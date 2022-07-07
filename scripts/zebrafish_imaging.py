@@ -23,13 +23,13 @@ z_position_list = [mm_pos_list.get_position(i).get('ZDrive').get1_d_position()
 
 #%% define imaging settings
 
-data_directory = r''
-data_name = ''
+data_directory = r'D:\2022_07_07 automation testing'
+data_name = 'test1'
 
 # fluorescence channels
 epi_channels = [{'group': 'Master Channel', 'config': 'Epi-GFP'},
                 {'group': 'Master Channel', 'config': 'Epi-DSRED'}]
-epi_exposure = [100, 100]
+epi_exposure = [100, 80]  # in ms
 
 # LF channels, 5-state algorithm
 lf_channels = [{'group': 'Master Channel', 'config': f'State{i}'} for i in range(5)]
@@ -41,10 +41,26 @@ z_end = 3
 z_step = 0.25
 z_range = np.arange(z_start, z_end + z_step, z_step)
 
-num_time_points = 5
-time_interval_s = 20*60  # in seconds
+num_time_points = 2
+time_interval_s = 0  # in seconds
 
 #%% prepare for acquisition
+
+# setup Prime BSI Express camera
+mmc.set_property('Prime BSI Express', 'Binning', '2x2')
+mmc.set_property('Prime BSI Express', 'ReadoutRate', '100MHz 16bit')
+mmc.set_property('Prime BSI Express', 'Gain', '2-CMS')
+
+# setup Oryx camera
+mmc.set_property('Oryx', 'Frame Rate Control Enabled', '1')
+mmc.set_property('Oryx', 'Frame Rate', '10')
+mmc.set_property('Oryx', 'Pixel Format', 'Mono12p')
+mmc.set_roi('Oryx', 100, 0, 1024, 1024)
+
+# setup TriggerScope
+mmc.set_property('TS_DAC01', 'Sequence', 'On')
+mmc.set_property('TS_DAC02', 'Sequence', 'On')
+mmc.set_property('TS_DAC05', 'Sequence', 'On')
 
 # set Focus device to piezo drive
 mmc.set_property('Core', 'Focus', 'PiezoStage:Q:35')
@@ -70,10 +86,9 @@ for t_idx in range(num_time_points):
                     'z': z,
                     'channel': channel,
                     'exposure': exp,
-                    'keep_shutter_open': False  # keep shutter closed to disable sequencing here
                 })
 
-        # lf positions, channel first
+        # lf positions, channel first - channel sequencing does not work
         for z_idx, z in enumerate(z_range):
             for channel in lf_channels:
                 events.append({
@@ -84,8 +99,8 @@ for t_idx in range(num_time_points):
                     'z': z,
                     'channel': channel,
                     'exposure': lf_exposure,
-                    'keep_shutter_open': True
                 })
+
 
 #%% hook functions
 
@@ -120,8 +135,8 @@ if snap_live_manager.is_live_mode_on():
     snap_live_manager.set_live_mode_on(False)
 
 # acquire data
-with Acquisition(directory=data_directory, name=data_name) as acq:
-    acq.acquire(events)
+# with Acquisition(directory=data_directory, name=data_name) as acq:
+#     acq.acquire(events, keep_shutter_open=True)
 
-# with Acquisition(directory=data_directory, name=data_name, post_camera_hook_fn=post_hardware_hook) as acq:
-#     acq.acquire(events)
+with Acquisition(directory=data_directory, name=data_name, post_camera_hook_fn=post_hardware_hook) as acq:
+    acq.acquire(events, keep_shutter_open=True)
