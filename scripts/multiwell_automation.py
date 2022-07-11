@@ -33,6 +33,8 @@ z_start = -3
 z_end = 3
 z_step = 0.25
 z_range = np.arange(z_start, z_end + z_step, z_step)
+time_interval_s = 30
+num_time_points = 3
 
 # set Focus device to piezo drive
 mmc.set_property('Core', 'Focus', 'PiezoStage:Q:35')
@@ -44,15 +46,17 @@ autofocus_manager.set_autofocus_method_by_name('PFS')
 
 
 #%% define acquisition events
-
-events = multi_d_acquisition_events(num_time_points=3,
-                                    time_interval_s=30,
-                                    z_start=z_start,
-                                    z_step=z_step,
-                                    z_end=z_end,
-                                    xy_positions=xy_position_list,
-                                    order='tpcz',
-                                    keep_shutter_open_between_z_steps=True)
+events = []
+for t_idx in range(num_time_points):
+    for p_idx, p in enumerate(xy_position_list):
+        for z_idx, z in enumerate(z_range):
+            events.append({
+                'axes': {'time': t_idx, 'position': p_idx, 'z': z_idx},
+                'min_start_time': t_idx * time_interval_s,
+                'x': p[0],
+                'y': p[1],
+                'z': z,
+                })
 
 #%% autofocus function
 
@@ -71,21 +75,34 @@ def autofocus_fn(event, bridge, event_queue):
 
             # apply ZDrive position
             mmc.set_position('ZDrive', z_position_list[pos_index])
+            time.sleep(2) #wait for oil to catch up
 
             # apply autofocus
             z_old = mmc.get_position('ZDrive')
             print(f'Position before autofocus: {z_old}')
 
             # autofocus
+            print('Calling autofocus')
             try:
                 mmc.full_focus()
             except:
-                mmc.set_relative_position(5)  # try moving up
+                print('First try failed. Moving +5 um and retry')
+                mmc.set_relative_position('ZDrive', 5)  # try moving up
                 try:
                     mmc.full_focus()
                 except:
-                    mmc.set_relative_position(-10)  # try moving down
-                    mmc.full_focus()
+                    print("Second try failed. Move -10 um and retry")
+                    mmc.set_relative_position('ZDrive', -10)  # try moving down
+                    try:
+                        mmc.full_focus()
+                    except:
+                        print('Autofocus failed')
+                    else:
+                        print('Autofocus succeeded')
+                else:
+                    print('Autofocus succeeded')
+            else:
+                print('Autofocus succeeded')
 
             z_new = mmc.get_position('ZDrive')
             print(f'Position after autofocus: {z_new}')
