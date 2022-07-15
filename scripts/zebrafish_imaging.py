@@ -23,25 +23,25 @@ z_position_list = [mm_pos_list.get_position(i).get('ZDrive').get1_d_position()
 
 #%% define imaging settings
 
-data_directory = r'D:\2022_07_07 automation testing'
-data_name = 'test1'
+data_directory = r'E:\2022_07_08 zebrafish imaging'
+data_name = 'fish2_withGFP'
 
 # fluorescence channels
 epi_channels = [{'group': 'Master Channel', 'config': 'Epi-GFP'},
                 {'group': 'Master Channel', 'config': 'Epi-DSRED'}]
-epi_exposure = [100, 80]  # in ms
+epi_exposure = [150, 80]  # in ms
 
 # LF channels, 5-state algorithm
 lf_channels = [{'group': 'Master Channel', 'config': f'State{i}'} for i in range(5)]
 lf_exposure = 5
 
 # relative z, acquired using piezo stage
-z_start = -3
-z_end = 3
-z_step = 0.25
+z_start = -10
+z_end = 20
+z_step = 0.3
 z_range = np.arange(z_start, z_end + z_step, z_step)
 
-num_time_points = 2
+num_time_points = 15
 time_interval_s = 0  # in seconds
 
 #%% prepare for acquisition
@@ -55,7 +55,7 @@ mmc.set_property('Prime BSI Express', 'Gain', '2-CMS')
 mmc.set_property('Oryx', 'Frame Rate Control Enabled', '1')
 mmc.set_property('Oryx', 'Frame Rate', '10')
 mmc.set_property('Oryx', 'Pixel Format', 'Mono12p')
-mmc.set_roi('Oryx', 100, 0, 1024, 1024)
+# mmc.set_roi('Oryx', 100, 0, 1024, 1024)
 
 # setup TriggerScope
 mmc.set_property('TS_DAC01', 'Sequence', 'On')
