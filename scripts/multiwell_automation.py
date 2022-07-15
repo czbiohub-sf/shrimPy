@@ -11,14 +11,16 @@ mmStudio = bridge.get_studio()
 #%% import positions from MM
 mm_pos_list = mmStudio.get_position_list_manager().get_position_list()
 number_of_positions = mm_pos_list.get_number_of_positions()
-#method one: hasattr() filter, append z values
+
 xyz_position_list = [[mm_pos_list.get_position(i).get_x(),
                       mm_pos_list.get_position(i).get_y(),
                       mm_pos_list.get_position(i).get('ZDrive').get1_d_position()]
                       for i in range(number_of_positions)]
+
 xy_position_list = [[mm_pos_list.get_position(i).get_x(),
                      mm_pos_list.get_position(i).get_y()]
                     for i in range(number_of_positions)]
+
 z_position_list = [mm_pos_list.get_position(i).get('ZDrive').get1_d_position()
                    for i in range(number_of_positions)]
 
