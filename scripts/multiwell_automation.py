@@ -1,5 +1,4 @@
 #%% import libraries
-
 import numpy as np
 from pycromanager import Bridge, Acquisition, multi_d_acquisition_events
 
@@ -10,19 +9,16 @@ mmc = bridge.get_core()
 mmStudio = bridge.get_studio()
 
 #%% import positions from MM
-
 mm_pos_list = mmStudio.get_position_list_manager().get_position_list()
 number_of_positions = mm_pos_list.get_number_of_positions()
-
+#method one: hasattr() filter, append z values
 xyz_position_list = [[mm_pos_list.get_position(i).get_x(),
                       mm_pos_list.get_position(i).get_y(),
                       mm_pos_list.get_position(i).get('ZDrive').get1_d_position()]
-                     for i in range(number_of_positions)]
-
+                      for i in range(number_of_positions)]
 xy_position_list = [[mm_pos_list.get_position(i).get_x(),
                      mm_pos_list.get_position(i).get_y()]
                     for i in range(number_of_positions)]
-
 z_position_list = [mm_pos_list.get_position(i).get('ZDrive').get1_d_position()
                    for i in range(number_of_positions)]
 
@@ -36,6 +32,9 @@ z_range = np.arange(z_start, z_end + z_step, z_step)
 time_interval_s = 30
 num_time_points = 3
 
+data_directory = r'D:\2022_07_14 automation testing'
+data_name = 'BPAE_multi-channel_automation'
+
 # set Focus device to piezo drive
 mmc.set_property('Core', 'Focus', 'PiezoStage:Q:35')
 # mmc.set_property('Core', 'Focus', 'ZDrive')
@@ -44,20 +43,48 @@ mmc.set_property('Core', 'Focus', 'PiezoStage:Q:35')
 autofocus_manager = mmStudio.get_autofocus_manager()
 autofocus_manager.set_autofocus_method_by_name('PFS')
 
+#XY Stage Movement Speed
+mmc.set_property('XYStage:XY:31', 'MotorSpeedX-S(mm/s)', '3')
+mmc.set_property('XYStage:XY:31', 'MotorSpeedY-S(mm/s)', '3')
+
+#channels
+#fluoresence
+epi_channels =[{'group': 'Master Channel', 'config': 'Epi-GFP'},
+               {'group': 'Master Channel', 'config': 'Epi-DSRED'}]
+epi_exposure = [150, 80] #ms
+
+#LF channels, 5 state (for i in range(#))
+lf_channels = [{'group': 'Master Channel', 'config': f'State{i}'} for i in range(5)]
+lf_exposure = 5
 
 #%% define acquisition events
 events = []
 for t_idx in range(num_time_points):
     for p_idx, p in enumerate(xy_position_list):
+        #epi, z first
+        for channel, exp in zip(epi_channels, epi_exposure):
+            for z_idx, z in enumerate(z_range):
+                events.append({
+                    'axes': {'time': t_idx, 'position': p_idx, 'z': z_idx},
+                    'min_start_time': t_idx * time_interval_s,
+                    'x': p[0],
+                    'y': p[1],
+                    'z': z,
+                    'channel': channel,
+                    'exposure': exp
+                    })
+#lf positions: channel first
         for z_idx, z in enumerate(z_range):
-            events.append({
-                'axes': {'time': t_idx, 'position': p_idx, 'z': z_idx},
-                'min_start_time': t_idx * time_interval_s,
-                'x': p[0],
-                'y': p[1],
-                'z': z,
+            for channel in lf_channels:
+                events.append({
+                    'axes': {'time': t_idx, 'position': p_idx, 'z':z_idx},
+                    'min_start_time': t_idx*time_interval_s,
+                    'x': p[0],
+                    'y': p[1],
+                    'z': z,
+                    'channel': channel,
+                    'exposure': lf_exposure
                 })
-
 #%% autofocus function
 
 def autofocus_fn(event, bridge, event_queue):
