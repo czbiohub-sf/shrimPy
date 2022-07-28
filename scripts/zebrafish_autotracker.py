@@ -12,6 +12,8 @@ def img_process_fn(image, metadata, bridge, event_queue):
 
     time_index = metadata['Axes']['time']
     print(time_index)
+    x_pos = metadata['Axes']['x_pos']
+    print(x_pos)
     # define the number of time points, it will run through this time point and then stop
     n_time = 5
     # define the number of z_steps
@@ -32,34 +34,37 @@ def img_process_fn(image, metadata, bridge, event_queue):
        
         #print(z_index)
         if z_index == z_steps:
-
+            
         # perform the calculation on the drift
             #print(img_process_fn.images[5]) 
             #img_process_fn.images = []
-            
+            print(metadata)
 
-            if time_index > 1: 
+            if time_index >= 1: 
                 # calculate the shift in x,y, and z
                 # right now, just picking the image in the middle of the stack, need to think more about this
-                #ref_image = img_process_fn.images[int((time_index-2)*9-4)]
-                #curr_image = img_process_fn.images[int((time_index-1)*9-4)]
-                ref_stack = np.stack(img_process_fn.images[((time_index-2)*10):((time_index-2)*10+9)])
-                curr_stack = np.stack(img_process_fn.images[((time_index-1)*10): ((time_index-1)*10+9)])
-                #corr = phase_cross_correlation(ref_image,curr_image)
-                corr = phase_cross_correlation(ref_stack, curr_stack)
+                ref_image = img_process_fn.images[4]
+                curr_image = img_process_fn.images[int((time_index)*10+4)]
+                # compare with the first time point
+                #ref_stack = np.stack(img_process_fn.images[0:9])
+                #curr_stack = np.stack(img_process_fn.images[((time_index)*10): ((time_index)*10+9)])
+                corr = phase_cross_correlation(ref_image,curr_image)
+                #corr = phase_cross_correlation(ref_stack, curr_stack)
                 shift = tuple(-corr[0])
                 print(shift)
-                dx = shift[2]
-                dy = shift[1]
-                dz = shift[0]
+                #dx = shift[2]
+                #dy = shift[1]
+                #dz = shift[0]
+                dx = shift[1]
+                dy = shift[0]
 
                 # define the next event and add to the queue
                 time_index += 1
                 event = []
-                for index, z_um in enumerate(np.arange(start=0 + dz, stop=10 + dz, step=1)):
+                for index, z_um in enumerate(np.arange(start=0, stop=10, step=1)):
                     evt = {
-                        'axes' : {'z': index, 'time': time_index},
-                        'x' : 0 + dz,
+                        'axes' : {'z': index, 'time': time_index, 'x_pos': x_pos + dx},
+                        'x' : 0 + dx,
                         'y' : 0 + dy,
                         'z' : z_um
                     }
@@ -73,8 +78,8 @@ def img_process_fn(image, metadata, bridge, event_queue):
                 event = []
                 for index, z_um in enumerate(np.arange(start=0, stop=10, step=1)):
                     evt = {
-                        'axes' : {'z': index, 'time': time_index},
-                        'x' : 0,
+                        'axes' : {'z': index, 'time': time_index, 'x_pos': x_pos},
+                        'x' : x_pos,
                         'y' : 0,
                         'z' : z_um
                     }
@@ -85,16 +90,29 @@ def img_process_fn(image, metadata, bridge, event_queue):
             
     return image, metadata
 
+# try multiple positions
+#position_list = [(0,0), (100,100)]
 # define the first event
 events = []
+# for p_index in range(len(position_list)):
+
+#     for index, z_um in enumerate(np.arange(start=0, stop=10, step=1)):
+#         evt = {
+#         'axes' : {'z': index, 'time': 0},
+#         'x' : position_list[p_index][0],
+#         'y' : position_list[p_index][1],
+#         'z' : z_um
+#             }
+#         events.append(evt)
+
 for index, z_um in enumerate(np.arange(start=0, stop=10, step=1)):
-    evt = {
-     'axes' : {'z': index, 'time': 0},
-     'x' : 0,
-     'y' : 0,
-     'z' : z_um
-         }
-    events.append(evt)
+         evt = {
+         'axes' : {'z': index, 'time': 0, 'x_pos': 0},
+         'x' : 0,
+         'y' : 0,
+         'z' : z_um
+             }
+         events.append(evt)
 
 acq = Acquisition(directory='/Users/rachel.banks/Documents/pycromanager_tests/', name='test',
                     image_process_fn = img_process_fn)
