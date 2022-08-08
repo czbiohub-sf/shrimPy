@@ -2,18 +2,13 @@ from pycromanager import Acquisition, multi_d_acquisition_events
 import numpy as np
 from skimage.registration import phase_cross_correlation
 
-# with Acquisition(directory='/Users/rachel.banks/Documents/pycromanager_tests/', name='test') as acq:
-
-#     events = multi_d_acquisition_events(z_start=0, z_end=10, z_step=0.5)
-
-#     acq.acquire(events)
 
 def img_process_fn(image, metadata, bridge, event_queue):
-
+   
     time_index = metadata['Axes']['time']
     print(time_index)
-    x_pos = metadata['Axes']['x_pos']
-    print(x_pos)
+    
+    
     # define the number of time points, it will run through this time point and then stop
     n_time = 5
     # define the number of z_steps
@@ -30,9 +25,14 @@ def img_process_fn(image, metadata, bridge, event_queue):
         acq_running = False
     else:
         z_index = metadata['Axes']['z']
-        img_process_fn.images.append(image)
+        #use DAPI channel for correlation
+        channel = metadata['Channel']
+        print(channel)
+        if channel == 'DAPI':
+            img_process_fn.images.append(image)
+            print('DAPI channel added')
        
-        #print(z_index)
+        print(z_index)
         if z_index == z_steps:
             
         # perform the calculation on the drift
@@ -40,53 +40,82 @@ def img_process_fn(image, metadata, bridge, event_queue):
             #img_process_fn.images = []
             print(metadata)
 
-            if time_index >= 1: 
+            if time_index > 0: 
+
+                if channel == 'DAPI':
                 # calculate the shift in x,y, and z
                 # right now, just picking the image in the middle of the stack, need to think more about this
-                ref_image = img_process_fn.images[4]
-                curr_image = img_process_fn.images[int((time_index)*10+4)]
+                # ref_image = img_process_fn.images[4]
+                # curr_image = img_process_fn.images[int((time_index)*10+4)]
                 # compare with the first time point
-                #ref_stack = np.stack(img_process_fn.images[0:9])
-                #curr_stack = np.stack(img_process_fn.images[((time_index)*10): ((time_index)*10+9)])
-                corr = phase_cross_correlation(ref_image,curr_image)
-                #corr = phase_cross_correlation(ref_stack, curr_stack)
-                shift = tuple(-corr[0])
-                print(shift)
-                #dx = shift[2]
-                #dy = shift[1]
-                #dz = shift[0]
-                dx = shift[1]
-                dy = shift[0]
+                    
+                    x_pos = metadata['XPosition_um_Intended']
+                    y_pos = metadata['YPosition_um_Intended']
+                    #ref_stack = np.stack(img_process_fn.images[0:9])
+                    ref_stack = np.stack(img_process_fn.images[((time_index-1)*10): ((time_index-1)*10+9)])
+                    curr_stack = np.stack(img_process_fn.images[((time_index)*10): ((time_index)*10+9)])
+                    # corr = phase_cross_correlation(ref_image,curr_image)
+                    corr = phase_cross_correlation(ref_stack, curr_stack)
+                    shift = tuple(-corr[0])
+                    print(shift)
+                    dx = shift[2]
+                    dy = shift[1]
+                    dz = shift[0]
+                    #dx = shift[1]
+                    #dy = shift[0]
 
-                # define the next event and add to the queue
-                time_index += 1
-                event = []
-                for index, z_um in enumerate(np.arange(start=0, stop=10, step=1)):
-                    evt = {
-                        'axes' : {'z': index, 'time': time_index, 'x_pos': x_pos + dx},
-                        'x' : 0 + dx,
-                        'y' : 0 + dy,
-                        'z' : z_um
-                    }
-                    event.append(evt)
+                    # define the next event and add to the queue
+                    time_index = time_index + 1
+                    print(time_index)
+                    channels = ['DAPI', 'FITC']
+                    event = []
+                    for c_index, channel in enumerate(channels):
+                        for index, z_um in enumerate(np.arange(start=0 + dz, stop=10 + dz, step=1)):
+                            evt = {
+                                'axes' : {'z': index, 'time': time_index, 'position': 0},
+                                'x' : x_pos+ dx,
+                                'y' : y_pos + dy,
+                                'z' : z_um,
+                                'channel' : channel
+                            }
+                            event.append(evt)
+                    
+                    event_queue.put(event)
+
+                # event = multi_d_acquisition_events(
+                #                     num_time_points=1, time_interval_s=0,
+                #                     channel_group='Channel', channels=['DAPI', 'FITC'],
+                #                     z_start=0, z_end=10, z_step=1,
+                #                     order='tcz')
             
-                event_queue.put(event)
+                
             
             else:
+                print('time index is zero')
                 time_index += 1
                 # define the next event and add to the queue
+                channels = ['DAPI', 'FITC']
                 event = []
-                for index, z_um in enumerate(np.arange(start=0, stop=10, step=1)):
-                    evt = {
-                        'axes' : {'z': index, 'time': time_index, 'x_pos': x_pos},
-                        'x' : x_pos,
-                        'y' : 0,
-                        'z' : z_um
-                    }
-                    event.append(evt)
-                
+                for c_index, channel in enumerate(channels):
+                    for index, z_um in enumerate(np.arange(start=0, stop=10, step=1)):
+                        evt = {
+                            'axes' : {'z': index, 'time': time_index, 'position': 0},
+                            'x' : 0,
+                            'y' : 0,
+                            'z' : z_um,
+                            'channel' : {'group' : 'Channel', 'config' : channel}
+                        }
+                        event.append(evt)
                 event_queue.put(event)
-                 # increment the time index
+
+                #event = multi_d_acquisition_events(
+                                   # num_time_points=1, time_interval_s=0,
+                                   # channel_group='Channel', channels=['DAPI', 'FITC'],
+                                   # z_start=0, z_end=10, z_step=1,
+                                  #  order='tcz')
+                
+                        
+                
             
     return image, metadata
 
@@ -105,17 +134,28 @@ events = []
 #             }
 #         events.append(evt)
 
-for index, z_um in enumerate(np.arange(start=0, stop=10, step=1)):
-         evt = {
-         'axes' : {'z': index, 'time': 0, 'x_pos': 0},
-         'x' : 0,
-         'y' : 0,
-         'z' : z_um
-             }
-         events.append(evt)
+pos_init = np.array([0,0])
+epi_channels = ['DAPI', 'FITC']
+for c_index, channel in enumerate(epi_channels):
+    for index, z_um in enumerate(np.arange(start=0, stop=10, step=1)):
+            evt = {
+            'axes' : {'z': index, 'time': 0, 'position': 0},
+            'x' : pos_init[0],
+            'y' : pos_init[1],
+            'z' : z_um,
+            'channel': {'group': 'Channel', 'config': channel}
+                }
+            events.append(evt)
+
+# events = multi_d_acquisition_events(
+#                                     num_time_points=2, time_interval_s=0,
+#                                     channel_group='Channel', channels=['DAPI', 'FITC'],
+#                                     z_start=0, z_end=10, z_step=1,
+#                                     order='tcz')
 
 acq = Acquisition(directory='/Users/rachel.banks/Documents/pycromanager_tests/', name='test',
                     image_process_fn = img_process_fn)
+
 
 acq.acquire(events)
 
