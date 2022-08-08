@@ -2,6 +2,27 @@ from pycromanager import Acquisition, multi_d_acquisition_events
 import numpy as np
 from skimage.registration import phase_cross_correlation
 
+data_directory = r'E:\2022_08_08 tracker testing'
+data_name =  'test'
+
+# setup Prime BSI Express camera
+mmc.set_property('Prime BSI Express', 'Binning', '2x2')
+mmc.set_property('Prime BSI Express', 'ReadoutRate', '100MHz 16bit')
+mmc.set_property('Prime BSI Express', 'Gain', '2-CMS')
+
+# setup Oryx camera
+mmc.set_property('Oryx', 'Frame Rate Control Enabled', '1')
+mmc.set_property('Oryx', 'Frame Rate', '10')
+mmc.set_property('Oryx', 'Pixel Format', 'Mono12p')
+# mmc.set_roi('Oryx', 100, 0, 1024, 1024)
+
+# setup TriggerScope
+mmc.set_property('TS_DAC01', 'Sequence', 'On')
+mmc.set_property('TS_DAC02', 'Sequence', 'On')
+mmc.set_property('TS_DAC05', 'Sequence', 'On')
+
+# set Focus device to piezo drive
+mmc.set_property('Core', 'Focus', 'PiezoStage:Q:35')
 
 def img_process_fn(image, metadata, bridge, event_queue):
    
@@ -17,6 +38,7 @@ def img_process_fn(image, metadata, bridge, event_queue):
     epi_channels = [{'group': 'Master Channel', 'config': 'Epi-GFP'},
                 {'group': 'Master Channel', 'config': 'Epi-DSRED'}]
     epi_exposure = [150, 80]
+    
 
     # accumulate the images
     if not hasattr(img_process_fn, "images"):
@@ -162,7 +184,7 @@ for channel, exp in zip(epi_channels, epi_exposure):
 #                                     z_start=0, z_end=9, z_step=1,
 #                                     order='tcz')
 
-acq = Acquisition(directory='/Users/rachel.banks/Documents/pycromanager_tests/', name='test',
+acq = Acquisition(directory= data_name, name= data_name,
                     image_process_fn = img_process_fn)
 
 
