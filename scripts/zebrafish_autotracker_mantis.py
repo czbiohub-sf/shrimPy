@@ -80,9 +80,12 @@ def img_process_fn(image, metadata, bridge, event_queue):
             print('GFP channel added')
        
         # if we're at the end of the z stack
-        if z_index == len(z_range)-1:
+        z_steps = len(z_range)
+        if z_index == z_steps:
             print('Entering z_index == len(z_range)-1')
-            if channel == 'Epi-DSRED':
+            # if we're in the last channel, DSRED in this case
+            #if channel == 'Epi-DSRED':
+            if channel == epi_channels[-1]:
                 print('Entering channel == Epi-DSRED')
                 if time_index > 1:
                     # print('Setting rel xy position to (-5, 0)')
@@ -92,9 +95,6 @@ def img_process_fn(image, metadata, bridge, event_queue):
                     print('Entering time_index > 1')
                     x_pos = metadata['XPosition_um_Intended']
                     y_pos = metadata['YPosition_um_Intended']
-                    #ref_stack = np.stack(img_process_fn.images[0:9])
-                    # ref_stack = np.stack(img_process_fn.images[((time_index-1)*10): ((time_index-1)*10+9)])
-                    # curr_stack = np.stack(img_process_fn.images[((time_index)*10): ((time_index)*10+9)])
                     # corr = phase_cross_correlation(ref_image,curr_image)
                     print(len(img_process_fn.ref_images))
                     print(len(img_process_fn.curr_images))
@@ -107,76 +107,36 @@ def img_process_fn(image, metadata, bridge, event_queue):
                     dz = shift[0] * z_step
                     #dx = shift[1]
                     #dy = shift[0]
-
-                    # define the next event and add to the queue
-                    time_index = time_index + 1
-                    # print(time_index)
-                    
-                    event = []
-                    for channel, exp in zip(epi_channels, epi_exposure):
-                        for index, z_um in enumerate(z_range + dz):
-                            evt = {
-                                'axes' : {'z': index, 'time': time_index, 'position': 0},
-                                'x' : x_pos + dx,
-                                'y' : y_pos + dy,
-                                'z' : z_um,
-                                'channel' : channel,
-                                'exposure' : exp
-                            }
-                            event.append(evt)
-                    event_queue.put(event)
                 else:
+                    dx = 0
+                    dy = 0
+                    dz = 0
+                    
+                time_index = time_index + 1
+                # print(time_index)
+                # define the next event and add to the queue    
+                event = []
+                for channel, exp in zip(epi_channels, epi_exposure):
+                    for index, z_um in enumerate(z_range + dz):
+                        evt = {
+                            'axes' : {'z': index, 'time': time_index, 'position': 0},
+                            'x' : x_pos + dx,
+                            'y' : y_pos + dy,
+                            'z' : z_um,
+                            'channel' : channel,
+                            'exposure' : exp
+                        }
+                        event.append(evt)
+                event_queue.put(event)
 
-                    time_index += 1
-                    # define the next event and add to the queue
-                    event = []
-                    for channel, exp in zip(epi_channels, epi_exposure):
-                        for index, z_um in enumerate(z_range):
-                            evt = {
-                                'axes' : {'z': index, 'time': time_index, 'position': 0},
-                                'x' : xy_position_list[0][0],
-                                'y' : xy_position_list[0][1],
-                                'z' : z_um,
-                                'channel' : channel,
-                                'exposure' : exp
-                            }
-                            event.append(evt)
-                    event_queue.put(event)
-
+                # swap the reference and current images    
+                # alternate - always use the first time point as the reference image
                 print('Swapping ref and curr images')
                 print(len(img_process_fn.curr_images))
                 img_process_fn.ref_images = deepcopy(img_process_fn.curr_images)
                 img_process_fn.curr_images = []
 
     return image, metadata
-
-# try multiple positions
-#position_list = [(0,0), (100,100)]
-# define the first event
-# events = []
-# for p_index in range(len(position_list)):
-
-#     for index, z_um in enumerate(np.arange(start=0, stop=10, step=1)):
-#         evt = {
-#         'axes' : {'z': index, 'time': 0},
-#         'x' : position_list[p_index][0],
-#         'y' : position_list[p_index][1],
-#         'z' : z_um
-#             }
-#         events.append(evt)
-
-# pos_init = np.array([0,0])
-# epi_channels = [{'group': 'Master Channel', 'config': 'Epi-GFP'},
-#                 {'group': 'Master Channel', 'config': 'Epi-DSRED'}]
-# epi_exposure = [150, 80]
-
-
-# events = multi_d_acquisition_events(
-#                                     num_time_points=2, time_interval_s=0,
-#                                     channel_group='Channel', channels=['DAPI', 'FITC'],
-#                                    # xy_positions = [0,0],
-#                                     z_start=0, z_end=9, z_step=1,
-#                                     order='tcz')
 
 #%%
 # turn on autoshutter
@@ -193,23 +153,3 @@ acq = Acquisition(directory= data_directory, name= data_name,
 
 
 acq.acquire(events)
-
-# with Acquisition(directory='/Users/rachel.banks/Documents/pycromanager_tests/', name='test',
-#                     image_process_fn = img_process_fn) as acq:
-#     events = []
-#     for index, z_um in enumerate(np.arange(start=0, stop=10, step=0.5)):
-#         evt = {
-#             'axes' : {'z': index, 'time': 0},
-#             'z' : z_um
-#         }
-#         events.append(evt)
-#     acq.acquire(events)
-
-
-#     # create some acquisition events here
-#     events = []
-#     event_0 = {'axes': {'time':0}}
-#     event_1 = {'axes': {'time':1}}
-#     events = [event_0, event_1]
-#     acq.acquire(events)
-
