@@ -14,7 +14,7 @@ mmc.set_property('Core', 'Focus', 'PiezoStage:Q:35')
 
 #%%
 data_directory = r'E:\2022_08_09 zebrafish tracking'
-data_name = 'fish0'
+data_name = 'fish1_tracking'
 
 mm_pos_list = mmStudio.get_position_list_manager().get_position_list()
 number_of_positions = mm_pos_list.get_number_of_positions()
@@ -24,7 +24,7 @@ xy_position_list = [[mm_pos_list.get_position(i).get_x(),
                     for i in range(number_of_positions)]
 
 # define the number of time points, it will run through this time point and then stop
-n_time = 20
+n_time = 400
 
 verbose = False
 autotrack_channel = 'Epi-DSRED'
@@ -32,8 +32,8 @@ block_avg_window = 4  # in pixels
 pixel_size = 6.9/100  # in um
 
 # PID Params
-Kp_xy = 1
-Kp_z = 0.8
+Kp_xy = 0.8
+Kp_z = 1.0
 
 # relative z, acquired using piezo stage
 z0 = mmc.get_position('PiezoStage:Q:35')
@@ -138,37 +138,39 @@ def img_process_fn(image, metadata, bridge, event_queue):
                 if time_index > 0:
                     if verbose:
                         print('Entering time_index > 0 condition')
-                    x_pos = metadata['XPosition_um_Intended']
+                    z_pos = metadata['ZPosition_um_Intended']
                     y_pos = metadata['YPosition_um_Intended']
-                    print(f'XY position from metadata: {y_pos, x_pos}')
+                    x_pos = metadata['XPosition_um_Intended']
+                    print(f'ZYX position from metadata: {z_pos, y_pos, x_pos}')
 
                     ref_stack = block_avg(rescale_image(np.stack(img_process_fn.ref_images)), n=block_avg_window)
                     curr_stack = block_avg(rescale_image(np.stack(img_process_fn.curr_images)), n=block_avg_window)
                     shift, _, _ = phase_cross_correlation(ref_stack, curr_stack)
 
-                    img_process_fn.shift += np.array([
+                    dz, dy, dx = [
                         Kp_z  * shift[0] * z_step,
                         Kp_xy * shift[1] * pixel_size * block_avg_window,
                         Kp_xy * shift[2] * pixel_size * block_avg_window
-                    ])
-                    dz, dy, dx = img_process_fn.shift.copy()
+                    ]
 
                     # dx = shift[2] * pixel_size * block_avg_window
                     # dy = shift[1] * pixel_size * block_avg_window
                     # dz = shift[0] * z_step
-                    print(f'Shift in pixels: {shift}')
-                    print(f'Shift in microns: {dz, dy, dx}')
 
-                    if dx < 1:
+                    if np.abs(dx) < 1:
                         dx = 0
-                    if dy < 1:
+                    if np.abs(dy) < 1:
                         dy = 0
+
+                    print(f'Shift in pixels: {shift}')
+                    print('Shift in microns: {:.3f}, {:.3f}, {:.3f}'.format(dz, dy, dx))
 
                     # define the next event and add to the queue
                     time_index = time_index + 1
                     new_events = []
                     for channel, exp in zip(epi_channels, epi_exposure):
-                        for index, z_um in enumerate(z_range - dz):
+                        new_z_range = np.arange(z_pos-(z_end-z_start), z_pos+z_step, z_step) - dz
+                        for index, z_um in enumerate(new_z_range):
                             evt = {
                                 'axes': {'z': index, 'time': time_index, 'position': 0},
                                 'x': x_pos - dx,
@@ -180,11 +182,10 @@ def img_process_fn(image, metadata, bridge, event_queue):
                             new_events.append(evt)
                     event_queue.put(new_events)
 
-                # swap the reference and current images    
-                # alternate - always use the first time point as the reference image
-                if verbose:
-                    print('Swapping ref and curr images')
-                img_process_fn.ref_images = deepcopy(img_process_fn.curr_images)
+                else:
+                    if verbose:
+                        print('Setting ref_images')
+                    img_process_fn.ref_images = deepcopy(img_process_fn.curr_images)
                 img_process_fn.curr_images = []
 
     return image, metadata
