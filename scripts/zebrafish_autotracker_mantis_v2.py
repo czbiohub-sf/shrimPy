@@ -60,17 +60,18 @@ pos_init = xy_position_list
 
 events = []
 for t_idx, t in enumerate(range(2)):
-    for channel, exp in zip(epi_channels, epi_exposure):
-        for z_idx, z_um in enumerate(z_range):
-                evt = {
-                'axes' : {'time': t_idx, 'z': z_idx, 'position': 0},
-                'x' : pos_init[0][0],
-                'y' : pos_init[0][1],
-                'z' : z_um,
-                'channel': channel,
-                'exposure': exp
-                    }
-                events.append(evt)
+    for p_idx in range(number_of_positions):
+        for channel, exp in zip(epi_channels, epi_exposure):
+            for z_idx, z_um in enumerate(z_range):
+                    evt = {
+                    'axes' : {'time': t_idx, 'z': z_idx, 'position': p_idx},
+                    'x' : pos_init[p_idx][0],
+                    'y' : pos_init[p_idx][1],
+                    'z' : z_um,
+                    'channel': channel,
+                    'exposure': exp
+                        }
+                    events.append(evt)
 
 #%%
 def block_avg(data, n=2):
@@ -143,7 +144,8 @@ def img_process_fn(image, metadata, bridge, event_queue):
                     x_pos = metadata['XPosition_um_Intended']
                     print(f'ZYX position from metadata: {z_pos, y_pos, x_pos}')
 
-                    ref_stack = block_avg(rescale_image(np.stack(img_process_fn.ref_images)), n=block_avg_window)
+                    p_idx = metadata['Axes']['position']
+                    ref_stack = block_avg(rescale_image(np.stack(img_process_fn.ref_images[pos_idx])), n=block_avg_window)
                     curr_stack = block_avg(rescale_image(np.stack(img_process_fn.curr_images)), n=block_avg_window)
                     shift, _, _ = phase_cross_correlation(ref_stack, curr_stack)
 
@@ -172,7 +174,7 @@ def img_process_fn(image, metadata, bridge, event_queue):
                         new_z_range = np.arange(z_pos-(z_end-z_start), z_pos+z_step, z_step) - dz
                         for index, z_um in enumerate(new_z_range):
                             evt = {
-                                'axes': {'z': index, 'time': time_index, 'position': 0},
+                                'axes': {'z': index, 'time': time_index, 'position': p_idx},
                                 'x': x_pos - dx,
                                 'y': y_pos - dy,
                                 'z': z_um,
@@ -185,7 +187,8 @@ def img_process_fn(image, metadata, bridge, event_queue):
                 else:
                     if verbose:
                         print('Setting ref_images')
-                    img_process_fn.ref_images = deepcopy(img_process_fn.curr_images)
+                    img_list = deepcopy(img_process_fn.curr_images)
+                    img_process_fn.ref_images.append(img_list)
                 img_process_fn.curr_images = []
 
     return image, metadata
