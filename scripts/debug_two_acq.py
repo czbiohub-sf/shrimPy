@@ -6,8 +6,8 @@ mmc1 = Core(port=PORT1)
 print(mmc1)
 
 PORT2 = 5827
-mm_app_path = r'C:\Program Files\Micro-Manager-2.0_09_01_2022'
-config_file = os.path.join(mm_app_path, 'MMConfig_demo.cfg')
+mm_app_path = r'C:\Program Files\Micro-Manager-2.0_11_25_2022'
+config_file = r'C:\CompMicro_MMConfigs\mantis\mantis-LS.cfg'
 start_headless(mm_app_path, config_file, port=PORT2) 
 mmc2 = Core(port=PORT2)
 print(mmc2)
