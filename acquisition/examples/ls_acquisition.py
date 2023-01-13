@@ -15,9 +15,9 @@ PORT1 = 4827
 LS_POST_READOUT_DELAY = 0.05 # in ms
 
 #%% Set acquisition parameters
-save_path = r'D:\\2022_11_18 automation'
+save_path = r'D:\\2023_01_12 automation'
 
-n_timepoints = 5
+n_timepoints = 1
 time_interval = 3 # in seconds
 
 ls_exposure_ms = 10
@@ -38,7 +38,7 @@ print(mmc2)
 
 roi = mmc2.get_roi()
 ls_roi = [roi.x, roi.y, roi.width, roi.height]
-assert ls_roi[3] < 30, 'Please crop camera sensor for light-sheet acquisition'
+assert ls_roi[3] < 300, 'Please crop camera sensor for light-sheet acquisition'
 
 # mmc2.set_config('Channel - LS', 'GFP EX488 EM525-45')
 
@@ -46,7 +46,7 @@ assert ls_roi[3] < 30, 'Please crop camera sensor for light-sheet acquisition'
 mmc2.set_property('Prime BSI Express', 'ReadoutRate', '200MHz 11bit')
 mmc2.set_property('Prime BSI Express', 'Gain', '1-Full well')
 # One frame is acquired for every trigger pulse
-mmc2.set_property('Prime BSI Express', 'TriggerMode', 'Edge Trigger')
+# mmc2.set_property('Prime BSI Express', 'TriggerMode', 'Edge Trigger')
 # Rolling Shutter Exposure Out mode is high when all rows are exposing
 mmc2.set_property('Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter')
 
@@ -69,7 +69,7 @@ ls_events = multi_d_acquisition_events(num_time_points=n_timepoints,
                                        z_start=AP_galvo_start,
                                        z_end=AP_galvo_end,
                                        z_step=AP_galvo_step,
-                                       order='tpzc')
+                                       order='tpcz')
 
 #%% Setup DAQ
 
@@ -77,13 +77,41 @@ ls_framerate = 1000 / (ls_exposure_ms + ls_readout_time_ms + LS_POST_READOUT_DEL
 
 # Ctr1 triggers LS camera
 Ctr1 = nidaqmx.Task('Counter1')
-ctr1 = Ctr1.co_channels.add_co_pulse_chan_time('cDAQ1/_ctr1', freq=ls_framerate, duty_cycle=0.1)
-Ctr1.timing.cfg_implicit_timing(sample_mode=AcquisitionType.FINITE, samps_per_chan=802)
+ctr1 = Ctr1.co_channels.add_co_pulse_chan_freq('cDAQ1/_ctr1', freq=ls_framerate, duty_cycle=0.1)
+# Ctr1.timing.cfg_implicit_timing(sample_mode=AcquisitionType.FINITE, samps_per_chan=80)
 # Ctr1.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source='/cDAQ1/PFI0', trigger_edge=Slope.RISING)
 ctr1.co_pulse_term = '/cDAQ1/PFI1'
 
+#%% Acquire data
+
+def prep_daq_counter(events):
+    event_seq_length = len(events)
+    print('Running pre-hardware hook function')
+    print(f'Sequence length: {event_seq_length}')
+    # if Ctr1.is_task_done():
+    #     print('Previous task is done')
+    #     Ctr1.stop()
+    # Ctr1.timing.cfg_implicit_timing(sample_mode=AcquisitionType.FINITE, samps_per_chan=event_seq_length)
+    print(events)
+    return events
+
+def start_daq_counter(events):
+    print('Running post camera hook fun')
+    print('Starting counter')
+    # Ctr1.start()
+    return events
+
+
+#%%
+with Acquisition(directory=save_path, name='ls_acq', port=PORT1, 
+                 pre_hardware_hook_fn=prep_daq_counter,
+                 post_camera_hook_fn=start_daq_counter,
+                 show_display=False) as acq2:
+    acq2.acquire(ls_events)
+
 #%% Acquire data v1
-acq2 = Acquisition(directory=save_path, name='ls_acq', port=PORT1)
+acq2 = Acquisition(directory=save_path, name='ls_acq', port=PORT1,
+                   show_display=False)
 
 print('Starting acquisition')
 acq2.acquire(ls_events)
