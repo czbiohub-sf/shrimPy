@@ -1,5 +1,5 @@
 #%% import modules
-# mantis conda env: acq
+# mantis conda env: acq_pm_latest
 
 import os
 import time
@@ -11,19 +11,20 @@ from nidaqmx.constants import AcquisitionType, Slope
 from nidaqmx.types import CtrTime
 
 #%% Define constants
+_verbose = False
 PORT1 = 4827
 LS_POST_READOUT_DELAY = 0.05 # in ms
 
 #%% Set acquisition parameters
-save_path = r'D:\\2023_01_12 automation'
+save_path = r'D:\\temp'
 
-n_timepoints = 1
-time_interval = 3 # in seconds
+n_timepoints = 3
+time_interval = 30 # in seconds
 
 ls_exposure_ms = 10
 
-AP_galvo_start = -2 # in Volts
-AP_galvo_end = 2
+AP_galvo_start = -2/10 # in Volts
+AP_galvo_end = 2/10
 AP_galvo_step = 0.01
 
 ls_channels = ['GFP EX488 EM525-45', 'mCherry EX561 EM600-37']
@@ -32,7 +33,6 @@ ls_channels = ['GFP EX488 EM525-45', 'mCherry EX561 EM600-37']
 # MM config: mantis-LS.cfg
 
 mmc2 = Core(port=PORT1)
-print(mmc2)
 
 #%% setup light sheet acquisition
 
@@ -46,7 +46,7 @@ assert ls_roi[3] < 300, 'Please crop camera sensor for light-sheet acquisition'
 mmc2.set_property('Prime BSI Express', 'ReadoutRate', '200MHz 11bit')
 mmc2.set_property('Prime BSI Express', 'Gain', '1-Full well')
 # One frame is acquired for every trigger pulse
-# mmc2.set_property('Prime BSI Express', 'TriggerMode', 'Edge Trigger')
+mmc2.set_property('Prime BSI Express', 'TriggerMode', 'Edge Trigger')
 # Rolling Shutter Exposure Out mode is high when all rows are exposing
 mmc2.set_property('Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter')
 
@@ -78,6 +78,7 @@ ls_framerate = 1000 / (ls_exposure_ms + ls_readout_time_ms + LS_POST_READOUT_DEL
 # Ctr1 triggers LS camera
 Ctr1 = nidaqmx.Task('Counter1')
 ctr1 = Ctr1.co_channels.add_co_pulse_chan_freq('cDAQ1/_ctr1', freq=ls_framerate, duty_cycle=0.1)
+# Ctr1 timing is now set in the prep_daq_counter hook function
 # Ctr1.timing.cfg_implicit_timing(sample_mode=AcquisitionType.FINITE, samps_per_chan=80)
 # Ctr1.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source='/cDAQ1/PFI0', trigger_edge=Slope.RISING)
 ctr1.co_pulse_term = '/cDAQ1/PFI1'
@@ -86,19 +87,18 @@ ctr1.co_pulse_term = '/cDAQ1/PFI1'
 
 def prep_daq_counter(events):
     event_seq_length = len(events)
-    print('Running pre-hardware hook function')
-    print(f'Sequence length: {event_seq_length}')
-    # if Ctr1.is_task_done():
-    #     print('Previous task is done')
-    #     Ctr1.stop()
-    # Ctr1.timing.cfg_implicit_timing(sample_mode=AcquisitionType.FINITE, samps_per_chan=event_seq_length)
-    print(events)
+    if _verbose:
+        print(f'Running pre-hardware hook function. Sequence length: {len(event_seq_length)}')
+    # Counter task needs to be stopped before it is restarted
+    if Ctr1.is_task_done():
+        Ctr1.stop()
+    Ctr1.timing.cfg_implicit_timing(sample_mode=AcquisitionType.FINITE, samps_per_chan=event_seq_length)
     return events
 
 def start_daq_counter(events):
-    print('Running post camera hook fun')
-    print('Starting counter')
-    # Ctr1.start()
+    if _verbose:
+        print('Running post camera hook fun. Starting DAC Ctr1.')
+    Ctr1.start()
     return events
 
 
@@ -109,25 +109,27 @@ with Acquisition(directory=save_path, name='ls_acq', port=PORT1,
                  show_display=False) as acq2:
     acq2.acquire(ls_events)
 
+print('Acquisition completed!\n\n\n')
+
 #%% Acquire data v1
-acq2 = Acquisition(directory=save_path, name='ls_acq', port=PORT1,
-                   show_display=False)
+# acq2 = Acquisition(directory=save_path, name='ls_acq', port=PORT1,
+#                    show_display=False)
 
-print('Starting acquisition')
-acq2.acquire(ls_events)
-time.sleep(1)  # give time for cameras to setup acquisition
+# print('Starting acquisition')
+# acq2.acquire(ls_events)
+# time.sleep(1)  # give time for cameras to setup acquisition
 
-print('Starting trigger sequence')
-Ctr1.start()
+# print('Starting trigger sequence')
+# Ctr1.start()
 
-print('Marking acquisition as finished')
-acq2.mark_finished()
+# print('Marking acquisition as finished')
+# acq2.mark_finished()
 
-print('Waiting for acquisition to finish')
-acq2.await_completion(); print('Acq2 finished')
+# print('Waiting for acquisition to finish')
+# acq2.await_completion(); print('Acq2 finished')
 
-print('Stop counters')
-Ctr1.stop()
+# print('Stop counters')
+# Ctr1.stop()
 
 
 #%% Reset acquisition
@@ -135,5 +137,6 @@ Ctr1.stop()
 # Close counters
 Ctr1.close()
 
-mmc2.set_property('TS2_TTL1-8', 'Blanking', 'Off')
+mmc2.set_position('AP Galvo', 0)
+# mmc2.set_property('TS2_TTL1-8', 'Blanking', 'Off')
 mmc2.set_property('Prime BSI Express', 'TriggerMode', 'Internal Trigger')
