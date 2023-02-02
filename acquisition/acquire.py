@@ -23,6 +23,8 @@ PORT1 = 4827
 PORT2 = 5827   # we need to space out port numbers a bit
 LS_POST_READOUT_DELAY = 0.05  # in ms
 LS_ROI = (0, 896, 2048, 256)  # centered in FOV
+MCL_STEP_TIME = 1.5  # in ms
+LC_CHANGE_TIME = 20  # in ms
 
 mm_app_path = r'C:\\Program Files\\Micro-Manager-nightly'
 config_file = r'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg'
@@ -159,19 +161,34 @@ ls_events = multi_d_acquisition_events(num_time_points=n_timepoints,
 
 ls_framerate = 1000 / (ls_exposure_ms + ls_readout_time_ms + LS_POST_READOUT_DELAY)
 
-# Ctr0 triggers LF camera
-Ctr0 = nidaqmx.Task('Counter0')
-ctr0 = Ctr0.co_channels.add_co_pulse_chan_freq('cDAQ1/_ctr0', freq=20.0, duty_cycle=0.1)
-Ctr0.timing.cfg_implicit_timing(sample_mode=AcquisitionType.FINITE, samps_per_chan=100)
-ctr0.co_pulse_term = '/cDAQ1/PFI0'
+lf_num_slices = len(range(MCL_piezo_start, MCL_piezo_end, MCL_piezo_step)) + 1
+lf_num_channels = len(lf_channels)
+lf_z_freq = 1000 / (lf_exposure_ms + MCL_STEP_TIME)
+lf_channel_freq = 1 / (lf_num_slices/lf_z_freq + LC_CHANGE_TIME/1000)
 
-# Ctr1 triggers LS camera
-Ctr1 = nidaqmx.Task('Counter1')
-ctr1 = Ctr1.co_channels.add_co_pulse_chan_freq('cDAQ1/_ctr1', freq=ls_framerate, duty_cycle=0.1)
+# LF channel trigger - accommodates longer LC switching times
+lf_channel_ctr_task = nidaqmx.Task('LF Channel Counter')
+lf_channel_ctr = lf_channel_ctr_task.co_channels.add_co_pulse_chan_freq('cDAQ1/_ctr0', freq=lf_channel_freq, duty_cycle=0.1)
+## Should this be here or within a hook function?
+lf_channel_ctr_task.timing.cfg_implicit_timing(sample_mode=AcquisitionType.FINITE, samps_per_chan=lf_num_channels)
+lf_channel_ctr.co_pulse_term = '/cDAQ1/Ctr0InternalOutput'
+
+# LF Z trigger
+lf_z_ctr_task = nidaqmx.Task('LF Z Counter')
+lf_z_ctr = lf_z_ctr_task.co_channels.add_co_pulse_chan_freq('cDAQ1/_ctr1', freq=lf_z_freq, duty_cycle=0.1)
+## Should this be here or within a hook function?
+lf_z_ctr_task.timing.cfg_implicit_timing(sample_mode=AcquisitionType.FINITE, samps_per_chan=lf_num_slices)
+lf_z_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source='/cDAQ1/Ctr0InternalOutput', trigger_edge=Slope.RISING)
+lf_z_ctr_task.triggers.start_trigger.retriggerable = True
+lf_z_ctr.co_pulse_term = '/cDAQ1/PFI0'
+
+# LS frame trigger
+ls_ctr_task = nidaqmx.Task('LS Frame Counter')
+ls_ctr = ls_ctr_task.co_channels.add_co_pulse_chan_freq('cDAQ1/_ctr2', freq=ls_framerate, duty_cycle=0.1)
 # Ctr1 timing is now set in the prep_daq_counter hook function
 # Ctr1.timing.cfg_implicit_timing(sample_mode=AcquisitionType.FINITE, samps_per_chan=50)
-Ctr1.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source='/cDAQ1/PFI0', trigger_edge=Slope.RISING)
-ctr1.co_pulse_term = '/cDAQ1/PFI1'
+ls_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source='/cDAQ1/Ctr0InternalOutput', trigger_edge=Slope.RISING)
+ls_ctr.co_pulse_term = '/cDAQ1/PFI1'
 
 
 #%% 
