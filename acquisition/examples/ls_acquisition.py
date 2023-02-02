@@ -13,17 +13,17 @@ from nidaqmx.types import CtrTime
 #%% Define constants
 _verbose = False
 PORT1 = 4827
-LS_POST_READOUT_DELAY = 0.05 # in ms
+LS_POST_READOUT_DELAY = 0.05  # in ms
 
 #%% Set acquisition parameters
 save_path = r'D:\\temp'
 
 n_timepoints = 3
-time_interval = 30 # in seconds
+time_interval = 30  # in seconds
 
 ls_exposure_ms = 10
 
-AP_galvo_start = -2/10 # in Volts
+AP_galvo_start = -2/10  # in Volts
 AP_galvo_end = 2/10
 AP_galvo_step = 0.01
 
@@ -34,7 +34,7 @@ ls_channels = ['GFP EX488 EM525-45', 'mCherry EX561 EM600-37']
 
 mmc2 = Core(port=PORT1)
 
-#%% setup light sheet acquisition
+#%% Setup light sheet acquisition
 
 roi = mmc2.get_roi()
 ls_roi = [roi.x, roi.y, roi.width, roi.height]
