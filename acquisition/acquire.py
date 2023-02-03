@@ -10,7 +10,7 @@ import numpy as np
 from pycromanager import start_headless, Core, Acquisition, multi_d_acquisition_events
 
 from functools import partial
-from hook_functions.daq_control import set_daq_counter_samples, start_daq_counters
+from hook_functions.daq_control import confirm_num_daq_counter_samples, start_daq_counter
 from util.convenience import get_z_range
 
 import nidaqmx
@@ -22,7 +22,7 @@ from nidaqmx.types import CtrTime
 # Define constants
 ######################
 
-_verbose = False
+_verbose = True
 PORT1 = 4827
 PORT2 = 5827   # we need to space out port numbers a bit
 LS_POST_READOUT_DELAY = 0.05  # in ms
@@ -189,7 +189,7 @@ lf_z_ctr = lf_z_ctr_task.co_channels.add_co_pulse_chan_freq('cDAQ1/_ctr1', freq=
 ## Should this be here or within a hook function?
 lf_z_ctr_task.timing.cfg_implicit_timing(sample_mode=AcquisitionType.FINITE, samps_per_chan=lf_num_slices)
 lf_z_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source='/cDAQ1/Ctr0InternalOutput', trigger_edge=Slope.RISING)
-lf_z_ctr_task.triggers.start_trigger.retriggerable = True
+lf_z_ctr_task.triggers.start_trigger.retriggerable = True  # will always return is_task_done = False after counter is started
 lf_z_ctr.co_pulse_term = '/cDAQ1/PFI0'
 
 # LS frame trigger
@@ -201,7 +201,7 @@ ls_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source='/cDAQ
 ls_ctr.co_pulse_term = '/cDAQ1/PFI1'
 
 #%% 
-# Acquire data v1
+# Acquire data v2
 ######################
 
 # LF acquisition
@@ -209,103 +209,118 @@ lf_acq = Acquisition(
     directory=save_path, 
     name='lf_acq', 
     port=PORT1,
-    show_display=False
-)
-
-# LS acquisition
-ls_acq = Acquisition(
-    directory=save_path, 
-    name='ls_acq', 
-    port=PORT2, 
-    show_display=False
-)
-
-print('Starting acquisition')
-ls_acq.acquire(ls_events)  # it's important to start the LS acquisition first
-lf_acq.acquire(lf_events)
-time.sleep(1)
-
-lf_z_ctr_task.start()
-ls_ctr_task.start()
-lf_channel_ctr_task.start()  # triggers other two
-
-print('Marking acquisition as finished')
-ls_acq.mark_finished()
-lf_acq.mark_finished()
-
-print('Waiting for acquisition to finish')
-ls_acq.await_completion(); print('LS finished')
-lf_acq.await_completion(); print('LF finished')
-
-#%% 
-# Reset acquisition
-######################
-ls_ctr_task.stop()
-lf_z_ctr_task.stop()
-lf_channel_ctr_task.stop()
-
-#%% 
-# Acquire data v2
-######################
-
-# # LF acquisition
-# lf_acq = Acquisition(
-#     directory=save_path, 
-#     name='lf_acq', 
-#     port=PORT1,
-#     pre_hardware_hook_fn=None,
-#     post_camera_hook_fn=partial(
-#         start_daq_counters, 
-#         [lf_z_ctr_task, lf_channel_ctr_task],  # lf_z_ctr_task needs to be started first
-#         _verbose),
-#     show_display=False
-# )
-
-# LS acquisition
-ls_acq = Acquisition(
-    directory=save_path, 
-    name='ls_acq', 
-    port=PORT2, 
-    # pre_hardware_hook_fn=partial(
-    #     set_daq_counter_samples, 
-    #     ls_ctr_task, 
-    #     ls_num_slices, 
-    #     _verbose), 
+    pre_hardware_hook_fn=partial(
+        confirm_num_daq_counter_samples, 
+        [lf_z_ctr_task, lf_channel_ctr_task], 
+        lf_num_slices*lf_num_channels, 
+        _verbose),
     post_camera_hook_fn=partial(
-        start_daq_counters, 
-        [ls_ctr_task], 
+        start_daq_counter, 
+        [lf_z_ctr_task, lf_channel_ctr_task],  # lf_z_ctr_task needs to be started first
+        _verbose),
+    show_display=False
+)
+
+# LS acquisition
+ls_acq = Acquisition(
+    directory=save_path, 
+    name='ls_acq', 
+    port=PORT2, 
+    pre_hardware_hook_fn=partial(
+        confirm_num_daq_counter_samples, 
+        ls_ctr_task, 
+        ls_num_slices, 
+        _verbose), 
+    post_camera_hook_fn=partial(
+        start_daq_counter, 
+        ls_ctr_task, 
         _verbose), 
     show_display=False
 )
 
 print('Starting acquisition')
 ls_acq.acquire(ls_events)  # it's important to start the LS acquisition first
-# lf_acq.acquire(lf_events)
+lf_acq.acquire(lf_events)
 
-print('Marking acquisition as finished')
+if _verbose:
+    print('Marking acquisition as finished')
 ls_acq.mark_finished()
-# lf_acq.mark_finished()
+lf_acq.mark_finished()
 
-print('Waiting for acquisition to finish')
+if _verbose:
+    print('Waiting for acquisition to finish')
 ls_acq.await_completion(); print('LS finished')
-# lf_acq.await_completion(); print('LF finished')
+lf_acq.await_completion(); print('LF finished')
 
+print('Acquisition completed.')
 
 #%% 
 # Reset acquisition
 ######################
 
-print('Stop counters')
-Ctr0.stop()
-Ctr1.stop()
+if _verbose:
+    print('Stop counters')
+ls_ctr_task.stop()
+lf_z_ctr_task.stop()
+lf_channel_ctr_task.stop()
 
 # Close counters
-Ctr0.close()
-Ctr1.close()
+ls_ctr_task.close()
+lf_z_ctr_task.close()
+lf_channel_ctr_task.close()
 
+#%%
+
+if _verbose:
+    print('Resetting microscope hardware')
 mmc1.set_property('Oryx', 'Trigger Mode', 'Off')
 mmc2.set_property('Prime BSI Express', 'TriggerMode', 'Internal Trigger')
 
 mmc1.set_property('Oryx', 'Frame Rate Control Enabled', oryx_framerate_enabled)
 if oryx_framerate_enabled == '1': 
     mmc1.set_property('Oryx', 'Frame Rate', oryx_framerate)
+
+
+# #%% 
+# # Acquire data v1
+# ######################
+
+# # LF acquisition
+# lf_acq = Acquisition(
+#     directory=save_path, 
+#     name='lf_acq', 
+#     port=PORT1,
+#     show_display=False
+# )
+
+# # LS acquisition
+# ls_acq = Acquisition(
+#     directory=save_path, 
+#     name='ls_acq', 
+#     port=PORT2, 
+#     show_display=False
+# )
+
+# print('Starting acquisition')
+# ls_acq.acquire(ls_events)  # it's important to start the LS acquisition first
+# lf_acq.acquire(lf_events)
+# time.sleep(1)
+
+# lf_z_ctr_task.start()
+# ls_ctr_task.start()
+# lf_channel_ctr_task.start()  # triggers other two
+
+# print('Marking acquisition as finished')
+# ls_acq.mark_finished()
+# lf_acq.mark_finished()
+
+# print('Waiting for acquisition to finish')
+# ls_acq.await_completion(); print('LS finished')
+# lf_acq.await_completion(); print('LF finished')
+
+# #%% 
+# # Reset acquisition
+# ######################
+# ls_ctr_task.stop()
+# lf_z_ctr_task.stop()
+# lf_channel_ctr_task.stop()
