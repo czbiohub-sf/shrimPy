@@ -136,8 +136,11 @@ mmc2.set_property('TS2_DAC03', 'Sequence', 'On') # turn off sequencing to avoid 
 mmc2.set_property('TS2_TTL1-8', 'Blanking', 'On')
 
 mmc2.set_exposure(ls_exposure_ms)
-ls_readout_time_ms = np.around(float(mmc2.get_property('Prime BSI Express', 'Timing-ReadoutTimeNs'))*1e-6, decimals=3)
-assert ls_readout_time_ms < ls_exposure_ms, f'Exposure time needs to be greater than the {ls_readout_time_ms} sensor readout time'
+ls_readout_time_ms = np.around(
+    float(mmc2.get_property('Prime BSI Express', 'Timing-ReadoutTimeNs'))*1e-6, 
+    decimals=3)
+assert ls_readout_time_ms < ls_exposure_ms, \
+    f'Exposure time needs to be greater than the {ls_readout_time_ms} sensor readout time'
 
 
 #%% 
@@ -178,26 +181,42 @@ lf_channel_freq = 1 / (lf_num_slices/lf_z_freq + LC_CHANGE_TIME/1000)
 
 # LF channel trigger - accommodates longer LC switching times
 lf_channel_ctr_task = nidaqmx.Task('LF Channel Counter')
-lf_channel_ctr = lf_channel_ctr_task.co_channels.add_co_pulse_chan_freq('cDAQ1/_ctr0', freq=lf_channel_freq, duty_cycle=0.1)
-## Should this be here or within a hook function?
-lf_channel_ctr_task.timing.cfg_implicit_timing(sample_mode=AcquisitionType.FINITE, samps_per_chan=lf_num_channels)
+lf_channel_ctr = lf_channel_ctr_task.co_channels.add_co_pulse_chan_freq(
+    'cDAQ1/_ctr0', 
+    freq=lf_channel_freq, 
+    duty_cycle=0.1)
+lf_channel_ctr_task.timing.cfg_implicit_timing(
+    sample_mode=AcquisitionType.FINITE, 
+    samps_per_chan=lf_num_channels)
 lf_channel_ctr.co_pulse_term = '/cDAQ1/Ctr0InternalOutput'
 
 # LF Z trigger
 lf_z_ctr_task = nidaqmx.Task('LF Z Counter')
-lf_z_ctr = lf_z_ctr_task.co_channels.add_co_pulse_chan_freq('cDAQ1/_ctr1', freq=lf_z_freq, duty_cycle=0.1)
-## Should this be here or within a hook function?
-lf_z_ctr_task.timing.cfg_implicit_timing(sample_mode=AcquisitionType.FINITE, samps_per_chan=lf_num_slices)
-lf_z_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source='/cDAQ1/Ctr0InternalOutput', trigger_edge=Slope.RISING)
+lf_z_ctr = lf_z_ctr_task.co_channels.add_co_pulse_chan_freq(
+    'cDAQ1/_ctr1', 
+    freq=lf_z_freq, 
+    duty_cycle=0.1)
+lf_z_ctr_task.timing.cfg_implicit_timing(
+    sample_mode=AcquisitionType.FINITE, 
+    samps_per_chan=lf_num_slices)
+lf_z_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(
+    trigger_source='/cDAQ1/Ctr0InternalOutput', 
+    trigger_edge=Slope.RISING)
 lf_z_ctr_task.triggers.start_trigger.retriggerable = True  # will always return is_task_done = False after counter is started
 lf_z_ctr.co_pulse_term = '/cDAQ1/PFI0'
 
 # LS frame trigger
 ls_ctr_task = nidaqmx.Task('LS Frame Counter')
-ls_ctr = ls_ctr_task.co_channels.add_co_pulse_chan_freq('cDAQ1/_ctr2', freq=ls_framerate, duty_cycle=0.1)
-# Ctr1 timing is now set in the prep_daq_counter hook function
-ls_ctr_task.timing.cfg_implicit_timing(sample_mode=AcquisitionType.FINITE, samps_per_chan=ls_num_slices)
-ls_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source='/cDAQ1/Ctr0InternalOutput', trigger_edge=Slope.RISING)
+ls_ctr = ls_ctr_task.co_channels.add_co_pulse_chan_freq(
+    'cDAQ1/_ctr2', 
+    freq=ls_framerate, 
+    duty_cycle=0.1)
+ls_ctr_task.timing.cfg_implicit_timing(
+    sample_mode=AcquisitionType.FINITE, 
+    samps_per_chan=ls_num_slices)
+ls_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(
+    trigger_source='/cDAQ1/Ctr0InternalOutput', 
+    trigger_edge=Slope.RISING)
 ls_ctr.co_pulse_term = '/cDAQ1/PFI1'
 
 #%% 
