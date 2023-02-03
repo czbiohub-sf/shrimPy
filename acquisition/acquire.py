@@ -245,50 +245,50 @@ lf_z_ctr_task.stop()
 lf_channel_ctr_task.stop()
 
 #%% 
-# Acquire data
+# Acquire data v2
 ######################
 
-# LF acquisition
-lf_acq = Acquisition(
-    directory=save_path, 
-    name='lf_acq', 
-    port=PORT1,
-    pre_hardware_hook_fn=None,
-    post_camera_hook_fn=partial(
-        start_daq_counters, 
-        [lf_z_ctr_task, lf_channel_ctr_task],  # lf_z_ctr_task needs to be started first
-        verbose=_verbose),
-    show_display=False
-)
+# # LF acquisition
+# lf_acq = Acquisition(
+#     directory=save_path, 
+#     name='lf_acq', 
+#     port=PORT1,
+#     pre_hardware_hook_fn=None,
+#     post_camera_hook_fn=partial(
+#         start_daq_counters, 
+#         [lf_z_ctr_task, lf_channel_ctr_task],  # lf_z_ctr_task needs to be started first
+#         _verbose),
+#     show_display=False
+# )
 
 # LS acquisition
 ls_acq = Acquisition(
     directory=save_path, 
     name='ls_acq', 
     port=PORT2, 
-    pre_hardware_hook_fn=partial(
-        set_daq_counter_samples, 
-        ls_ctr_task, 
-        extected_sequence_length=ls_num_slices, 
-        verbose=_verbose), 
+    # pre_hardware_hook_fn=partial(
+    #     set_daq_counter_samples, 
+    #     ls_ctr_task, 
+    #     ls_num_slices, 
+    #     _verbose), 
     post_camera_hook_fn=partial(
         start_daq_counters, 
         [ls_ctr_task], 
-        verbose=_verbose), 
+        _verbose), 
     show_display=False
 )
 
 print('Starting acquisition')
 ls_acq.acquire(ls_events)  # it's important to start the LS acquisition first
-lf_acq.acquire(lf_events)
+# lf_acq.acquire(lf_events)
 
 print('Marking acquisition as finished')
 ls_acq.mark_finished()
-lf_acq.mark_finished()
+# lf_acq.mark_finished()
 
 print('Waiting for acquisition to finish')
 ls_acq.await_completion(); print('LS finished')
-lf_acq.await_completion(); print('LF finished')
+# lf_acq.await_completion(); print('LF finished')
 
 
 #%% 

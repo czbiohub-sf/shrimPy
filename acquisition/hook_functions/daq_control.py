@@ -2,14 +2,14 @@ import nidaqmx
 from nidaqmx.constants import AcquisitionType, Slope
 from nidaqmx.types import CtrTime
 
-def set_daq_counter_samples(CtrTask, events, extected_sequence_length=None, verbose=False):
+def set_daq_counter_samples(CtrTask, extected_sequence_length, verbose, events):
     """ Intended to be used as pre-hardware hook function
 
     """
 
     event_seq_length = len(events)
     if verbose:
-        print(f'Running pre-hardware hook function. Sequence length: {len(event_seq_length)}')
+        print(f'Running pre-hardware hook function. Sequence length: {event_seq_length}')
     if extected_sequence_length is not None and event_seq_length != extected_sequence_length:
         raise Warning(f'Sequence length of {event_seq_length} events is not equal to the expected sequence length of {extected_sequence_length} events')
     
@@ -19,7 +19,7 @@ def set_daq_counter_samples(CtrTask, events, extected_sequence_length=None, verb
     CtrTask.timing.cfg_implicit_timing(sample_mode=AcquisitionType.FINITE, samps_per_chan=event_seq_length)
     return events
 
-def start_daq_counters(CtrTask: list, events, verbose=False):
+def start_daq_counters(CtrTask: list, verbose, events):
     """ Intended to be used as post-camera hook function
     
     """
