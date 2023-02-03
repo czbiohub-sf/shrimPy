@@ -130,3 +130,6 @@ dmypy.json
 
 # JetBrains template
 .idea
+
+# VS code
+.vscode
