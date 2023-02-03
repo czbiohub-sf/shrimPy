@@ -9,6 +9,10 @@ import time
 import numpy as np
 from pycromanager import start_headless, Core, Acquisition, multi_d_acquisition_events
 
+from functools import partial
+from hook_functions.daq_control import set_daq_counter_samples, start_daq_counters
+from util.convenience import get_z_range
+
 import nidaqmx
 from nidaqmx.constants import AcquisitionType, Slope
 from nidaqmx.types import CtrTime
@@ -36,8 +40,8 @@ config_file = r'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg'
 
 save_path = r'D:\\temp'
 
-n_timepoints = 3
-time_interval = 30  # in seconds
+n_timepoints = 1
+time_interval = 0  # in seconds
 
 ls_exposure_ms = 10
 lf_exposure_ms = 10
@@ -45,13 +49,16 @@ lf_exposure_ms = 10
 AP_galvo_start = -2/10  # in Volts
 AP_galvo_end = 2/10
 AP_galvo_step = 0.01
+AP_galvo_range = get_z_range(AP_galvo_start, AP_galvo_end, AP_galvo_step)
 
 MCL_piezo_start = 0
 MCL_piezo_end = 60
-MCL_piezo_step = 1
+MCL_piezo_step = 5
+MCL_piezo_range = get_z_range(MCL_piezo_start, MCL_piezo_end, MCL_piezo_step)
 
 ls_channel_group = 'Channel - LS'
-ls_channels = ['GFP EX488 EM525-45', 'mCherry EX561 EM600-37']
+ls_channels = ['GFP EX488 EM525-45']
+# ls_channels = ['GFP EX488 EM525-45', 'mCherry EX561 EM600-37']
 
 lf_channel_group = 'Channel - LF'
 lf_channels = [f'State{i}' for i in range(5)]
@@ -89,6 +96,7 @@ mmc1.set_property('Oryx', 'Line Selector', 'Line2'); mmc1.update_system_state_ca
 mmc1.set_property('Oryx', 'Line Mode', 'Input')
 mmc1.set_property('Oryx', 'Trigger Source', 'Line2')
 mmc1.set_property('Oryx', 'Trigger Mode', 'On')
+mmc1.set_property('Oryx', 'Trigger Overlap', 'ReadOut')  # required for external triggering at max frame rate
 oryx_framerate_enabled = mmc1.get_property('Oryx', 'Frame Rate Control Enabled')
 oryx_framerate = mmc1.get_property('Oryx', 'Frame Rate')
 mmc1.set_property('Oryx', 'Frame Rate Control Enabled', '0')
@@ -159,9 +167,11 @@ ls_events = multi_d_acquisition_events(num_time_points=n_timepoints,
 # Setup DAQ
 ######################
 
+# TODO: make sure we're not running faster than the max camera framerate
 ls_framerate = 1000 / (ls_exposure_ms + ls_readout_time_ms + LS_POST_READOUT_DELAY)
+ls_num_slices = len(AP_galvo_range)
 
-lf_num_slices = len(range(MCL_piezo_start, MCL_piezo_end, MCL_piezo_step)) + 1
+lf_num_slices = len(MCL_piezo_range)
 lf_num_channels = len(lf_channels)
 lf_z_freq = 1000 / (lf_exposure_ms + MCL_STEP_TIME)
 lf_channel_freq = 1 / (lf_num_slices/lf_z_freq + LC_CHANGE_TIME/1000)
@@ -186,45 +196,108 @@ lf_z_ctr.co_pulse_term = '/cDAQ1/PFI0'
 ls_ctr_task = nidaqmx.Task('LS Frame Counter')
 ls_ctr = ls_ctr_task.co_channels.add_co_pulse_chan_freq('cDAQ1/_ctr2', freq=ls_framerate, duty_cycle=0.1)
 # Ctr1 timing is now set in the prep_daq_counter hook function
-# Ctr1.timing.cfg_implicit_timing(sample_mode=AcquisitionType.FINITE, samps_per_chan=50)
+ls_ctr_task.timing.cfg_implicit_timing(sample_mode=AcquisitionType.FINITE, samps_per_chan=ls_num_slices)
 ls_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source='/cDAQ1/Ctr0InternalOutput', trigger_edge=Slope.RISING)
 ls_ctr.co_pulse_term = '/cDAQ1/PFI1'
 
+#%% 
+# Acquire data v1
+######################
+
+# LF acquisition
+lf_acq = Acquisition(
+    directory=save_path, 
+    name='lf_acq', 
+    port=PORT1,
+    show_display=False
+)
+
+# LS acquisition
+ls_acq = Acquisition(
+    directory=save_path, 
+    name='ls_acq', 
+    port=PORT2, 
+    show_display=False
+)
+
+print('Starting acquisition')
+ls_acq.acquire(ls_events)  # it's important to start the LS acquisition first
+lf_acq.acquire(lf_events)
+time.sleep(1)
+
+lf_z_ctr_task.start()
+ls_ctr_task.start()
+lf_channel_ctr_task.start()  # triggers other two
+
+print('Marking acquisition as finished')
+ls_acq.mark_finished()
+lf_acq.mark_finished()
+
+print('Waiting for acquisition to finish')
+ls_acq.await_completion(); print('LS finished')
+lf_acq.await_completion(); print('LF finished')
+
+#%% 
+# Reset acquisition
+######################
+ls_ctr_task.stop()
+lf_z_ctr_task.stop()
+lf_channel_ctr_task.stop()
 
 #%% 
 # Acquire data
 ######################
 
-save_path = r'D:\2022_11_18 automation'
+# LF acquisition
+lf_acq = Acquisition(
+    directory=save_path, 
+    name='lf_acq', 
+    port=PORT1,
+    pre_hardware_hook_fn=None,
+    post_camera_hook_fn=partial(
+        start_daq_counters, 
+        [lf_z_ctr_task, lf_channel_ctr_task],  # lf_z_ctr_task needs to be started first
+        verbose=_verbose),
+    show_display=False
+)
 
-acq1 = Acquisition(directory=save_path, name='lf_acq', port=PORT1)
-acq2 = Acquisition(directory=save_path, name='ls_acq', port=PORT2)
+# LS acquisition
+ls_acq = Acquisition(
+    directory=save_path, 
+    name='ls_acq', 
+    port=PORT2, 
+    pre_hardware_hook_fn=partial(
+        set_daq_counter_samples, 
+        ls_ctr_task, 
+        extected_sequence_length=ls_num_slices, 
+        verbose=_verbose), 
+    post_camera_hook_fn=partial(
+        start_daq_counters, 
+        [ls_ctr_task], 
+        verbose=_verbose), 
+    show_display=False
+)
 
 print('Starting acquisition')
-acq1.acquire(lf_events)
-acq2.acquire(ls_events)
-time.sleep(1)  # give time for cameras to setup acquisition
-
-print('Starting trigger sequence')
-Ctr1.start()
-Ctr0.start()
+ls_acq.acquire(ls_events)  # it's important to start the LS acquisition first
+lf_acq.acquire(lf_events)
 
 print('Marking acquisition as finished')
-acq1.mark_finished()
-acq2.mark_finished()
+ls_acq.mark_finished()
+lf_acq.mark_finished()
 
 print('Waiting for acquisition to finish')
-acq1.await_completion(); print('Acq1 finished')
-acq2.await_completion(); print('Acq2 finished')
-
-print('Stop counters')
-Ctr0.stop()
-Ctr1.stop()
+ls_acq.await_completion(); print('LS finished')
+lf_acq.await_completion(); print('LF finished')
 
 
 #%% 
 # Reset acquisition
 ######################
+
+print('Stop counters')
+Ctr0.stop()
+Ctr1.stop()
 
 # Close counters
 Ctr0.close()
