@@ -233,10 +233,12 @@ lf_acq = Acquisition(
         [lf_z_ctr_task, lf_channel_ctr_task], 
         lf_num_slices*lf_num_channels, 
         _verbose),
+    post_hardware_hook_fn=None  # autofocus
     post_camera_hook_fn=partial(
         start_daq_counter, 
         [lf_z_ctr_task, lf_channel_ctr_task],  # lf_z_ctr_task needs to be started first
         _verbose),
+    image_saved_fn=None  # data processing and display
     show_display=False
 )
 
