@@ -22,3 +22,10 @@ Now clone `recOrder` in a separate folder and install it:
 git clone https://github.com/mehta-lab/recOrder
 pip install -e <path to recOrder>
 ```
+
+Similarly clone `iohub` and install:
+
+```shell
+git clone https://github.com/czbiohub/iohub
+pip install -e <path to iohub>
+```
