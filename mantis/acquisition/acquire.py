@@ -38,7 +38,10 @@ config_file = r'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg'
 # Set acquisition parameters
 ######################
 
+# TODO: impose the data structure described in docs/data_structure.md
 save_path = r'D:\\temp'
+
+
 
 n_timepoints = 1
 time_interval = 0  # in seconds
@@ -226,7 +229,7 @@ ls_ctr.co_pulse_term = '/cDAQ1/PFI1'
 # LF acquisition
 lf_acq = Acquisition(
     directory=save_path, 
-    name='lf_acq', 
+    name='labelfree', 
     port=PORT1,
     pre_hardware_hook_fn=partial(
         confirm_num_daq_counter_samples, 
@@ -245,7 +248,7 @@ lf_acq = Acquisition(
 # LS acquisition
 ls_acq = Acquisition(
     directory=save_path, 
-    name='ls_acq', 
+    name='lightsheet', 
     port=PORT2, 
     pre_hardware_hook_fn=partial(
         confirm_num_daq_counter_samples, 
@@ -309,7 +312,7 @@ if oryx_framerate_enabled == '1':
 # # LF acquisition
 # lf_acq = Acquisition(
 #     directory=save_path, 
-#     name='lf_acq', 
+#     name='labelfree', 
 #     port=PORT1,
 #     show_display=False
 # )
@@ -317,7 +320,7 @@ if oryx_framerate_enabled == '1':
 # # LS acquisition
 # ls_acq = Acquisition(
 #     directory=save_path, 
-#     name='ls_acq', 
+#     name='lightsheet', 
 #     port=PORT2, 
 #     show_display=False
 # )

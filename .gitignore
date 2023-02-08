@@ -133,3 +133,11 @@ dmypy.json
 
 # VS code
 .vscode
+
+# Mac
+.DS_Store
+    
+
+# Windows
+Thumbs.db
+ehthumbs.db
