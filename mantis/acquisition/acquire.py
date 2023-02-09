@@ -134,7 +134,7 @@ mmc2.set_property('Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter')
 
 mmc2.set_property('Core', 'Focus', 'AP Galvo')
 
-mmc2.set_property('TS2_DAC03', 'Sequence', 'On') # turn off sequencing to avoid PM bugs
+mmc2.set_property('TS2_DAC03', 'Sequence', 'On')
 # Illuminate sample only when all rows are exposing, aka pseudo global shutter 
 mmc2.set_property('TS2_TTL1-8', 'Blanking', 'On')
 
