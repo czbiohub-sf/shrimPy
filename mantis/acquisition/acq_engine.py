@@ -10,7 +10,6 @@ from pycromanager import (
     multi_d_acquisition_events)
 
 from functools import partial
-# not sure why I need to do from .hook_functions
 from .hook_functions.daq_control import (
     confirm_num_daq_counter_samples, 
     start_daq_counter)
@@ -23,7 +22,6 @@ from nidaqmx.types import CtrTime
 LF_ZMQ_PORT = 4827
 LS_ZMQ_PORT = 5827   # we need to space out port numbers a bit
 LS_POST_READOUT_DELAY = 0.05  # in ms
-# LS_ROI = (0, 896, 2048, 256)  # centered in FOV
 MCL_STEP_TIME = 1.5  # in ms
 LC_CHANGE_TIME = 20  # in ms
 
@@ -111,8 +109,6 @@ class MantisAcquisition(object):
         self.close()
 
     def close(self):
-        # Close daq counters
-        # Reset microscope hardware as needed
         # Close PM bridges
         pass
             
@@ -274,6 +270,9 @@ class MantisAcquisition(object):
                 self._ls_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(
                     trigger_source='/cDAQ1/Ctr0InternalOutput', 
                     trigger_edge=Slope.RISING)
+                
+    def _setup_autofocus(self):
+        pass
 
     def _generate_acq_events(self, acq_settings: AcquisitionSettings):
         events =  multi_d_acquisition_events(    
@@ -298,6 +297,7 @@ class MantisAcquisition(object):
             self._setup_ls_acq()
             ls_events = self._generate_acq_events(self.ls_acq_settings)
         self._setup_daq()
+        self._setup_autofocus()
         
         if self._lf_acq_set_up:
             lf_acq = Acquisition(
@@ -336,14 +336,9 @@ class MantisAcquisition(object):
         print('Starting acquisition')
         if self._ls_acq_enabled:
             ls_acq.acquire(ls_events)  # it's important to start the LS acquisition first
-        if self._lf_acq_enabled:
-            lf_acq.acquire(lf_events)
-
-        if self._verbose:
-            print('Marking acquisition as finished')
-        if self._ls_acq_enabled:
             ls_acq.mark_finished()
         if self._lf_acq_enabled:
+            lf_acq.acquire(lf_events)
             lf_acq.mark_finished()
 
         if self._verbose:
@@ -354,8 +349,20 @@ class MantisAcquisition(object):
             lf_acq.await_completion(); print('LF finished')
 
         if self._verbose:
-            print('Stopping DAQ counters')
+            print('Stopping and closing DAQ counters')
+        if self._ls_acq_enabled:
             self._ls_ctr_task.stop()
+            self._ls_ctr_task.close()
+
+            self._ls_mmc.set_property('Prime BSI Express', 'TriggerMode', 'Internal Trigger')
+
+        if self._lf_acq_enabled:
             self._lf_z_ctr_task.stop()
+            self._lf_z_ctr_task.close()
             self._lf_channel_ctr_task.stop()
-        
+            self._lf_channel_ctr_task.close()
+
+            self._lf_mmc.set_property('Oryx', 'Trigger Mode', 'Off')
+            # mmc1.set_property('Oryx', 'Frame Rate Control Enabled', oryx_framerate_enabled)
+            # if oryx_framerate_enabled == '1': 
+            #     mmc1.set_property('Oryx', 'Frame Rate', oryx_framerate)
