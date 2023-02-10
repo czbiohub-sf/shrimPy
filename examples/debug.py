@@ -1,10 +1,18 @@
-from pycromanager import Core, Acquisition, multi_d_acquisition_events
+from pycromanager import Core, start_headless
 
-mmc = Core()
-# mmc.set_config('Camera', 'HighRes')
-mmc.set_property('Z', 'UseSequences', 'Yes')
+PORT2 = 4927
+mm_app_path = r'C:\\Program Files\\Micro-Manager-nightly'
+config_file = r'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg'
 
-events = multi_d_acquisition_events(num_time_points=3, time_interval_s=20, z_start=-3, z_end=3, z_step=0.01)
+print('Starting headless mode')
+start_headless(mm_app_path, config_file, port=PORT2)
+print('Started headless mode')
 
-with Acquisition(r'D:\\temp', 'pm_acq_bsi', show_display=True) as acq:
-    acq.acquire(events)
+print('Connecting to core')
+mmc = Core(port=PORT2)
+print('Connected to core')
+
+print('Setting blanking mode')
+mmc.set_property('TS2_TTL1-8', 'Blanking', 'On')
+
+print('done')
