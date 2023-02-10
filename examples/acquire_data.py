@@ -11,8 +11,8 @@ lf_acq_settings = AcquisitionSettings(
     time_internal_s = time_internal_s,
     scan_stage = 'MCL Piezo',
     z_start = 0,
-    z_end = 28,
-    z_step = 0.4,
+    z_end = 60,
+    z_step = 5,
     channel_group = 'Channel - LF',
     channels = [f'State{i}' for i in range(5)],
     use_sequence = True,
@@ -32,9 +32,11 @@ ls_acq_settings = AcquisitionSettings(
     use_sequence = True,
 )
 
-acq = MantisAcquisition()
+acq = MantisAcquisition(verbose=True)
 
 acq.define_lf_acq_settings(lf_acq_settings)
 acq.define_ls_acq_settings(ls_acq_settings)
 
-acq.acquire(dir_name, acq_name)
+acq.acquire(directory = r'D:\\temp', name = 'test_acq')
+
+print('done')

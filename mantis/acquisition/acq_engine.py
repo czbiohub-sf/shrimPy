@@ -1,5 +1,6 @@
 import os
 import time
+import warnings
 from dataclasses import dataclass, field
 import numpy as np
 from pycromanager import (
@@ -44,7 +45,7 @@ class AcquisitionSettings:
     channel_acq_rate: float = field(init=False)
 
     def __post_init__(self):
-        self.num_slices = len(np.arange(self.z_start, self.z_end, self.z_step))
+        self.num_slices = len(np.arange(self.z_start, self.z_end+self.z_step, self.z_step))
         self.num_channels = len(self.channels)
 
 
@@ -99,7 +100,7 @@ class MantisAcquisition(object):
             start_headless(
                 self._ls_mm_app_path,
                 self._ls_mm_config_file,
-                LS_ZMQ_PORT)
+                port=LS_ZMQ_PORT)
             self._ls_mmc = Core(port=LS_ZMQ_PORT)
 
     def __enter__(self):
@@ -115,13 +116,13 @@ class MantisAcquisition(object):
     def define_lf_acq_settings(self, acq_settings:AcquisitionSettings):
         if not self._lf_acq_enabled:
             self._lf_acq_enabled = True
-            raise RuntimeWarning('Enabling label-free acquisition')
+            warnings.warn('Enabling label-free acquisition')
         self.lf_acq_settings = acq_settings
 
     def define_ls_acq_settings(self, acq_settings:AcquisitionSettings):
         if not self._ls_acq_enabled:
             self._ls_acq_enabled = True
-            raise RuntimeWarning('Enabling light-sheet acquisition')
+            warnings.warn('Enabling light-sheet acquisition')
         self.ls_acq_settings = acq_settings
 
     def _setup_lf_acq(self):
@@ -172,12 +173,12 @@ class MantisAcquisition(object):
         self._lf_mmc.set_exposure(self.lf_acq_settings.exposure_time_ms)
 
         # Configure acq timing
-        oryx_framerate = self._lf_mmc.get_property('Oryx', 'Frame Rate')
+        oryx_framerate = float(self._lf_mmc.get_property('Oryx', 'Frame Rate'))
         self.lf_acq_settings.slice_acq_rate = np.minimum(
             1000 / (self.lf_acq_settings.exposure_time_ms + MCL_STEP_TIME),
             np.floor(oryx_framerate))
         self.lf_acq_settings.channel_acq_rate = 1 / (
-            self.lf_acq_settings.num_channels/self.lf_acq_settings.slice_acq_rate + 
+            self.lf_acq_settings.num_slices/self.lf_acq_settings.slice_acq_rate + 
             LC_CHANGE_TIME/1000)
 
         # Set flag
@@ -277,13 +278,12 @@ class MantisAcquisition(object):
     def _generate_acq_events(self, acq_settings: AcquisitionSettings):
         events =  multi_d_acquisition_events(    
             num_time_points = acq_settings.num_timepoints,
-            time_interval_s = acq_settings,
+            time_interval_s = acq_settings.time_internal_s,
             z_start = acq_settings.z_start,
             z_end = acq_settings.z_end,
-            z_step = acq_settings.z,
+            z_step = acq_settings.z_step,
             channel_group = acq_settings.channel_group,
             channels = acq_settings.channels,
-            channel_exposures_ms = acq_settings.exposure_time_ms,
             # xy_positions=None,
             order = "tpcz")
         
