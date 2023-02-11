@@ -38,7 +38,10 @@ config_file = r'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg'
 # Set acquisition parameters
 ######################
 
+# TODO: impose the data structure described in docs/data_structure.md
 save_path = r'D:\\temp'
+
+
 
 n_timepoints = 1
 time_interval = 0  # in seconds
@@ -131,7 +134,7 @@ mmc2.set_property('Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter')
 
 mmc2.set_property('Core', 'Focus', 'AP Galvo')
 
-mmc2.set_property('TS2_DAC03', 'Sequence', 'On') # turn off sequencing to avoid PM bugs
+mmc2.set_property('TS2_DAC03', 'Sequence', 'On')
 # Illuminate sample only when all rows are exposing, aka pseudo global shutter 
 mmc2.set_property('TS2_TTL1-8', 'Blanking', 'On')
 
@@ -226,26 +229,26 @@ ls_ctr.co_pulse_term = '/cDAQ1/PFI1'
 # LF acquisition
 lf_acq = Acquisition(
     directory=save_path, 
-    name='lf_acq', 
+    name='labelfree', 
     port=PORT1,
     pre_hardware_hook_fn=partial(
         confirm_num_daq_counter_samples, 
         [lf_z_ctr_task, lf_channel_ctr_task], 
         lf_num_slices*lf_num_channels, 
         _verbose),
-    post_hardware_hook_fn=None  # autofocus
+    post_hardware_hook_fn=None,  # autofocus
     post_camera_hook_fn=partial(
         start_daq_counter, 
         [lf_z_ctr_task, lf_channel_ctr_task],  # lf_z_ctr_task needs to be started first
         _verbose),
-    image_saved_fn=None  # data processing and display
+    image_saved_fn=None,  # data processing and display
     show_display=False
 )
 
 # LS acquisition
 ls_acq = Acquisition(
     directory=save_path, 
-    name='ls_acq', 
+    name='lightsheet', 
     port=PORT2, 
     pre_hardware_hook_fn=partial(
         confirm_num_daq_counter_samples, 
@@ -309,7 +312,7 @@ if oryx_framerate_enabled == '1':
 # # LF acquisition
 # lf_acq = Acquisition(
 #     directory=save_path, 
-#     name='lf_acq', 
+#     name='labelfree', 
 #     port=PORT1,
 #     show_display=False
 # )
@@ -317,7 +320,7 @@ if oryx_framerate_enabled == '1':
 # # LS acquisition
 # ls_acq = Acquisition(
 #     directory=save_path, 
-#     name='ls_acq', 
+#     name='lightsheet', 
 #     port=PORT2, 
 #     show_display=False
 # )

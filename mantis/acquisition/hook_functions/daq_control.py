@@ -2,7 +2,7 @@ import nidaqmx
 from nidaqmx.constants import AcquisitionType, Slope
 from nidaqmx.types import CtrTime
 
-def confirm_num_daq_counter_samples(CtrTask:nidaqmx.Task or list, extected_sequence_length, verbose, events):
+def confirm_num_daq_counter_samples(CtrTask:nidaqmx.Task or list, expected_sequence_length, verbose, events):
     """ Intended to be used as pre-hardware hook function, wrapped by functools.partial
 
     """
