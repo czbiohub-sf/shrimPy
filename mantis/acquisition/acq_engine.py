@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import datetime
 import warnings
 from dataclasses import dataclass, field
 import numpy as np
@@ -97,10 +98,16 @@ class MantisAcquisition(object):
 
         # Connect to MM running LS acq
         if self._ls_acq_enabled:
+            timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+            core_log_path = os.path.join(self._ls_mm_app_path, 'CoreLogs',
+                                         f'CoreLog{timestamp}_headless.txt')
+
             start_headless(
                 self._ls_mm_app_path,
                 self._ls_mm_config_file,
-                port=LS_ZMQ_PORT)
+                port=LS_ZMQ_PORT,
+                core_log_path=core_log_path
+                )
             self._ls_mmc = Core(port=LS_ZMQ_PORT)
 
     def __enter__(self):
