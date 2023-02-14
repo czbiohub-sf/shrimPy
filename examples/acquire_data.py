@@ -32,11 +32,11 @@ ls_acq_settings = AcquisitionSettings(
     use_sequence = True,
 )
 
-acq = MantisAcquisition(verbose=True)
+acq = MantisAcquisition(acquisition_directory=r'D:\\temp', verbose=True)
 
 acq.define_lf_acq_settings(lf_acq_settings)
 acq.define_ls_acq_settings(ls_acq_settings)
 
-acq.acquire(directory = r'D:\\temp', name = 'test_acq')
+acq.acquire(name = 'test_acq')
 
 print('done')
