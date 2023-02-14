@@ -111,18 +111,18 @@ class MantisAcquisition(object):
         
         # Connect to MM running LF acq
         if self._lf_acq_enabled:
-            logger.debug(f"""Label-free acquisition enabled. 
-                Connecting to MicroManager on port {LF_ZMQ_PORT}""")
+            logger.debug('Label-free acquisition enabled')
+            logger.debug(f'Connecting to MicroManager on port {LF_ZMQ_PORT}')
             self._lf_mmc = Core(port=LF_ZMQ_PORT)
             self._lf_mmStudio = Studio(port=LF_ZMQ_PORT)
             logger.debug('Successfully connected to MicroManager.')
-            logger.debug(f'MMCore version: {self._lf_mmc.get_version_info()}')
+            logger.debug(f'{self._lf_mmc.get_version_info()}')  # MMCore Version
             logger.debug(f'MM Studio version: {self._lf_mmStudio.compat().get_version()}')
 
         # Connect to MM running LS acq
         if self._ls_acq_enabled:
-            logger.debug(f"""Light-sheet acquisition enabled. 
-                Starting MicroManager instance on port {LS_ZMQ_PORT}""")
+            logger.debug('Light-sheet acquisition enabled.') 
+            logger.debug(f'Starting MicroManager instance on port {LS_ZMQ_PORT}')
             core_log_path = os.path.join(self._ls_mm_app_path, 'CoreLogs',
                                          f'CoreLog{timestamp}_headless.txt')
             logger.debug(f'Core logs will be saved at: {core_log_path}')
@@ -135,7 +135,7 @@ class MantisAcquisition(object):
                 )
             self._ls_mmc = Core(port=LS_ZMQ_PORT)
             logger.debug('Successfully started headless instance of MicroManager.')
-            logger.debug(f'MMCore version: {self._ls_mmc.get_version_info()}')
+            logger.debug(f'{self._ls_mmc.get_version_info()}')  # MMCore Version
 
     def __enter__(self):
         return self
@@ -154,7 +154,7 @@ class MantisAcquisition(object):
             logger.warning('Enabling label-free acquisition even though one was not requested.')
         
         self.lf_acq_settings = acq_settings
-        logger.debug(f'Setting up label-free acquisition with settings {acq_settings.__dict__}')
+        logger.debug(f'Label-free acquisition will have following settings: {acq_settings.__dict__}')
 
     def define_ls_acq_settings(self, acq_settings:AcquisitionSettings):
         logger = logging.getLogger(__name__)
@@ -163,7 +163,7 @@ class MantisAcquisition(object):
             logger.warning('Enabling light-sheet acquisition even though one was not requested.')
         
         self.ls_acq_settings = acq_settings
-        logger.debug(f'Setting up light-sheet acquisition with settings {acq_settings.__dict__}')
+        logger.debug(f'Light-sheet acquisition will have following settings: {acq_settings.__dict__}')
 
     def _setup_lf_acq(self):
         logger = logging.getLogger(__name__)
@@ -177,18 +177,17 @@ class MantisAcquisition(object):
             logger.debug(f'Setting {_config_group} config group to {_config}')
         
         # Setup camera
-        _apply_device_property_settings(logger, self._lf_mmc, 
-                                        (('Oryx', 'Line Selector', 'Line5')))
+        _apply_device_property_settings(self._lf_mmc, (('Oryx', 'Line Selector', 'Line5'),))
         # required for above selection to take effect
         self._lf_mmc.update_system_state_cache()
 
         settings = (('Oryx', 'Line Mode', 'Output'),
                     ('Oryx', 'Line Source', 'ExposureActive'))
-        _apply_device_property_settings(logger, self._lf_mmc, settings)
+        _apply_device_property_settings(self._lf_mmc, settings)
 
 
-        _apply_device_property_settings(logger, self._lf_mmc, 
-                                        (('Oryx', 'Line Selector', 'Line2')))
+        _apply_device_property_settings(self._lf_mmc, 
+                                        (('Oryx', 'Line Selector', 'Line2'),))
         # required for above selection to take effect
         self._lf_mmc.update_system_state_cache()
 
@@ -197,16 +196,16 @@ class MantisAcquisition(object):
                     ('Oryx', 'Trigger Source', 'Line2'),
                     ('Oryx', 'Trigger Mode', 'On'),
                     ('Oryx', 'Trigger Overlap', 'ReadOut'))
-        _apply_device_property_settings(logger, self._lf_mmc, settings)
+        _apply_device_property_settings(self._lf_mmc, settings)
 
         oryx_framerate_enabled = self._lf_mmc.get_property('Oryx', 'Frame Rate Control Enabled')
-        _apply_device_property_settings(logger, self._lf_mmc, 
-                                        (('Oryx', 'Frame Rate Control Enabled', '0')))
+        _apply_device_property_settings(self._lf_mmc, 
+                                        (('Oryx', 'Frame Rate Control Enabled', '0'),))
 
         # Setup sequencing
         _use_seq = 'On' if self.lf_acq_settings.use_sequence else 'Off'
         _apply_device_property_settings(
-            logger, self._lf_mmc, [(d, 'Sequence', _use_seq) for d in (LCA_DAC, LCB_DAC, MCL_DAC)])
+            self._lf_mmc, [(d, 'Sequence', _use_seq) for d in (LCA_DAC, LCB_DAC, MCL_DAC)])
 
         # Setup ROI
         if self.lf_acq_settings.roi is not None:
@@ -236,9 +235,9 @@ class MantisAcquisition(object):
         self.lf_acq_settings.channel_acq_rate = 1 / (
             self.lf_acq_settings.num_slices/self.lf_acq_settings.slice_acq_rate + 
             LC_CHANGE_TIME/1000)
-        logger.debug(f'Maximum acquisition framerate: {oryx_framerate}')
-        logger.debug(f'Current slice acquisition rate: {self.lf_acq_settings.slice_acq_rate}')
-        logger.debug(f'Current channel acquisition rate: {self.lf_acq_settings.channel_acq_rate}')
+        logger.debug(f'Maximum Oryx acquisition framerate: {oryx_framerate:.6f}')
+        logger.debug(f'Current slice acquisition rate: {self.lf_acq_settings.slice_acq_rate:.6f}')
+        logger.debug(f'Current channel acquisition rate: {self.lf_acq_settings.channel_acq_rate:.6f}')
 
         # Set flag
         self._lf_acq_set_up = True
@@ -255,13 +254,13 @@ class MantisAcquisition(object):
                     ('Prime BSI Express', 'Gain', '1-Full well'),
                     ('Prime BSI Express', 'TriggerMode', 'Edge Trigger'),
                     ('Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter'))
-        _apply_device_property_settings(logger, self._ls_mmc, settings)
+        _apply_device_property_settings(self._ls_mmc, settings)
 
         # Setup sequencing
         _use_seq = 'On' if self.ls_acq_settings.use_sequence else 'Off'
-        _apply_device_property_settings(logger, self._ls_mmc, ((AP_GALVO_DAC, 'Sequence', _use_seq)))
+        _apply_device_property_settings(self._ls_mmc, ((AP_GALVO_DAC, 'Sequence', _use_seq),))
         # Illuminate sample only when all rows are exposing, aka pseudo global shutter 
-        _apply_device_property_settings(logger, self._ls_mmc, (('TS2_TTL1-8', 'Blanking', 'On')))
+        _apply_device_property_settings(self._ls_mmc, (('TS2_TTL1-8', 'Blanking', 'On'),))
 
         # Setup ROI
         if self.ls_acq_settings.roi is not None:
@@ -286,19 +285,20 @@ class MantisAcquisition(object):
             self.ls_acq_settings.exposure_time_ms + 
             ls_readout_time_ms + 
             LS_POST_READOUT_DELAY)
-        logger.debug(f'Maximum acquisition framerate: ~{1000/ls_readout_time_ms}')
-        logger.debug(f'Current slice acquisition rate: {self.ls_acq_settings.slice_acq_rate}')
+        _cam_max_fps = int(np.around(1000/ls_readout_time_ms))
+        logger.debug(f'Maximum Prime BSI Express acquisition framerate: ~{_cam_max_fps}')
+        logger.debug(f'Current slice acquisition rate: {self.ls_acq_settings.slice_acq_rate:.6f}')
 
         # Set flag
         self._ls_acq_set_up = True
 
     def _setup_daq(self):
         logger = logging.getLogger(__name__)
+
         if self._lf_acq_set_up:
             # LF channel trigger - accommodates longer LC switching times
             self._lf_channel_ctr_task = nidaqmx.Task('LF Channel Counter')
             lf_channel_ctr = _setup_daq_counter(
-                logger, 
                 self._lf_channel_ctr_task, 
                 co_channel='cDAQ1/_ctr0', 
                 freq=self.lf_acq_settings.channel_acq_rate, 
@@ -309,25 +309,27 @@ class MantisAcquisition(object):
             # LF Z trigger
             self._lf_z_ctr_task = nidaqmx.Task('LF Z Counter')
             lf_z_ctr = _setup_daq_counter(
-                logger, 
                 self._lf_z_ctr_task, 
                 co_channel='cDAQ1/_ctr1', 
                 freq=self.lf_acq_settings.slice_acq_rate, 
                 duty_cycle=0.1, 
                 samples_per_channel=self.lf_acq_settings.num_slices, 
                 pulse_terminal='/cDAQ1/PFI0')
+            logger.debug('Setting up cDAQ1/_ctr0 as start trigger for cDAQ1/_ctr1')
             self._lf_z_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(
                 trigger_source='/cDAQ1/Ctr0InternalOutput', 
                 trigger_edge=Slope.RISING)
             # will always return is_task_done = False after counter is started
-            self._lf_z_ctr_task.triggers.start_trigger.retriggerable = True  
+            logger.debug('Setting up cDAQ1/_ctr1 as retriggerable')
+            self._lf_z_ctr_task.triggers.start_trigger.retriggerable = True
+             
+
 
         if self._ls_acq_set_up:
             # LS frame trigger
             self._ls_ctr_task = nidaqmx.Task('LS Frame Counter')
 
-            lf_z_ctr = _setup_daq_counter(
-                logger, 
+            lf_z_ctr = _setup_daq_counter( 
                 self._ls_ctr_task, 
                 co_channel='cDAQ1/_ctr2', 
                 freq=self.ls_acq_settings.slice_acq_rate, 
@@ -339,6 +341,7 @@ class MantisAcquisition(object):
                 self._ls_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(
                     trigger_source='/cDAQ1/Ctr0InternalOutput', 
                     trigger_edge=Slope.RISING)
+                logger.debug('Setting up cDAQ1/_ctr0 as start trigger for cDAQ1/_ctr2')
                 
     def _setup_autofocus(self):
         pass
@@ -454,17 +457,20 @@ class MantisAcquisition(object):
         
         logger.info('Acquisition finished')
 
-def _apply_device_property_settings(logger, mmc, settings: Iterable):
-    for _device, _prop_name, _prop_val in settings:
+def _apply_device_property_settings(mmc, settings: Iterable):
+    logger = logging.getLogger(__name__)
+
+    for _dev_settings in settings:
+        _device, _prop_name, _prop_val = _dev_settings
         logger.debug(f'Setting {_device} {_prop_name} to {_prop_val}')
         mmc.set_property(_device, _prop_name, _prop_val)
 
 def _setup_daq_counter(
-        logger, task, co_channel, freq, duty_cycle, samples_per_channel, pulse_terminal):
+        task, co_channel, freq, duty_cycle, samples_per_channel, pulse_terminal):
     
+    logger = logging.getLogger(__name__)
     logger.debug(f'Setting up {task.name} on {co_channel}')
-    logger.debug(f"""{co_channel} will output {samples_per_channel} samples 
-        with {duty_cycle} duty cycle at {freq} Hz on terminal {pulse_terminal}""")
+    logger.debug(f'{co_channel} will output {samples_per_channel} samples with {duty_cycle} duty cycle at {freq:.6f} Hz on terminal {pulse_terminal}')
     
     ctr = task.co_channels.add_co_pulse_chan_freq(
         co_channel, 

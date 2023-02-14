@@ -1,4 +1,7 @@
+import tracemalloc
 from mantis.acquisition.acq_engine import MantisAcquisition, AcquisitionSettings
+
+tracemalloc.start()
 
 # it is possible to use different acq rate for LF and LS
 num_timepoints = 1
@@ -32,7 +35,7 @@ ls_acq_settings = AcquisitionSettings(
     use_sequence = True,
 )
 
-acq = MantisAcquisition(acquisition_directory=r'D:\\temp', verbose=True)
+acq = MantisAcquisition(acquisition_directory=r'D:\\2023_02_13_automation_testing', verbose=False)
 
 acq.define_lf_acq_settings(lf_acq_settings)
 acq.define_ls_acq_settings(ls_acq_settings)
