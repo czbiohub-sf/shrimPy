@@ -12,6 +12,7 @@ from pycromanager import (
     Studio,
     Acquisition, 
     multi_d_acquisition_events)
+from pycromanager.acq_util import cleanup
 
 from functools import partial
 from mantis.acquisition.hook_functions.daq_control import (
@@ -34,12 +35,24 @@ MCL_STEP_TIME = 1.5  # in ms
 LC_CHANGE_TIME = 20  # in ms
 
 @dataclass
-class AcquisitionSettings:
-    roi: tuple = None
-    exposure_time_ms: float = 10  # in ms
+class PositionTimeAcquisitionSettings:
     num_timepoints: int = 1
     time_internal_s: float = 0  # in seconds
-    scan_stage: str = None
+    xyz_positions: list = None
+    focus_stage: str = None
+    use_autofocus: bool = True
+    autofocus_method: str = None
+    num_positions: int = field(init=False, default=0)
+
+    def __post_init__(self):
+        if self.num_positions is not None:
+            self.num_positions = len(self.num_positions)
+
+@dataclass
+class ChannelSliceAcquisitionSettings:
+    roi: tuple = None
+    exposure_time_ms: float = 10  # in ms
+    z_scan_stage: str = None
     z_start: float = 0
     z_end: float = 1
     z_step: float = 0.1
@@ -145,9 +158,21 @@ class MantisAcquisition(object):
 
     def close(self):
         # Close PM bridges
-        pass
+        cleanup()
+
+    def _get_position_list(self):
+        mm_pos_list = self._lf_mmStudio.get_position_list_manager().get_position_list()
+        number_of_positions = mm_pos_list.get_number_of_positions()
+
+        xyz_position_list = [
+            [mm_pos_list.get_position(i).get_x(), 
+             mm_pos_list.get_position(i).get_y(), 
+             mm_pos_list.get_position(i).get('ZDrive').get1_d_position()] 
+             for i in range(number_of_positions)]
+        
+        return xyz_position_list
             
-    def define_lf_acq_settings(self, acq_settings:AcquisitionSettings):
+    def define_lf_acq_settings(self, acq_settings:ChannelSliceAcquisitionSettings):
         logger = logging.getLogger(__name__)
         if not self._lf_acq_enabled:
             self._lf_acq_enabled = True
@@ -156,7 +181,7 @@ class MantisAcquisition(object):
         self.lf_acq_settings = acq_settings
         logger.debug(f'Label-free acquisition will have following settings: {acq_settings.__dict__}')
 
-    def define_ls_acq_settings(self, acq_settings:AcquisitionSettings):
+    def define_ls_acq_settings(self, acq_settings:ChannelSliceAcquisitionSettings):
         logger = logging.getLogger(__name__)
         if not self._ls_acq_enabled:
             self._ls_acq_enabled = True
@@ -164,6 +189,14 @@ class MantisAcquisition(object):
         
         self.ls_acq_settings = acq_settings
         logger.debug(f'Light-sheet acquisition will have following settings: {acq_settings.__dict__}')
+
+    def defile_position_time_acq_settings(self, acq_settings:PositionTimeAcquisitionSettings):
+        self.pt_acq_settings = acq_settings
+        if self.pt_acq_settings.xyz_positions is None:
+            xyz_position_list = self._get_position_list()
+            if len(xyz_position_list) > 0:
+                self.pt_acq_settings.xyz_positions = xyz_position_list
+                self.pt_acq_settings.num_positions = len(xyz_position_list)
 
     def _setup_lf_acq(self):
         logger = logging.getLogger(__name__)
@@ -213,8 +246,8 @@ class MantisAcquisition(object):
             logger.debug(f'Setting ROI to {self.lf_acq_settings.roi}')
 
         # Setup scan stage
-        self._lf_mmc.set_property('Core', 'Focus', self.lf_acq_settings.scan_stage)
-        logger.debug(f'Setting focus stage to {self.lf_acq_settings.scan_stage}')
+        self._lf_mmc.set_property('Core', 'Focus', self.lf_acq_settings.z_scan_stage)
+        logger.debug(f'Setting focus stage to {self.lf_acq_settings.z_scan_stage}')
 
         # Setup channels
         if self.lf_acq_settings.channels is not None:
@@ -268,8 +301,8 @@ class MantisAcquisition(object):
             logger.debug(f'Setting ROI to {self.ls_acq_settings.roi}')
 
         # Setup scan stage
-        self._ls_mmc.set_property('Core', 'Focus', self.ls_acq_settings.scan_stage)
-        logger.debug(f'Setting focus stage to {self.ls_acq_settings.scan_stage}')
+        self._ls_mmc.set_property('Core', 'Focus', self.ls_acq_settings.z_scan_stage)
+        logger.debug(f'Setting focus stage to {self.ls_acq_settings.z_scan_stage}')
 
         # Setup exposure
         self._ls_mmc.set_exposure(self.ls_acq_settings.exposure_time_ms)
@@ -346,7 +379,7 @@ class MantisAcquisition(object):
     def _setup_autofocus(self):
         pass
 
-    def _generate_acq_events(self, acq_settings: AcquisitionSettings):
+    def _generate_acq_events(self, acq_settings: ChannelSliceAcquisitionSettings):
         events =  multi_d_acquisition_events(    
             num_time_points = acq_settings.num_timepoints,
             time_interval_s = acq_settings.time_internal_s,

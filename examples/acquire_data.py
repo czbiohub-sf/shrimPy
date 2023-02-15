@@ -1,18 +1,23 @@
-import tracemalloc
-from mantis.acquisition.acq_engine import MantisAcquisition, AcquisitionSettings
-
-tracemalloc.start()
+from mantis.acquisition.acq_engine import (
+    MantisAcquisition, 
+    ChannelSliceAcquisitionSettings,
+    PositionTimeAcquisitionSettings)
 
 # it is possible to use different acq rate for LF and LS
-num_timepoints = 1
-time_internal_s = 0
 
-lf_acq_settings = AcquisitionSettings(
+pt_acq_settins = PositionTimeAcquisitionSettings(
+    num_timepoints = 1,
+    time_internal_s = 0,
+    xyz_positions = None,  # will be acquired from MM later
+    focus_stage = 'ZDrive',
+    use_autofocus = True,
+    autofocus_method = 'PFS'
+)
+
+lf_acq_settings = ChannelSliceAcquisitionSettings(
     roi=None,
     exposure_time_ms = 10,
-    num_timepoints = num_timepoints,
-    time_internal_s = time_internal_s,
-    scan_stage = 'MCL Piezo',
+    z_scan_stage = 'MCL Piezo',
     z_start = 0,
     z_end = 60,
     z_step = 5,
@@ -21,12 +26,10 @@ lf_acq_settings = AcquisitionSettings(
     use_sequence = True,
 )
 
-ls_acq_settings = AcquisitionSettings(
+ls_acq_settings = ChannelSliceAcquisitionSettings(
     roi = (0, 896, 2048, 256),  # centered in FOV,
     exposure_time_ms = 10,
-    num_timepoints = num_timepoints,
-    time_internal_s = time_internal_s,
-    scan_stage = 'AP Galvo',
+    z_scan_stage = 'AP Galvo',
     z_start = -2/10,  # in Volts
     z_end = 2/10,
     z_step = 0.01,  # equivalent to 330 nm
@@ -39,7 +42,9 @@ acq = MantisAcquisition(acquisition_directory=r'D:\\2023_02_13_automation_testin
 
 acq.define_lf_acq_settings(lf_acq_settings)
 acq.define_ls_acq_settings(ls_acq_settings)
+acq.defile_position_time_acq_settings(pt_acq_settins)
 
 acq.acquire(name = 'test_acq')
+acq.close()
 
 print('done')
