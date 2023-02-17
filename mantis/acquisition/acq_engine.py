@@ -16,7 +16,7 @@ from pycromanager.acq_util import cleanup
 
 from functools import partial
 from mantis.acquisition.hook_functions.daq_control import (
-    confirm_num_daq_counter_samples, 
+    get_num_daq_counter_samples, 
     start_daq_counter)
 
 import nidaqmx
@@ -42,11 +42,12 @@ class PositionTimeAcquisitionSettings:
     focus_stage: str = None
     use_autofocus: bool = True
     autofocus_method: str = None
+    position_labels: list = None
     num_positions: int = field(init=False, default=0)
 
     def __post_init__(self):
-        if self.num_positions is not None:
-            self.num_positions = len(self.num_positions)
+        if self.xyz_positions is not None:
+            self.num_positions = len(self.xyz_positions)
 
 @dataclass
 class ChannelSliceAcquisitionSettings:
@@ -164,13 +165,18 @@ class MantisAcquisition(object):
         mm_pos_list = self._lf_mmStudio.get_position_list_manager().get_position_list()
         number_of_positions = mm_pos_list.get_number_of_positions()
 
-        xyz_position_list = [
-            [mm_pos_list.get_position(i).get_x(), 
-             mm_pos_list.get_position(i).get_y(), 
-             mm_pos_list.get_position(i).get('ZDrive').get1_d_position()] 
-             for i in range(number_of_positions)]
+        xyz_position_list = []
+        position_labels = []
+        for i in range(number_of_positions):
+            _pos = mm_pos_list.get_position(i)
+            xyz_position_list.append([
+                _pos.get_x(), 
+                _pos.get_y(), 
+                _pos.get(self.pt_acq_settings.focus_stage).get1_d_position()
+            ])
+            position_labels.append(_pos.get_label())
         
-        return xyz_position_list
+        return xyz_position_list, position_labels
             
     def define_lf_acq_settings(self, acq_settings:ChannelSliceAcquisitionSettings):
         logger = logging.getLogger(__name__)
@@ -191,12 +197,15 @@ class MantisAcquisition(object):
         logger.debug(f'Light-sheet acquisition will have following settings: {acq_settings.__dict__}')
 
     def defile_position_time_acq_settings(self, acq_settings:PositionTimeAcquisitionSettings):
+        logger = logging.getLogger(__name__)
         self.pt_acq_settings = acq_settings
         if self.pt_acq_settings.xyz_positions is None:
-            xyz_position_list = self._get_position_list()
+            xyz_position_list, position_labels = self._get_position_list()
             if len(xyz_position_list) > 0:
                 self.pt_acq_settings.xyz_positions = xyz_position_list
+                self.pt_acq_settings.position_labels = position_labels
                 self.pt_acq_settings.num_positions = len(xyz_position_list)
+        logger.debug(f'The following time and position settings will be applied: {acq_settings.__dict__}')
 
     def _setup_lf_acq(self):
         logger = logging.getLogger(__name__)
@@ -355,8 +364,6 @@ class MantisAcquisition(object):
             # will always return is_task_done = False after counter is started
             logger.debug('Setting up cDAQ1/_ctr1 as retriggerable')
             self._lf_z_ctr_task.triggers.start_trigger.retriggerable = True
-             
-
 
         if self._ls_acq_set_up:
             # LS frame trigger
@@ -379,19 +386,28 @@ class MantisAcquisition(object):
     def _setup_autofocus(self):
         pass
 
-    def _generate_acq_events(self, acq_settings: ChannelSliceAcquisitionSettings):
-        events =  multi_d_acquisition_events(    
-            num_time_points = acq_settings.num_timepoints,
-            time_interval_s = acq_settings.time_internal_s,
-            z_start = acq_settings.z_start,
-            z_end = acq_settings.z_end,
-            z_step = acq_settings.z_step,
-            channel_group = acq_settings.channel_group,
-            channels = acq_settings.channels,
-            # xy_positions=None,
-            order = "tpcz")
+    # def _generate_acq_events(self, acq_settings: ChannelSliceAcquisitionSettings):
+    #     events =  multi_d_acquisition_events(    
+    #         num_time_points = self.pt_acq_settings.num_timepoints,
+    #         time_interval_s = self.pt_acq_settings.time_internal_s,
+    #         z_start = acq_settings.z_start,
+    #         z_end = acq_settings.z_end,
+    #         z_step = acq_settings.z_step,
+    #         channel_group = acq_settings.channel_group,
+    #         channels = acq_settings.channels,
+    #         xy_positions=None if self.pt_acq_settings.num_positions==0 else [
+    #             self.pt_acq_settings.xyz_positions[p][:2] 
+    #             for p in range(self.pt_acq_settings.num_positions)
+    #         ],
+    #         order = "tpcz")
         
-        return events
+    #     # Make sure all events have time and position axes so that dataset has 
+    #     # consistent PTCZYX dimensions. Adding a position axis without giving
+    #     # xyz coordinates will not move the microscope
+    #     _append_event_axis(events, 'time')
+    #     _append_event_axis(events, 'position')
+
+        # return events
                 
     def acquire(self, name: str):
         logger = logging.getLogger(__name__)
@@ -400,15 +416,19 @@ class MantisAcquisition(object):
             logger.debug('Setting up label-free acquisition')
             self._setup_lf_acq()
             logger.debug('Finished setting up label-free acquisition')
-            lf_events = self._generate_acq_events(self.lf_acq_settings)
-            logger.debug(f'Generated {len(lf_events)} events for label-free acquisition')
+            # lf_events = self._generate_acq_events(self.lf_acq_settings)
+            # logger.debug(f'Generated {len(lf_events)} events for label-free acquisition')
 
         if self._ls_acq_enabled:
             logger.debug('Setting up light-sheet acquisition')
             self._setup_ls_acq()
             logger.debug('Finished setting up light-sheet acquisition')
-            ls_events = self._generate_acq_events(self.ls_acq_settings)
-            logger.debug(f'Generated {len(ls_events)} events for light-sheet acquisition')
+            # ls_events = self._generate_acq_events(self.ls_acq_settings)
+            # logger.debug(f'Generated {len(ls_events)} events for light-sheet acquisition')
+
+            # remove xy coordinates from LS events dictionary
+            # _remove_event_key(ls_events, 'x')
+            # _remove_event_key(ls_events, 'y')
         
         logger.debug('Setting up DAQ')
         self._setup_daq()
@@ -417,22 +437,75 @@ class MantisAcquisition(object):
         logger.debug('Setting up autofocus')
         self._setup_autofocus()
         logger.debug('Finished setting up autofocus')
+
+        def log_and_check_lf_counter(events):
+            if isinstance(events, list):
+                _event = events[0]
+            else:
+                _event = events  # events is a dict
+
+            t_idx = _event['axes']['time']
+            p_idx = _event['axes']['position']
+            logger.debug(f'Preparing to acquire timepoint {t_idx} at position {self.pt_acq_settings.position_labels[p_idx]}')
+
+            num_counter_samples = get_num_daq_counter_samples([self._lf_z_ctr_task, self._lf_channel_ctr_task])
+            logger.debug(f'DAQ counters will generate a total of {num_counter_samples} pulses')
+
+            event_seq_length = len(events)
+            if num_counter_samples != event_seq_length:  # here events may be dict
+                logger.error(f'Number of counter samples: {num_counter_samples}, is not equal to event sequence length:  {event_seq_length}.')
+                logger.error('Aborting acquisition.')
+                events = None
+
+            return events
+        
+        def check_ls_counter(events):
+            num_counter_samples = get_num_daq_counter_samples(self._ls_ctr_task)
+            logger.debug(f'DAQ counters will generate a total of {num_counter_samples} pulses')
+
+            event_seq_length = len(events)
+            if num_counter_samples != event_seq_length:  # here events may be dict
+                logger.error(f'Number of counter samples: {num_counter_samples}, is not equal to event sequence length:  {event_seq_length}.')
+                logger.error('Aborting acquisition.')
+                events = None
+            
+            return events
+        
+        def log_acq_start(events):
+            if isinstance(events, list):
+                _event = events[0]
+            else:
+                _event = events  # events is a dict
+
+            t_idx = _event['axes']['time']
+            p_idx = _event['axes']['position']
+            logger.info(f'Starting acquisition of timepoint {t_idx} at position {self.pt_acq_settings.position_labels[p_idx]}')
+
+            return events
+        
+        def log_and_start_lf_daq_counters(events):
+            ctr_names = start_daq_counter([self._lf_z_ctr_task, self._lf_channel_ctr_task])
+            logger.debug(f'Started DAQ counter tasks: {ctr_names}.')
+            return events
+        
+        def log_and_start_ls_daq_counters(events):
+            ctr_names = start_daq_counter([self._ls_ctr_task])
+            logger.debug(f'Started DAQ counter tasks: {ctr_names}.')
+            return events
         
         if self._lf_acq_set_up:
             lf_acq = Acquisition(
                 directory=self._acq_dir, 
                 name=f'{name}_labelfree',
                 port=LF_ZMQ_PORT,
-                pre_hardware_hook_fn=partial(
-                    confirm_num_daq_counter_samples, 
-                    [self._lf_z_ctr_task, self._lf_channel_ctr_task], 
-                    self.lf_acq_settings.num_channels*self.lf_acq_settings.num_slices, 
-                    self._verbose),
-                post_hardware_hook_fn=None,  # autofocus
-                post_camera_hook_fn=partial(
-                    start_daq_counter, 
-                    [self._lf_z_ctr_task, self._lf_channel_ctr_task],  # self._lf_z_ctr_task needs to be started first
-                    self._verbose),
+                pre_hardware_hook_fn=log_and_check_lf_counter,
+                # pre_hardware_hook_fn=partial(
+                #     confirm_num_daq_counter_samples, 
+                #     [self._lf_z_ctr_task, self._lf_channel_ctr_task], 
+                #     self.lf_acq_settings.num_channels*self.lf_acq_settings.num_slices, 
+                #     self._verbose),
+                post_hardware_hook_fn=log_acq_start,  # autofocus
+                post_camera_hook_fn=log_and_start_lf_daq_counters,
                 image_saved_fn=None,  # data processing and display
                 show_display=False)
             
@@ -441,24 +514,43 @@ class MantisAcquisition(object):
                 directory=self._acq_dir, 
                 name=f'{name}_lightsheet', 
                 port=LS_ZMQ_PORT, 
-                pre_hardware_hook_fn=partial(
-                    confirm_num_daq_counter_samples, 
-                    self._ls_ctr_task, 
-                    self.ls_acq_settings.num_slices, 
-                    self._verbose), 
-                post_camera_hook_fn=partial(
-                    start_daq_counter, 
-                    self._ls_ctr_task, 
-                    self._verbose), 
+                pre_hardware_hook_fn=check_ls_counter, 
+                post_camera_hook_fn=log_and_start_ls_daq_counters, 
                 show_display=False)
             
         logger.info('Starting acquisition')
-        if self._ls_acq_enabled:
-            ls_acq.acquire(ls_events)  # it's important to start the LS acquisition first
-            ls_acq.mark_finished()
-        if self._lf_acq_enabled:
-            lf_acq.acquire(lf_events)
-            lf_acq.mark_finished()
+        for t_idx in range(self.pt_acq_settings.num_positions):
+            for p_idx in range(self.pt_acq_settings.num_positions):
+                lf_events = _generate_channel_slice_acq_events(self.lf_acq_settings)
+                ls_events = _generate_channel_slice_acq_events(self.ls_acq_settings)
+
+                for _event in lf_events:
+                    _event['axes']['time'] = t_idx
+                    _event['axes']['position'] = p_idx
+                    _event['min_start_time'] = t_idx*self.pt_acq_settings.time_internal_s
+                    _event['x'] = self.pt_acq_settings.xyz_positions[p_idx][0]
+                    _event['y'] = self.pt_acq_settings.xyz_positions[p_idx][1]
+
+                for _event in ls_events:
+                    _event['axes']['time'] = t_idx
+                    _event['axes']['position'] = p_idx
+                    # start LS acq a bit earlier and wait for LF acq to trigger it
+                    _event['min_start_time'] = np.maximum(
+                        t_idx*self.pt_acq_settings.time_internal_s-0.2, 0  
+                    )
+
+                ls_acq.acquire(ls_events)  # it's important to start the LS acquisition first
+                lf_acq.acquire(lf_events)
+        ls_acq.mark_finished()
+        lf_acq.mark_finished()
+
+
+        # if self._ls_acq_enabled:
+        #     ls_acq.acquire(ls_events)  # it's important to start the LS acquisition first
+        #     ls_acq.mark_finished()
+        # if self._lf_acq_enabled:
+        #     lf_acq.acquire(lf_events)
+        #     lf_acq.mark_finished()
 
         logger.debug('Waiting for acquisition to finish')
         if self._ls_acq_enabled:
@@ -489,6 +581,28 @@ class MantisAcquisition(object):
             #     mmc1.set_property('Oryx', 'Frame Rate', oryx_framerate)
         
         logger.info('Acquisition finished')
+
+def _generate_channel_slice_acq_events(acq_settings: ChannelSliceAcquisitionSettings):
+    events =  multi_d_acquisition_events(    
+        num_time_points = 1,
+        time_interval_s = 0,
+        z_start = acq_settings.z_start,
+        z_end = acq_settings.z_end,
+        z_step = acq_settings.z_step,
+        channel_group = acq_settings.channel_group,
+        channels = acq_settings.channels,
+        order = "tpcz")
+    
+    return events
+
+def _append_event_axis(events:list, axis:str):
+    if axis not in events[0]['axes'].keys():
+        for _event in events:
+            _event['axes'][axis] = 0
+
+def _remove_event_key(events:list, key:str):
+    for _event in events:
+        _event.pop(key, None)
 
 def _apply_device_property_settings(mmc, settings: Iterable):
     logger = logging.getLogger(__name__)

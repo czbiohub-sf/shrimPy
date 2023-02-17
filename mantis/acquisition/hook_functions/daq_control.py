@@ -2,30 +2,30 @@ import nidaqmx
 from nidaqmx.constants import AcquisitionType, Slope
 from nidaqmx.types import CtrTime
 
-def confirm_num_daq_counter_samples(CtrTask:nidaqmx.Task or list, expected_sequence_length, verbose, events):
-    """ Intended to be used as pre-hardware hook function, wrapped by functools.partial
-
-    """
+def get_num_daq_counter_samples(CtrTask:nidaqmx.Task or list):
 
     if not isinstance(CtrTask, list):
         CtrTask = [CtrTask]
 
-    event_seq_length = len(events)
-    if verbose:
-        print(f'Running *confirm_num_daq_counter_samples* pre-hardware hook function. Sequence length: {event_seq_length}')
+    # event_seq_length = len(events)
+    # if verbose:
+    #     print(f'Running *confirm_num_daq_counter_samples* pre-hardware hook function. Sequence length: {event_seq_length}')
 
     num_counter_samples = 1
     for _task in CtrTask:
         num_counter_samples *= _task.timing.samp_quant_samp_per_chan
+
+    return num_counter_samples
     
-    if num_counter_samples == event_seq_length:
-        if verbose:
-            print(f'Number of counter samples is equal to event sequence length: {event_seq_length}.')
-    else:
-        events = None
-        raise Warning(f'Number of counter samples: {num_counter_samples}, is not equal to event sequence length:  {event_seq_length}. Aborting acquisition.')
+    # if num_counter_samples == event_seq_length:
+    #     return True
+    #     # if verbose:
+    #     #     print(f'Number of counter samples is equal to event sequence length: {event_seq_length}.')
+    # # else:
+    #     # events = None
+    #     # raise Warning(f'Number of counter samples: {num_counter_samples}, is not equal to event sequence length:  {event_seq_length}. Aborting acquisition.')
     
-    return events
+    # return False
 
 # def set_daq_counter_samples(CtrTask:nidaqmx.Task or list, extected_sequence_length, verbose, events):
 #     """ Intended to be used as pre-hardware hook function, wrapped by functools.partial
@@ -48,17 +48,20 @@ def confirm_num_daq_counter_samples(CtrTask:nidaqmx.Task or list, expected_seque
 #             _task.timing.cfg_implicit_timing(sample_mode=AcquisitionType.FINITE, samps_per_chan=event_seq_length)
 #     return events
 
-def start_daq_counter(CtrTask:nidaqmx.Task or list, verbose, events):
-    """ Intended to be used as post-camera hook function, wrapped by functools.partial
-    
-    """
+def start_daq_counter(CtrTask:nidaqmx.Task or list):
 
     if not isinstance(CtrTask, list):
         CtrTask = [CtrTask]
 
-    if verbose:
-        print(f'Running *start_daq_counter* post camera hook fun. Starting tasks {[_task.name for _task in CtrTask]}.')
+    ctr_names = []
+
+    # if verbose:
+    #     print(f'Running *start_daq_counter* post camera hook fun. Starting tasks {[_task.name for _task in CtrTask]}.')
     for _task in CtrTask:
         if _task.is_task_done():
+            ctr_names.append(_task.name)
+            _task.stop()  # Counter needs to be stopped before it is restarted
             _task.start()
-    return events
+    
+    # return events
+    return ctr_names

@@ -6,9 +6,10 @@ from mantis.acquisition.acq_engine import (
 # it is possible to use different acq rate for LF and LS
 
 pt_acq_settins = PositionTimeAcquisitionSettings(
-    num_timepoints = 1,
-    time_internal_s = 0,
+    num_timepoints = 3,
+    time_internal_s = 15,
     xyz_positions = None,  # will be acquired from MM later
+    position_labels = None,
     focus_stage = 'ZDrive',
     use_autofocus = True,
     autofocus_method = 'PFS'
