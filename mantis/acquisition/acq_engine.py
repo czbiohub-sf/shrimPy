@@ -1,10 +1,10 @@
 import os
-import time
 import logging
 from collections.abc import Iterable
+
+# from acquisition.settings import PositionTimeAcquisitionSettings, ChannelSliceAcquisitionSettings
 from mantis.acquisition.logger import configure_logger
 from datetime import datetime
-from dataclasses import dataclass, field
 import numpy as np
 from pycromanager import (
     start_headless, 
@@ -14,14 +14,12 @@ from pycromanager import (
     multi_d_acquisition_events)
 from pycromanager.acq_util import cleanup
 
-from functools import partial
 from mantis.acquisition.hook_functions.daq_control import (
     get_num_daq_counter_samples, 
     start_daq_counter)
 
 import nidaqmx
 from nidaqmx.constants import AcquisitionType, Slope
-from nidaqmx.types import CtrTime
 
 ### Define constants
 LF_ZMQ_PORT = 4827
@@ -33,41 +31,6 @@ AP_GALVO_DAC = 'TS2_DAC03'
 LS_POST_READOUT_DELAY = 0.05  # in ms
 MCL_STEP_TIME = 1.5  # in ms
 LC_CHANGE_TIME = 20  # in ms
-
-@dataclass
-class PositionTimeAcquisitionSettings:
-    num_timepoints: int = 1
-    time_internal_s: float = 0  # in seconds
-    xyz_positions: list = None
-    focus_stage: str = None
-    use_autofocus: bool = True
-    autofocus_method: str = None
-    position_labels: list = None
-    num_positions: int = field(init=False, default=0)
-
-    def __post_init__(self):
-        if self.xyz_positions is not None:
-            self.num_positions = len(self.xyz_positions)
-
-@dataclass
-class ChannelSliceAcquisitionSettings:
-    roi: tuple = None
-    exposure_time_ms: float = 10  # in ms
-    z_scan_stage: str = None
-    z_start: float = 0
-    z_end: float = 1
-    z_step: float = 0.1
-    channel_group: str = None
-    channels: list = None
-    use_sequence: bool = True
-    num_slices: int = field(init=False)
-    num_channels: int = field(init=False)
-    slice_acq_rate: float = field(init=False, default=None)
-    channel_acq_rate: float = field(init=False, default=None)
-
-    def __post_init__(self):
-        self.num_slices = len(np.arange(self.z_start, self.z_end+self.z_step, self.z_step))
-        self.num_channels = len(self.channels)
 
 
 class MantisAcquisition(object):
@@ -178,7 +141,7 @@ class MantisAcquisition(object):
         
         return xyz_position_list, position_labels
             
-    def define_lf_acq_settings(self, acq_settings:ChannelSliceAcquisitionSettings):
+    def define_lf_acq_settings(self, acq_settings):
         logger = logging.getLogger(__name__)
         if not self._lf_acq_enabled:
             self._lf_acq_enabled = True
@@ -187,7 +150,7 @@ class MantisAcquisition(object):
         self.lf_acq_settings = acq_settings
         logger.debug(f'Label-free acquisition will have following settings: {acq_settings.__dict__}')
 
-    def define_ls_acq_settings(self, acq_settings:ChannelSliceAcquisitionSettings):
+    def define_ls_acq_settings(self, acq_settings):
         logger = logging.getLogger(__name__)
         if not self._ls_acq_enabled:
             self._ls_acq_enabled = True
@@ -196,7 +159,7 @@ class MantisAcquisition(object):
         self.ls_acq_settings = acq_settings
         logger.debug(f'Light-sheet acquisition will have following settings: {acq_settings.__dict__}')
 
-    def defile_position_time_acq_settings(self, acq_settings:PositionTimeAcquisitionSettings):
+    def defile_position_time_acq_settings(self, acq_settings):
         logger = logging.getLogger(__name__)
         self.pt_acq_settings = acq_settings
         if self.pt_acq_settings.xyz_positions is None:
@@ -582,7 +545,7 @@ class MantisAcquisition(object):
         
         logger.info('Acquisition finished')
 
-def _generate_channel_slice_acq_events(acq_settings: ChannelSliceAcquisitionSettings):
+def _generate_channel_slice_acq_events(acq_settings):
     events =  multi_d_acquisition_events(    
         num_time_points = 1,
         time_interval_s = 0,
