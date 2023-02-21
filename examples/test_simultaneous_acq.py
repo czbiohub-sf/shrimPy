@@ -27,7 +27,7 @@ print(mmc2)
 #%% Acquire 100 timepoints on both cameras
 
 events = multi_d_acquisition_events(num_time_points=100)
-save_path = 'Q:\Ivan\debug'
+save_path = r'D:\temp'
 
 # Images can be different size, no problem
 mmc2.set_config('Camera', 'LowRes')
@@ -44,3 +44,5 @@ acq2.mark_finished()
 
 acq1.await_completion()
 acq2.await_completion()
+
+print('done')
