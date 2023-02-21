@@ -1,4 +1,4 @@
-from acquisition.settings import (
+from settings import (
     TimeSettings, PositionSettings, ChannelSettings, SliceSettings, MicroscopeSettings
     )
 
@@ -62,4 +62,4 @@ lf_microscope_settings = MicroscopeSettings(
     autofocus_method='PFS'
 )
 
-lf_microscope_settings = MicroscopeSettings()
+ls_microscope_settings = MicroscopeSettings()
