@@ -108,7 +108,8 @@ class MantisAcquisition(object):
                 self._ls_mm_app_path,
                 self._ls_mm_config_file,
                 port=LS_ZMQ_PORT,
-                core_log_path=core_log_path
+                core_log_path=core_log_path,
+                buffer_size_mb=2048
                 )
             self._ls_mmc = Core(port=LS_ZMQ_PORT)
             logger.debug('Successfully started headless instance of MicroManager.')
@@ -482,7 +483,7 @@ class MantisAcquisition(object):
                 show_display=False)
             
         logger.info('Starting acquisition')
-        for t_idx in range(self.pt_acq_settings.num_positions):
+        for t_idx in range(self.pt_acq_settings.num_positions+1):
             for p_idx in range(self.pt_acq_settings.num_positions):
                 lf_events = _generate_channel_slice_acq_events(self.lf_acq_settings)
                 ls_events = _generate_channel_slice_acq_events(self.ls_acq_settings)
