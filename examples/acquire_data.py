@@ -39,13 +39,13 @@ ls_acq_settings = ChannelSliceAcquisitionSettings(
     use_sequence = True,
 )
 
-acq = MantisAcquisition(acquisition_directory=r'D:\\2023_02_13_automation_testing', verbose=False)
+acq = MantisAcquisition(acquisition_directory=r'D:\2023_02_17_mantis_dataset_standard', verbose=False)
 
 acq.define_lf_acq_settings(lf_acq_settings)
 acq.define_ls_acq_settings(ls_acq_settings)
 acq.defile_position_time_acq_settings(pt_acq_settins)
 
-acq.acquire(name = 'test_acq')
+acq.acquire(name = 'acq1')
 acq.close()
 
 print('done')
