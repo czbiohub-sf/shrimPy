@@ -521,7 +521,7 @@ class MantisAcquisition(object):
             
         logger.info('Starting acquisition')
         for t_idx in range(self.pt_acq_settings.num_positions+1):
-            for p_idx in range(self.pt_acq_settings.num_positions+1):
+            for p_idx in range(self.pt_acq_settings.num_positions):
                 lf_events = _generate_channel_slice_acq_events(self.lf_acq_settings)
                 ls_events = _generate_channel_slice_acq_events(self.ls_acq_settings)
 
