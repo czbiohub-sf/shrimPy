@@ -494,9 +494,17 @@ class MantisAcquisition(object):
             logger.debug(f'Started DAQ counter tasks: {ctr_names}.')
             return events
         
+        acq_directory = os.path.join(self._acq_dir, name)
+        if not os.path.exists(acq_directory):
+            os.makedirs(acq_directory)
+
+        # save position list
+        mm_pos_list = self._lf_mmStudio.get_position_list_manager().get_position_list()
+        mm_pos_list.save(os.path.join(acq_directory, 'PositionList.json'))
+        
         if self._lf_acq_set_up:
             lf_acq = Acquisition(
-                directory=self._acq_dir, 
+                directory=acq_directory, 
                 name=f'{name}_labelfree',
                 port=LF_ZMQ_PORT,
                 pre_hardware_hook_fn=log_and_check_lf_counter,
@@ -512,14 +520,14 @@ class MantisAcquisition(object):
             
         if self._ls_acq_set_up:
             ls_acq = Acquisition(
-                directory=self._acq_dir, 
+                directory=acq_directory, 
                 name=f'{name}_lightsheet', 
                 port=LS_ZMQ_PORT, 
                 pre_hardware_hook_fn=check_ls_counter, 
                 post_camera_hook_fn=log_and_start_ls_daq_counters, 
                 show_display=False)
             
-        logger.info('Starting acquisition')
+        logger.info(f'Starting acquisition {name}')
         for t_idx in range(self.pt_acq_settings.num_positions+1):
             for p_idx in range(self.pt_acq_settings.num_positions):
                 lf_events = _generate_channel_slice_acq_events(self.lf_acq_settings)
