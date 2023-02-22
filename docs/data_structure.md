@@ -1,47 +1,83 @@
 
 # Data format 
 
+This document defines the standard for organizing data acquired by the mantis microscope.
 
-## Directory heirarchy 
+## Raw directory organization 
 
-We organize the data by positions with a dedicated folder for calibrations considering the following:
+Organization of the raw data is constrained by the `pycromanager`-based acquisitioon engine. Currently, we structure raw data in the following hierarchy:
+
+```markdown
+
+YYYY_MM_DD_<experiment_description>
+|--- <acq-name>
+|    |--- PositionList.json
+|
+|    |--- <acq-name>_labelfree_<n>  # contains PTCZYX dataset
+|        |--- <acq-name>_labelfree_NDTiffStack.tif
+|        |--- <acq-name>_labelfree_NDTiffStack_1.tif
+|        ...
+|
+|    |--- <acq-name>_lightsheet_<n>  # contains PTCZYX dataset
+|        |--- <acq-name>_lightsheet_NDTiffStack.tif
+|        |--- <acq-name>_lightsheet_NDTiffStack_1.tif
+|        ...
+|
+|--- <acq-name>  # one experiment folder may contain multiple acquisitions
+|    ...
+|
+|--- mantis_acquisition_log_YYYYMMDDTHHMMSS.txt
+|
+|--- calibration
+|    |--- labelfree
+|    |--- lightsheet
+
+```
+
+An example dataset is provided in: `//ESS/comp_micro/rawdata/mantis/2023_02_21_mantis_dataset_standard/`.
+
+Each acquisition will contain a PTCZYX dataset; some dimensions may be singleton.
+
+The structure of the mantis acquisition log file is not final and is subject to change. Input is welcomed. The log file may contain logs from multiple acquisitions.
+
+A `PositionList.pos` file will accompany each experiment. This file is useful as it carries information about the position labels, which is not saved by `pycromanager`. In the future, we may decide to manage that differently.
+
+Raw data files will be converted to `ome-zarr` for long-term storage and downstream processing.
+
+## Conversion to `ome-zarr` format
+
+The development of this converter is still upcoming. 
+
+We will organize the data by positions with a dedicated folder for calibrations considering the following:
 
 * We can parallelize analysis by distributing the compute using `jobs` and `sbatch` commands on HPC.
 * We match the directory structure of OME-NGFF format, to make it easier to use the reader and writer modules implemented in `iohub`.
 * Backup and file i/o are performant when the data is stored in nested structure with few files per directory.
-* Calibration data required by each anlaysis module (recOrder and dexp) is organized consistently and properly.
+* Calibration data required by each analysis module (recOrder and dexp) is organized consistently and properly.
 
 ```markdown
 
-experiment (datestamp_sample)
-|--- acq_<short description>_<nn>
-|    |--- PositionList.csv (Write out positions from micro-manager to facilitate parsing by iohub and document the cell condition in each well)
+YYYY_MM_DD_<experiment_description>
+|--- <acq-name>
 |    |--- <Row>
 |       |--- <Col>
-|           |--- Pos000 
-|              |--- labelfree
-|                  |--- ndtiff stacks  # all label-free images
-|              |--- lightsheet
-|                  |--- ndtiff stacks  # all light-sheet images
-|           |--- Pos<nnn> 
-|              |--- labelfree
-|                  |--- ndtiff stacks  # all label-free images
-|              |--- lightsheet
-|                  |--- ndtiff stacks  # all light-sheet images
-|           ...
-|--- calib_<short description>_nn
+|           |--- <Pos_Label> 
+|              |--- labelfree  # zarr dataset with TCZYX dimensions
+|              |--- lightsheet  # zarr dataset with TCZYX dimensions
+|           |--- <Pos_Label>  
+|              |--- labelfree  # zarr dataset with TCZYX dimensions
+|              |--- lightsheet  # zarr dataset with TCZYX dimensions
+|    ...
+|
+|--- mantis_acquisition_log_YYYYMMDDTHHMMSS.txt
+|
+|--- calibration
 |    |--- labelfree
-|           |--- ndtiff stacks  # all label-free images  
-|           |---- recOrder calibration metadata.    
 |    |--- lightsheet
-|           |--- ndtiff stacks  # all light-sheet images
-|           |--- dexp calibration metadata.
-|   ....
-|--- acq_<short description>_nn
 
 ```
 
-## Constraints and flexibilities in data heirarchy
+## Constraints and flexibilities in data hierarchy
 
 * The modalities (channels) contained in one acquisition folder are identical, i.e., all positions and calibration folders contain either labelfree, lightsheet, or labelfree + lightsheet stacks.
 * The names of Positions (`Pos`) may be renamed to reflect the condition or perturbation.
