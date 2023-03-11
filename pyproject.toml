@@ -31,14 +31,15 @@ dependencies = [
     "pydantic",
     "pycromanager",
     "nidaqmx",
-    "napari",
-    "pyqt6",
     "dexp",
 ]
 
 
 [project.optional-dependencies]
 # note that dev dependencies are only pinned to major versions
+napari = [
+    "napari[all]",
+]
 dev = [
     "black~=22.3",
     "flake8~=5.0",
