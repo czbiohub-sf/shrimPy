@@ -1,4 +1,5 @@
 #%%
+import os
 import yaml
 from mantis.acquisition.acq_engine import MantisAcquisition
 from mantis.acquisition.BaseSettings import (
@@ -10,7 +11,8 @@ from mantis.acquisition.BaseSettings import (
 )
 
 #%%
-with open('./acquisition/settings/demo_acquisition_settings.yaml') as file:
+settings_filepath = os.path.join(os.path.dirname(__file__), '../settings/demo_acquisition_settings.yaml')
+with open(settings_filepath) as file:
     raw_settings = yaml.safe_load(file)
 
 #%%

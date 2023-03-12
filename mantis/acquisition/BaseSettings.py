@@ -43,9 +43,9 @@ class SliceSettings:
     z_end: Optional[float] = None
     z_step: Optional[float] = None
     use_sequence: bool = False
-    z_range: List[float] = field(init=False, default_factory=list)
     num_slices: int = field(init=False, default=0)
     slice_acq_rate: float = field(init=False, default=None)
+    z_range: List[float] = field(init=False, repr=False, default_factory=list)
 
     def __post_init__(self):
         if self.z_step is not None:

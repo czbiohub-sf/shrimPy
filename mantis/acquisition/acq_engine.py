@@ -1,5 +1,6 @@
 import os
 import numpy as np
+from dataclasses import asdict
 from datetime import datetime
 import logging
 from collections.abc import Iterable
@@ -53,19 +54,22 @@ class BaseChannelSliceAcquisition(object):
             core_log_path: str = '',
     ):
         self.enabled = enabled
-        self.channel_settings = ChannelSettings()
-        self.slice_settings = SliceSettings()
-        self.microscope_settings = MicroscopeSettings()
+        self._channel_settings = ChannelSettings()
+        self._slice_settings = SliceSettings()
+        self._microscope_settings = MicroscopeSettings()
+        self.headless = False if mm_app_path is None else True
+        self.type = 'light-sheet' if self.headless else 'label-free'
         self.mmc = None
         self.mmStudio = None
 
+        logger.debug(f'Initializing {self.type} acquisition engine')
         if enabled:
-            if mm_app_path is not None:
+            if self.headless:
                 java_loc = None
                 if "JAVA_HOME" in os.environ:
                     java_loc = os.environ["JAVA_HOME"]
 
-                logger.debug(f'Starting Micro-Manager instance on port {zmq_port}')
+                logger.debug(f'Starting headless Micro-Manager instance on port {zmq_port}')
                 logger.debug(f'Core logs will be saved at: {core_log_path}')
                 start_headless(
                     mm_app_path,
@@ -79,13 +83,52 @@ class BaseChannelSliceAcquisition(object):
             logger.debug(f'Connecting to Micro-Manager on port {zmq_port}')
 
             self.mmc = Core(port=zmq_port)
-            self.mmStudio = Studio(port=zmq_port)
 
-            logger.debug('Successfully connected to Micro-Manager.')
+            # headless MM instance doesn't have a studio object
+            if not self.headless:
+                self.mmStudio = Studio(port=zmq_port)
+
+            logger.debug('Successfully connected to Micro-Manager')
             logger.debug(f'{self.mmc.get_version_info()}')  # MMCore Version
-            logger.debug(f'MM Studio version: {self.mmStudio.compat().get_version()}')
+
+            if not self.headless:
+                logger.debug(f'MM Studio version: {self.mmStudio.compat().get_version()}')
         else:
-            logger.info('Acquisition is not enabled.')
+            logger.info(f'{self.type.capitalize()} acquisition is not enabled')
+
+    @property
+    def channel_settings(self):
+        return self._channel_settings
+    
+    @property
+    def slice_settings(self):
+        return self._slice_settings
+    
+    @property
+    def microscope_settings(self):
+        return self._microscope_settings
+    
+    @channel_settings.setter
+    def channel_settings(self, settings:ChannelSettings):
+        logger.debug(
+            f'{self.type.capitalize()} acquisition will have the followign settings: {asdict(settings)}'
+        )
+        self._channel_settings = settings
+
+    @slice_settings.setter
+    def slice_settings(self, settings:SliceSettings):
+        settings_dict = {key: val for key, val in asdict(settings).items() if key != 'z_range'}
+        logger.debug(
+            f'{self.type.capitalize()} acquisition will have the followign settings: {settings_dict}'
+        )
+        self._slice_settings = settings
+
+    @microscope_settings.setter
+    def microscope_settings(self, settings:MicroscopeSettings):
+        logger.debug(
+            f'{self.type.capitalize()} acquisition will have the followign settings: {asdict(settings)}'
+        )
+        self._microscope_settings = settings
 
 
 class MantisAcquisition(object):
@@ -139,18 +182,16 @@ class MantisAcquisition(object):
                                       f'mantis_acquisition_log_{timestamp}.txt'))
 
         if self._demo_run:
-            logger.info('NOTE: This is a demo run.')
+            logger.info('NOTE: This is a demo run')
         logger.debug(f'Starting mantis acquisition log at: {self._acq_dir}')
         
         # Connect to MM running LF acq
-        logger.debug('Initializing label-free acquisition engine.')
         self.lf_acq = BaseChannelSliceAcquisition(
             enabled=enable_lf_acq,
             zmq_port=LF_ZMQ_PORT,
         )
 
         # Connect to MM running LS acq
-        logger.debug('Initializing light-sheet acquisition engine.')
         self.ls_acq = BaseChannelSliceAcquisition(
             enabled=enable_ls_acq,
             mm_app_path=mm_app_path,
