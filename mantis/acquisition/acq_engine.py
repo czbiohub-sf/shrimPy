@@ -1,11 +1,18 @@
 import os
+import numpy as np
+from datetime import datetime
 import logging
 from collections.abc import Iterable
 
-# from acquisition.settings import PositionTimeAcquisitionSettings, ChannelSliceAcquisitionSettings
 from mantis.acquisition.logger import configure_logger
-from datetime import datetime
-import numpy as np
+from mantis.acquisition.BaseSettings import (
+    TimeSettings,
+    PositionSettings,
+    ChannelSettings,
+    SliceSettings,
+    MicroscopeSettings,
+)
+
 from pycromanager import (
     start_headless, 
     Core, 
@@ -32,6 +39,54 @@ LS_POST_READOUT_DELAY = 0.05  # in ms
 MCL_STEP_TIME = 1.5  # in ms
 LC_CHANGE_TIME = 20  # in ms
 
+logger = logging.getLogger(__name__)
+
+
+class BaseChannelSliceAcquisition(object):
+
+    def __init__(
+            self,
+            enabled: bool = True,
+            mm_app_path: str = None,
+            mm_config_file: str = None,
+            zmq_port: int = 4827,
+            core_log_path: str = '',
+    ):
+        self.enabled = enabled
+        self.channel_settings = ChannelSettings()
+        self.slice_settings = SliceSettings()
+        self.microscope_settings = MicroscopeSettings()
+        self.mmc = None
+        self.mmStudio = None
+
+        if enabled:
+            if mm_app_path is not None:
+                java_loc = None
+                if "JAVA_HOME" in os.environ:
+                    java_loc = os.environ["JAVA_HOME"]
+
+                logger.debug(f'Starting Micro-Manager instance on port {zmq_port}')
+                logger.debug(f'Core logs will be saved at: {core_log_path}')
+                start_headless(
+                    mm_app_path,
+                    mm_config_file,
+                    java_loc=java_loc,
+                    port=zmq_port,
+                    core_log_path=core_log_path,
+                    buffer_size_mb=2048
+                )
+
+            logger.debug(f'Connecting to Micro-Manager on port {zmq_port}')
+
+            self.mmc = Core(port=zmq_port)
+            self.mmStudio = Studio(port=zmq_port)
+
+            logger.debug('Successfully connected to Micro-Manager.')
+            logger.debug(f'{self.mmc.get_version_info()}')  # MMCore Version
+            logger.debug(f'MM Studio version: {self.mmStudio.compat().get_version()}')
+        else:
+            logger.info('Acquisition is not enabled.')
+
 
 class MantisAcquisition(object):
     """
@@ -41,11 +96,12 @@ class MantisAcquisition(object):
     def __init__(
             self,
             acquisition_directory: str,
-            mm_app_path: str=r'C:\\Program Files\\Micro-Manager-nightly',
-            mm_config_file: str=r'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg',
-            enable_ls_acq: bool=True,
-            enable_lf_acq: bool=True,
-            verbose: bool=False,
+            mm_app_path: str = r'C:\\Program Files\\Micro-Manager-nightly',
+            mm_config_file: str = r'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg',
+            enable_ls_acq: bool = True,
+            enable_lf_acq: bool = True,
+            demo_run: bool = False,
+            verbose: bool = False,
             ) -> None:
         
         """Initialize the mantis acquisition class and connect to Micro-manager
@@ -69,51 +125,40 @@ class MantisAcquisition(object):
             By default False
         """
 
-        self._verbose = verbose
         self._acq_dir = acquisition_directory
-        self._ls_mm_app_path = mm_app_path
-        self._ls_mm_config_file = mm_config_file
-        self._lf_acq_enabled = enable_lf_acq
-        self._ls_acq_enabled = enable_ls_acq
-        self._lf_acq_set_up = False
-        self._ls_acq_set_up = False
+        self._demo_run = demo_run
+        self._verbose = verbose
+
+        # initialize time and position settings
+        self.time_settings = TimeSettings()
+        self.position_settings = PositionSettings()
 
         # Setup logger
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         configure_logger(os.path.join(self._acq_dir,
                                       f'mantis_acquisition_log_{timestamp}.txt'))
-        logger = logging.getLogger(__name__)
-        logger.debug(f'Starting mantis acquisition log at: {self._acq_dir}')
 
+        if self._demo_run:
+            logger.info('NOTE: This is a demo run.')
+        logger.debug(f'Starting mantis acquisition log at: {self._acq_dir}')
         
         # Connect to MM running LF acq
-        if self._lf_acq_enabled:
-            logger.debug('Label-free acquisition enabled')
-            logger.debug(f'Connecting to MicroManager on port {LF_ZMQ_PORT}')
-            self._lf_mmc = Core(port=LF_ZMQ_PORT)
-            self._lf_mmStudio = Studio(port=LF_ZMQ_PORT)
-            logger.debug('Successfully connected to MicroManager.')
-            logger.debug(f'{self._lf_mmc.get_version_info()}')  # MMCore Version
-            logger.debug(f'MM Studio version: {self._lf_mmStudio.compat().get_version()}')
+        logger.debug('Initializing label-free acquisition engine.')
+        self.lf_acq = BaseChannelSliceAcquisition(
+            enabled=enable_lf_acq,
+            zmq_port=LF_ZMQ_PORT,
+        )
 
         # Connect to MM running LS acq
-        if self._ls_acq_enabled:
-            logger.debug('Light-sheet acquisition enabled.') 
-            logger.debug(f'Starting MicroManager instance on port {LS_ZMQ_PORT}')
-            core_log_path = os.path.join(self._ls_mm_app_path, 'CoreLogs',
-                                         f'CoreLog{timestamp}_headless.txt')
-            logger.debug(f'Core logs will be saved at: {core_log_path}')
-
-            start_headless(
-                self._ls_mm_app_path,
-                self._ls_mm_config_file,
-                port=LS_ZMQ_PORT,
-                core_log_path=core_log_path,
-                buffer_size_mb=2048
-                )
-            self._ls_mmc = Core(port=LS_ZMQ_PORT)
-            logger.debug('Successfully started headless instance of MicroManager.')
-            logger.debug(f'{self._ls_mmc.get_version_info()}')  # MMCore Version
+        logger.debug('Initializing light-sheet acquisition engine.')
+        self.ls_acq = BaseChannelSliceAcquisition(
+            enabled=enable_ls_acq,
+            mm_app_path=mm_app_path,
+            mm_config_file=mm_config_file,
+            zmq_port=LS_ZMQ_PORT,
+            core_log_path=os.path.join(mm_app_path, 'CoreLogs',
+                                       f'CoreLog{timestamp}_headless.txt')
+        )
 
     def __enter__(self):
         return self
@@ -219,8 +264,8 @@ class MantisAcquisition(object):
             logger.debug(f'Setting ROI to {self.lf_acq_settings.roi}')
 
         # Setup scan stage
-        self._lf_mmc.set_property('Core', 'Focus', self.lf_acq_settings.z_scan_stage)
-        logger.debug(f'Setting focus stage to {self.lf_acq_settings.z_scan_stage}')
+        self._lf_mmc.set_property('Core', 'Focus', self.lf_acq_settings.z_stage)
+        logger.debug(f'Setting focus stage to {self.lf_acq_settings.z_stage}')
 
         # Setup channels
         if self.lf_acq_settings.channels is not None:
@@ -274,8 +319,8 @@ class MantisAcquisition(object):
             logger.debug(f'Setting ROI to {self.ls_acq_settings.roi}')
 
         # Setup scan stage
-        self._ls_mmc.set_property('Core', 'Focus', self.ls_acq_settings.z_scan_stage)
-        logger.debug(f'Setting focus stage to {self.ls_acq_settings.z_scan_stage}')
+        self._ls_mmc.set_property('Core', 'Focus', self.ls_acq_settings.z_stage)
+        logger.debug(f'Setting focus stage to {self.ls_acq_settings.z_stage}')
 
         # Setup exposure
         self._ls_mmc.set_exposure(self.ls_acq_settings.exposure_time_ms)

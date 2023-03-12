@@ -1,4 +1,4 @@
-from settings import (
+from acquisition.BaseSettings import (
     TimeSettings, PositionSettings, ChannelSettings, SliceSettings, MicroscopeSettings
     )
 
@@ -18,7 +18,7 @@ lf_channel_settings = ChannelSettings(
 )
 
 lf_slice_settings = SliceSettings(
-    z_scan_stage='MCL Piezo',
+    z_stage='MCL Piezo',
     z_start=0,
     z_end=60,
     z_step=5,
