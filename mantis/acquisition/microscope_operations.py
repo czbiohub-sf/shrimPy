@@ -1,4 +1,6 @@
 import logging
+import nidaqmx
+from nidaqmx.constants import AcquisitionType
 
 logger = logging.getLogger(__name__)
 
@@ -19,3 +21,42 @@ def set_roi(mmc, roi:tuple):
     logger.debug(f'Setting ROI to {roi}')
 
     mmc.set_roi(*roi)
+
+def get_position_list(mmStudio, z_stage_name):
+    mm_pos_list = mmStudio.get_position_list_manager().get_position_list()
+    number_of_positions = mm_pos_list.get_number_of_positions()
+
+    xyz_position_list = []
+    position_labels = []
+    for i in range(number_of_positions):
+        _pos = mm_pos_list.get_position(i)
+        xyz_position_list.append([
+            _pos.get_x(), 
+            _pos.get_y(), 
+            _pos.get(z_stage_name).get1_d_position()
+        ])
+        position_labels.append(_pos.get_label())
+    
+    return xyz_position_list, position_labels
+
+def setup_daq_counter(
+        task:nidaqmx.task.Task, 
+        co_channel, 
+        freq, duty_cycle, 
+        samples_per_channel, 
+        pulse_terminal
+):
+    
+    logger.debug(f'Setting up {task.name} on {co_channel}')
+    logger.debug(f'{co_channel} will output {samples_per_channel} samples with {duty_cycle} duty cycle at {freq:.6f} Hz on terminal {pulse_terminal}')
+    
+    ctr = task.co_channels.add_co_pulse_chan_freq(
+        co_channel, 
+        freq=freq, 
+        duty_cycle=duty_cycle)
+    task.timing.cfg_implicit_timing(
+        sample_mode=AcquisitionType.FINITE, 
+        samps_per_chan=samples_per_channel)
+    ctr.co_pulse_term = pulse_terminal
+    
+    return ctr

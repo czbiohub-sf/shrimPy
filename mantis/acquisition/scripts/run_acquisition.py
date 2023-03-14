@@ -1,5 +1,4 @@
-#%%
-import os
+import click
 import yaml
 from mantis.acquisition.acq_engine import MantisAcquisition
 from mantis.acquisition.BaseSettings import (
@@ -10,43 +9,82 @@ from mantis.acquisition.BaseSettings import (
     MicroscopeSettings,
 )
 
-#%%
-settings_filepath = os.path.join(os.path.dirname(__file__), '../settings/mantis_acquisition_settings.yaml')
-with open(settings_filepath) as file:
-    raw_settings = yaml.safe_load(file)
-
-#%%
-acquisition_directory = r'D:\\2023_02_13_automation_testing'
-mm_app_path = r'C:\\Program Files\\Micro-Manager-nightly'
-mm_config_file = r'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg'
-
-acq = MantisAcquisition(
-    acquisition_directory=acquisition_directory,
-    mm_app_path=mm_app_path,
-    mm_config_file=mm_config_file,
-    demo_run=True,
-    verbose=False,
+@click.command()
+@click.help_option("-h", "--help")
+@click.option(
+    '--data-dirpath', 
+    required=True, 
+    type=click.Path(exists=True),
+    help='Directory where acquired data will be saved',
 )
+@click.option(
+    '--name', 
+    required=True,
+    help='Name of the acquisition',
+)
+@click.option(
+    '--settings', 
+    required=True, 
+    type=click.Path(exists=True, file_okay=True, dir_okay=False),
+    help='YAML file containing the acquisition settings',
+)
+@click.option(
+    '--mm-app-path', 
+    default='C:\\Program Files\\Micro-Manager-nightly', 
+    type=click.Path(exists=True),
+    show_default=True,
+    help='''Path to Micro-manager installation directory
+      which will run the light-sheet acquisition''',
+)
+@click.option(
+    '--mm-config-file', 
+    default='C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg', 
+    type=click.Path(exists=True, file_okay=True, dir_okay=False),
+    show_default=True,
+    help='''Path to Micro-manager config file 
+      which will run the light-sheet acquisition''',
+)
+def run_acquisition(
+    data_dirpath,
+    name,
+    settings,
+    mm_app_path,
+    mm_config_file,
+):
 
-acq.time_settings = \
-    TimeSettings(**raw_settings.get('time_settings'))
-acq.position_settings = \
-    PositionSettings()
-acq.lf_acq.channel_settings = \
-    ChannelSettings(**raw_settings.get('lf_channel_settings'))
-acq.lf_acq.slice_settings = \
-    SliceSettings(**raw_settings.get('lf_slice_settings'))
-acq.lf_acq.microscope_settings = \
-    MicroscopeSettings(**raw_settings.get('lf_microscope_settings'))
-acq.ls_acq.channel_settings = \
-    ChannelSettings(**raw_settings.get('ls_channel_settings'))
-acq.ls_acq.slice_settings = \
-    SliceSettings(**raw_settings.get('ls_slice_settings'))
-acq.ls_acq.microscope_settings = \
-    MicroscopeSettings(**raw_settings.get('ls_microscope_settings'))
+    demo_run = True if 'demo' in settings else False
+    
+    with open(settings) as file:
+        raw_settings = yaml.safe_load(file)
 
-acq.setup()
-acq.acquire(name='test_acq')
-acq.close()
+    with MantisAcquisition(
+        acquisition_directory=data_dirpath,
+        mm_app_path=mm_app_path,
+        mm_config_file=mm_config_file,
+        demo_run=demo_run,
+        verbose=False,
+    ) as acq:
 
-print('done')
+        acq.time_settings = \
+            TimeSettings(**raw_settings.get('time_settings'))
+        acq.position_settings = \
+            PositionSettings()
+        acq.lf_acq.channel_settings = \
+            ChannelSettings(**raw_settings.get('lf_channel_settings'))
+        acq.lf_acq.slice_settings = \
+            SliceSettings(**raw_settings.get('lf_slice_settings'))
+        acq.lf_acq.microscope_settings = \
+            MicroscopeSettings(**raw_settings.get('lf_microscope_settings'))
+        acq.ls_acq.channel_settings = \
+            ChannelSettings(**raw_settings.get('ls_channel_settings'))
+        acq.ls_acq.slice_settings = \
+            SliceSettings(**raw_settings.get('ls_slice_settings'))
+        acq.ls_acq.microscope_settings = \
+            MicroscopeSettings(**raw_settings.get('ls_microscope_settings'))
+        
+        acq.setup()
+        acq.acquire(name)
+
+
+if __name__ == '__main__':
+    run_acquisition()

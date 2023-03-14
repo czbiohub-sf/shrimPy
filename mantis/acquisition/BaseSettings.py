@@ -30,6 +30,7 @@ class PositionSettings:
     num_positions: int = field(init=False, default=0)
 
     def __post_init__(self):
+        assert len(self.xyz_positions) == len(self.position_labels)
         self.num_positions = len(self.xyz_positions)
 
 
@@ -40,7 +41,7 @@ class ChannelSettings:
     channels: List[str] = field(default_factory=list)
     use_sequencing: bool = False
     num_channels: int = field(init=False, default=0)
-    channel_acq_rate: float = field(init=False, default=None)
+    acquisition_rate: float = field(init=False, default=None)
 
     def __post_init__(self):
         self.num_channels = len(self.channels)
@@ -56,7 +57,7 @@ class SliceSettings:
     z_step: Optional[float] = None
     use_sequencing: bool = False
     num_slices: int = field(init=False, default=0)
-    slice_acq_rate: float = field(init=False, default=None)
+    acquisition_rate: float = field(init=False, default=None)
     z_range: List[float] = field(init=False, repr=False, default_factory=list)
 
     def __post_init__(self):

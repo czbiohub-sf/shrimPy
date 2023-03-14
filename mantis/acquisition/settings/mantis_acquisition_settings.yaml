@@ -38,6 +38,8 @@ lf_microscope_settings:
   config_group_settings:
     - ['Imaging Path', 'Label-free']
     - ['Channel - LS', 'External Control']
+    # need to set first channel for falling edge sequencing
+    - ['Channel - LF', 'State0']
   device_property_settings:
     - ['Oryx', 'Line Selector', 'Line5']
     - ['Oryx', 'Line Mode', 'Output']
@@ -46,6 +48,7 @@ lf_microscope_settings:
     - ['Oryx', 'Line Mode', 'Input']
     - ['Oryx', 'Trigger Source', 'Line2']
     - ['Oryx', 'Trigger Mode', 'On']
+    # required for external triggering at max fps
     - ['Oryx', 'Trigger Overlap', 'ReadOut']
     - ['Oryx', 'Frame Rate Control Enabled', '0']
   z_sequencing_settings: 
@@ -64,6 +67,7 @@ ls_microscope_settings:
     - ['Prime BSI Express', 'Gain', '1-Full well']
     - ['Prime BSI Express', 'TriggerMode', 'Edge Trigger']
     - ['Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter']
+    # Illuminate sample only when all rows are exposing, aka pseudo global shutter 
     - ['TS2_TTL1-8', 'Blanking', 'On']
   z_sequencing_settings: 
     - [*AP_GALVO_DAC, 'Sequence', 'On']
