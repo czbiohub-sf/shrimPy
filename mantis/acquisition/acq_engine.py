@@ -191,6 +191,7 @@ class MantisAcquisition(object):
     def __init__(
             self,
             acquisition_directory: str,
+            acquisition_name: str,
             mm_app_path: str = r'C:\\Program Files\\Micro-Manager-nightly',
             mm_config_file: str = r'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg',
             enable_ls_acq: bool = True,
@@ -205,6 +206,8 @@ class MantisAcquisition(object):
         ----------
         acquisition_directory : str
             Directory where acquired data will be saved
+        acquisition_name : str
+            Name of the acquisition
         mm_app_path : str, optional
             Path to Micro-manager installation directory which runs the 
             light-sheet acquisition, by default r'C:\Program Files\Micro-Manager-nightly'
@@ -220,18 +223,22 @@ class MantisAcquisition(object):
             By default False
         """
 
-        self._acq_dir = acquisition_directory
+        self._root_dir = acquisition_directory
+        self._acq_name = acquisition_name
         self._demo_run = demo_run
         self._verbose = verbose
 
-        # initialize time and position settings
-        self._time_settings = TimeSettings()
-        self._position_settings = PositionSettings()
+        # Create acquisition directory
+        self._acq_dir = _create_acquisition_directory(self._root_dir, self._acq_name)
 
         # Setup logger
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         configure_logger(os.path.join(self._acq_dir,
                                       f'mantis_acquisition_log_{timestamp}.txt'))
+        
+        # initialize time and position settings
+        self._time_settings = TimeSettings()
+        self._position_settings = PositionSettings()
 
         if self._demo_run:
             logger.info('NOTE: This is a demo run')
@@ -591,7 +598,7 @@ class MantisAcquisition(object):
 
         self.update_position_settings()
     
-    def acquire(self, name: str):
+    def acquire(self):
 
         def log_and_check_lf_counter(events):
             if isinstance(events, list):
@@ -651,7 +658,7 @@ class MantisAcquisition(object):
         # if self._lf_acq_set_up:
         lf_acq = Acquisition(
             directory=self._acq_dir, 
-            name=f'{name}_labelfree',
+            name=f'{self._acq_name}_labelfree',
             port=LF_ZMQ_PORT,
             pre_hardware_hook_fn=log_and_check_lf_counter,
             # pre_hardware_hook_fn=partial(
@@ -668,7 +675,7 @@ class MantisAcquisition(object):
         # if self._ls_acq_set_up:
         ls_acq = Acquisition(
             directory=self._acq_dir, 
-            name=f'{name}_lightsheet', 
+            name=f'{self._acq_name}_lightsheet', 
             port=LS_ZMQ_PORT, 
             pre_hardware_hook_fn=check_ls_counter, 
             post_camera_hook_fn=log_and_start_ls_daq_counters, 
@@ -676,7 +683,7 @@ class MantisAcquisition(object):
         )
             
         logger.info('Starting acquisition')
-        for t_idx in range(self.time_settings.num_timepoints+1):
+        for t_idx in range(self.time_settings.num_timepoints):
             for p_idx in range(self.position_settings.num_positions):
                 lf_events = _generate_channel_slice_acq_events(self.lf_acq.channel_settings, self.lf_acq.slice_settings)
                 ls_events = _generate_channel_slice_acq_events(self.ls_acq.channel_settings, self.ls_acq.slice_settings)
@@ -740,6 +747,9 @@ class MantisAcquisition(object):
             # mmc1.set_property('Oryx', 'Frame Rate Control Enabled', oryx_framerate_enabled)
             # if oryx_framerate_enabled == '1': 
             #     mmc1.set_property('Oryx', 'Frame Rate', oryx_framerate)
+
+        lf_acq._dataset.close()
+        ls_acq._dataset.close()
         
         logger.info('Acquisition finished')
 
@@ -773,3 +783,10 @@ def _generate_channel_slice_acq_events(channel_settings, slice_settings):
 #         logger.debug(f'Setting {_device} {_prop_name} to {_prop_val}')
 #         mmc.set_property(_device, _prop_name, _prop_val)
 
+def _create_acquisition_directory(root_dir, acq_name, idx=1):
+    acq_dir = os.path.join(root_dir, f'{acq_name}_{idx}')
+    try:
+        os.mkdir(acq_dir)
+    except OSError:
+        return _create_acquisition_directory(root_dir, acq_name, idx+1)
+    return acq_dir
