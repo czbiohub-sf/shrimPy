@@ -319,8 +319,8 @@ class MantisAcquisition(object):
                 logger.debug('Fetching current position from Micro-manager')
 
                 xyz_position_list = [(
-                    self.lf_acq.mmc.get_x_position,
-                    self.lf_acq.mmc.get_y_position,
+                    self.lf_acq.mmc.get_x_position(),
+                    self.lf_acq.mmc.get_y_position(),
                     self.lf_acq.mmc.get_position(self.lf_acq.microscope_settings.autofocus_stage)
                 )]
                 position_labels = ['Current']
@@ -470,7 +470,7 @@ class MantisAcquisition(object):
 
     def setup_daq(self):
         # Determine label-free acq timing
-        oryx_framerate = float(self._lf_mmc.get_property('Oryx', 'Frame Rate'))
+        oryx_framerate = float(self.lf_acq.mmc.get_property('Oryx', 'Frame Rate'))
         ## assumes all channels have the same exposure time
         self.lf_acq.slice_settings.acquisition_rate = np.minimum(
             1000 / (self.lf_acq.channel_settings.exposure_time_ms[0] + MCL_STEP_TIME),
@@ -479,12 +479,12 @@ class MantisAcquisition(object):
             self.lf_acq.slice_settings.num_slices/self.lf_acq.slice_settings.acquisition_rate + 
             LC_CHANGE_TIME/1000)
         logger.debug(f'Maximum Oryx acquisition framerate: {oryx_framerate:.6f}')
-        logger.debug(f'Current slice acquisition rate: {self.lf_acq.slice_settings.acquisition_rate:.6f}')
-        logger.debug(f'Current channel acquisition rate: {self.lf_acq.channel_settings.acquisition_rate:.6f}')
+        logger.debug(f'Current label-free slice acquisition rate: {self.lf_acq.slice_settings.acquisition_rate:.6f}')
+        logger.debug(f'Current label-free channel acquisition rate: {self.lf_acq.channel_settings.acquisition_rate:.6f}')
 
         # Determine light-sheet acq timing
         ls_readout_time_ms = np.around(
-            float(self._ls_mmc.get_property('Prime BSI Express', 'Timing-ReadoutTimeNs'))*1e-6, 
+            float(self.ls_acq.mmc.get_property('Prime BSI Express', 'Timing-ReadoutTimeNs'))*1e-6, 
             decimals=3)
         for ls_exp_time in self.ls_acq.channel_settings.exposure_time_ms:
             assert ls_readout_time_ms < ls_exp_time, \
@@ -496,7 +496,8 @@ class MantisAcquisition(object):
             LS_POST_READOUT_DELAY)
         _cam_max_fps = int(np.around(1000/ls_readout_time_ms))
         logger.debug(f'Maximum Prime BSI Express acquisition framerate: ~{_cam_max_fps}')
-        logger.debug(f'Current slice acquisition rate: {self.ls_acq.slice_settings.acquisition_rate:.6f}')
+        logger.debug(f'Current light-sheet slice acquisition rate: {self.ls_acq.slice_settings.acquisition_rate:.6f}')
+        # logger.debug(f'Current light-sheet channel acquisition rate: {self.ls_acq.channel_settings.acquisition_rate:.6f}')
 
         # LF channel trigger - accommodates longer LC switching times
         self._lf_channel_ctr_task = nidaqmx.Task('LF Channel Counter')
@@ -647,32 +648,32 @@ class MantisAcquisition(object):
             logger.debug(f'Started DAQ counter tasks: {ctr_names}.')
             return events
         
-        if self._lf_acq_set_up:
-            lf_acq = Acquisition(
-                directory=self._acq_dir, 
-                name=f'{name}_labelfree',
-                port=LF_ZMQ_PORT,
-                pre_hardware_hook_fn=log_and_check_lf_counter,
-                # pre_hardware_hook_fn=partial(
-                #     confirm_num_daq_counter_samples, 
-                #     [self._lf_z_ctr_task, self._lf_channel_ctr_task], 
-                #     self.lf_acq_settings.num_channels*self.lf_acq_settings.num_slices, 
-                #     self._verbose),
-                post_hardware_hook_fn=log_acq_start,  # autofocus
-                post_camera_hook_fn=log_and_start_lf_daq_counters,
-                image_saved_fn=None,  # data processing and display
-                show_display=False
-            )
+        # if self._lf_acq_set_up:
+        lf_acq = Acquisition(
+            directory=self._acq_dir, 
+            name=f'{name}_labelfree',
+            port=LF_ZMQ_PORT,
+            pre_hardware_hook_fn=log_and_check_lf_counter,
+            # pre_hardware_hook_fn=partial(
+            #     confirm_num_daq_counter_samples, 
+            #     [self._lf_z_ctr_task, self._lf_channel_ctr_task], 
+            #     self.lf_acq_settings.num_channels*self.lf_acq_settings.num_slices, 
+            #     self._verbose),
+            post_hardware_hook_fn=log_acq_start,  # autofocus
+            post_camera_hook_fn=log_and_start_lf_daq_counters,
+            image_saved_fn=None,  # data processing and display
+            show_display=False
+        )
             
-        if self._ls_acq_set_up:
-            ls_acq = Acquisition(
-                directory=self._acq_dir, 
-                name=f'{name}_lightsheet', 
-                port=LS_ZMQ_PORT, 
-                pre_hardware_hook_fn=check_ls_counter, 
-                post_camera_hook_fn=log_and_start_ls_daq_counters, 
-                show_display=False
-            )
+        # if self._ls_acq_set_up:
+        ls_acq = Acquisition(
+            directory=self._acq_dir, 
+            name=f'{name}_lightsheet', 
+            port=LS_ZMQ_PORT, 
+            pre_hardware_hook_fn=check_ls_counter, 
+            post_camera_hook_fn=log_and_start_ls_daq_counters, 
+            show_display=False
+        )
             
         logger.info('Starting acquisition')
         for t_idx in range(self.time_settings.num_timepoints+1):
@@ -684,8 +685,8 @@ class MantisAcquisition(object):
                     _event['axes']['time'] = t_idx
                     _event['axes']['position'] = p_idx
                     _event['min_start_time'] = t_idx*self.time_settings.time_internal_s
-                    _event['x'] = self.pt_acq_settings.xyz_positions[p_idx][0]
-                    _event['y'] = self.pt_acq_settings.xyz_positions[p_idx][1]
+                    _event['x'] = self.position_settings.xyz_positions[p_idx][0]
+                    _event['y'] = self.position_settings.xyz_positions[p_idx][1]
 
                 for _event in ls_events:
                     _event['axes']['time'] = t_idx
