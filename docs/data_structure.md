@@ -7,7 +7,7 @@ This document defines the standard for organizing data acquired by the mantis mi
 
 Organization of the raw data is constrained by the `pycromanager`-based acquisitioon engine. Currently, we structure raw data in the following hierarchy:
 
-```markdown
+```text
 
 YYYY_MM_DD_<experiment_description>
 |--- <acq-name>
@@ -55,7 +55,7 @@ We will organize the data by positions with a dedicated folder for calibrations 
 * Backup and file i/o are performant when the data is stored in nested structure with few files per directory.
 * Calibration data required by each analysis module (recOrder and dexp) is organized consistently and properly.
 
-```markdown
+```text
 
 YYYY_MM_DD_<experiment_description>
 |--- <acq-name>
