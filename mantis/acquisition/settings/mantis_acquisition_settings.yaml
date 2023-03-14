@@ -1,0 +1,69 @@
+LCA_DAC: &LCA_DAC 'TS1_DAC01'
+LCB_DAC: &LCB_DAC 'TS1_DAC02'
+MCL_DAC: &MCL_DAC 'TS1_DAC06'
+AP_GALVO_DAC: &AP_GALVO_DAC 'TS2_DAC03'
+
+time_settings:
+  num_timepoints: 3
+  time_internal_s: 5
+
+lf_channel_settings:
+  exposure_time_ms: [10, 10, 10, 10, 10]
+  channel_group: 'Channel - LF'
+  channels: ['State0', 'State1', 'State2', 'State3', 'State4']
+  use_sequencing: True
+
+lf_slice_settings:
+  z_stage_name: 'MCL Piezo'
+  z_start: 0
+  z_end: 60
+  z_step: 5
+  use_sequencing: True
+
+ls_channel_settings:
+  exposure_time_ms: [10]
+  channel_group: 'Channel - LS'
+  channels: ['GFP EX488 EM525-45']
+  use_sequencing: False
+
+ls_slice_settings:
+  z_stage_name: 'AP Galvo'
+  z_start: -0.2  # in Volts
+  z_end: 0.2
+  z_step: 0.01  # equivalent to 330 nm
+  use_sequencing: True
+
+lf_microscope_settings:
+  roi: 
+  config_group_settings:
+    - ['Imaging Path', 'Label-free']
+    - ['Channel - LS', 'External Control']
+  device_property_settings:
+    - ['Oryx', 'Line Selector', 'Line5']
+    - ['Oryx', 'Line Mode', 'Output']
+    - ['Oryx', 'Line Source', 'ExposureActive']
+    - ['Oryx', 'Line Selector', 'Line2']
+    - ['Oryx', 'Line Mode', 'Input']
+    - ['Oryx', 'Trigger Source', 'Line2']
+    - ['Oryx', 'Trigger Mode', 'On']
+    - ['Oryx', 'Trigger Overlap', 'ReadOut']
+    - ['Oryx', 'Frame Rate Control Enabled', '0']
+  z_sequencing_settings: 
+    - [*MCL_DAC, 'Sequence', 'On']
+  channel_sequencing_settings:
+    - [*LCA_DAC, 'Sequence', 'On']
+    - [*LCB_DAC, 'Sequence', 'On']
+  autofocus_stage: 'ZDrive'
+  use_autofocus: True
+  autofocus_method: 'PFS'
+
+ls_microscope_settings:
+  roi: [0, 896, 2048, 256]
+  device_property_settings:
+    - ['Prime BSI Express', 'ReadoutRate', '200MHz 11bit']
+    - ['Prime BSI Express', 'Gain', '1-Full well']
+    - ['Prime BSI Express', 'TriggerMode', 'Edge Trigger']
+    - ['Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter']
+    - ['TS2_TTL1-8', 'Blanking', 'On']
+  z_sequencing_settings: 
+    - [*AP_GALVO_DAC, 'Sequence', 'On']

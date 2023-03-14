@@ -9,14 +9,14 @@ lf_channel_settings:
   exposure_time_ms: [10, 15]
   channel_group: 'Channel-Multiband'
   channels: ['DAPI', 'FITC']
-  use_sequence: True
+  use_sequencing: True
 
 lf_slice_settings:
-  z_stage: 'Z'
+  z_stage_name: 'Z'
   z_start: 0
   z_end: 60
   z_step: 5
-  use_sequence: True
+  use_sequencing: True
 
 lf_microscope_settings:
   config_group_settings:
@@ -31,14 +31,14 @@ ls_channel_settings:
   exposure_time_ms: [20, 30]
   channel_group: 'Channel'
   channels: ['Rhodamine', 'Cy5']
-  use_sequence: False
+  use_sequencing: False
 
 ls_slice_settings:
-  z_scan_stage: 'Z'
+  z_stage_name: 'Z'
   z_start: -0.2  # in Volts
   z_end: 0.2
   z_step: 0.01  # equivalent to 330 nm
-  use_sequence: True
+  use_sequencing: True
 
 ls_microscope_settings:
   config_group_settings:

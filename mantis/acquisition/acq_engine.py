@@ -5,6 +5,7 @@ from datetime import datetime
 import logging
 from collections.abc import Iterable
 
+from mantis.acquisition import microscope_operations
 from mantis.acquisition.logger import configure_logger
 from mantis.acquisition.BaseSettings import (
     TimeSettings,
@@ -32,10 +33,6 @@ from nidaqmx.constants import AcquisitionType, Slope
 ### Define constants
 LF_ZMQ_PORT = 4827
 LS_ZMQ_PORT = 5827   # we need to space out port numbers a bit
-LCA_DAC = 'TS1_DAC01'
-LCB_DAC = 'TS1_DAC02'
-MCL_DAC = 'TS1_DAC06'
-AP_GALVO_DAC = 'TS2_DAC03'
 LS_POST_READOUT_DELAY = 0.05  # in ms
 MCL_STEP_TIME = 1.5  # in ms
 LC_CHANGE_TIME = 20  # in ms
@@ -130,6 +127,59 @@ class BaseChannelSliceAcquisition(object):
         )
         self._microscope_settings = settings
 
+    def setup(self):
+        # Apply microscope config settings
+        for settings in self.microscope_settings.config_group_settings:
+            microscope_operations.set_config(
+                self.mmc,
+                settings.config_group,
+                settings.config_name
+            )
+
+        # Apply microscope device property settings
+        for settings in self.microscope_settings.device_property_settings:
+            microscope_operations.set_property(
+                self.mmc,
+                settings.device_name,
+                settings.property_name,
+                settings.property_value
+            )
+
+        # Apply ROI
+        if self.microscope_settings.roi is not None:
+            microscope_operations.set_roi(
+                self.mmc,
+                self.microscope_settings.roi
+            )
+
+        # Setup z scan stage
+        microscope_operations.set_property(
+            self.mmc,
+            'Core',
+            'Focus',
+            self.slice_settings.z_stage_name
+        )
+
+        # Setup z sequencing
+        if self.slice_settings.use_sequencing:
+            for settings in self.microscope_settings.z_sequencing_settings:
+                microscope_operations.set_property(
+                    self.mmc,
+                    settings.device_name,
+                    settings.property_name,
+                    settings.property_value
+                )
+
+        # Setup channel sequencing
+        if self.channel_settings.use_sequencing:
+            for settings in self.microscope_settings.channel_sequencing_settings:
+                microscope_operations.set_property(
+                    self.mmc,
+                    settings.device_name,
+                    settings.property_name,
+                    settings.property_value
+                )
+
 
 class MantisAcquisition(object):
     """
@@ -173,8 +223,8 @@ class MantisAcquisition(object):
         self._verbose = verbose
 
         # initialize time and position settings
-        self.time_settings = TimeSettings()
-        self.position_settings = PositionSettings()
+        self._time_settings = TimeSettings()
+        self._position_settings = PositionSettings()
 
         # Setup logger
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -201,6 +251,28 @@ class MantisAcquisition(object):
                                        f'CoreLog{timestamp}_headless.txt')
         )
 
+    @property
+    def time_settings(self):
+        return self._time_settings
+    
+    @property
+    def position_settings(self):
+        return self._position_settings
+
+    @time_settings.setter
+    def time_settings(self, settings:TimeSettings):
+        logger.debug(
+            f'Mantis acquisition will have the followign settings: {asdict(settings)}'
+        )
+        self._time_settings = settings
+
+    @position_settings.setter
+    def position_settings(self, settings:PositionSettings):
+        logger.debug(
+            f'Mantis acquisition will have the followign settings: {asdict(settings)}'
+        )
+        self._position_settings = settings
+    
     def __enter__(self):
         return self
     
@@ -257,7 +329,7 @@ class MantisAcquisition(object):
                 self.pt_acq_settings.num_positions = len(xyz_position_list)
         logger.debug(f'The following time and position settings will be applied: {acq_settings.__dict__}')
 
-    def _setup_lf_acq(self):
+    def _setup_lf_acq_archive(self):
         logger = logging.getLogger(__name__)
         if not hasattr(self, 'lf_acq_settings'):
             raise Exception('Please define LF acquisition settings.')
@@ -319,7 +391,7 @@ class MantisAcquisition(object):
         self._lf_mmc.set_exposure(self.lf_acq_settings.exposure_time_ms)
         logger.debug(f'Setting exposure to {self.lf_acq_settings.exposure_time_ms} ms')
 
-        # Configure acq timing
+        # Configure acq timing - move to _setup_daq
         oryx_framerate = float(self._lf_mmc.get_property('Oryx', 'Frame Rate'))
         self.lf_acq_settings.slice_acq_rate = np.minimum(
             1000 / (self.lf_acq_settings.exposure_time_ms + MCL_STEP_TIME),
@@ -367,7 +439,7 @@ class MantisAcquisition(object):
         self._ls_mmc.set_exposure(self.ls_acq_settings.exposure_time_ms)
         logger.debug(f'Setting exposure to {self.ls_acq_settings.exposure_time_ms} ms')
 
-        # Configure acq timing
+        # Configure acq timing - move to _setup_daq
         ls_readout_time_ms = np.around(
             float(self._ls_mmc.get_property('Prime BSI Express', 'Timing-ReadoutTimeNs'))*1e-6, 
             decimals=3)
@@ -459,27 +531,17 @@ class MantisAcquisition(object):
 
         # return events
                 
-    def acquire(self, name: str):
-        logger = logging.getLogger(__name__)
-
-        if self._lf_acq_enabled:
+    def setup(self):
+        if self.lf_acq.enabled:
             logger.debug('Setting up label-free acquisition')
-            self._setup_lf_acq()
+            self.lf_acq.setup()
             logger.debug('Finished setting up label-free acquisition')
-            # lf_events = self._generate_acq_events(self.lf_acq_settings)
-            # logger.debug(f'Generated {len(lf_events)} events for label-free acquisition')
 
-        if self._ls_acq_enabled:
+        if self.ls_acq.enabled:
             logger.debug('Setting up light-sheet acquisition')
-            self._setup_ls_acq()
+            self.ls_acq.setup()
             logger.debug('Finished setting up light-sheet acquisition')
-            # ls_events = self._generate_acq_events(self.ls_acq_settings)
-            # logger.debug(f'Generated {len(ls_events)} events for light-sheet acquisition')
 
-            # remove xy coordinates from LS events dictionary
-            # _remove_event_key(ls_events, 'x')
-            # _remove_event_key(ls_events, 'y')
-        
         logger.debug('Setting up DAQ')
         self._setup_daq()
         logger.debug('Finished setting up DAQ')
@@ -487,6 +549,8 @@ class MantisAcquisition(object):
         logger.debug('Setting up autofocus')
         self._setup_autofocus()
         logger.debug('Finished setting up autofocus')
+    
+    def acquire(self, name: str):
 
         def log_and_check_lf_counter(events):
             if isinstance(events, list):

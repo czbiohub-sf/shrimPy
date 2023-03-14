@@ -5,6 +5,19 @@ from dataclasses import field
 
 
 @dataclass
+class ConfigSettings:
+    config_group: str
+    config_name: str
+
+
+@dataclass
+class DevicePropertySettings:
+    device_name: str
+    property_name: str
+    property_value: str
+
+
+@dataclass
 class TimeSettings:
     num_timepoints: Optional[int] = 0
     time_internal_s: Optional[float] = 0  # in seconds
@@ -22,11 +35,10 @@ class PositionSettings:
 
 @dataclass
 class ChannelSettings:
-    roi: Optional[Tuple[int, int, int, int]] = None
     exposure_time_ms: List[float] = field(default_factory=list)  # in ms
     channel_group: Optional[str] = None
     channels: List[str] = field(default_factory=list)
-    use_sequence: bool = False
+    use_sequencing: bool = False
     num_channels: int = field(init=False, default=0)
     channel_acq_rate: float = field(init=False, default=None)
 
@@ -38,11 +50,11 @@ class ChannelSettings:
 
 @dataclass
 class SliceSettings:
-    z_stage: Optional[str] = None
+    z_stage_name: Optional[str] = None
     z_start: Optional[float] = None
     z_end: Optional[float] = None
     z_step: Optional[float] = None
-    use_sequence: bool = False
+    use_sequencing: bool = False
     num_slices: int = field(init=False, default=0)
     slice_acq_rate: float = field(init=False, default=None)
     z_range: List[float] = field(init=False, repr=False, default_factory=list)
@@ -54,24 +66,12 @@ class SliceSettings:
 
 
 @dataclass
-class ConfigSettings:
-    config_group: str
-    config_name: str
-
-
-@dataclass
-class DevicePropertySettings:
-    device_name: str
-    property_name: str
-    property_value: str
-
-
-@dataclass
 class MicroscopeSettings:
-    # config_group_settings: List[Tuple[str, str]] = field(default_factory=list)
-    # device_property_settings: List[Tuple[str, str, str]] = field(default_factory=list)
+    roi: Optional[Tuple[int, int, int, int]] = None
     config_group_settings: List[ConfigSettings] = field(default_factory=list)
     device_property_settings: List[DevicePropertySettings] = field(default_factory=list)
+    z_sequencing_settings: List[DevicePropertySettings] = field(default_factory=list)
+    channel_sequencing_settings: List[DevicePropertySettings] = field(default_factory=list)
     use_autofocus: bool = False
     autofocus_stage: Optional[str] = None
     autofocus_method: Optional[str] = None
