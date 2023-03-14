@@ -40,7 +40,7 @@ def get_position_list(mmStudio, z_stage_name):
     return xyz_position_list, position_labels
 
 def setup_daq_counter(
-        task:nidaqmx.task.Task, 
+        task:nidaqmx.Task, 
         co_channel, 
         freq, duty_cycle, 
         samples_per_channel, 
@@ -58,5 +58,5 @@ def setup_daq_counter(
         sample_mode=AcquisitionType.FINITE, 
         samps_per_chan=samples_per_channel)
     ctr.co_pulse_term = pulse_terminal
-    
+
     return ctr

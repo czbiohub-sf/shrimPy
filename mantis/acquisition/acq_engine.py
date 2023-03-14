@@ -307,13 +307,24 @@ class MantisAcquisition(object):
         mm_pos_list = self.lf_acq.mmStudio.get_position_list_manager().get_position_list()
         mm_number_of_positions = mm_pos_list.get_number_of_positions()
 
-        if self.position_settings.num_positions == 0 and mm_number_of_positions > 0:
-            logger.debug('Fetching position list from Micro-manager')
+        if self.position_settings.num_positions == 0:
+            if mm_number_of_positions > 0:
+                logger.debug('Fetching position list from Micro-manager')
 
-            xyz_position_list, position_labels = microscope_operations.get_position_list(
-                self.lf_acq.mmStudio,
-                self.lf_acq.microscope_settings.autofocus_stage
-            )
+                xyz_position_list, position_labels = microscope_operations.get_position_list(
+                    self.lf_acq.mmStudio,
+                    self.lf_acq.microscope_settings.autofocus_stage
+                )
+            else:
+                logger.debug('Fetching current position from Micro-manager')
+
+                xyz_position_list = [(
+                    self.lf_acq.mmc.get_x_position,
+                    self.lf_acq.mmc.get_y_position,
+                    self.lf_acq.mmc.get_position(self.lf_acq.microscope_settings.autofocus_stage)
+                )]
+                position_labels = ['Current']
+
             self.position_settings = PositionSettings(
                 xyz_positions=xyz_position_list,
                 position_labels=position_labels,
@@ -589,7 +600,7 @@ class MantisAcquisition(object):
 
             t_idx = _event['axes']['time']
             p_idx = _event['axes']['position']
-            logger.debug(f'Preparing to acquire timepoint {t_idx} at position {self.pt_acq_settings.position_labels[p_idx]}')
+            logger.debug(f'Preparing to acquire timepoint {t_idx} at position {self.position_settings.position_labels[p_idx]}')
 
             num_counter_samples = get_num_daq_counter_samples([self._lf_z_ctr_task, self._lf_channel_ctr_task])
             logger.debug(f'DAQ counters will generate a total of {num_counter_samples} pulses')
@@ -622,7 +633,7 @@ class MantisAcquisition(object):
 
             t_idx = _event['axes']['time']
             p_idx = _event['axes']['position']
-            logger.info(f'Starting acquisition of timepoint {t_idx} at position {self.pt_acq_settings.position_labels[p_idx]}')
+            logger.info(f'Starting acquisition of timepoint {t_idx} at position {self.position_settings.position_labels[p_idx]}')
 
             return events
         
@@ -650,7 +661,8 @@ class MantisAcquisition(object):
                 post_hardware_hook_fn=log_acq_start,  # autofocus
                 post_camera_hook_fn=log_and_start_lf_daq_counters,
                 image_saved_fn=None,  # data processing and display
-                show_display=False)
+                show_display=False
+            )
             
         if self._ls_acq_set_up:
             ls_acq = Acquisition(
@@ -659,18 +671,19 @@ class MantisAcquisition(object):
                 port=LS_ZMQ_PORT, 
                 pre_hardware_hook_fn=check_ls_counter, 
                 post_camera_hook_fn=log_and_start_ls_daq_counters, 
-                show_display=False)
+                show_display=False
+            )
             
         logger.info('Starting acquisition')
-        for t_idx in range(self.pt_acq_settings.num_positions+1):
-            for p_idx in range(self.pt_acq_settings.num_positions):
-                lf_events = _generate_channel_slice_acq_events(self.lf_acq_settings)
-                ls_events = _generate_channel_slice_acq_events(self.ls_acq_settings)
+        for t_idx in range(self.time_settings.num_timepoints+1):
+            for p_idx in range(self.position_settings.num_positions):
+                lf_events = _generate_channel_slice_acq_events(self.lf_acq.channel_settings, self.lf_acq.slice_settings)
+                ls_events = _generate_channel_slice_acq_events(self.ls_acq.channel_settings, self.ls_acq.slice_settings)
 
                 for _event in lf_events:
                     _event['axes']['time'] = t_idx
                     _event['axes']['position'] = p_idx
-                    _event['min_start_time'] = t_idx*self.pt_acq_settings.time_internal_s
+                    _event['min_start_time'] = t_idx*self.time_settings.time_internal_s
                     _event['x'] = self.pt_acq_settings.xyz_positions[p_idx][0]
                     _event['y'] = self.pt_acq_settings.xyz_positions[p_idx][1]
 
@@ -679,7 +692,7 @@ class MantisAcquisition(object):
                     _event['axes']['position'] = p_idx
                     # start LS acq a bit earlier and wait for LF acq to trigger it
                     _event['min_start_time'] = np.maximum(
-                        t_idx*self.pt_acq_settings.time_internal_s-0.2, 0  
+                        t_idx*self.time_settings.time_internal_s-0.2, 0  
                     )
 
                 ls_acq.acquire(ls_events)  # it's important to start the LS acquisition first
@@ -696,44 +709,48 @@ class MantisAcquisition(object):
         #     lf_acq.mark_finished()
 
         logger.debug('Waiting for acquisition to finish')
-        if self._ls_acq_enabled:
+        if self.ls_acq.enabled:
             ls_acq.await_completion() 
             logger.debug('Light-sheet acquisition finished')
-        if self._lf_acq_enabled:
+        if self.lf_acq.enabled:
             lf_acq.await_completion()
             logger.debug('Label-free acquisition finished')
 
         logger.debug('Stopping DAQ counter tasks')
-        if self._ls_acq_enabled:
+        if self.ls_acq.enabled:
             self._ls_ctr_task.stop()
             self._ls_ctr_task.close()
 
-            logger.debug('Resetting Prime BSI Express to internal trigger')
-            self._ls_mmc.set_property('Prime BSI Express', 'TriggerMode', 'Internal Trigger')
+            microscope_operations.set_property(
+                self.ls_acq.mmc, 
+                *('Prime BSI Express', 'TriggerMode', 'Internal Trigger')
+            )
 
-        if self._lf_acq_enabled:
+        if self.lf_acq.enabled:
             self._lf_z_ctr_task.stop()
             self._lf_z_ctr_task.close()
             self._lf_channel_ctr_task.stop()
             self._lf_channel_ctr_task.close()
 
-            logger.debug('Resetting Oryx camera to internal trigger')
-            self._lf_mmc.set_property('Oryx', 'Trigger Mode', 'Off')
+            microscope_operations.set_property(
+                self.lf_acq.mmc, 
+                *('Oryx', 'Trigger Mode', 'Off')
+            )
             # mmc1.set_property('Oryx', 'Frame Rate Control Enabled', oryx_framerate_enabled)
             # if oryx_framerate_enabled == '1': 
             #     mmc1.set_property('Oryx', 'Frame Rate', oryx_framerate)
         
         logger.info('Acquisition finished')
 
-def _generate_channel_slice_acq_events(acq_settings):
+def _generate_channel_slice_acq_events(channel_settings, slice_settings):
     events =  multi_d_acquisition_events(    
         num_time_points = 1,
         time_interval_s = 0,
-        z_start = acq_settings.z_start,
-        z_end = acq_settings.z_end,
-        z_step = acq_settings.z_step,
-        channel_group = acq_settings.channel_group,
-        channels = acq_settings.channels,
+        z_start = slice_settings.z_start,
+        z_end = slice_settings.z_end,
+        z_step = slice_settings.z_step,
+        channel_group = channel_settings.channel_group,
+        channels = channel_settings.channels,
         order = "tpcz")
     
     return events
