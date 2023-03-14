@@ -291,24 +291,6 @@ class MantisAcquisition(object):
     def close(self):
         # Close PM bridges
         cleanup()
-            
-    # def define_lf_acq_settings(self, acq_settings):
-    #     logger = logging.getLogger(__name__)
-    #     if not self._lf_acq_enabled:
-    #         self._lf_acq_enabled = True
-    #         logger.warning('Enabling label-free acquisition even though one was not requested.')
-        
-    #     self.lf_acq_settings = acq_settings
-    #     logger.debug(f'Label-free acquisition will have following settings: {acq_settings.__dict__}')
-
-    # def define_ls_acq_settings(self, acq_settings):
-    #     logger = logging.getLogger(__name__)
-    #     if not self._ls_acq_enabled:
-    #         self._ls_acq_enabled = True
-    #         logger.warning('Enabling light-sheet acquisition even though one was not requested.')
-        
-    #     self.ls_acq_settings = acq_settings
-    #     logger.debug(f'Light-sheet acquisition will have following settings: {acq_settings.__dict__}')
 
     def update_position_settings(self):
         mm_pos_list = self.lf_acq.mmStudio.get_position_list_manager().get_position_list()
@@ -336,144 +318,6 @@ class MantisAcquisition(object):
                 xyz_positions=xyz_position_list,
                 position_labels=position_labels,
             )
-    
-    # def defile_position_time_acq_settings(self, acq_settings):
-    #     logger = logging.getLogger(__name__)
-    #     self.pt_acq_settings = acq_settings
-    #     if self.pt_acq_settings.xyz_positions is None:
-    #         xyz_position_list, position_labels = self._get_position_list()
-    #         if len(xyz_position_list) > 0:
-    #             self.pt_acq_settings.xyz_positions = xyz_position_list
-    #             self.pt_acq_settings.position_labels = position_labels
-    #             self.pt_acq_settings.num_positions = len(xyz_position_list)
-    #     logger.debug(f'The following time and position settings will be applied: {acq_settings.__dict__}')
-
-    # def _setup_lf_acq_archive(self):
-    #     logger = logging.getLogger(__name__)
-    #     if not hasattr(self, 'lf_acq_settings'):
-    #         raise Exception('Please define LF acquisition settings.')
-
-    #     # Setup light path
-    #     for _config_group, _config in (('Imaging Path', 'Label-free'),
-    #                                    ('Channel - LS', 'External Control')):
-    #         self._lf_mmc.set_config(_config_group, _config)
-    #         logger.debug(f'Setting {_config_group} config group to {_config}')
-        
-    #     # Setup camera
-    #     _apply_device_property_settings(self._lf_mmc, (('Oryx', 'Line Selector', 'Line5'),))
-    #     # required for above selection to take effect
-    #     self._lf_mmc.update_system_state_cache()
-
-    #     settings = (('Oryx', 'Line Mode', 'Output'),
-    #                 ('Oryx', 'Line Source', 'ExposureActive'))
-    #     _apply_device_property_settings(self._lf_mmc, settings)
-
-
-    #     _apply_device_property_settings(self._lf_mmc, 
-    #                                     (('Oryx', 'Line Selector', 'Line2'),))
-    #     # required for above selection to take effect
-    #     self._lf_mmc.update_system_state_cache()
-
-    #     # Trigger Overlap: ReadOut is required for external triggering at max frame rate
-    #     settings = (('Oryx', 'Line Mode', 'Input'),
-    #                 ('Oryx', 'Trigger Source', 'Line2'),
-    #                 ('Oryx', 'Trigger Mode', 'On'),
-    #                 ('Oryx', 'Trigger Overlap', 'ReadOut'))
-    #     _apply_device_property_settings(self._lf_mmc, settings)
-
-    #     oryx_framerate_enabled = self._lf_mmc.get_property('Oryx', 'Frame Rate Control Enabled')
-    #     _apply_device_property_settings(self._lf_mmc, 
-    #                                     (('Oryx', 'Frame Rate Control Enabled', '0'),))
-
-    #     # Setup sequencing
-    #     _use_seq = 'On' if self.lf_acq_settings.use_sequence else 'Off'
-    #     _apply_device_property_settings(
-    #         self._lf_mmc, [(d, 'Sequence', _use_seq) for d in (LCA_DAC, LCB_DAC, MCL_DAC)])
-
-    #     # Setup ROI
-    #     if self.lf_acq_settings.roi is not None:
-    #         self._lf_mmc.set_roi(*self.lf_acq_settings.roi)
-    #         logger.debug(f'Setting ROI to {self.lf_acq_settings.roi}')
-
-    #     # Setup scan stage
-    #     self._lf_mmc.set_property('Core', 'Focus', self.lf_acq_settings.z_stage)
-    #     logger.debug(f'Setting focus stage to {self.lf_acq_settings.z_stage}')
-
-    #     # Setup channels
-    #     if self.lf_acq_settings.channels is not None:
-    #         self._lf_mmc.set_config(
-    #             self.lf_acq_settings.channel_group, 
-    #             self.lf_acq_settings.channels[0])
-    #         logger.debug(f'Setting first channel as {self.lf_acq_settings.channels[0]}')
-            
-    #     # Setup exposure
-    #     self._lf_mmc.set_exposure(self.lf_acq_settings.exposure_time_ms)
-    #     logger.debug(f'Setting exposure to {self.lf_acq_settings.exposure_time_ms} ms')
-
-    #     # Configure acq timing - move to _setup_daq
-    #     oryx_framerate = float(self._lf_mmc.get_property('Oryx', 'Frame Rate'))
-    #     self.lf_acq_settings.slice_acq_rate = np.minimum(
-    #         1000 / (self.lf_acq_settings.exposure_time_ms + MCL_STEP_TIME),
-    #         np.floor(oryx_framerate))
-    #     self.lf_acq_settings.channel_acq_rate = 1 / (
-    #         self.lf_acq_settings.num_slices/self.lf_acq_settings.slice_acq_rate + 
-    #         LC_CHANGE_TIME/1000)
-    #     logger.debug(f'Maximum Oryx acquisition framerate: {oryx_framerate:.6f}')
-    #     logger.debug(f'Current slice acquisition rate: {self.lf_acq_settings.slice_acq_rate:.6f}')
-    #     logger.debug(f'Current channel acquisition rate: {self.lf_acq_settings.channel_acq_rate:.6f}')
-
-    #     # Set flag
-    #     self._lf_acq_set_up = True
-
-    # def _setup_ls_acq(self):
-    #     logger = logging.getLogger(__name__)
-    #     if not hasattr(self, 'ls_acq_settings'):
-    #         raise Exception('Please define LS acquisition settings.')
-        
-    #     # Setup camera
-    #     # Edge Trigger acquires one frame is acquired for every trigger pulse
-    #     # Rolling Shutter Exposure Out mode is high when all rows are exposing
-    #     settings = (('Prime BSI Express', 'ReadoutRate', '200MHz 11bit'),
-    #                 ('Prime BSI Express', 'Gain', '1-Full well'),
-    #                 ('Prime BSI Express', 'TriggerMode', 'Edge Trigger'),
-    #                 ('Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter'))
-    #     _apply_device_property_settings(self._ls_mmc, settings)
-
-    #     # Setup sequencing
-    #     _use_seq = 'On' if self.ls_acq_settings.use_sequence else 'Off'
-    #     _apply_device_property_settings(self._ls_mmc, ((AP_GALVO_DAC, 'Sequence', _use_seq),))
-    #     # Illuminate sample only when all rows are exposing, aka pseudo global shutter 
-    #     _apply_device_property_settings(self._ls_mmc, (('TS2_TTL1-8', 'Blanking', 'On'),))
-
-    #     # Setup ROI
-    #     if self.ls_acq_settings.roi is not None:
-    #         self._ls_mmc.set_roi(*self.ls_acq_settings.roi)
-    #         logger.debug(f'Setting ROI to {self.ls_acq_settings.roi}')
-
-    #     # Setup scan stage
-    #     self._ls_mmc.set_property('Core', 'Focus', self.ls_acq_settings.z_stage)
-    #     logger.debug(f'Setting focus stage to {self.ls_acq_settings.z_stage}')
-
-    #     # Setup exposure
-    #     self._ls_mmc.set_exposure(self.ls_acq_settings.exposure_time_ms)
-    #     logger.debug(f'Setting exposure to {self.ls_acq_settings.exposure_time_ms} ms')
-
-    #     # Configure acq timing - move to _setup_daq
-    #     ls_readout_time_ms = np.around(
-    #         float(self._ls_mmc.get_property('Prime BSI Express', 'Timing-ReadoutTimeNs'))*1e-6, 
-    #         decimals=3)
-    #     assert ls_readout_time_ms < self.ls_acq_settings.exposure_time_ms, \
-    #         f'Exposure time needs to be greater than the {ls_readout_time_ms} sensor readout time'
-    #     self.ls_acq_settings.slice_acq_rate = 1000 / (
-    #         self.ls_acq_settings.exposure_time_ms + 
-    #         ls_readout_time_ms + 
-    #         LS_POST_READOUT_DELAY)
-    #     _cam_max_fps = int(np.around(1000/ls_readout_time_ms))
-    #     logger.debug(f'Maximum Prime BSI Express acquisition framerate: ~{_cam_max_fps}')
-    #     logger.debug(f'Current slice acquisition rate: {self.ls_acq_settings.slice_acq_rate:.6f}')
-
-    #     # Set flag
-    #     self._ls_acq_set_up = True
 
     def setup_daq(self):
         # Determine label-free acq timing
@@ -553,29 +397,6 @@ class MantisAcquisition(object):
                 
     def setup_autofocus(self):
         pass
-
-    # def _generate_acq_events(self, acq_settings: ChannelSliceAcquisitionSettings):
-    #     events =  multi_d_acquisition_events(    
-    #         num_time_points = self.pt_acq_settings.num_timepoints,
-    #         time_interval_s = self.pt_acq_settings.time_internal_s,
-    #         z_start = acq_settings.z_start,
-    #         z_end = acq_settings.z_end,
-    #         z_step = acq_settings.z_step,
-    #         channel_group = acq_settings.channel_group,
-    #         channels = acq_settings.channels,
-    #         xy_positions=None if self.pt_acq_settings.num_positions==0 else [
-    #             self.pt_acq_settings.xyz_positions[p][:2] 
-    #             for p in range(self.pt_acq_settings.num_positions)
-    #         ],
-    #         order = "tpcz")
-        
-    #     # Make sure all events have time and position axes so that dataset has 
-    #     # consistent PTCZYX dimensions. Adding a position axis without giving
-    #     # xyz coordinates will not move the microscope
-    #     _append_event_axis(events, 'time')
-    #     _append_event_axis(events, 'position')
-
-        # return events
                 
     def setup(self):
         logger.info('Setting up acquisition')
@@ -708,14 +529,6 @@ class MantisAcquisition(object):
         ls_acq.mark_finished()
         lf_acq.mark_finished()
 
-
-        # if self._ls_acq_enabled:
-        #     ls_acq.acquire(ls_events)  # it's important to start the LS acquisition first
-        #     ls_acq.mark_finished()
-        # if self._lf_acq_enabled:
-        #     lf_acq.acquire(lf_events)
-        #     lf_acq.mark_finished()
-
         logger.debug('Waiting for acquisition to finish')
         if self.ls_acq.enabled:
             ls_acq.await_completion() 
@@ -765,23 +578,6 @@ def _generate_channel_slice_acq_events(channel_settings, slice_settings):
         order = "tpcz")
     
     return events
-
-# def _append_event_axis(events:list, axis:str):
-#     if axis not in events[0]['axes'].keys():
-#         for _event in events:
-#             _event['axes'][axis] = 0
-
-# def _remove_event_key(events:list, key:str):
-#     for _event in events:
-#         _event.pop(key, None)
-
-# def _apply_device_property_settings(mmc, settings: Iterable):
-#     logger = logging.getLogger(__name__)
-
-#     for _dev_settings in settings:
-#         _device, _prop_name, _prop_val = _dev_settings
-#         logger.debug(f'Setting {_device} {_prop_name} to {_prop_val}')
-#         mmc.set_property(_device, _prop_name, _prop_val)
 
 def _create_acquisition_directory(root_dir, acq_name, idx=1):
     acq_dir = os.path.join(root_dir, f'{acq_name}_{idx}')
