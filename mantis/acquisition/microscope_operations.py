@@ -89,3 +89,6 @@ def get_total_num_daq_counter_samples(CtrTask:nidaqmx.Task or list):
         num_counter_samples *= _task.timing.samp_quant_samp_per_chan
 
     return num_counter_samples
+
+def autofocus():
+    pass
