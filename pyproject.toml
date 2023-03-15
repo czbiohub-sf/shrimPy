@@ -61,3 +61,6 @@ packages = ["mantis"]
 
 # allow use of __file__ to load data files included in the package
 zip-safe = false
+
+[tool.setuptools.dynamic]
+version = {attr = "mantis.__version__"}
