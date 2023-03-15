@@ -60,3 +60,32 @@ def setup_daq_counter(
     ctr.co_pulse_term = pulse_terminal
 
     return ctr
+
+def get_daq_counter_names(CtrTask:nidaqmx.Task or list):
+    if not isinstance(CtrTask, list):
+        CtrTask = [CtrTask]
+
+    ctr_names = []
+    for _task in CtrTask:
+        ctr_names.append(_task.name)
+
+    return ctr_names
+
+def start_daq_counter(CtrTask:nidaqmx.Task or list):
+    if not isinstance(CtrTask, list):
+        CtrTask = [CtrTask]
+
+    for _task in CtrTask:
+        if _task.is_task_done():
+            _task.stop()  # Counter needs to be stopped before it is restarted
+            _task.start()
+
+def get_total_num_daq_counter_samples(CtrTask:nidaqmx.Task or list):
+    if not isinstance(CtrTask, list):
+        CtrTask = [CtrTask]
+
+    num_counter_samples = 1
+    for _task in CtrTask:
+        num_counter_samples *= _task.timing.samp_quant_samp_per_chan
+
+    return num_counter_samples

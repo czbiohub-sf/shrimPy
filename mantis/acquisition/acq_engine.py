@@ -3,6 +3,7 @@ import numpy as np
 from dataclasses import asdict
 from datetime import datetime
 import logging
+from functools import partial
 from collections.abc import Iterable
 
 from mantis.acquisition import microscope_operations
@@ -15,6 +16,9 @@ from mantis.acquisition.BaseSettings import (
     MicroscopeSettings,
 )
 
+import nidaqmx
+from nidaqmx.constants import AcquisitionType, Slope
+
 from pycromanager import (
     start_headless, 
     Core, 
@@ -23,12 +27,22 @@ from pycromanager import (
     multi_d_acquisition_events)
 from pycromanager.acq_util import cleanup
 
-from mantis.acquisition.hook_functions.daq_control import (
-    get_num_daq_counter_samples, 
+from mantis.acquisition.microscope_operations import (
+    get_total_num_daq_counter_samples, 
     start_daq_counter)
 
-import nidaqmx
-from nidaqmx.constants import AcquisitionType, Slope
+from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
+    log_preparing_acquisition_check_counter,
+    check_num_counter_samples,
+)
+
+from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
+    log_acquisition_start,
+)
+
+from mantis.acquisition.hook_functions.post_camera_hook_functions import (
+    start_daq_counters,
+)
 
 ### Define constants
 LF_ZMQ_PORT = 4827
@@ -394,6 +408,18 @@ class MantisAcquisition(object):
         self._ls_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(
             trigger_source='/cDAQ1/Ctr0InternalOutput', 
             trigger_edge=Slope.RISING)
+        
+    def cleanup_daq(self):
+        logger.debug('Stopping DAQ counter tasks')
+        if self.ls_acq.enabled:
+            self._ls_ctr_task.stop()
+            self._ls_ctr_task.close()
+
+        if self.lf_acq.enabled:
+            self._lf_z_ctr_task.stop()
+            self._lf_z_ctr_task.close()
+            self._lf_channel_ctr_task.stop()
+            self._lf_channel_ctr_task.close()
                 
     def setup_autofocus(self):
         pass
@@ -419,76 +445,25 @@ class MantisAcquisition(object):
 
         self.update_position_settings()
     
-    def acquire(self):
-
-        def log_and_check_lf_counter(events):
-            if isinstance(events, list):
-                _event = events[0]
-            else:
-                _event = events  # events is a dict
-
-            t_idx = _event['axes']['time']
-            p_idx = _event['axes']['position']
-            logger.debug(f'Preparing to acquire timepoint {t_idx} at position {self.position_settings.position_labels[p_idx]}')
-
-            num_counter_samples = get_num_daq_counter_samples([self._lf_z_ctr_task, self._lf_channel_ctr_task])
-            logger.debug(f'DAQ counters will generate a total of {num_counter_samples} pulses')
-
-            event_seq_length = len(events)
-            if num_counter_samples != event_seq_length:  # here events may be dict
-                logger.error(f'Number of counter samples: {num_counter_samples}, is not equal to event sequence length:  {event_seq_length}.')
-                logger.error('Aborting acquisition.')
-                events = None
-
-            return events
-        
-        def check_ls_counter(events):
-            num_counter_samples = get_num_daq_counter_samples(self._ls_ctr_task)
-            logger.debug(f'DAQ counters will generate a total of {num_counter_samples} pulses')
-
-            event_seq_length = len(events)
-            if num_counter_samples != event_seq_length:  # here events may be dict
-                logger.error(f'Number of counter samples: {num_counter_samples}, is not equal to event sequence length:  {event_seq_length}.')
-                logger.error('Aborting acquisition.')
-                events = None
-            
-            return events
-        
-        def log_acq_start(events):
-            if isinstance(events, list):
-                _event = events[0]
-            else:
-                _event = events  # events is a dict
-
-            t_idx = _event['axes']['time']
-            p_idx = _event['axes']['position']
-            logger.info(f'Starting acquisition of timepoint {t_idx} at position {self.position_settings.position_labels[p_idx]}')
-
-            return events
-        
-        def log_and_start_lf_daq_counters(events):
-            ctr_names = start_daq_counter([self._lf_z_ctr_task, self._lf_channel_ctr_task])
-            logger.debug(f'Started DAQ counter tasks: {ctr_names}.')
-            return events
-        
-        def log_and_start_ls_daq_counters(events):
-            ctr_names = start_daq_counter([self._ls_ctr_task])
-            logger.debug(f'Started DAQ counter tasks: {ctr_names}.')
-            return events
-        
+    def acquire(self):    
         # if self._lf_acq_set_up:
         lf_acq = Acquisition(
             directory=self._acq_dir, 
             name=f'{self._acq_name}_labelfree',
             port=LF_ZMQ_PORT,
-            pre_hardware_hook_fn=log_and_check_lf_counter,
-            # pre_hardware_hook_fn=partial(
-            #     confirm_num_daq_counter_samples, 
-            #     [self._lf_z_ctr_task, self._lf_channel_ctr_task], 
-            #     self.lf_acq_settings.num_channels*self.lf_acq_settings.num_slices, 
-            #     self._verbose),
-            post_hardware_hook_fn=log_acq_start,  # autofocus
-            post_camera_hook_fn=log_and_start_lf_daq_counters,
+            pre_hardware_hook_fn=partial(
+                log_preparing_acquisition_check_counter,
+                self.position_settings.position_labels,
+                [self._lf_z_ctr_task, self._lf_channel_ctr_task]
+            ),
+            post_hardware_hook_fn=partial(
+                log_acquisition_start,
+                self.position_settings.position_labels
+            ),  # autofocus
+            post_camera_hook_fn=partial(
+                start_daq_counters,
+                [self._lf_z_ctr_task, self._lf_channel_ctr_task]
+            ),
             image_saved_fn=None,  # data processing and display
             show_display=False
         )
@@ -498,8 +473,14 @@ class MantisAcquisition(object):
             directory=self._acq_dir, 
             name=f'{self._acq_name}_lightsheet', 
             port=LS_ZMQ_PORT, 
-            pre_hardware_hook_fn=check_ls_counter, 
-            post_camera_hook_fn=log_and_start_ls_daq_counters, 
+            pre_hardware_hook_fn=partial(
+                check_num_counter_samples,
+                [self._ls_ctr_task]
+            ), 
+            post_camera_hook_fn=partial(
+                start_daq_counters,
+                [self._ls_ctr_task]
+            ),
             show_display=False
         )
             
@@ -537,30 +518,23 @@ class MantisAcquisition(object):
             lf_acq.await_completion()
             logger.debug('Label-free acquisition finished')
 
-        logger.debug('Stopping DAQ counter tasks')
-        if self.ls_acq.enabled:
-            self._ls_ctr_task.stop()
-            self._ls_ctr_task.close()
+        # Shut down DAQ
+        self.cleanup_daq()
 
-            microscope_operations.set_property(
-                self.ls_acq.mmc, 
-                *('Prime BSI Express', 'TriggerMode', 'Internal Trigger')
-            )
-
-        if self.lf_acq.enabled:
-            self._lf_z_ctr_task.stop()
-            self._lf_z_ctr_task.close()
-            self._lf_channel_ctr_task.stop()
-            self._lf_channel_ctr_task.close()
-
-            microscope_operations.set_property(
-                self.lf_acq.mmc, 
-                *('Oryx', 'Trigger Mode', 'Off')
+        # Reset some microscope properties
+        microscope_operations.set_property(
+            self.ls_acq.mmc, 
+            *('Prime BSI Express', 'TriggerMode', 'Internal Trigger')
+        )
+        microscope_operations.set_property(
+            self.lf_acq.mmc, 
+            *('Oryx', 'Trigger Mode', 'Off')
             )
             # mmc1.set_property('Oryx', 'Frame Rate Control Enabled', oryx_framerate_enabled)
             # if oryx_framerate_enabled == '1': 
             #     mmc1.set_property('Oryx', 'Frame Rate', oryx_framerate)
 
+        # Close ndtiff dataset - not sure why this is necessary
         lf_acq._dataset.close()
         ls_acq._dataset.close()
         
