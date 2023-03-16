@@ -50,6 +50,7 @@ LS_ZMQ_PORT = 5827   # we need to space out port numbers a bit
 LS_POST_READOUT_DELAY = 0.05  # in ms
 MCL_STEP_TIME = 1.5  # in ms
 LC_CHANGE_TIME = 20  # in ms
+LS_CHANGE_TIME = 200  # time needed to change LS filter wheel, in ms
 
 logger = logging.getLogger(__name__)
 
@@ -351,6 +352,7 @@ class MantisAcquisition(object):
         ls_readout_time_ms = np.around(
             float(self.ls_acq.mmc.get_property('Prime BSI Express', 'Timing-ReadoutTimeNs'))*1e-6, 
             decimals=3)
+        _cam_max_fps = int(np.around(1000/ls_readout_time_ms))
         for ls_exp_time in self.ls_acq.channel_settings.exposure_time_ms:
             assert ls_readout_time_ms < ls_exp_time, \
                 f'Exposure time needs to be greater than the {ls_readout_time_ms} sensor readout time'
@@ -359,10 +361,12 @@ class MantisAcquisition(object):
             self.ls_acq.channel_settings.exposure_time_ms[0] + 
             ls_readout_time_ms + 
             LS_POST_READOUT_DELAY)
-        _cam_max_fps = int(np.around(1000/ls_readout_time_ms))
+        self.ls_acq.channel_settings.acquisition_rate = 1 / (
+            self.ls_acq.slice_settings.num_slices/self.ls_acq.slice_settings.acquisition_rate + 
+            LS_CHANGE_TIME/1000)
         logger.debug(f'Maximum Prime BSI Express acquisition framerate: ~{_cam_max_fps}')
         logger.debug(f'Current light-sheet slice acquisition rate: {self.ls_acq.slice_settings.acquisition_rate:.6f}')
-        # logger.debug(f'Current light-sheet channel acquisition rate: {self.ls_acq.channel_settings.acquisition_rate:.6f}')
+        logger.debug(f'Current light-sheet channel acquisition rate: {self.ls_acq.channel_settings.acquisition_rate:.6f}')
 
         # LF channel trigger - accommodates longer LC switching times
         self._lf_channel_ctr_task = nidaqmx.Task('LF Channel Counter')
@@ -392,12 +396,21 @@ class MantisAcquisition(object):
         logger.debug('Setting up cDAQ1/_ctr1 as retriggerable')
         self._lf_z_ctr_task.triggers.start_trigger.retriggerable = True
 
-        # LS frame trigger
-        self._ls_ctr_task = nidaqmx.Task('LS Frame Counter')
-
-        lf_z_ctr = microscope_operations.setup_daq_counter( 
-            self._ls_ctr_task, 
+        # LS channel trigger
+        self._ls_channel_ctr_task = nidaqmx.Task('LS Channel Counter')
+        ls_channel_ctr = microscope_operations.setup_daq_counter(
+            self._ls_channel_ctr_task, 
             co_channel='cDAQ1/_ctr2', 
+            freq=self.ls_acq.channel_settings.acquisition_rate, 
+            duty_cycle=0.1, 
+            samples_per_channel=self.ls_acq.channel_settings.num_channels, 
+            pulse_terminal='/cDAQ1/Ctr1InternalOutput')
+        
+        # LS frame trigger
+        self._ls_z_ctr_task = nidaqmx.Task('LS Z Counter')
+        ls_z_ctr = microscope_operations.setup_daq_counter( 
+            self._ls_z_ctr_task, 
+            co_channel='cDAQ1/_ctr3', 
             freq=self.ls_acq.slice_settings.acquisition_rate, 
             duty_cycle=0.1, 
             samples_per_channel=self.ls_acq.slice_settings.num_slices, 
@@ -405,15 +418,15 @@ class MantisAcquisition(object):
         
         # TODO: Only trigger by Ctr0 is LF acquisition is also running
         logger.debug('Setting up cDAQ1/_ctr0 as start trigger for cDAQ1/_ctr2')
-        self._ls_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(
+        self._ls_z_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(
             trigger_source='/cDAQ1/Ctr0InternalOutput', 
             trigger_edge=Slope.RISING)
         
     def cleanup_daq(self):
         logger.debug('Stopping DAQ counter tasks')
         if self.ls_acq.enabled:
-            self._ls_ctr_task.stop()
-            self._ls_ctr_task.close()
+            self._ls_z_ctr_task.stop()
+            self._ls_z_ctr_task.close()
 
         if self.lf_acq.enabled:
             self._lf_z_ctr_task.stop()
@@ -475,11 +488,11 @@ class MantisAcquisition(object):
             port=LS_ZMQ_PORT, 
             pre_hardware_hook_fn=partial(
                 check_num_counter_samples,
-                [self._ls_ctr_task]
+                [self._ls_z_ctr_task]
             ), 
             post_camera_hook_fn=partial(
                 start_daq_counters,
-                [self._ls_ctr_task]
+                [self._ls_z_ctr_task]
             ),
             show_display=False
         )
