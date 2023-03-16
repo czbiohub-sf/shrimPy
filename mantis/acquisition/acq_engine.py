@@ -377,36 +377,28 @@ class MantisAcquisition(object):
             duty_cycle=0.1, 
             samples_per_channel=self.lf_acq.channel_settings.num_channels, 
             pulse_terminal='/cDAQ1/Ctr0InternalOutput')
+        
+        # LS channel trigger
+        self._ls_channel_ctr_task = nidaqmx.Task('LS Channel Counter')
+        ls_channel_ctr = microscope_operations.setup_daq_counter(
+            self._ls_channel_ctr_task, 
+            co_channel='cDAQ1/_ctr1', 
+            freq=self.ls_acq.channel_settings.acquisition_rate, 
+            duty_cycle=0.1, 
+            samples_per_channel=self.ls_acq.channel_settings.num_channels, 
+            pulse_terminal='/cDAQ1/Ctr1InternalOutput')
 
         # LF Z trigger
         self._lf_z_ctr_task = nidaqmx.Task('LF Z Counter')
         lf_z_ctr = microscope_operations.setup_daq_counter(
             self._lf_z_ctr_task, 
-            co_channel='cDAQ1/_ctr1', 
+            co_channel='cDAQ1/_ctr2', 
             freq=self.lf_acq.slice_settings.acquisition_rate, 
             duty_cycle=0.1, 
             samples_per_channel=self.lf_acq.slice_settings.num_slices, 
             pulse_terminal='/cDAQ1/PFI0')
-        
-        logger.debug('Setting up cDAQ1/_ctr0 as start trigger for cDAQ1/_ctr1')
-        self._lf_z_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(
-            trigger_source='/cDAQ1/Ctr0InternalOutput', 
-            trigger_edge=Slope.RISING)
-        # will always return is_task_done = False after counter is started
-        logger.debug('Setting up cDAQ1/_ctr1 as retriggerable')
-        self._lf_z_ctr_task.triggers.start_trigger.retriggerable = True
 
-        # LS channel trigger
-        self._ls_channel_ctr_task = nidaqmx.Task('LS Channel Counter')
-        ls_channel_ctr = microscope_operations.setup_daq_counter(
-            self._ls_channel_ctr_task, 
-            co_channel='cDAQ1/_ctr2', 
-            freq=self.ls_acq.channel_settings.acquisition_rate, 
-            duty_cycle=0.1, 
-            samples_per_channel=self.ls_acq.channel_settings.num_channels, 
-            pulse_terminal='/cDAQ1/Ctr1InternalOutput')
-        
-        # LS frame trigger
+        # LS Z trigger
         self._ls_z_ctr_task = nidaqmx.Task('LS Z Counter')
         ls_z_ctr = microscope_operations.setup_daq_counter( 
             self._ls_z_ctr_task, 
@@ -416,17 +408,38 @@ class MantisAcquisition(object):
             samples_per_channel=self.ls_acq.slice_settings.num_slices, 
             pulse_terminal='/cDAQ1/PFI1')
         
-        # TODO: Only trigger by Ctr0 is LF acquisition is also running
-        logger.debug('Setting up cDAQ1/_ctr0 as start trigger for cDAQ1/_ctr2')
-        self._ls_z_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(
+        # The LF Channel counter task serve as a master start trigger
+        # LF Channel counter triggers LS Channel counter
+        logger.debug('Setting up LF Channel counter as start trigger for LS Channel counter')
+        self._ls_channel_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(
             trigger_source='/cDAQ1/Ctr0InternalOutput', 
             trigger_edge=Slope.RISING)
+        
+        # LS Channel counter triggers LS Z counter
+        logger.debug('Setting up LS Channel counter as start trigger for LS Z counter')
+        self._ls_z_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(
+            trigger_source='/cDAQ1/Ctr1InternalOutput', 
+            trigger_edge=Slope.RISING)
+        # will always return is_task_done = False after counter is started
+        logger.debug('Setting up LS Z counter as retriggerable')
+        self._ls_z_ctr_task.triggers.start_trigger.retriggerable = True
+
+        # LF Channel counter triggers LF Z counter
+        logger.debug('Setting up LF Channel counter as start trigger for LF Z counter')
+        self._lf_z_ctr_task.triggers.start_trigger.cfg_dig_edge_start_trig(
+            trigger_source='/cDAQ1/Ctr0InternalOutput', 
+            trigger_edge=Slope.RISING)
+        # will always return is_task_done = False after counter is started
+        logger.debug('Setting up LF Z counter as retriggerable')
+        self._lf_z_ctr_task.triggers.start_trigger.retriggerable = True
         
     def cleanup_daq(self):
         logger.debug('Stopping DAQ counter tasks')
         if self.ls_acq.enabled:
             self._ls_z_ctr_task.stop()
             self._ls_z_ctr_task.close()
+            self._ls_channel_ctr_task.stop()
+            self._ls_channel_ctr_task.close()
 
         if self.lf_acq.enabled:
             self._lf_z_ctr_task.stop()
@@ -488,11 +501,11 @@ class MantisAcquisition(object):
             port=LS_ZMQ_PORT, 
             pre_hardware_hook_fn=partial(
                 check_num_counter_samples,
-                [self._ls_z_ctr_task]
+                [self._ls_z_ctr_task, self._ls_channel_ctr_task]
             ), 
             post_camera_hook_fn=partial(
                 start_daq_counters,
-                [self._ls_z_ctr_task]
+                [self._ls_z_ctr_task, self._ls_channel_ctr_task]
             ),
             show_display=False
         )
