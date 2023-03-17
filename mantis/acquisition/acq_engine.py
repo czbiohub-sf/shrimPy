@@ -533,14 +533,17 @@ class MantisAcquisition(object):
                     logger.error(f'Autofocus failed. Aborting acquisition for timepoint {t_idx} at position {self.position_settings.position_labels[p_idx]}')
                     continue
 
+                # TODO: implement time intervals between timepoints and positions
                 # start acquisition
                 for _event in lf_events:
                     _event['axes']['time'] = t_idx
                     _event['axes']['position'] = p_idx
+                    _event['min_start_time'] = 0
 
                 for _event in ls_events:
                     _event['axes']['time'] = t_idx
                     _event['axes']['position'] = p_idx
+                    _event['min_start_time'] = 0
 
                 config.lf_last_img_idx = lf_events[-1]['axes']
                 config.ls_last_img_idx = ls_events[-1]['axes']
