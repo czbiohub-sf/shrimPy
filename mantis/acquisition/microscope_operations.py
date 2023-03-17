@@ -1,4 +1,5 @@
 import logging
+import numpy as np
 import nidaqmx
 from nidaqmx.constants import AcquisitionType
 
@@ -91,4 +92,8 @@ def get_total_num_daq_counter_samples(CtrTask:nidaqmx.Task or list):
     return num_counter_samples
 
 def autofocus():
-    pass
+    logger.debug('Calling autofocus')
+    # autofocus_success = bool(np.random.choice(2))
+    autofocus_success = True
+
+    return autofocus_success
