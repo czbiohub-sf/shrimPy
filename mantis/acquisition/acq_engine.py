@@ -1,4 +1,5 @@
 import os
+import time
 import numpy as np
 from dataclasses import asdict
 from datetime import datetime
@@ -43,6 +44,13 @@ from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
 from mantis.acquisition.hook_functions.post_camera_hook_functions import (
     start_daq_counters,
 )
+
+from mantis.acquisition.hook_functions.image_saved_hook_functions import (
+    check_lf_acq_finished,
+    check_ls_acq_finished,
+)
+
+from mantis.acquisition.hook_functions import config
 
 ### Define constants
 LF_ZMQ_PORT = 4827
@@ -490,7 +498,7 @@ class MantisAcquisition(object):
                 start_daq_counters,
                 [self._lf_z_ctr_task, self._lf_channel_ctr_task]
             ),
-            image_saved_fn=None,  # data processing and display
+            image_saved_fn=check_lf_acq_finished,  # data processing and display
             show_display=False
         )
             
@@ -507,32 +515,49 @@ class MantisAcquisition(object):
                 start_daq_counters,
                 [self._ls_z_ctr_task]
             ),
+            image_saved_fn=check_ls_acq_finished,
             show_display=False
         )
+
+        lf_events = _generate_channel_slice_acq_events(self.lf_acq.channel_settings, self.lf_acq.slice_settings)
+        ls_events = _generate_channel_slice_acq_events(self.ls_acq.channel_settings, self.ls_acq.slice_settings)
             
         logger.info('Starting acquisition')
         for t_idx in range(self.time_settings.num_timepoints):
             for p_idx in range(self.position_settings.num_positions):
-                lf_events = _generate_channel_slice_acq_events(self.lf_acq.channel_settings, self.lf_acq.slice_settings)
-                ls_events = _generate_channel_slice_acq_events(self.ls_acq.channel_settings, self.ls_acq.slice_settings)
+                # move to position
 
+                # autofocus
+                autofocus_success = microscope_operations.autofocus()
+                if not autofocus_success:
+                    logger.error(f'Autofocus failed. Aborting acquisition for timepoint {t_idx} at position {self.position_settings.position_labels[p_idx]}')
+                    continue
+
+                # start acquisition
                 for _event in lf_events:
                     _event['axes']['time'] = t_idx
                     _event['axes']['position'] = p_idx
-                    _event['min_start_time'] = t_idx*self.time_settings.time_internal_s
-                    _event['x'] = self.position_settings.xyz_positions[p_idx][0]
-                    _event['y'] = self.position_settings.xyz_positions[p_idx][1]
 
                 for _event in ls_events:
                     _event['axes']['time'] = t_idx
                     _event['axes']['position'] = p_idx
-                    # start LS acq a bit earlier and wait for LF acq to trigger it
-                    _event['min_start_time'] = np.maximum(
-                        t_idx*self.time_settings.time_internal_s-0.2, 0  
-                    )
 
-                ls_acq.acquire(ls_events)  # it's important to start the LS acquisition first
+                config.lf_last_img_idx = lf_events[-1]['axes']
+                config.ls_last_img_idx = ls_events[-1]['axes']
+                config.lf_acq_finished = False
+                config.ls_acq_finished = False
+
+                ls_acq.acquire(ls_events)
                 lf_acq.acquire(lf_events)
+
+                # wait for PT acquisition to finish
+                while any((not config.lf_acq_finished, not config.ls_acq_finished)):
+                    time.sleep(0.2)
+                    # if not config.lf_acq_finished:
+                    #     print('Waiting for LF acquisition to finish')
+                    # if not config.ls_acq_finished:
+                    #     print('Waiting for LS acquisition to finish')
+
         ls_acq.mark_finished()
         lf_acq.mark_finished()
 

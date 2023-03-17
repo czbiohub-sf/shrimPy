@@ -93,7 +93,7 @@ def get_total_num_daq_counter_samples(CtrTask:nidaqmx.Task or list):
 
 def autofocus():
     logger.debug('Calling autofocus')
-    # autofocus_success = bool(np.random.choice(2))
-    autofocus_success = True
+    autofocus_success = bool(np.random.choice(2))
+    # autofocus_success = True
 
     return autofocus_success

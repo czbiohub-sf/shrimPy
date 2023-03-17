@@ -4,7 +4,7 @@ MCL_DAC: &MCL_DAC 'TS1_DAC06'
 AP_GALVO_DAC: &AP_GALVO_DAC 'TS2_DAC03'
 
 time_settings:
-  num_timepoints: 1
+  num_timepoints: 10
   time_internal_s: 5
 
 lf_channel_settings:
