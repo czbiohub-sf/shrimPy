@@ -4,7 +4,7 @@ MCL_DAC: &MCL_DAC 'TS1_DAC06'
 AP_GALVO_DAC: &AP_GALVO_DAC 'TS2_DAC03'
 
 time_settings:
-  num_timepoints: 10
+  num_timepoints: 3
   time_internal_s: 5
 
 lf_channel_settings:
@@ -19,12 +19,6 @@ lf_slice_settings:
   z_end: 60
   z_step: 5
   use_sequencing: True
-
-# ls_channel_settings:
-#   exposure_time_ms: [10]
-#   channel_group: 'Channel - LS'
-#   channels: ['GFP EX488 EM525-45']
-#   use_sequencing: False
 
 ls_channel_settings:
   exposure_time_ms: [10, 10]

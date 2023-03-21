@@ -4,6 +4,8 @@ from mantis.acquisition.microscope_operations import (
     get_total_num_daq_counter_samples,
 )
 
+daq_debug = False
+
 logger = logging.getLogger(__name__)
 
 def log_preparing_acquisition(position_labels, events):
@@ -21,7 +23,8 @@ def log_preparing_acquisition(position_labels, events):
 def check_num_counter_samples(ctr_tasks, events):
     counter_names = get_daq_counter_names(ctr_tasks)
     num_counter_samples = get_total_num_daq_counter_samples(ctr_tasks)
-    logger.debug(f'DAQ counters {counter_names} will generate a total of {num_counter_samples} pulses')
+    if daq_debug:
+        logger.debug(f'DAQ counters {counter_names} will generate a total of {num_counter_samples} pulses')
 
     event_seq_length = len(events)
     if num_counter_samples != event_seq_length:  # here events may be dict

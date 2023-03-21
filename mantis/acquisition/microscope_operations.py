@@ -30,7 +30,7 @@ def _try_mmc_call(mmc, mmc_call_name, *mmc_carr_args):
             time.sleep(wait_time_between_mm_calls)
 
     if error_occurred and call_succeeded:
-        logger.info(f'The call to method {mmc_call_name} succeeded on a subsequent attempt')
+        logger.debug(f'The call to method {mmc_call_name} succeeded on a subsequent attempt')
     
     if not call_succeeded:
         message = f'Call to method {mmc_call_name} failed after {num_mm_call_tries} tries'
@@ -157,9 +157,35 @@ def get_total_num_daq_counter_samples(CtrTask:nidaqmx.Task or list):
 
     return num_counter_samples
 
-def autofocus():
-    logger.debug('Calling autofocus')
-    autofocus_success = bool(np.random.choice(2))
-    # autofocus_success = True
+def autofocus(mmc, mmStudio, z_stage_name:str, z_position):
+    logger.debug('Engaging autofocus')
+    autofocus_success = False
+    error_occurred = False
+
+    af_method = mmStudio.get_autofocus_manager().get_autofocus_method()
+    z_offsets = [0, -10, 10, -20, 20, -30, 30]
+    
+    if af_method.is_continuous_focus_locked():
+        autofocus_success = True
+    else:
+        for z_offset in z_offsets:
+            mmc.set_position(z_stage_name, z_position+z_offset)
+            mmc.wait_for_device(z_stage_name)
+            time.sleep(1)  # wait an extra second
+            try:
+                af_method.full_focus()
+                if not af_method.is_continuous_focus_enabled():
+                    af_method.enable_continuous_focus(True)
+                autofocus_success = True
+                break
+            except Exception as e:
+                error_occurred = True
+                logger.debug(f'Autofocus call failed with z offset of {z_offset} um')
+
+    if error_occurred and autofocus_success:
+        logger.debug(f'Autofocus call succeeded with z offset of {z_offset} um')
+    
+    if not autofocus_success:
+        logger.error(f'Autofocus call failed after {len(z_offsets)} tries')
 
     return autofocus_success

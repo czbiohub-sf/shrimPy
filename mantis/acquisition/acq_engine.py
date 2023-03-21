@@ -25,7 +25,8 @@ from pycromanager import (
     Core, 
     Studio,
     Acquisition, 
-    multi_d_acquisition_events)
+    multi_d_acquisition_events
+)
 from pycromanager.acq_util import cleanup
 
 from mantis.acquisition.microscope_operations import (
@@ -456,7 +457,25 @@ class MantisAcquisition(object):
             self._lf_channel_ctr_task.close()
                 
     def setup_autofocus(self):
-        pass
+        self.lf_acq.mmc.set_auto_focus_device(
+            self.lf_acq.microscope_settings.autofocus_method
+        )
+
+    def go_to_position(self, position_index: int):
+        p_label = self.position_settings.position_labels[position_index]
+
+        logger.debug(f'Moving to position {p_label} with coordinates {self.position_settings.xyz_positions[position_index]}')
+        microscope_operations.set_xy_position(
+            self.lf_acq.mmc,
+            self.position_settings.xyz_positions[position_index][:2]
+        )
+        # Note: moving z stage disengages autofocus
+        # microscope_operations.set_z_position(
+        #     self.lf_acq.mmc,
+        #     self.lf_acq.microscope_settings.autofocus_stage,
+        #     self.position_settings.xyz_positions[position_index][2]
+        # )
+        self.lf_acq.mmc.wait_for_device(self.lf_acq.mmc.get_xy_stage_device())
                 
     def setup(self):
         logger.info('Setting up acquisition')
@@ -529,21 +548,19 @@ class MantisAcquisition(object):
                 p_label = self.position_settings.position_labels[p_idx]
 
                 # move to position
-                logger.debug(f'Moving to position {p_label}')
-                microscope_operations.set_xy_position(
-                    self.lf_acq.mmc,
-                    self.position_settings.xyz_positions[p_idx][:2]
-                )
-                microscope_operations.set_z_position(
-                    self.lf_acq.mmc,
-                    self.position_settings.xyz_positions[p_idx][2]
-                )
+                self.go_to_position(p_idx)
 
                 # autofocus
-                autofocus_success = microscope_operations.autofocus()
-                if not autofocus_success:
-                    logger.error(f'Autofocus failed. Aborting acquisition for timepoint {t_idx} at position {p_label}')
-                    continue
+                if self.lf_acq.microscope_settings.use_autofocus:
+                    autofocus_success = microscope_operations.autofocus(
+                        self.lf_acq.mmc,
+                        self.lf_acq.mmStudio,
+                        self.lf_acq.microscope_settings.autofocus_stage,
+                        self.position_settings.xyz_positions[p_idx][2]
+                    )
+                    if not autofocus_success:
+                        logger.error(f'Autofocus failed. Aborting acquisition for timepoint {t_idx} at position {p_label}')
+                        continue
 
                 # start acquisition
                 for _event in lf_events:
