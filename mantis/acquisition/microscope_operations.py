@@ -1,9 +1,43 @@
 import logging
 import numpy as np
+import time
+from typing import Tuple
 import nidaqmx
 from nidaqmx.constants import AcquisitionType
 
 logger = logging.getLogger(__name__)
+
+def _try_mmc_call(mmc, mmc_call_name, *mmc_carr_args):
+    """Wrapper that tries to repeat calls to mmCore if they fail. Largely copied
+    from dragonfly_automation MicromanagerInterface
+
+    """
+    num_mm_call_tries = 3
+    wait_time_between_mm_calls = 5  # in seconds
+    call_succeeded = False
+    error_occurred = False
+    result = None
+    
+    for _ in range(num_mm_call_tries):
+        try:
+            result = getattr(mmc, mmc_call_name)(*mmc_carr_args)
+            call_succeeded = True
+            break
+        except Exception as e:
+            error_occurred = True
+            msg = str(e).split("\n")[0]
+            logger.error(f'An error occurred calling method {mmc_call_name}: {msg}')
+            time.sleep(wait_time_between_mm_calls)
+
+    if error_occurred and call_succeeded:
+        logger.info(f'The call to method {mmc_call_name} succeeded on a subsequent attempt')
+    
+    if not call_succeeded:
+        message = f'Call to method {mmc_call_name} failed after {num_mm_call_tries} tries'
+        logger.critical(message)
+        raise Exception(message)
+    
+    return result
 
 def set_config(mmc, config_group, config_name):
     logger.debug(f'Setting {config_group} config group to {config_name}')
@@ -39,6 +73,38 @@ def get_position_list(mmStudio, z_stage_name):
         position_labels.append(_pos.get_label())
     
     return xyz_position_list, position_labels
+
+def set_z_position(mmc, z_stage_name:str, z_position: float):
+    _try_mmc_call(
+        mmc, 
+        'set_position', 
+        str(z_stage_name), 
+        float(z_position)
+    )
+
+def set_relative_z_position(mmc, z_stage_name:str, z_offset: float):
+    _try_mmc_call(
+        mmc, 
+        'set_relative_position', 
+        str(z_stage_name), 
+        float(z_offset)
+    )
+
+def set_xy_position(mmc, xy_position: Tuple[float, float]):
+    _try_mmc_call(
+        mmc, 
+        'set_xy_position', 
+        float(xy_position[0]), 
+        float(xy_position[1])
+    )
+
+def set_relative_xy_position(mmc, xy_offset: Tuple[float, float]):
+    _try_mmc_call(
+        mmc, 
+        'set_relative_xy_position', 
+        float(xy_offset[0]), 
+        float(xy_offset[1])
+    )
 
 def setup_daq_counter(
         task:nidaqmx.Task, 

@@ -524,16 +524,27 @@ class MantisAcquisition(object):
             
         logger.info('Starting acquisition')
         for t_idx in range(self.time_settings.num_timepoints):
+            t_start = time.time()
             for p_idx in range(self.position_settings.num_positions):
+                p_label = self.position_settings.position_labels[p_idx]
+
                 # move to position
+                logger.debug(f'Moving to position {p_label}')
+                microscope_operations.set_xy_position(
+                    self.lf_acq.mmc,
+                    self.position_settings.xyz_positions[p_idx][:2]
+                )
+                microscope_operations.set_z_position(
+                    self.lf_acq.mmc,
+                    self.position_settings.xyz_positions[p_idx][2]
+                )
 
                 # autofocus
                 autofocus_success = microscope_operations.autofocus()
                 if not autofocus_success:
-                    logger.error(f'Autofocus failed. Aborting acquisition for timepoint {t_idx} at position {self.position_settings.position_labels[p_idx]}')
+                    logger.error(f'Autofocus failed. Aborting acquisition for timepoint {t_idx} at position {p_label}')
                     continue
 
-                # TODO: implement time intervals between timepoints and positions
                 # start acquisition
                 for _event in lf_events:
                     _event['axes']['time'] = t_idx
@@ -560,6 +571,9 @@ class MantisAcquisition(object):
                     #     print('Waiting for LF acquisition to finish')
                     # if not config.ls_acq_finished:
                     #     print('Waiting for LS acquisition to finish')
+            # wait for delay between timepoints
+            while (time.time()-t_start < self.time_settings.time_internal_s):
+                time.sleep(1)
 
         ls_acq.mark_finished()
         lf_acq.mark_finished()
