@@ -165,20 +165,19 @@ def autofocus(mmc, mmStudio, z_stage_name:str, z_position):
     af_method = mmStudio.get_autofocus_manager().get_autofocus_method()
     z_offsets = [0, -10, 10, -20, 20, -30, 30]
     
-    if af_method.is_continuous_focus_locked():
+    if af_method.is_continuous_focus_locked():  # True if autofocus is engaged
         autofocus_success = True
     else:
         for z_offset in z_offsets:
             mmc.set_position(z_stage_name, z_position+z_offset)
             mmc.wait_for_device(z_stage_name)
             time.sleep(1)  # wait an extra second
-            try:
-                af_method.full_focus()
-                if not af_method.is_continuous_focus_enabled():
-                    af_method.enable_continuous_focus(True)
+
+            af_method.enable_continuous_focus(True)  # this call engages autofocus
+            if af_method.is_continuous_focus_locked():
                 autofocus_success = True
                 break
-            except Exception as e:
+            else:
                 error_occurred = True
                 logger.debug(f'Autofocus call failed with z offset of {z_offset} um')
 
