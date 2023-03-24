@@ -52,7 +52,7 @@ def run_acquisition(
     mm_config_file,
 ):
 
-    demo_run = True if 'demo' in settings else False
+    demo_run = True if 'demo' in mm_config_file else False
     
     with open(settings) as file:
         raw_settings = yaml.safe_load(file)

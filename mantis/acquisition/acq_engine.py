@@ -252,6 +252,9 @@ class MantisAcquisition(object):
         self._demo_run = demo_run
         self._verbose = verbose
 
+        if not enable_lf_acq or not enable_ls_acq:
+            raise Exception('Disabling LF or LS acquisition is not currently supported')
+
         # Create acquisition directory
         self._acq_dir = _create_acquisition_directory(self._root_dir, self._acq_name)
 
@@ -319,6 +322,7 @@ class MantisAcquisition(object):
     def update_position_settings(self):
         mm_pos_list = self.lf_acq.mmStudio.get_position_list_manager().get_position_list()
         mm_number_of_positions = mm_pos_list.get_number_of_positions()
+        autofocus_stage = self.lf_acq.microscope_settings.autofocus_stage
 
         if self.position_settings.num_positions == 0:
             if mm_number_of_positions > 0:
@@ -326,7 +330,7 @@ class MantisAcquisition(object):
 
                 xyz_position_list, position_labels = microscope_operations.get_position_list(
                     self.lf_acq.mmStudio,
-                    self.lf_acq.microscope_settings.autofocus_stage
+                    autofocus_stage
                 )
             else:
                 logger.debug('Fetching current position from Micro-manager')
@@ -334,7 +338,7 @@ class MantisAcquisition(object):
                 xyz_position_list = [(
                     self.lf_acq.mmc.get_x_position(),
                     self.lf_acq.mmc.get_y_position(),
-                    self.lf_acq.mmc.get_position(self.lf_acq.microscope_settings.autofocus_stage)
+                    self.lf_acq.mmc.get_position(autofocus_stage) if autofocus_stage else None
                 )]
                 position_labels = ['Current']
 
@@ -457,9 +461,13 @@ class MantisAcquisition(object):
             self._lf_channel_ctr_task.close()
                 
     def setup_autofocus(self):
-        self.lf_acq.mmc.set_auto_focus_device(
-            self.lf_acq.microscope_settings.autofocus_method
-        )
+        if self.lf_acq.microscope_settings.use_autofocus:
+            autofocus_method = self.lf_acq.microscope_settings.autofocus_method
+            logger.debug(f'Setting autofocus method as {autofocus_method}')
+            self.lf_acq.mmc.set_auto_focus_device(autofocus_method)
+        else:
+            logger.debug('Autofocus is not enabled')
+
 
     def go_to_position(self, position_index: int):
         p_label = self.position_settings.position_labels[position_index]
@@ -489,8 +497,11 @@ class MantisAcquisition(object):
         logger.debug('Finished setting up light-sheet acquisition')
 
         logger.debug('Setting up DAQ')
-        self.setup_daq()
-        logger.debug('Finished setting up DAQ')
+        if not self._demo_run:
+            self.setup_daq()
+            logger.debug('Finished setting up DAQ')
+        else:
+            logger.debug('DAQ setup is not supported in demo mode')
 
         logger.debug('Setting up autofocus')
         self.setup_autofocus()
@@ -498,43 +509,50 @@ class MantisAcquisition(object):
 
         self.update_position_settings()
     
-    def acquire(self):    
-        # if self._lf_acq_set_up:
+    def acquire(self):
+        lf_pre_hardware_hook_fn = partial(
+                log_preparing_acquisition_check_counter,
+                self.position_settings.position_labels,
+                [self._lf_z_ctr_task, self._lf_channel_ctr_task]
+        )
+        lf_post_hardware_hook_fn = partial(
+                log_acquisition_start,
+                self.position_settings.position_labels
+        )
+        lf_post_camera_hook_fn = partial(
+                start_daq_counters,
+                [self._lf_z_ctr_task, self._lf_channel_ctr_task]
+        )
+        lf_image_saved_fn = check_lf_acq_finished
+        
         lf_acq = Acquisition(
             directory=self._acq_dir, 
             name=f'{self._acq_name}_labelfree',
             port=LF_ZMQ_PORT,
-            pre_hardware_hook_fn=partial(
-                log_preparing_acquisition_check_counter,
-                self.position_settings.position_labels,
-                [self._lf_z_ctr_task, self._lf_channel_ctr_task]
-            ),
-            post_hardware_hook_fn=partial(
-                log_acquisition_start,
-                self.position_settings.position_labels
-            ),  # autofocus
-            post_camera_hook_fn=partial(
-                start_daq_counters,
-                [self._lf_z_ctr_task, self._lf_channel_ctr_task]
-            ),
-            image_saved_fn=check_lf_acq_finished,  # data processing and display
+            pre_hardware_hook_fn=lf_pre_hardware_hook_fn,
+            post_hardware_hook_fn=lf_post_hardware_hook_fn,
+            post_camera_hook_fn=lf_post_camera_hook_fn,
+            image_saved_fn=lf_image_saved_fn,  # data processing and display
             show_display=False
         )
             
-        # if self._ls_acq_set_up:
+        ls_pre_hardware_hook_fn = partial(
+                check_num_counter_samples,
+                [self._ls_z_ctr_task]
+        )
+        ls_post_camera_hook_fn = partial(
+                start_daq_counters,
+                [self._ls_z_ctr_task]
+            )
+        ls_image_saved_fn = check_ls_acq_finished
+
         ls_acq = Acquisition(
             directory=self._acq_dir, 
             name=f'{self._acq_name}_lightsheet', 
             port=LS_ZMQ_PORT, 
-            pre_hardware_hook_fn=partial(
-                check_num_counter_samples,
-                [self._ls_z_ctr_task]
-            ), 
-            post_camera_hook_fn=partial(
-                start_daq_counters,
-                [self._ls_z_ctr_task]
-            ),
-            image_saved_fn=check_ls_acq_finished,
+            pre_hardware_hook_fn=ls_pre_hardware_hook_fn, 
+            post_camera_hook_fn=ls_post_camera_hook_fn,
+            image_saved_fn=ls_image_saved_fn,
             show_display=False
         )
 

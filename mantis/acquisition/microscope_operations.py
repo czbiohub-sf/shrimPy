@@ -68,7 +68,7 @@ def get_position_list(mmStudio, z_stage_name):
         xyz_position_list.append([
             _pos.get_x(), 
             _pos.get_y(), 
-            _pos.get(z_stage_name).get1_d_position()
+            _pos.get(z_stage_name).get1_d_position() if z_stage_name else None
         ])
         position_labels.append(_pos.get_label())
     
