@@ -364,7 +364,7 @@ class MantisAcquisition(object):
         _cam_max_fps = int(np.around(1000/ls_readout_time_ms))
         for ls_exp_time in self.ls_acq.channel_settings.exposure_time_ms:
             assert ls_readout_time_ms < ls_exp_time, \
-                f'Exposure time needs to be greater than the {ls_readout_time_ms} sensor readout time'
+                f'Exposure time needs to be greater than the {ls_readout_time_ms} ms sensor readout time'
         ## TODO: here we are only taking the exposure time of the first channel
         self.ls_acq.slice_settings.acquisition_rate = 1000 / (
             self.ls_acq.channel_settings.exposure_time_ms[0] + 
@@ -375,7 +375,7 @@ class MantisAcquisition(object):
             LS_CHANGE_TIME/1000)
         logger.debug(f'Maximum Prime BSI Express acquisition framerate: ~{_cam_max_fps}')
         logger.debug(f'Current light-sheet slice acquisition rate: {self.ls_acq.slice_settings.acquisition_rate:.6f}')
-        logger.debug(f'Current light-sheet channel acquisition rate: {self.ls_acq.channel_settings.acquisition_rate:.6f}')
+        logger.debug(f'Current light-sheet channel acquisition rate: ~{self.ls_acq.channel_settings.acquisition_rate:.6f}')
 
         # LF channel trigger - accommodates longer LC switching times
         self._lf_channel_ctr_task = nidaqmx.Task('LF Channel Counter')
@@ -615,6 +615,10 @@ class MantisAcquisition(object):
             self.lf_acq.mmc, 
             *('Oryx', 'Trigger Mode', 'Off')
             )
+        microscope_operations.set_property(
+            self.ls_acq.mmc, 
+            *('TS2_TTL1-8', 'Blanking', 'Off')
+            )
             # mmc1.set_property('Oryx', 'Frame Rate Control Enabled', oryx_framerate_enabled)
             # if oryx_framerate_enabled == '1': 
             #     mmc1.set_property('Oryx', 'Frame Rate', oryx_framerate)
@@ -634,6 +638,7 @@ def _generate_channel_slice_acq_events(channel_settings, slice_settings):
         z_step = slice_settings.z_step,
         channel_group = channel_settings.channel_group,
         channels = channel_settings.channels,
+        channel_exposures_ms = channel_settings.exposure_time_ms,
         order = "tpcz")
     
     return events
