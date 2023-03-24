@@ -474,13 +474,17 @@ class MantisAcquisition(object):
             self.lf_acq.mmc,
             self.position_settings.xyz_positions[position_index][:2]
         )
+        microscope_operations.wait_for_device(
+            self.lf_acq.mmc,
+            self.lf_acq.mmc.get_xy_stage_device()
+        )
         # Note: moving z stage disengages autofocus
         # microscope_operations.set_z_position(
         #     self.lf_acq.mmc,
         #     self.lf_acq.microscope_settings.autofocus_stage,
         #     self.position_settings.xyz_positions[position_index][2]
         # )
-        self.lf_acq.mmc.wait_for_device(self.lf_acq.mmc.get_xy_stage_device())
+
                 
     def setup(self):
         logger.info('Setting up acquisition')

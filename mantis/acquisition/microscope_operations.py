@@ -106,6 +106,13 @@ def set_relative_xy_position(mmc, xy_offset: Tuple[float, float]):
         float(xy_offset[1])
     )
 
+def wait_for_device(mmc, device_name: str):
+    _try_mmc_call(
+        mmc, 
+        'wait_for_device', 
+        str(device_name),
+    )
+
 def setup_daq_counter(
         task:nidaqmx.Task, 
         co_channel, 
