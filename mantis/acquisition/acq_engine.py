@@ -29,11 +29,8 @@ from pycromanager import (
 )
 from pycromanager.acq_util import cleanup
 
-from mantis.acquisition.microscope_operations import (
-    get_total_num_daq_counter_samples, 
-    start_daq_counter)
-
 from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
+    log_preparing_acquisition,
     log_preparing_acquisition_check_counter,
     check_num_counter_samples,
 )
@@ -510,21 +507,30 @@ class MantisAcquisition(object):
         self.update_position_settings()
     
     def acquire(self):
-        lf_pre_hardware_hook_fn = partial(
-                log_preparing_acquisition_check_counter,
-                self.position_settings.position_labels,
-                [self._lf_z_ctr_task, self._lf_channel_ctr_task]
-        )
+        # define LF hook functions
+        if self._demo_run:
+            lf_pre_hardware_hook_fn = partial(
+                log_preparing_acquisition,
+                self.position_settings.position_labels
+            )
+            lf_post_camera_hook_fn = None
+        else:
+            lf_pre_hardware_hook_fn = partial(
+                    log_preparing_acquisition_check_counter,
+                    self.position_settings.position_labels,
+                    [self._lf_z_ctr_task, self._lf_channel_ctr_task]
+            )
+            lf_post_camera_hook_fn = partial(
+                    start_daq_counters,
+                    [self._lf_z_ctr_task, self._lf_channel_ctr_task]
+            )
         lf_post_hardware_hook_fn = partial(
                 log_acquisition_start,
                 self.position_settings.position_labels
         )
-        lf_post_camera_hook_fn = partial(
-                start_daq_counters,
-                [self._lf_z_ctr_task, self._lf_channel_ctr_task]
-        )
         lf_image_saved_fn = check_lf_acq_finished
         
+        # define LF acquisition
         lf_acq = Acquisition(
             directory=self._acq_dir, 
             name=f'{self._acq_name}_labelfree',
@@ -536,16 +542,22 @@ class MantisAcquisition(object):
             show_display=False
         )
             
-        ls_pre_hardware_hook_fn = partial(
-                check_num_counter_samples,
-                [self._ls_z_ctr_task]
-        )
-        ls_post_camera_hook_fn = partial(
-                start_daq_counters,
-                [self._ls_z_ctr_task]
+        # define LS hook functions
+        if self._demo_run:
+            ls_pre_hardware_hook_fn = None
+            ls_post_camera_hook_fn = None
+        else:
+            ls_pre_hardware_hook_fn = partial(
+                    check_num_counter_samples,
+                    [self._ls_z_ctr_task]
             )
+            ls_post_camera_hook_fn = partial(
+                    start_daq_counters,
+                    [self._ls_z_ctr_task]
+                )
         ls_image_saved_fn = check_ls_acq_finished
 
+        # define LS acquisition
         ls_acq = Acquisition(
             directory=self._acq_dir, 
             name=f'{self._acq_name}_lightsheet', 
@@ -556,6 +568,7 @@ class MantisAcquisition(object):
             show_display=False
         )
 
+        # define acquisition events
         lf_events = _generate_channel_slice_acq_events(self.lf_acq.channel_settings, self.lf_acq.slice_settings)
         ls_events = _generate_channel_slice_acq_events(self.ls_acq.channel_settings, self.ls_acq.slice_settings)
             
@@ -621,25 +634,27 @@ class MantisAcquisition(object):
             lf_acq.await_completion()
             logger.debug('Label-free acquisition finished')
 
-        # Shut down DAQ
-        self.cleanup_daq()
-
-        # Reset some microscope properties
-        microscope_operations.set_property(
-            self.ls_acq.mmc, 
-            *('Prime BSI Express', 'TriggerMode', 'Internal Trigger')
-        )
-        microscope_operations.set_property(
-            self.lf_acq.mmc, 
-            *('Oryx', 'Trigger Mode', 'Off')
+        
+        if not self._demo_run:
+            # Shut down DAQ
+            self.cleanup_daq()
+            
+            # Reset some microscope properties
+            microscope_operations.set_property(
+                self.ls_acq.mmc, 
+                *('Prime BSI Express', 'TriggerMode', 'Internal Trigger')
             )
-        microscope_operations.set_property(
-            self.ls_acq.mmc, 
-            *('TS2_TTL1-8', 'Blanking', 'Off')
-            )
-            # mmc1.set_property('Oryx', 'Frame Rate Control Enabled', oryx_framerate_enabled)
-            # if oryx_framerate_enabled == '1': 
-            #     mmc1.set_property('Oryx', 'Frame Rate', oryx_framerate)
+            microscope_operations.set_property(
+                self.lf_acq.mmc, 
+                *('Oryx', 'Trigger Mode', 'Off')
+                )
+            microscope_operations.set_property(
+                self.ls_acq.mmc, 
+                *('TS2_TTL1-8', 'Blanking', 'Off')
+                )
+                # mmc1.set_property('Oryx', 'Frame Rate Control Enabled', oryx_framerate_enabled)
+                # if oryx_framerate_enabled == '1': 
+                #     mmc1.set_property('Oryx', 'Frame Rate', oryx_framerate)
 
         # Close ndtiff dataset - not sure why this is necessary
         lf_acq._dataset.close()
