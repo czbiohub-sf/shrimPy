@@ -6,7 +6,7 @@ time_settings:
 
 lf_channel_settings:
   roi:
-  exposure_time_ms: [10, 15]
+  exposure_time_ms: [10, 10]
   channel_group: 'Channel-Multiband'
   channels: ['DAPI', 'FITC']
   use_sequencing: True
@@ -25,6 +25,11 @@ lf_microscope_settings:
     - ['Camera', 'OnCameraCCDXSize', '1024']
     - ['Camera', 'OnCameraCCDYSize', '1224']
     - ['Camera', 'BitDepth', '12']
+  z_sequencing_settings: 
+    - ['Z', 'UseSequences', 'Yes']
+  channel_sequencing_settings:
+    - ['LED', 'Sequence', 'On']
+  use_autofocus: False
 
 ls_channel_settings:
   roi: [0, 896, 2048, 256]
@@ -47,3 +52,5 @@ ls_microscope_settings:
     - ['Camera', 'OnCameraCCDXSize', '2048']
     - ['Camera', 'OnCameraCCDYSize', '2048']
     - ['Camera', 'BitDepth', '11']
+  z_sequencing_settings: 
+    - ['Z', 'UseSequences', 'Yes']
