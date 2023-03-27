@@ -37,6 +37,7 @@ from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
 
 from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
     log_acquisition_start,
+    update_daq_freq,
 )
 
 from mantis.acquisition.hook_functions.post_camera_hook_functions import (
@@ -366,17 +367,18 @@ class MantisAcquisition(object):
         for ls_exp_time in self.ls_acq.channel_settings.exposure_time_ms:
             assert ls_readout_time_ms < ls_exp_time, \
                 f'Exposure time needs to be greater than the {ls_readout_time_ms} ms sensor readout time'
-        ## TODO: here we are only taking the exposure time of the first channel
-        self.ls_acq.slice_settings.acquisition_rate = 1000 / (
-            self.ls_acq.channel_settings.exposure_time_ms[0] + 
-            ls_readout_time_ms + 
-            LS_POST_READOUT_DELAY)
-        self.ls_acq.channel_settings.acquisition_rate = 1 / (
-            self.ls_acq.slice_settings.num_slices/self.ls_acq.slice_settings.acquisition_rate + 
-            LS_CHANGE_TIME/1000)
+        self.ls_acq.slice_settings.acquisition_rate = [
+            1000 / (exp + ls_readout_time_ms + LS_POST_READOUT_DELAY) 
+            for exp in self.ls_acq.channel_settings.exposure_time_ms
+        ]
+        # self.ls_acq.channel_settings.acquisition_rate = [
+        #     1 / (self.ls_acq.slice_settings.num_slices/acq_rate + LS_CHANGE_TIME/1000)
+        #     for acq_rate in self.ls_acq.slice_settings.acquisition_rate
+        # ]
+        acq_rates = list(np.around(self.ls_acq.slice_settings.acquisition_rate, decimals=6))
         logger.debug(f'Maximum Prime BSI Express acquisition framerate: ~{_cam_max_fps}')
-        logger.debug(f'Current light-sheet slice acquisition rate: {self.ls_acq.slice_settings.acquisition_rate:.6f}')
-        logger.debug(f'Current light-sheet channel acquisition rate: ~{self.ls_acq.channel_settings.acquisition_rate:.6f}')
+        logger.debug(f'Current light-sheet slice acquisition rate: {acq_rates}')
+        # logger.debug(f'Current light-sheet channel acquisition rate: ~{self.ls_acq.channel_settings.acquisition_rate}')
 
         # LF channel trigger - accommodates longer LC switching times
         self._lf_channel_ctr_task = nidaqmx.Task('LF Channel Counter')
@@ -411,11 +413,12 @@ class MantisAcquisition(object):
 
         # LS Z trigger
         # LS Z counter will start with a software command
+        # Counter frequency is updated for each channel in post-camera hook fn
         self._ls_z_ctr_task = nidaqmx.Task('LS Z Counter')
         ls_z_ctr = microscope_operations.setup_daq_counter( 
             self._ls_z_ctr_task, 
             co_channel='cDAQ1/_ctr3', 
-            freq=self.ls_acq.slice_settings.acquisition_rate, 
+            freq=self.ls_acq.slice_settings.acquisition_rate[0], 
             duty_cycle=0.1, 
             samples_per_channel=self.ls_acq.slice_settings.num_slices, 
             pulse_terminal='/cDAQ1/PFI1')
@@ -568,11 +571,18 @@ class MantisAcquisition(object):
         # define LS hook functions
         if self._demo_run:
             ls_pre_hardware_hook_fn = None
+            ls_post_hardware_hook_fn = None
             ls_post_camera_hook_fn = None
         else:
             ls_pre_hardware_hook_fn = partial(
                     check_num_counter_samples,
                     [self._ls_z_ctr_task]
+            )
+            ls_post_hardware_hook_fn = partial(
+                update_daq_freq,
+                self._ls_z_ctr_task,
+                self.ls_acq.channel_settings.channels,
+                self.ls_acq.slice_settings.acquisition_rate,
             )
             ls_post_camera_hook_fn = partial(
                     start_daq_counters,
@@ -585,7 +595,8 @@ class MantisAcquisition(object):
             directory=self._acq_dir, 
             name=f'{self._acq_name}_lightsheet', 
             port=LS_ZMQ_PORT, 
-            pre_hardware_hook_fn=ls_pre_hardware_hook_fn, 
+            pre_hardware_hook_fn=ls_pre_hardware_hook_fn,
+            post_hardware_hook_fn=ls_post_hardware_hook_fn,
             post_camera_hook_fn=ls_post_camera_hook_fn,
             image_saved_fn=ls_image_saved_fn,
             show_display=False
