@@ -477,16 +477,16 @@ class MantisAcquisition(object):
 
         # only change stage speed if using autofocus
         if self.lf_acq.microscope_settings.use_autofocus and not self._demo_run:
-            current_xy_position = (
+            current_xy_position = np.asarray([
                 self.lf_acq.mmc.get_x_position(),
                 self.lf_acq.mmc.get_y_position()
-                )
-            target_xy_position = self.position_settings.xyz_positions[position_index][:2]
+            ])
+            target_xy_position = np.asarray(self.position_settings.xyz_positions[position_index][:2])
             distance = np.linalg.norm(target_xy_position - current_xy_position)
 
             speed = slow_speed if distance < short_distance else fast_speed
-            microscope_operations.set_property('XYStage:XY:31', 'MotorSpeedX-S(mm/s)', speed)
-            microscope_operations.set_property('XYStage:XY:31', 'MotorSpeedY-S(mm/s)', speed)
+            microscope_operations.set_property(self.lf_acq.mmc, 'XYStage:XY:31', 'MotorSpeedX-S(mm/s)', speed)
+            microscope_operations.set_property(self.lf_acq.mmc, 'XYStage:XY:31', 'MotorSpeedY-S(mm/s)', speed)
 
         logger.debug(f'Moving to position {p_label} with coordinates {self.position_settings.xyz_positions[position_index]}')
         microscope_operations.set_xy_position(
