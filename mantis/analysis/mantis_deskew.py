@@ -6,7 +6,7 @@ import napari
 import scipy
 
 
-def mantis_deskew(raw_data, xy_px_spacing, scan_spacing, theta):
+def mantis_deskew(raw_data, xy_px_spacing, scan_spacing, theta, order=1, cval=0):
     """Deskews data from the mantis microscope
 
     Parameters
@@ -26,6 +26,10 @@ def mantis_deskew(raw_data, xy_px_spacing, scan_spacing, theta):
         Note: use identical units as `xy_px_spacing`
     theta : float
         angle of light sheet with respect to the optical axis.
+    order : int, optional
+        interpolation order (default 1 is linear interpolation)
+    cval : int, optional
+        fill value area outside of the measured volume (default 0)
 
     Returns
     -------
@@ -50,7 +54,12 @@ def mantis_deskew(raw_data, xy_px_spacing, scan_spacing, theta):
 
     # Apply transforms
     deskewed_data = scipy.ndimage.affine_transform(
-        raw_data, matrix, offset=offset, output_shape=output_shape, order=1
+        raw_data,
+        matrix,
+        offset=offset,
+        output_shape=output_shape,
+        order=order,
+        cval=cval,
     )
 
     # Return transformed data with its dimensions
