@@ -44,13 +44,13 @@ def mantis_deskew(raw_data, xy_px_spacing, scan_spacing, theta, order=1, cval=0)
     """
     # Non-dimensional parameters
     ar = xy_px_spacing / scan_spacing  # voxel aspect ratio
-    st = np.sin(theta * np.pi / 180)  # sin(theta)
+    tt = np.tan(theta * np.pi / 180)  # sin(theta)
 
     # Prepare transforms
     Z, Y, X = raw_data.shape
-    matrix = np.array([[ar * st, 0, ar], [1, 0, 0], [0, 1, 0]])
-    offset = (-Y * st * ar, 0, 0)
-    output_shape = (Y, X, int(np.ceil(Z / ar + (Y * st))))
+    matrix = np.array([[ar * tt, 0, ar], [1, 0, 0], [0, 1, 0]])
+    offset = (-Y * tt * ar, 0, 0)
+    output_shape = (Y, X, int(np.ceil(Z / ar + (Y * tt))))
 
     # Apply transforms
     deskewed_data = scipy.ndimage.affine_transform(
@@ -83,7 +83,7 @@ for dataset in datasets:
     # data = data[170:470, 50:251, 900:1102]  # crop for faster testing
 
     # Deskew and save
-    for tilt in [37]:
+    for tilt in [35]:
         for scan_spacing in [0.31]:
             print(tilt, scan_spacing)
             deskewed, dims = mantis_deskew(data, 0.116, scan_spacing, tilt)
