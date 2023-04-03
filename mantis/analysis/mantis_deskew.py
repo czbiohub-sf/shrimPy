@@ -50,17 +50,18 @@ def mantis_deskew(raw_data, xy_px_spacing, scan_spacing, theta):
 
     # Apply transforms
     deskewed_data = scipy.ndimage.affine_transform(
-        raw_data, matrix, offset=offset, output_shape=output_shape
+        raw_data, matrix, offset=offset, output_shape=output_shape, order=1
     )
 
     # Return transformed data with its dimensions
     return deskewed_data, (scan_spacing, xy_px_spacing, xy_px_spacing)
 
+
 #%%
 
 raw_data_path = "/hpc/projects/comp_micro/rawdata/mantis/2023_03_27_argolight/"
-processed_data_path = "/hpc/projects/comp_micro/projects/mantis/2023_03_31_deskew"
-datasets = ['sphere_1', 'ring_stack_1', 'rings_1']
+processed_data_path = "/hpc/projects/comp_micro/projects/mantis/2023_04_03_deskew"
+datasets = ["sphere_1", "ring_stack_1", "rings_1"]
 
 for dataset in datasets:
     os.makedirs(os.path.join(processed_data_path, dataset), exist_ok=True)
@@ -70,12 +71,14 @@ for dataset in datasets:
         os.path.join(raw_data_path, dataset, dataset + "_MMStack_Pos0.ome.tif")
     )
 
-    #data = data[170:470, 50:251, 900:1102]  # crop for faster testing
+    # data = data[170:470, 50:251, 900:1102]  # crop for faster testing
 
     # Deskew and save
-    for tilt in [47]:
+    for tilt in [37]:
         for scan_spacing in [0.31]:
             print(tilt, scan_spacing)
             deskewed, dims = mantis_deskew(data, 0.116, scan_spacing, tilt)
-            out_path = os.path.join(processed_data_path, dataset, f"{tilt}-{scan_spacing:.2f}.tif")
+            out_path = os.path.join(
+                processed_data_path, dataset, f"{tilt}-{scan_spacing:.2f}.tif"
+            )
             tifffile.imwrite(out_path, deskewed)
