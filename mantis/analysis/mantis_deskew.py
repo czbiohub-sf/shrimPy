@@ -44,7 +44,7 @@ def mantis_deskew(raw_data, xy_px_spacing, scan_spacing, theta, order=1, cval=0)
     """
     # Non-dimensional parameters
     ar = xy_px_spacing / scan_spacing  # voxel aspect ratio
-    tt = np.tan(theta * np.pi / 180)  # sin(theta)
+    tt = np.tan(theta * np.pi / 180)  # tan(theta)
 
     # Prepare transforms
     Z, Y, X = raw_data.shape
@@ -67,7 +67,7 @@ def mantis_deskew(raw_data, xy_px_spacing, scan_spacing, theta, order=1, cval=0)
 
 
 #%%
-
+1
 raw_data_path = "/hpc/projects/comp_micro/rawdata/mantis/2023_03_27_argolight/"
 processed_data_path = "/hpc/projects/comp_micro/projects/mantis/2023_04_03_deskew"
 datasets = ["sphere_1", "ring_stack_1", "rings_1"]
