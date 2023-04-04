@@ -4,12 +4,13 @@ import click
 import deskew_settings
 import yaml
 import napari
+import os
 from iohub import read_micromanager, open_ome_zarr
 
 
 @click.command()
 @click.argument(
-    "filename",
+    "mmfolder",
     type=click.Path(exists=True),
 )
 @click.argument(
@@ -31,7 +32,7 @@ from iohub import read_micromanager, open_ome_zarr
     is_flag=True,
     help="View the correctly scaled result in napari",
 )
-def deskew(filename, deskew_params_file, output, view):
+def deskew(mmfolder, deskew_params_file, output, view):
     """
     Deskews across P, T, C axes using a parameter file generated with estimate_deskew.py
 
@@ -45,9 +46,12 @@ def deskew(filename, deskew_params_file, output, view):
     print(f"Deskewing parameters: {settings}")
 
     # Prepare reader and writer
-    reader = read_micromanager(filename)
+    if os.path.isdir(output):
+        output = os.path.join(output, mmfolder.split(os.sep)[-2] + ".zarr")
+
+    reader = read_micromanager(mmfolder)
     writer = open_ome_zarr(
-        output, mode="w", layout="hcs", channel_names=reader.channel_names
+        output, mode="w-", layout="hcs", channel_names=reader.channel_names
     )
 
     # Loop through (P, T, C), deskewing and writing as we go
