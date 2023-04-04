@@ -56,7 +56,7 @@ def estimate_deskew(mmfolder, output_file):
     line = v.layers[-1].data[0]
     r = line[1] - line[0]
     r_hat = r / np.linalg.norm(r)
-    theta = np.arctan2(r_hat[0] / px_to_scan_ratio, r_hat[1])
+    theta = np.arccos(r_hat[0] / r_hat[1] / px_to_scan_ratio)
     theta_deg = (theta % np.pi) * 180 / np.pi
     print(f"theta_deg : {theta_deg:.2f}\n")
 
