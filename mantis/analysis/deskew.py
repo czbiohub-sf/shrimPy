@@ -36,7 +36,7 @@ def deskew(mmfolder, deskew_params_file, output, view):
     """
     Deskews across P, T, C axes using a parameter file generated with estimate_deskew.py
 
-    Usage: python deskew.py /path/to/MM/dataset/ /path/to/params.yml
+    Usage: python deskew.py </path/to/mmfolder/> </path/to/deskew_params.yml>
     """
 
     # Load params
