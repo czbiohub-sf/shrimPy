@@ -99,7 +99,7 @@ def deskew(mmfolder, deskew_params_file, output, view):
         napari.run()
 
 
-def mantis_deskew(raw_data, px_to_scan_ratio, theta_deg, order=1, cval=0):
+def mantis_deskew(raw_data, px_to_scan_ratio, theta_deg, order=1, cval=None):
     """Deskews fluorescence data from the mantis microscope
 
     Parameters
@@ -118,8 +118,9 @@ def mantis_deskew(raw_data, px_to_scan_ratio, theta_deg, order=1, cval=0):
         angle of light sheet with respect to the optical axis in degrees
     order : int, optional
         interpolation order (default 1 is linear interpolation)
-    cval : int, optional
-        fill value area outside of the measured volume (default 0)
+    cval : float, optional
+        fill value area outside of the measured volume (default None fills
+        with the minimum value of the input array)
 
     Returns
     -------
@@ -132,6 +133,9 @@ def mantis_deskew(raw_data, px_to_scan_ratio, theta_deg, order=1, cval=0):
         returned voxels. i.e. the Z-axis voxels are a factor of sin(theta)
         shorter than the Y- and X-axis voxels.
     """
+    if cval is None:
+        cval = np.min(np.ravel(raw_data))
+
     # Trig
     theta = theta_deg * np.pi / 180
     st = np.sin(theta)
