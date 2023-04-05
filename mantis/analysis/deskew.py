@@ -130,16 +130,23 @@ def mantis_deskew(raw_data, px_to_scan_ratio, theta_deg, order=1, cval=0):
     # Prepare transforms
     Z, Y, X = raw_data.shape
     matrix = np.array(
-        [[px_to_scan_ratio * ct, 0, px_to_scan_ratio], [1, 0, 0], [0, 1, 0]]
+        [
+            [
+                -px_to_scan_ratio * ct,
+                0,
+                px_to_scan_ratio,
+                0,
+            ],
+            [-1, 0, 0, Y - 1],
+            [0, -1, 0, X - 1],
+        ]
     )
-    offset = (-Y * ct * px_to_scan_ratio, 0, 0)
     output_shape = (Y, X, int(np.ceil(Z / px_to_scan_ratio + (Y * ct))))
 
     # Apply transforms
     deskewed_data = scipy.ndimage.affine_transform(
         raw_data,
         matrix,
-        offset=offset,
         output_shape=output_shape,
         order=order,
         cval=cval,
