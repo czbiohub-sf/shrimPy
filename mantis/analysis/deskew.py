@@ -6,6 +6,7 @@ import yaml
 import napari
 import os
 from iohub import read_micromanager, open_ome_zarr
+from iohub.ngff_meta import TransformationMeta
 
 
 @click.command()
@@ -62,8 +63,16 @@ def deskew(mmfolder, deskew_params_file, output, view):
             for c in range(C):
                 print(f"Deskewing c={c}/{C-1}, t={t}/{T-1}, p={p}/{P-1}")
                 data = reader.get_array(p)[t, c, ...]  # zyx
+
+                # Deskew
                 deskewed, dims = mantis_deskew(
                     data, settings.px_to_scan_ratio, settings.theta_deg
+                )
+
+                # Handle transforms and metadata
+                transform = TransformationMeta(
+                    type="scale",
+                    scale=2 * (1,) + dims,
                 )
                 img = position.create_zeros(
                     name="0",
@@ -73,12 +82,13 @@ def deskew(mmfolder, deskew_params_file, output, view):
                     )
                     + deskewed.shape,
                     dtype=np.int16,
+                    transform=[transform],
                 )
+
                 img[t, c, ...] = deskewed  # write to zarr
 
     # Write metadata
     writer.zattrs["deskewing"] = settings.dict()
-    writer.zattrs["voxel-sizes"] = dims
     writer.zattrs["mm-meta"] = reader.mm_meta["Summary"]
 
     # Optional view
