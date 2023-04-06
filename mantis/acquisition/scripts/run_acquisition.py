@@ -14,7 +14,7 @@ from mantis.acquisition.BaseSettings import (
 @click.option(
     '--data-dirpath', 
     required=True, 
-    type=click.Path(exists=True),
+    type=click.Path(exists=True, file_okay=False, dir_okay=True),
     help='Directory where acquired data will be saved',
 )
 @click.option(
@@ -31,7 +31,7 @@ from mantis.acquisition.BaseSettings import (
 @click.option(
     '--mm-app-path', 
     default='C:\\Program Files\\Micro-Manager-nightly', 
-    type=click.Path(exists=True),
+    type=click.Path(exists=True, file_okay=False, dir_okay=True),
     show_default=True,
     help='''Path to Micro-manager installation directory
       which will run the light-sheet acquisition''',
