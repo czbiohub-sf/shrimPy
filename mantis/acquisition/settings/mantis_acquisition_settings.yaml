@@ -4,8 +4,8 @@ MCL_DAC: &MCL_DAC 'TS1_DAC06'
 AP_GALVO_DAC: &AP_GALVO_DAC 'TS2_DAC03'
 
 time_settings:
-  num_timepoints: 3
-  time_internal_s: 5
+  num_timepoints: 10
+  time_internal_s: 60
 
 lf_channel_settings:
   exposure_time_ms: [10, 10, 10, 10, 10]
@@ -15,9 +15,9 @@ lf_channel_settings:
 
 lf_slice_settings:
   z_stage_name: 'MCL Piezo'
-  z_start: 0
-  z_end: 60
-  z_step: 5
+  z_start: -10
+  z_end: 10
+  z_step: 0.4
   use_sequencing: True
 
 ls_channel_settings:
@@ -28,9 +28,9 @@ ls_channel_settings:
 
 ls_slice_settings:
   z_stage_name: 'AP Galvo'
-  z_start: -0.2  # in Volts
-  z_end: 0.2
-  z_step: 0.01  # equivalent to 330 nm
+  z_start: -2.5  # in Volts
+  z_end: 2.5
+  z_step: 0.01  # 10 mV equivalent to 310 nm
   use_sequencing: True
 
 lf_microscope_settings:
