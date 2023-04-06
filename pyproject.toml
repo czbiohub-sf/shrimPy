@@ -52,7 +52,7 @@ build = [
 ]
 
 [project.scripts]
-run-mantis-acquisition = "mantis.acquisition.scripts.run_acquisition:run_acquisition"
+run-mantis-acquisition = "mantis.cli.run_acquisition:run_acquisition"
 
 [tool.setuptools]
 # explicitly specify the package name
