@@ -165,12 +165,32 @@ def get_total_num_daq_counter_samples(CtrTask:nidaqmx.Task or list):
     return num_counter_samples
 
 def autofocus(mmc, mmStudio, z_stage_name:str, z_position):
+    """_summary_
+    0000000000000000 - Off and out of range?
+    0000000100000000 - Off
+    0000001100001001 - In Range
+    0000001100001010 - In range and engaged?
+    0000001000011001 - Out of Range
+
+    Args:
+        mmc (_type_): _description_
+        mmStudio (_type_): _description_
+        z_stage_name (str): _description_
+        z_position (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
     logger.debug('Engaging autofocus')
     autofocus_success = False
     error_occurred = False
 
     af_method = mmStudio.get_autofocus_manager().get_autofocus_method()
     z_offsets = [0, -10, 10, -20, 20, -30, 30]
+
+    # turn on autofocus if it has been turned off
+    if af_method.get_property_value('PFS Status') in ['0000000000000000', '0000000100000000']:
+        af_method.full_focus()
     
     if af_method.is_continuous_focus_locked():  # True if autofocus is engaged
         autofocus_success = True
