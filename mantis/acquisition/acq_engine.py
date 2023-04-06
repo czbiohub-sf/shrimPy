@@ -599,6 +599,7 @@ class MantisAcquisition(object):
             post_hardware_hook_fn=ls_post_hardware_hook_fn,
             post_camera_hook_fn=ls_post_camera_hook_fn,
             image_saved_fn=ls_image_saved_fn,
+            saving_queue_size=500,
             show_display=False
         )
 
@@ -667,6 +668,8 @@ class MantisAcquisition(object):
         if self.lf_acq.enabled:
             lf_acq.await_completion()
             logger.debug('Label-free acquisition finished')
+
+        # TODO: move scan stages to zero
 
         
         if not self._demo_run:
