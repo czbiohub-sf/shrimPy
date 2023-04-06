@@ -243,6 +243,11 @@ class MantisAcquisition(object):
             by default True
         verbose : bool, optional
             By default False
+
+        Notes
+        -----
+        The bridge to Micro-Manager should be closed before the object is cleared.
+        Use  `with MantisAcquisition(...) as acq:` context to achieve this.
         """
 
         self._root_dir = acquisition_directory
