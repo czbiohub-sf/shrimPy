@@ -194,6 +194,7 @@ def autofocus(mmc, mmStudio, z_stage_name:str, z_position):
     
     if af_method.is_continuous_focus_locked():  # True if autofocus is engaged
         autofocus_success = True
+        logger.debug('Autofocus is already engaged')
     else:
         for z_offset in z_offsets:
             mmc.set_position(z_stage_name, z_position+z_offset)
