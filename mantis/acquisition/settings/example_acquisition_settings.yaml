@@ -51,6 +51,8 @@ lf_microscope_settings:
     # required for external triggering at max fps
     - ['Oryx', 'Trigger Overlap', 'ReadOut']
     - ['Oryx', 'Frame Rate Control Enabled', '0']
+  reset_device_properties:
+    - ['Oryx', 'Trigger Mode', 'Off']
   z_sequencing_settings: 
     - [*MCL_DAC, 'Sequence', 'On']
   channel_sequencing_settings:
@@ -69,5 +71,8 @@ ls_microscope_settings:
     - ['Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter']
     # Illuminate sample only when all rows are exposing, aka pseudo global shutter 
     - ['TS2_TTL1-8', 'Blanking', 'On']
+  reset_device_properties:
+    - ['Prime BSI Express', 'TriggerMode', 'Internal Trigger']
+    - ['TS2_TTL1-8', 'Blanking', 'Off']
   z_sequencing_settings: 
     - [*AP_GALVO_DAC, 'Sequence', 'On']

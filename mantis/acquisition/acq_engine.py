@@ -151,7 +151,7 @@ class BaseChannelSliceAcquisition(object):
 
     def setup(self):
         if self.enabled:
-        # Apply microscope config settings
+            # Apply microscope config settings
             for settings in self.microscope_settings.config_group_settings:
                 microscope_operations.set_config(
                     self.mmc,
@@ -183,7 +183,7 @@ class BaseChannelSliceAcquisition(object):
                 self.slice_settings.z_stage_name
             )
 
-            # TODO: How should we deal with turning off sequencing when use_sequencing=False?
+            # Note: sequencing should be turned off by default
             # Setup z sequencing
             if self.slice_settings.use_sequencing:
                 for settings in self.microscope_settings.z_sequencing_settings:
@@ -203,6 +203,17 @@ class BaseChannelSliceAcquisition(object):
                         settings.property_name,
                         settings.property_value
                     )
+
+    def reset(self):
+        if self.enabled:
+            # Reset device property settings
+            for settings in self.microscope_settings.reset_device_properties:
+                microscope_operations.set_property(
+                    self.mmc,
+                    settings.device_name,
+                    settings.property_name,
+                    settings.property_value
+                )
 
 
 class MantisAcquisition(object):
@@ -319,6 +330,13 @@ class MantisAcquisition(object):
         self.close()
 
     def close(self):
+        # Shut down DAQ
+        if not self._demo_run:
+            self.cleanup_daq()
+        
+        self.lf_acq.reset()
+        self.ls_acq.reset()
+    
         # Close PM bridges
         cleanup()
 
@@ -675,28 +693,6 @@ class MantisAcquisition(object):
             logger.debug('Label-free acquisition finished')
 
         # TODO: move scan stages to zero
-
-        
-        if not self._demo_run:
-            # Shut down DAQ
-            self.cleanup_daq()
-            
-            # Reset some microscope properties
-            microscope_operations.set_property(
-                self.ls_acq.mmc, 
-                *('Prime BSI Express', 'TriggerMode', 'Internal Trigger')
-            )
-            microscope_operations.set_property(
-                self.lf_acq.mmc, 
-                *('Oryx', 'Trigger Mode', 'Off')
-                )
-            microscope_operations.set_property(
-                self.ls_acq.mmc, 
-                *('TS2_TTL1-8', 'Blanking', 'Off')
-                )
-                # mmc1.set_property('Oryx', 'Frame Rate Control Enabled', oryx_framerate_enabled)
-                # if oryx_framerate_enabled == '1': 
-                #     mmc1.set_property('Oryx', 'Frame Rate', oryx_framerate)
 
         # Close ndtiff dataset - not sure why this is necessary
         lf_acq._dataset.close()

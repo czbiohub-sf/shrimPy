@@ -71,6 +71,7 @@ class MicroscopeSettings:
     roi: Optional[Tuple[int, int, int, int]] = None
     config_group_settings: List[ConfigSettings] = field(default_factory=list)
     device_property_settings: List[DevicePropertySettings] = field(default_factory=list)
+    reset_device_properties: List[DevicePropertySettings] = field(default_factory=list)
     z_sequencing_settings: List[DevicePropertySettings] = field(default_factory=list)
     channel_sequencing_settings: List[DevicePropertySettings] = field(default_factory=list)
     use_autofocus: bool = False
