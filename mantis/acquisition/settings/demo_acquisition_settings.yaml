@@ -1,4 +1,5 @@
-# Settings for use with Micro-manager's MMConfig_Demo config
+# Settings file for use with Micro-manager's MMConfig_Demo config. It emulates
+# acquiring data from the label-free and light-sheet arms of the microscope
 
 time_settings:
   num_timepoints: 3

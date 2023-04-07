@@ -1,18 +1,33 @@
+# This is an example settings file for combined label-free and light--sheet
+# acquisition on the mantis microscope.
+
+# Here we define variables (YAML anchors) which will be used later, for
+# convenience
 LCA_DAC: &LCA_DAC 'TS1_DAC01'
 LCB_DAC: &LCB_DAC 'TS1_DAC02'
 MCL_DAC: &MCL_DAC 'TS1_DAC06'
 AP_GALVO_DAC: &AP_GALVO_DAC 'TS2_DAC03'
 
+# The label-free and the light-sheet acquisition share the same time settings
+# which are controlled by the mantis acquisition engine. Data are acquired in
+# TPCZYX order. `time_internal_s` is the minimum time between positions, i.e.
+# the acquisition will continue immediately if the elapsed time to acquire all
+# positions is greater
 time_settings:
   num_timepoints: 10
   time_internal_s: 60
 
+# Define channel settings for the label-free acquisition. All channels must be
+# within the same config group. `exposure_time_ms` must be a list of length
+# equal to the number of channels. Currently, however, the acquisition software
+# does not support different exposure times for the label-free channels.
 lf_channel_settings:
   exposure_time_ms: [10, 10, 10, 10, 10]
   channel_group: 'Channel - LF'
   channels: ['State0', 'State1', 'State2', 'State3', 'State4']
   use_sequencing: True
 
+# Define slice (i.e. z-stack) settings for the label-free acquisition.
 lf_slice_settings:
   z_stage_name: 'MCL Piezo'
   z_start: -10
@@ -20,26 +35,36 @@ lf_slice_settings:
   z_step: 0.4
   use_sequencing: True
 
+# Define channel settings for the light-sheet acquisition. Channels may have
+# different exposure time
 ls_channel_settings:
   exposure_time_ms: [10, 10]
   channel_group: 'Channel - LS'
   channels: ['GFP EX488 EM525-45', 'mCherry EX561 EM600-37']
   use_sequencing: False
 
+# Define slice (i.e. z-stack) settings for the light-sheet acquisition.
 ls_slice_settings:
   z_stage_name: 'AP Galvo'
-  z_start: -2.5  # in Volts
-  z_end: 2.5
-  z_step: 0.01  # 10 mV equivalent to 310 nm
+  z_start: -2.5  # in Volts 
+  z_end: 2.5  # 5V range corresponds to 155 um scan range
+  z_step: 0.01  # 10 mV is equivalent to 310 nm
   use_sequencing: True
 
+# Microscope settings which will be applied when the label-free acquisition is
+# initialized
 lf_microscope_settings:
+  # ROI may be omitted or blank; in this case the ROI will not be changed
   roi: 
+  # Config group settings to apply. Must be a list of 
+  # [config_group, config_name] pairs
   config_group_settings:
     - ['Imaging Path', 'Label-free']
     - ['Channel - LS', 'External Control']
     # need to set first channel for falling edge sequencing
     - ['Channel - LF', 'State0']
+  # Device property settings to apply. Must be a list of 
+  # [device_name, property_name, property_value] sets
   device_property_settings:
     - ['Oryx', 'Line Selector', 'Line5']
     - ['Oryx', 'Line Mode', 'Output']
@@ -51,17 +76,26 @@ lf_microscope_settings:
     # required for external triggering at max fps
     - ['Oryx', 'Trigger Overlap', 'ReadOut']
     - ['Oryx', 'Frame Rate Control Enabled', '0']
+  # Device property settings which will be applied when the acquisition is
+  # finished.
   reset_device_properties:
     - ['Oryx', 'Trigger Mode', 'Off']
+  # Device property settings which enable z sequencing
   z_sequencing_settings: 
     - [*MCL_DAC, 'Sequence', 'On']
+  # Device property settings which enable channel sequencing
   channel_sequencing_settings:
     - [*LCA_DAC, 'Sequence', 'On']
     - [*LCB_DAC, 'Sequence', 'On']
-  autofocus_stage: 'ZDrive'
+  # Autofocus properties. `autofocus_stage` is the coarse stage which will be
+  # moved between positions to ensure that the autofocus mechanism is within
+  # range
   use_autofocus: True
+  autofocus_stage: 'ZDrive'
   autofocus_method: 'PFS'
 
+# Microscope settings which will be applied when the light-sheet acquisition is
+# initialized
 ls_microscope_settings:
   roi: [0, 896, 2048, 256]
   device_property_settings:
