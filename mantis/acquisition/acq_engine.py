@@ -5,7 +5,6 @@ from dataclasses import asdict
 from datetime import datetime
 import logging
 from functools import partial
-from collections.abc import Iterable
 
 from mantis.acquisition import microscope_operations
 from mantis.acquisition.logger import configure_logger
@@ -18,7 +17,7 @@ from mantis.acquisition.BaseSettings import (
 )
 
 import nidaqmx
-from nidaqmx.constants import AcquisitionType, Slope
+from nidaqmx.constants import Slope
 
 from pycromanager import (
     start_headless, 
@@ -54,7 +53,7 @@ from mantis.acquisition.hook_functions import config
 ### Define constants
 LF_ZMQ_PORT = 4827
 LS_ZMQ_PORT = 5827   # we need to space out port numbers a bit
-LS_POST_READOUT_DELAY = 0.05  # in ms
+LS_POST_READOUT_DELAY = 0.05  # delay before acquiring next frame, in ms
 MCL_STEP_TIME = 1.5  # in ms
 LC_CHANGE_TIME = 20  # in ms
 LS_CHANGE_TIME = 200  # time needed to change LS filter wheel, in ms
@@ -63,6 +62,22 @@ logger = logging.getLogger(__name__)
 
 
 class BaseChannelSliceAcquisition(object):
+    """
+    Base class which handles setup of the label-free or light-sheet acquisition
+
+    Parameters
+    ----------
+    enabled : bool, optional
+        Flag if acquisition should be enabled, by default True
+    mm_app_path : str, optional
+        Path to Micro-manager which will be launched in headless mode, by default None
+    mm_config_file : str, optional
+        Path to config file for the headless acquisition, by default None
+    zmq_port : int, optional
+        ZeroMQ port of the acquisition, by default 4827
+    core_log_path : str, optional
+        Path where the headless acquisition core logs will be saved, by default ''
+    """
 
     def __init__(
             self,
@@ -150,6 +165,9 @@ class BaseChannelSliceAcquisition(object):
         self._microscope_settings = settings
 
     def setup(self):
+        """
+        Apply acquisition settings as specified by the class properties 
+        """
         if self.enabled:
             # Apply microscope config settings
             for settings in self.microscope_settings.config_group_settings:
@@ -205,6 +223,9 @@ class BaseChannelSliceAcquisition(object):
                     )
 
     def reset(self):
+        """
+        Reset the microscope device properties, typically at the end of the acquisition
+        """
         if self.enabled:
             # Reset device property settings
             for settings in self.microscope_settings.reset_device_properties:
@@ -218,7 +239,44 @@ class BaseChannelSliceAcquisition(object):
 
 class MantisAcquisition(object):
     """
-    Base class for mantis  multimodal acquisition
+    Acquisition class for simultaneous label-free and light-sheet acquisition on
+    the mantis microscope.
+
+    Parameters
+    ----------
+    acquisition_directory : str
+        Directory where acquired data will be saved
+    acquisition_name : str
+        Name of the acquisition
+    mm_app_path : str, optional
+        Path to Micro-manager installation directory which runs the light-sheet
+        acquisition, by default r'C:\Program Files\Micro-Manager-nightly'
+    config_file : str, optional
+        Path to config file which runs the light-sheet acquisition, by default
+        r'C:\CompMicro_MMConfigs\mantis\mantis-LS.cfg'
+    enable_ls_acq : bool, optional
+        Set to False if only acquiring label-free data, by default True
+    enable_lf_acq : bool, optional
+        Set to False if only acquiring fluorescence light-sheet data, by default
+        True
+    demo_run : bool, optional
+        Set to True if using the MicroManager demo config, by default False
+    verbose : bool, optional
+        By default False
+
+    Examples
+    -----
+    This class should be used with a context manager for proper cleanup of the
+    acquisition:
+
+    >>> with MantisAcquisition(...) as acq:
+            # define acquisition settings
+            acq.time_settings = TimeSettings(...)
+            acq.lf_acq.channel_settings = ChannelSettings(...)
+            ...
+
+            acq.setup() 
+            acq.acquire()
     """
 
     def __init__(
@@ -232,34 +290,6 @@ class MantisAcquisition(object):
             demo_run: bool = False,
             verbose: bool = False,
             ) -> None:
-        
-        """Initialize the mantis acquisition class and connect to Micro-manager
-
-        Parameters
-        ----------
-        acquisition_directory : str
-            Directory where acquired data will be saved
-        acquisition_name : str
-            Name of the acquisition
-        mm_app_path : str, optional
-            Path to Micro-manager installation directory which runs the 
-            light-sheet acquisition, by default r'C:\Program Files\Micro-Manager-nightly'
-        config_file : str, optional
-            Path to config file which runs the light-sheet acquisition,
-            by default r'C:\CompMicro_MMConfigs\mantis\mantis-LS.cfg'
-        enable_ls_acq : bool, optional
-            Set to False if only acquiring label-free data, by default True
-        enable_lf_acq : bool, optional
-            Set to False if only acquiring fluorescence light-sheet data,
-            by default True
-        verbose : bool, optional
-            By default False
-
-        Notes
-        -----
-        The bridge to Micro-Manager should be closed before the object is cleared.
-        Use  `with MantisAcquisition(...) as acq:` context to achieve this.
-        """
 
         self._root_dir = acquisition_directory
         self._acq_name = acquisition_name
@@ -334,6 +364,7 @@ class MantisAcquisition(object):
         if not self._demo_run:
             self.cleanup_daq()
         
+        # Reset LF and LS acquisitions
         self.lf_acq.reset()
         self.ls_acq.reset()
     
@@ -341,6 +372,9 @@ class MantisAcquisition(object):
         cleanup()
 
     def update_position_settings(self):
+        """
+        Fetch positions defined in the Micro-manager Position List Manager
+        """
         mm_pos_list = self.lf_acq.mmStudio.get_position_list_manager().get_position_list()
         mm_number_of_positions = mm_pos_list.get_number_of_positions()
         autofocus_stage = self.lf_acq.microscope_settings.autofocus_stage
@@ -369,6 +403,11 @@ class MantisAcquisition(object):
             )
 
     def setup_daq(self):
+        """
+        Setup the NI DAQ to output trigger pulses for the label-free and
+        light-sheet acquisitions. Acquisition can be sequenced across z slices
+        and channels
+        """
         # Determine label-free acq timing
         oryx_framerate = float(self.lf_acq.mmc.get_property('Oryx', 'Frame Rate'))
         ## assumes all channels have the same exposure time
@@ -532,6 +571,12 @@ class MantisAcquisition(object):
 
                 
     def setup(self):
+        """
+        Setup the mantis acquisition. This method sets up the label-free
+        acquisition, the light-sheet acquisition, the NI DAQ, the autofocus, and
+        fetches positions defined in the Micro-manager Position List Manager
+        """
+
         logger.info('Setting up acquisition')
 
         logger.debug('Setting up label-free acquisition')
@@ -556,6 +601,11 @@ class MantisAcquisition(object):
         self.update_position_settings()
     
     def acquire(self):
+        """
+        Simultaneously acquire label-free and light-sheet data over multiple
+        positions and time points.
+        """
+
         # define LF hook functions
         if self._demo_run:
             lf_pre_hardware_hook_fn = partial(

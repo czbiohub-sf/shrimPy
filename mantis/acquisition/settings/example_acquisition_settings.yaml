@@ -80,6 +80,8 @@ lf_microscope_settings:
   # finished.
   reset_device_properties:
     - ['Oryx', 'Trigger Mode', 'Off']
+    - ['XYStage:XY:31', 'MotorSpeedX-S(mm/s)', 5.75]
+    - ['XYStage:XY:31', 'MotorSpeedY-S(mm/s)', 5.75]
   # Device property settings which enable z sequencing
   z_sequencing_settings: 
     - [*MCL_DAC, 'Sequence', 'On']
