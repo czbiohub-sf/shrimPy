@@ -39,7 +39,7 @@ ls_acq_settings = ChannelSliceAcquisitionSettings(
     use_sequence = True,
 )
 
-acq = MantisAcquisition(acquisition_directory=r'D:\2023_02_21_mantis_dataset_standard', verbose=False)
+acq = MantisAcquisition(acquisition_directory=r'D:\2023_02_17_mantis_dataset_standard', verbose=False)
 
 acq.define_lf_acq_settings(lf_acq_settings)
 acq.define_ls_acq_settings(ls_acq_settings)

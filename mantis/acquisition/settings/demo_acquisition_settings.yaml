@@ -1,0 +1,57 @@
+# Settings file for use with Micro-manager's MMConfig_Demo config. It emulates
+# acquiring data from the label-free and light-sheet arms of the microscope
+
+time_settings:
+  num_timepoints: 3
+  time_internal_s: 5
+
+lf_channel_settings:
+  roi:
+  exposure_time_ms: [10, 10]
+  channel_group: 'Channel-Multiband'
+  channels: ['DAPI', 'FITC']
+  use_sequencing: True
+
+lf_slice_settings:
+  z_stage_name: 'Z'
+  z_start: 0
+  z_end: 60
+  z_step: 5
+  use_sequencing: True
+
+lf_microscope_settings:
+  config_group_settings:
+    - ['LightPath', 'Camera-left']
+  device_property_settings:
+    - ['Camera', 'OnCameraCCDXSize', '1024']
+    - ['Camera', 'OnCameraCCDYSize', '1224']
+    - ['Camera', 'BitDepth', '12']
+  z_sequencing_settings: 
+    - ['Z', 'UseSequences', 'Yes']
+  channel_sequencing_settings:
+    - ['LED', 'Sequence', 'On']
+  use_autofocus: False
+
+ls_channel_settings:
+  roi: [0, 896, 2048, 256]
+  exposure_time_ms: [20, 30]
+  channel_group: 'Channel'
+  channels: ['Rhodamine', 'Cy5']
+  use_sequencing: False
+
+ls_slice_settings:
+  z_stage_name: 'Z'
+  z_start: -0.2  # in Volts
+  z_end: 0.2
+  z_step: 0.01  # equivalent to 330 nm
+  use_sequencing: True
+
+ls_microscope_settings:
+  config_group_settings:
+    - ['LightPath', 'Camera-right']
+  device_property_settings:
+    - ['Camera', 'OnCameraCCDXSize', '2048']
+    - ['Camera', 'OnCameraCCDYSize', '2048']
+    - ['Camera', 'BitDepth', '11']
+  z_sequencing_settings: 
+    - ['Z', 'UseSequences', 'Yes']
