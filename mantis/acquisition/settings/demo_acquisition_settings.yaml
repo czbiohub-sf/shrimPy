@@ -55,3 +55,14 @@ ls_microscope_settings:
     - ['Camera', 'BitDepth', '11']
   z_sequencing_settings: 
     - ['Z', 'UseSequences', 'Yes']
+  
+ autoexposure:
+    min_intensity: 32768
+    max_intensity: 32768
+    min_exposure_time: 50.0
+    max_exposure_time: 500.0
+    default_exposure_time: 50.0
+    min_laser_power: 0.1
+    relative_exposure_step: 0.8
+    z_step_size: 1.0
+    rounding_factor: 5

@@ -216,3 +216,7 @@ def autofocus(mmc, mmStudio, z_stage_name:str, z_position):
         logger.error(f'Autofocus call failed after {len(z_offsets)} tries')
 
     return autofocus_success
+
+def autoxposure(mmc,autoexposure_settings,channel_settings):
+    
+    return autoexposure_succeed = True

@@ -42,12 +42,14 @@ class ChannelSettings:
     use_sequencing: bool = False
     num_channels: int = field(init=False, default=0)
     acquisition_rate: float = field(init=False, default=None)
+    #TODO:associate the laser to which channel
+    default_exposure_time: float = None
 
     def __post_init__(self):
         self.num_channels = len(self.channels)
         assert len(self.exposure_time_ms) == len(self.channels), \
             'Number of channels must equal number of exposure times'
-
+        self.exposure_time_ms = self.default_exposure_time
 
 @dataclass
 class SliceSettings:
@@ -77,3 +79,45 @@ class MicroscopeSettings:
     use_autofocus: bool = False
     autofocus_stage: Optional[str] = None
     autofocus_method: Optional[str] = None
+
+@dataclass
+class AutoexposureSettings:
+    # max intensity used to define over-exposure
+    max_intensity: int
+
+    # min intensity used to define under-exposure
+    min_intensity: int
+
+    # minimum exposure time used to decide when to lower the laser power
+    min_exposure_time: float
+
+    # max exposure time used during adjustment for under-exposure
+    max_exposure_time: float
+
+    # the initial exposure time used when the laser power is lowered
+    default_exposure_time: float
+
+    # the minimum laser power (used to define autoexposure failure)
+    min_laser_power: float
+
+    # factor by which to decrease the exposure time or laser power
+    # if a z-slice is found to be over-exposed
+    relative_exposure_step: float
+
+    # z-step size to use
+    z_step_size: float
+
+    # factor by which the exposure time will be rounded using
+    # round(exposure_time/rounding_factor)*rounding_factor. When using the
+    # Dragonfly spinning disk, the exposure time needs to be set in multiples of
+    # 2.5 ms to avoid artifacts introduced by the spinning disk rotation
+    rounding_factor: int = 5
+
+    def round_exposure_time(self, exposure_time: float):
+        exp_time = round(exposure_time / self.rounding_factor) * self.rounding_factor
+        return float(exp_time)
+
+    def __post_init__(self):
+        for attr in ('default_exposure_time', 'min_exposure_time', 'max_exposure_time'):
+            setattr(self, attr, self.round_exposure_time(getattr(self, attr)))
+
