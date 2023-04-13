@@ -34,3 +34,4 @@ exclude =
     notebooks,
     ignore,
     legacy,
+    examples,
