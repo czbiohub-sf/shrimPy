@@ -1,13 +1,23 @@
+import logging
 import os
 import time
-import numpy as np
+
 from dataclasses import asdict
 from datetime import datetime
-import logging
 from functools import partial
 
+import nidaqmx
+import numpy as np
+
+from nidaqmx.constants import Slope
+from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, start_headless
+from pycromanager.acq_util import cleanup
+
 from mantis.acquisition import microscope_operations
+from mantis.acquisition.hook_functions import config
 from mantis.acquisition.logger import configure_logger
+
+# isort: off
 from mantis.acquisition.BaseSettings import (
     TimeSettings,
     PositionSettings,
@@ -15,34 +25,25 @@ from mantis.acquisition.BaseSettings import (
     SliceSettings,
     MicroscopeSettings,
 )
-
-import nidaqmx
-from nidaqmx.constants import Slope
-
-from pycromanager import start_headless, Core, Studio, Acquisition, multi_d_acquisition_events
-from pycromanager.acq_util import cleanup
-
 from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
     log_preparing_acquisition,
     log_preparing_acquisition_check_counter,
     check_num_counter_samples,
 )
-
 from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
     log_acquisition_start,
     update_daq_freq,
 )
-
 from mantis.acquisition.hook_functions.post_camera_hook_functions import (
     start_daq_counters,
 )
-
 from mantis.acquisition.hook_functions.image_saved_hook_functions import (
     check_lf_acq_finished,
     check_ls_acq_finished,
 )
 
-from mantis.acquisition.hook_functions import config
+# isort: on
+
 
 ### Define constants
 LF_ZMQ_PORT = 4827

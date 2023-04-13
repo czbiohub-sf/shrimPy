@@ -1,6 +1,9 @@
 import click
 import yaml
+
 from mantis.acquisition.acq_engine import MantisAcquisition
+
+# isort: off
 from mantis.acquisition.BaseSettings import (
     TimeSettings,
     PositionSettings,
@@ -8,6 +11,8 @@ from mantis.acquisition.BaseSettings import (
     SliceSettings,
     MicroscopeSettings,
 )
+
+# isort: on
 
 
 @click.command()
@@ -42,7 +47,7 @@ from mantis.acquisition.BaseSettings import (
     default='C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg',
     type=click.Path(exists=True, file_okay=True, dir_okay=False),
     show_default=True,
-    help='''Path to Micro-manager config file 
+    help='''Path to Micro-manager config file
       which will run the light-sheet acquisition''',
 )
 def run_acquisition(

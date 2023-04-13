@@ -1,15 +1,13 @@
 #%%
 import os
-import numpy as np
 
-import tifffile
-from ndtiff import Dataset
-from waveorder.io.reader import WaveorderReader
-from recOrder.compute.reconstructions import (
-    initialize_reconstructor,
-    reconstruct_phase3D,
-)
 import napari
+import numpy as np
+import tifffile
+
+from ndtiff import Dataset
+from recOrder.compute.reconstructions import initialize_reconstructor, reconstruct_phase3D
+from waveorder.io.reader import WaveorderReader
 
 #%% Load data
 raw_data_path = r'D:\2023_03_30_kidney_tissue'

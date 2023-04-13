@@ -1,8 +1,10 @@
 #%%
 import os
+
+import napari
 import numpy as np
 import tifffile
-import napari
+
 from dexp.processing.deskew import yang_deskew
 
 #%%

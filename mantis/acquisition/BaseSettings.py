@@ -1,7 +1,9 @@
-import numpy as np
-from typing import Optional, List, Tuple, Sequence
-from pydantic.dataclasses import dataclass
 from dataclasses import field
+from typing import List, Optional, Sequence, Tuple
+
+import numpy as np
+
+from pydantic.dataclasses import dataclass
 
 
 @dataclass
