@@ -45,8 +45,9 @@ class ChannelSettings:
 
     def __post_init__(self):
         self.num_channels = len(self.channels)
-        assert len(self.exposure_time_ms) == len(self.channels), \
-            'Number of channels must equal number of exposure times'
+        assert len(self.exposure_time_ms) == len(
+            self.channels
+        ), 'Number of channels must equal number of exposure times'
 
 
 @dataclass
@@ -62,7 +63,7 @@ class SliceSettings:
 
     def __post_init__(self):
         if self.z_step is not None:
-            self.z_range = list(np.arange(self.z_start, self.z_end+self.z_step, self.z_step))
+            self.z_range = list(np.arange(self.z_start, self.z_end + self.z_step, self.z_step))
             self.num_slices = len(self.z_range)
 
 

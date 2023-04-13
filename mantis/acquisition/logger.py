@@ -8,13 +8,17 @@ def get_console_handler():
     console_handler.setFormatter(console_format)
     return console_handler
 
+
 # Setup file handler
 def get_file_handler(filename):
     file_handler = logging.FileHandler(filename)
     file_handler.setLevel(logging.DEBUG)
-    file_format = logging.Formatter('%(asctime)s - %(levelname)s - %(module)s.%(funcName)s - %(message)s')
+    file_format = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(module)s.%(funcName)s - %(message)s'
+    )
     file_handler.setFormatter(file_format)
     return file_handler
+
 
 # Setup root logger
 def configure_logger(filename):
