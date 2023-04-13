@@ -17,6 +17,8 @@ ignore =
     # (because selective use of whitespace is arguably clearer, e.g.,
     # `y = 2 * x**(1/3)` is clearer than `y = 2 * x ** (1 / 3)`
     E226,
+    # mccabe complexity test
+    C901,
 
 per-file-ignores =
     # allow star imports in `__init__.py`

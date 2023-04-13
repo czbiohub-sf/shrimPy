@@ -19,7 +19,6 @@ format:
 .PHONY: lint
 lint:
 	flake8 $(PACKAGE_NAME)
-	pylint $(PACKAGE_NAME) --extension-pkg-whitelist=PyQt5
 
 # run the pre-commit hooks on all files (not just staged changes)
 # (requires pre-commit to be installed)
