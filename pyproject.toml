@@ -39,9 +39,9 @@ napari = [
     "napari[all]",
 ]
 dev = [
-    "black~=22.3",
+    "black==22.3.0",
     "flake8~=5.0",
-    "isort~=5.10",
+    "isort~=5.12",
     "pre-commit~=2.19",
     "pylint~=2.14",
     "pytest~=7.1",
@@ -64,3 +64,42 @@ zip-safe = false
 
 [tool.setuptools.dynamic]
 version = {attr = "mantis.__version__"}
+
+[tool.black]
+line-length = 95
+target-version = ['py39', 'py310']
+include = '\.pyi?$'
+skip-string-normalization = true
+exclude = '''
+(
+  /(
+      \.eggs
+    | \.git
+    | \.hg
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | _build
+    | build
+    | dist
+    | notebooks
+    | ignore
+  )/
+)
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 95
+lines_between_types = 1
+default_section = "THIRDPARTY"
+no_lines_before = ["STDLIB",]
+ensure_newline_before_comments = true
+
+[tool.pylint]
+# disable all conventions, refactors, warnings (C, R, W) and the following:
+# E0401: unable-to-import (since it is possible that no one environment has all required packages)
+# E1136: unsubscriptable-object (anecdotal false positives for numpy objects)
+disable = ["C", "R", "W", "unsubscriptable-object", "import-error"]
+msg-template = "{line},{column},{category},{symbol}:{msg}"
+reports = "n"
