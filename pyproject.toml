@@ -33,10 +33,12 @@ dependencies = [
 
 
 [project.optional-dependencies]
-# note that dev dependencies are only pinned to major versions
 napari = [
-    "napari[all]",
+    "napari[all]; 'arm64' not in platform_machine", # with Qt5 and skimage
+    "napari; 'arm64' in platform_machine", # without Qt5 and skimage
+    "PyQt6; 'arm64' in platform_machine",
 ]
+# note that dev dependencies are only pinned to major versions
 dev = [
     "black==22.3.0",
     "flake8~=5.0",
