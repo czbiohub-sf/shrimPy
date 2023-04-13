@@ -33,7 +33,14 @@ from iohub.ngff_meta import TransformationMeta
     is_flag=True,
     help="View the correctly scaled result in napari",
 )
-def deskew(mmfolder, deskew_params_file, output, view):
+@click.option(
+    "--keep-overhang",
+    "-ko",
+    default=False,
+    is_flag=True,
+    help="Keep the overhanging region.",
+)
+def deskew(mmfolder, deskew_params_file, output, view, keep_overhang):
     """
     Deskews across P, T, C axes using a parameter file generated with estimate_deskew.py
 
@@ -66,7 +73,7 @@ def deskew(mmfolder, deskew_params_file, output, view):
 
                 # Deskew
                 deskewed, dims = mantis_deskew(
-                    data, settings.px_to_scan_ratio, settings.theta_deg
+                    data, settings.px_to_scan_ratio, settings.theta_deg, keep_overhang
                 )
 
                 # Handle transforms and metadata
@@ -99,7 +106,9 @@ def deskew(mmfolder, deskew_params_file, output, view):
         napari.run()
 
 
-def mantis_deskew(raw_data, px_to_scan_ratio, theta_deg, order=1, cval=None):
+def mantis_deskew(
+    raw_data, px_to_scan_ratio, theta_deg, keep_overhang=True, order=1, cval=None
+):
     """Deskews fluorescence data from the mantis microscope
 
     Parameters
@@ -114,6 +123,9 @@ def mantis_deskew(raw_data, px_to_scan_ratio, theta_deg, order=1, cval=None):
         e.g. if camera pixels = 6.5 um and mag = 1.4*40, then the pixel spacing
         is 6.5/(1.4*40) = 0.116 um. If the scan spacing is 0.3 um, then
         px_to_scan_ratio = 0.116 / 0.3 = 0.386
+    keep_overhang : bool
+        If true, compute the whole volume within the tilted parallelopipid.
+        If false, only compute the deskewed volume within a cuboid region.
     theta_deg : float
         angle of light sheet with respect to the optical axis in degrees
     order : int, optional
@@ -143,19 +155,27 @@ def mantis_deskew(raw_data, px_to_scan_ratio, theta_deg, order=1, cval=None):
 
     # Prepare transforms
     Z, Y, X = raw_data.shape
+
+    if keep_overhang:
+        Z_shift = 0
+        Xp = int(np.ceil((Z / px_to_scan_ratio) + (Y * ct)))
+    else:
+        Z_shift = int(np.floor(Y * ct * px_to_scan_ratio))
+        Xp = int(np.ceil((Z / px_to_scan_ratio) - (Y * ct)))
+
     matrix = np.array(
         [
             [
                 -px_to_scan_ratio * ct,
                 0,
                 px_to_scan_ratio,
-                0,
+                Z_shift,
             ],
             [-1, 0, 0, Y - 1],
             [0, -1, 0, X - 1],
         ]
     )
-    output_shape = (Y, X, int(np.ceil(Z / px_to_scan_ratio + (Y * ct))))
+    output_shape = (Y, X, Xp)
 
     # Apply transforms
     deskewed_data = scipy.ndimage.affine_transform(
