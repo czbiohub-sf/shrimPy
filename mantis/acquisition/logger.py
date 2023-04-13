@@ -1,5 +1,6 @@
 import logging
 
+
 # Setup console handler
 def get_console_handler():
     console_handler = logging.StreamHandler()

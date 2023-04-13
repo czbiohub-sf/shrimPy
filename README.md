@@ -12,7 +12,7 @@ mantis depends on following packages:
 
 ```shell
 conda create -n mantis python=3.9
-conda activate mantis  
+conda activate mantis
 pip install nidaqmx napari pyqt6 pycromanager dexp
 ```
 

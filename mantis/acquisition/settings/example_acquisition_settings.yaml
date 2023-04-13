@@ -46,7 +46,7 @@ ls_channel_settings:
 # Define slice (i.e. z-stack) settings for the light-sheet acquisition.
 ls_slice_settings:
   z_stage_name: 'AP Galvo'
-  z_start: -2.5  # in Volts 
+  z_start: -2.5  # in Volts
   z_end: 2.5  # 5V range corresponds to 155 um scan range
   z_step: 0.01  # 10 mV is equivalent to 310 nm
   use_sequencing: True
@@ -55,15 +55,15 @@ ls_slice_settings:
 # initialized
 lf_microscope_settings:
   # ROI may be omitted or blank; in this case the ROI will not be changed
-  roi: 
-  # Config group settings to apply. Must be a list of 
+  roi:
+  # Config group settings to apply. Must be a list of
   # [config_group, config_name] pairs
   config_group_settings:
     - ['Imaging Path', 'Label-free']
     - ['Channel - LS', 'External Control']
     # need to set first channel for falling edge sequencing
     - ['Channel - LF', 'State0']
-  # Device property settings to apply. Must be a list of 
+  # Device property settings to apply. Must be a list of
   # [device_name, property_name, property_value] sets
   device_property_settings:
     - ['Oryx', 'Line Selector', 'Line5']
@@ -83,7 +83,7 @@ lf_microscope_settings:
     - ['XYStage:XY:31', 'MotorSpeedX-S(mm/s)', 5.75]
     - ['XYStage:XY:31', 'MotorSpeedY-S(mm/s)', 5.75]
   # Device property settings which enable z sequencing
-  z_sequencing_settings: 
+  z_sequencing_settings:
     - [*MCL_DAC, 'Sequence', 'On']
   # Device property settings which enable channel sequencing
   channel_sequencing_settings:
@@ -105,10 +105,10 @@ ls_microscope_settings:
     - ['Prime BSI Express', 'Gain', '1-Full well']
     - ['Prime BSI Express', 'TriggerMode', 'Edge Trigger']
     - ['Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter']
-    # Illuminate sample only when all rows are exposing, aka pseudo global shutter 
+    # Illuminate sample only when all rows are exposing, aka pseudo global shutter
     - ['TS2_TTL1-8', 'Blanking', 'On']
   reset_device_properties:
     - ['Prime BSI Express', 'TriggerMode', 'Internal Trigger']
     - ['TS2_TTL1-8', 'Blanking', 'Off']
-  z_sequencing_settings: 
+  z_sequencing_settings:
     - [*AP_GALVO_DAC, 'Sequence', 'On']

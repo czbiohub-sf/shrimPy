@@ -1,4 +1,5 @@
 import logging
+
 from mantis.acquisition.microscope_operations import (
     get_daq_counter_names,
     get_total_num_daq_counter_samples,
