@@ -19,12 +19,16 @@ import yaml
 from mantis import logger
 
 
-def execute_autoexposure():
+def execute_autoexposure(channel_settings: ChannelSettings):
     """
     Acquires a z-stack with the selected channel
     Runs the autoexposure and adjusts the laser and exposures
     """
     try:
+        logger.info(
+            "Running autoexposure of channel '%s'" % channel_settings.config_name
+        )
+
         autoexposure_succeed = autoexposure()
     except RuntimeWarning(f"Autoexposure failed in channel"):
         autoexposure_succeed = False
@@ -60,20 +64,26 @@ def autoxposure(
     exposure_suggestion = channel_settings.exposure_time_ms[0]
     laser_power_suggestion = laser_settings.lasers["488"].laser_power
     flag_exposure = 0  # 1 over-exposed , 0 nominal, -1 under-exposed
+
+    # use a percentile to calculate the 'max' intensity
+    # as a defense against hot pixels, anomalous bright spots/dust, etc
+    # (the 99.99th percentile corresponds to ~100 pixels in a 1024x1024 image)
     stack_max_intensity = np.percentile(input_stack, 99.99)
 
     # Use the dtype for reference
     dtype = img_stack.dtype
     dtype_min = np.iinfo(dtype).min
     dtype_max = np.iinfo(dtype).max
+    # Calculate the min-max percent from dtypes
+    max_intensity = dtype_max * (1 - autoexposure_settings.max_intensity_percent / 100.0)
+    min_intensity = dtype_max * autoexposure_settings.min_intensity_percent / 100.0
 
     if method == "mean":
         stack_mean = np.mean(input_stack)
         stack_std = np.std(input_stack)
-        p_threshold = 0.05
 
         ## Over-exposed
-        if (stack_mean + stack_std) > (dtype_max * (1 - p_threshold)) or stack_max_intensity >= dtype_max:
+        if (stack_mean + stack_std) > max_intensity or stack_max_intensity >= dtype_max:
             logger.info(
                 f"Stack was over-exposed with mean:{stack_mean:.2f} std:{stack_std:.2f})"
             )
@@ -84,7 +94,7 @@ def autoxposure(
             )
 
         ## Under-exposed
-        elif (stack_mean - stack_std) < (dtype_min * (1 + p_threshold)):
+        elif (stack_mean - stack_std) < min_intensity:
             logger.info(
                 f"Stack was under-exposed with mean {stack_mean:.2f} std:{stack_std:.2f}"
             )
@@ -108,26 +118,81 @@ def autoxposure(
         # as a defense against hot pixels, anomalous bright spots/dust, etc
         logger.info(f"max_intensity ={stack_max_intensity}")
         # Check for over-exposure
-        if stack_max_intensity > autoexposure_settings.max_intensity:
+        if stack_max_intensity > max_intensity or stack_max_intensity >= dtype_max:
             logger.info(f"Stack was over-exposed)")
             flag_exposure = 1
             autoexposure_succeed = False
             laser_power_suggestion, exposure_suggestion = suggest_exposure_camera(
                 flag_exposure, autoexposure_settings, channel_settings, laser_settings
             )
+        else:
+            flag_exposure = 0
 
-        # Check for under-exposure
-        intensity_ratio = autoexposure_settings.min_intensity / stack_max_intensity
-        if intensity_ratio > 1:
+        if flag_exposure != 1:
+            # Check for under-exposure
+            intensity_ratio = min_intensity / stack_max_intensity
+            if intensity_ratio > 1:
+                logger.info(
+                    f"Stack was under-exposed with intensity ratio:{intensity_ratio})"
+                )
+                flag_exposure = -1
+                autoexposure_succeed = False
+
+                laser_power_suggestion, exposure_suggestion = suggest_exposure_camera(
+                    flag_exposure,
+                    autoexposure_settings,
+                    channel_settings,
+                    laser_settings,
+                )
+            ## Nominally exposed
+            else:
+                logger.info(
+                    f"Stack was nomially exposed with intensity ratio:{intensity_ratio})"
+                )
+                flag_exposure = 0
+                autoexposure_succeed = True
+
+    elif method == "masked_mean":
+        underexpose_thresh = 0.1
+        overexpose_thresh = 95
+        # Mask out hot pixels
+        image_masked = np.where(input_stack < stack_max_intensity, input_stack, 0)
+        # Calculate the percentile thresholds for underexposure and overexposure
+        underexpose_val = np.percentile(image_masked, underexpose_thresh)
+        overexpose_val = np.percentile(image_masked, overexpose_thresh)
+        # Check these values fall within desired range
+        underexpose_val = (
+            underexpose_val if underexpose_val > min_intensity else min_intensity
+        )
+        overexpose_val = (
+            overexpose_val if overexpose_val < max_intensity else max_intensity
+        )
+        stack_mean = np.mean(image_masked)
+        logger.info(f"{stack_mean}, {underexpose_val}, {overexpose_val}")
+
+        if stack_mean < underexpose_val or stack_mean < min_intensity:
             logger.info(
-                f"Stack was under-exposed with intensity ratio:{intensity_ratio})"
+                f"Stack is under-exposed mean {stack_mean:.2f} threshold:{underexpose_val:.2f}"
             )
             flag_exposure = -1
             autoexposure_succeed = False
-
             laser_power_suggestion, exposure_suggestion = suggest_exposure_camera(
                 flag_exposure, autoexposure_settings, channel_settings, laser_settings
             )
+        elif stack_mean > overexpose_val or stack_max_intensity >= dtype_max:
+            logger.info(
+                f"Stack is over-exposed mean {stack_mean:.2f} and threshold: {overexpose_val:.2f}"
+            )
+            flag_exposure = 1
+            autoexposure_succeed = False
+            laser_power_suggestion, exposure_suggestion = suggest_exposure_camera(
+                flag_exposure, autoexposure_settings, channel_settings, laser_settings
+            )
+        ## Nominally exposed
+        else:
+            logger.info(f"Stack was nomially exposed with mean {stack_mean:.2f})")
+            flag_exposure = 0
+            autoexposure_succeed = True
 
     # log the final results
     logger.info(
@@ -152,16 +217,14 @@ def suggest_exposure_camera(
         laser_power_suggestion <= autoexposure_settings.max_laser_power_mW
         or laser_power_suggestion >= autoexposure_settings.min_laser_power_mW
     ):
-        laser_power_suggestion = (
-            laser_settings.lasers["488"].laser_power
-            - (autoexposure_settings.relative_laser_power_step * flag_exposure)
+        laser_power_suggestion = laser_settings.lasers["488"].laser_power - (
+            autoexposure_settings.relative_laser_power_step * flag_exposure
         )
 
     # Change the exposure if the laser settings is maxed out
     elif exposure_suggestion <= autoexposure_settings.max_exposure_time_ms:
-        exposure_suggestion = (
-            channel_settings.exposure_time_ms
-            - (autoexposure_settings.relative_exposure_step * flag_exposure)
+        exposure_suggestion = channel_settings.exposure_time_ms - (
+            autoexposure_settings.relative_exposure_step * flag_exposure
         )
     else:
         logger.Warning(
@@ -275,34 +338,37 @@ if __name__ == "__main__":
     laser_settings = BaseSettings.LaserSettings(**mantis_settings.get("laser_settings"))
 
     # %%
-    # Underexposure
-    autoexposure_succeeded, new_laser_power, new_exposure = autoxposure(
-        img_stack[0, 1],
-        autoexposure_settings,
-        channel_settings,
-        laser_settings,
-        method="mean",
-    )
-    print(autoexposure_succeeded, new_laser_power, new_exposure)
+    methods = ["mean", "percentile", "masked_mean"]
+    for method in methods:
+        print(f"Using method: {method}")
+        # Underexposure
+        autoexposure_succeeded, new_laser_power, new_exposure = autoxposure(
+            img_stack[0, 1],
+            autoexposure_settings,
+            channel_settings,
+            laser_settings,
+            method=method,
+        )
+        print(autoexposure_succeeded, new_laser_power, new_exposure)
 
-    autoexposure_succeeded, new_laser_power, new_exposure = autoxposure(
-        img_stack[1, 1],
-        autoexposure_settings,
-        channel_settings,
-        laser_settings,
-        method="mean",
-    )
-    print(autoexposure_succeeded, new_laser_power, new_exposure)
-    # assert autoexposure_succeeded is False
-    # assert new_exposure > channel_settings.exposure_time_ms[0]
-    autoexposure_succeeded, new_laser_power, new_exposure = autoxposure(
-        img_stack[2, 1],
-        autoexposure_settings,
-        channel_settings,
-        laser_settings,
-        method="mean",
-    )
-    print(autoexposure_succeeded, new_laser_power, new_exposure)
+        autoexposure_succeeded, new_laser_power, new_exposure = autoxposure(
+            img_stack[1, 1],
+            autoexposure_settings,
+            channel_settings,
+            laser_settings,
+            method=method,
+        )
+        print(autoexposure_succeeded, new_laser_power, new_exposure)
+        # assert autoexposure_succeeded is False
+        # assert new_exposure > channel_settings.exposure_time_ms[0]
+        autoexposure_succeeded, new_laser_power, new_exposure = autoxposure(
+            img_stack[2, 1],
+            autoexposure_settings,
+            channel_settings,
+            laser_settings,
+            method=method,
+        )
+        print(autoexposure_succeeded, new_laser_power, new_exposure)
 
 # %%
 

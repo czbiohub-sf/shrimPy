@@ -86,11 +86,11 @@ class MicroscopeSettings:
 
 @dataclass
 class AutoexposureSettings:
-    # min intensity used to define under-exposure
-    min_intensity: int
+    # min intensity percent to define under-exposure
+    min_intensity_percent: float
 
-    # max intensity used to define over-exposure
-    max_intensity: int
+    # max intensity percent to define over-exposure
+    max_intensity_percent: float
 
     # minimum exposure time used to decide when to lower the laser power
     min_exposure_time_ms: float
@@ -114,9 +114,9 @@ class AutoexposureSettings:
 
     def __post_init__(self):
         for attr in ("default_exposure_time_ms", "min_exposure_time_ms", "max_exposure_time_ms"):
-            setattr(self, attr, self.round_exposure_time(getattr(self, attr)))
+            setattr(self, attr, round(getattr(self, attr)))
         for attr in ("min_laser_power_mW", "max_laser_power_mW"):
-            setattr(self, attr, self.round_laser_power(getattr(self, attr)))
+            setattr(self, attr, round(getattr(self, attr)))
 
 
 @dataclass

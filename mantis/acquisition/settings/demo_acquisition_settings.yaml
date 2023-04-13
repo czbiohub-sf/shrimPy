@@ -34,7 +34,7 @@ lf_microscope_settings:
 
 ls_channel_settings:
   roi: [0, 896, 2048, 256]
-  exposure_time_ms: [20, 30]
+  exposure_time_ms: [10, 10]
   channel_group: 'Channel'
   channels: ['Rhodamine', 'Cy5']
   use_sequencing: False
@@ -57,8 +57,8 @@ ls_microscope_settings:
     - ['Z', 'UseSequences', 'Yes']
 
 autoexposure_settings:
-  min_intensity: 10000
-  max_intensity: 40000
+  min_intensity_percent: 2.0
+  max_intensity_percent: 10.0
   min_exposure_time_ms: 2.0
   max_exposure_time_ms: 20.0
   default_exposure_time_ms: 50.0
