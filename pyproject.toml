@@ -84,6 +84,7 @@ exclude = '''
     | dist
     | notebooks
     | ignore
+    | examples
   )/
 )
 '''
