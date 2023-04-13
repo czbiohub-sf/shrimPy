@@ -1,4 +1,4 @@
-#%%
+# %%
 import os
 
 import napari
@@ -7,9 +7,8 @@ import tifffile
 
 from ndtiff import Dataset
 from recOrder.compute.reconstructions import initialize_reconstructor, reconstruct_phase3D
-from waveorder.io.reader import WaveorderReader
 
-#%% Load data
+# %% Load data
 raw_data_path = r'D:\2023_03_30_kidney_tissue'
 processed_data_path = r'D:\2023_03_30_kidney_tissue'
 dataset = 'FOV_grid_1'
@@ -39,7 +38,7 @@ reconstructor_args = {
 }
 reconstructor = initialize_reconstructor(pipeline="PhaseFromBF", **reconstructor_args)
 
-#%%
+# %%
 phase3D = reconstruct_phase3D(data[0, 0, 0], reconstructor, method="Tikhonov", reg_re=1e-2)
 # %%
 napari.view_image(phase3D)

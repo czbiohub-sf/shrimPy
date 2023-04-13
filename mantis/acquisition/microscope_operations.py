@@ -4,7 +4,6 @@ import time
 from typing import Tuple
 
 import nidaqmx
-import numpy as np
 
 from nidaqmx.constants import AcquisitionType
 

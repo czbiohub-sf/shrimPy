@@ -45,7 +45,7 @@ from mantis.acquisition.hook_functions.image_saved_hook_functions import (
 # isort: on
 
 
-### Define constants
+# Define constants
 LF_ZMQ_PORT = 4827
 LS_ZMQ_PORT = 5827  # we need to space out port numbers a bit
 LS_POST_READOUT_DELAY = 0.05  # delay before acquiring next frame, in ms
@@ -402,7 +402,7 @@ class MantisAcquisition(object):
         """
         # Determine label-free acq timing
         oryx_framerate = float(self.lf_acq.mmc.get_property('Oryx', 'Frame Rate'))
-        ## assumes all channels have the same exposure time
+        # assumes all channels have the same exposure time
         self.lf_acq.slice_settings.acquisition_rate = np.minimum(
             1000 / (self.lf_acq.channel_settings.exposure_time_ms[0] + MCL_STEP_TIME),
             np.floor(oryx_framerate),
@@ -445,7 +445,7 @@ class MantisAcquisition(object):
 
         # LF channel trigger - accommodates longer LC switching times
         self._lf_channel_ctr_task = nidaqmx.Task('LF Channel Counter')
-        lf_channel_ctr = microscope_operations.setup_daq_counter(
+        microscope_operations.setup_daq_counter(
             self._lf_channel_ctr_task,
             co_channel='cDAQ1/_ctr0',
             freq=self.lf_acq.channel_settings.acquisition_rate,
@@ -467,7 +467,7 @@ class MantisAcquisition(object):
 
         # LF Z trigger
         self._lf_z_ctr_task = nidaqmx.Task('LF Z Counter')
-        lf_z_ctr = microscope_operations.setup_daq_counter(
+        microscope_operations.setup_daq_counter(
             self._lf_z_ctr_task,
             co_channel='cDAQ1/_ctr2',
             freq=self.lf_acq.slice_settings.acquisition_rate,
@@ -480,7 +480,7 @@ class MantisAcquisition(object):
         # LS Z counter will start with a software command
         # Counter frequency is updated for each channel in post-camera hook fn
         self._ls_z_ctr_task = nidaqmx.Task('LS Z Counter')
-        ls_z_ctr = microscope_operations.setup_daq_counter(
+        microscope_operations.setup_daq_counter(
             self._ls_z_ctr_task,
             co_channel='cDAQ1/_ctr3',
             freq=self.ls_acq.slice_settings.acquisition_rate[0],
@@ -540,7 +540,7 @@ class MantisAcquisition(object):
         # quickly and re-engage
         slow_speed = 2.0
         fast_speed = 5.75
-        short_distance = 2000  ## in um
+        short_distance = 2000  # in um
         p_label = self.position_settings.position_labels[position_index]
 
         # only change stage speed if using autofocus

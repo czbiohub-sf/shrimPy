@@ -1,13 +1,12 @@
-#%%
+# %%
 import os
 
-import napari
 import numpy as np
 import tifffile
 
 from dexp.processing.deskew import yang_deskew
 
-#%%
+# %%
 
 raw_data_path = r'D:\2023_02_16_LS_argolight'
 processed_data_path = r'D:\2023_02_16_LS_argolight\deskew'
