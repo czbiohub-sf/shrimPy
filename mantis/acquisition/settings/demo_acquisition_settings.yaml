@@ -6,7 +6,7 @@ time_settings:
   time_internal_s: 5
 
 lf_channel_settings:
-  roi:
+  roi: []
   exposure_time_ms: [10, 10]
   channel_group: 'Channel-Multiband'
   channels: ['DAPI', 'FITC']
@@ -55,14 +55,38 @@ ls_microscope_settings:
     - ['Camera', 'BitDepth', '11']
   z_sequencing_settings: 
     - ['Z', 'UseSequences', 'Yes']
-  
- autoexposure:
-    min_intensity: 32768
-    max_intensity: 32768
-    min_exposure_time: 50.0
-    max_exposure_time: 500.0
-    default_exposure_time: 50.0
-    min_laser_power: 0.1
-    relative_exposure_step: 0.8
-    z_step_size: 1.0
-    rounding_factor: 5
+
+autoexposure_settings:
+  min_intensity: 10000
+  max_intensity: 40000
+  min_exposure_time_ms: 2.0
+  max_exposure_time_ms: 20.0
+  default_exposure_time_ms: 50.0
+  min_laser_power_mW: 1.0
+  max_laser_power_mW: 20.0
+  relative_exposure_step: 0.8
+  relative_laser_power_step: 2.2
+  rounding_factor: 5
+
+laser_settings:
+  common_settings:
+    serial_number: '000000'
+    com_port: ''
+    max_power: 0
+    laser_power: 0
+  lasers:
+    488:
+      serial_number: '00000'
+      com_port: 'COM3'
+      laser_power: 5.0
+      max_power: 100.0
+    561:
+      serial_number: '11111'
+      com_port: 'COM4'
+      laser_power: 5.0
+      max_power: 100.0
+    632:
+      serial_number: '22222'
+      com_port: 'COM5'
+      laser_power: 5.0
+      max_power: 100.0
