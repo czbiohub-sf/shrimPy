@@ -33,7 +33,7 @@ The pre-commit hooks automatically run style checks (e.g. `flake8`, `black`, `is
 
 ## Makefile
 
-A [makefile](Makefile) is included to help with a few basic development command. Currently, the following commands are available:
+A [makefile](Makefile) is included to help with a few basic development commands. Currently, the following commands are available:
 
 ```sh
 make setup-develop # setup the package in development mode
