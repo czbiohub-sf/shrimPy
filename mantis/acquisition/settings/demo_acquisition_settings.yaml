@@ -26,7 +26,7 @@ lf_microscope_settings:
     - ['Camera', 'OnCameraCCDXSize', '1024']
     - ['Camera', 'OnCameraCCDYSize', '1224']
     - ['Camera', 'BitDepth', '12']
-  z_sequencing_settings: 
+  z_sequencing_settings:
     - ['Z', 'UseSequences', 'Yes']
   channel_sequencing_settings:
     - ['LED', 'Sequence', 'On']
@@ -53,5 +53,5 @@ ls_microscope_settings:
     - ['Camera', 'OnCameraCCDXSize', '2048']
     - ['Camera', 'OnCameraCCDYSize', '2048']
     - ['Camera', 'BitDepth', '11']
-  z_sequencing_settings: 
+  z_sequencing_settings:
     - ['Z', 'UseSequences', 'Yes']
