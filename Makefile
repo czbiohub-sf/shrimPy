@@ -11,10 +11,12 @@ uninstall:
 .PHONY: check-format
 check-format:
 	black --check -S -t py39 .
+	isort --check .
 
 .PHONY: format
 format:
 	black -S -t py39 .
+	isort .
 
 .PHONY: lint
 lint:
