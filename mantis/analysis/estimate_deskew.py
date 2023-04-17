@@ -3,12 +3,13 @@ from iohub import read_micromanager
 import napari
 import numpy as np
 import yaml
-import deskew_settings
+from dataclasses import asdict
+from AnalysisSettings import DeskewSettings
 
 
 @click.command()
 @click.argument(
-    "mmfolder",
+    "data_path",
     type=click.Path(exists=True),
 )
 @click.option(
@@ -18,16 +19,21 @@ import deskew_settings
     required=False,
     help="Path to saved parameters",
 )
-def estimate_deskew(mmfolder, output_file):
+def estimate_deskew(data_path, output_file):
     """
     Routine for estimating deskewing parameters from calibration data.
 
-    >> python estimate_deskew.py </path/to/mmfolder>
+    >> python estimate_deskew.py </path/to/data_path>
 
     """
     # Read p, t, c = (0, 0, 0) into an array
-    reader = read_micromanager(mmfolder)
+    reader = read_micromanager(data_path)
     data = reader.get_array(0)[0, 0, ...]  # zyx
+
+    pixel_size_um = input("Enter image pixel size in micrometers: ")
+    scan_step_um = input("Enter the estimated galvo scan step in micrometers: ")
+    approx_theta_deg = input("Enter the approximate light sheet angle in degrees: ")
+    approx_px_to_scan_ratio = pixel_size_um / scan_step_um
 
     v = napari.Viewer()
     v.add_image(data)
@@ -42,6 +48,7 @@ def estimate_deskew(mmfolder, output_file):
     rect = v.layers["rect"].data[0]
     px_to_scan_ratio = (rect[2, 0] - rect[0, 0]) / (rect[2, 2] - rect[0, 2])
     print(f"px_to_scan_ratio : {px_to_scan_ratio:.3f}\n")
+    print(f"px_to_scan_ratio is a factor of {approx_px_to_scan_ratio/px_to_scan_ratio}x from your estimate")
 
     # Estimate theta
     v.layers.remove("data")
@@ -59,16 +66,20 @@ def estimate_deskew(mmfolder, output_file):
     theta = np.arccos(r_hat[0] / r_hat[1] / px_to_scan_ratio)
     theta_deg = (theta % np.pi) * 180 / np.pi
     print(f"theta_deg : {theta_deg:.2f}\n")
+    print(f"theta_deg is a factor of {approx_theta_deg/theta_deg}x from your estimate")
 
     # Create validated object
-    settings = deskew_settings.DeskewSettings(
-        px_to_scan_ratio=px_to_scan_ratio, theta_deg=theta_deg
+    settings = DeskewSettings(
+        pixel_size_um = pixel_size_um,
+        scan_step_um = scan_step_um,
+        ls_angle_deg=theta_deg,
+        px_to_scan_ratio=px_to_scan_ratio
     )
 
     # Write result
     print(f"Writing deskewing parameters to {output_file}")
     with open(output_file, "w") as f:
-        yaml.dump(settings.dict(), f)
+        yaml.dump(asdict(settings), f)
 
 
 if __name__ == "__main__":
