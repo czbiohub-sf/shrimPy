@@ -165,6 +165,7 @@ def autofocus(mmc, mmStudio, z_stage_name: str, z_position):
     0000001100001001 - In Range
     0000001100001010 - In range and engaged?
     0000001000011001 - Out of Range
+    0010001000001001 - ?
 
     Args:
         mmc (_type_): _description_
@@ -182,13 +183,18 @@ def autofocus(mmc, mmStudio, z_stage_name: str, z_position):
     af_method = mmStudio.get_autofocus_manager().get_autofocus_method()
     z_offsets = [0, -10, 10, -20, 20, -30, 30]
 
-    # turn on autofocus if it has been turned off
-    if af_method.get_property_value('PFS Status') in ['0000000000000000', '0000000100000000']:
+    # Turn on autofocus if it has been turned off. This call has no effect is
+    # continuous autofocus is already engaged
+    try:
         af_method.full_focus()
-
+    except:
+        logger.debug(f'Call to full_focus() method failed')
+    else:
+        logger.debug(f'Call to full_focus() method succeeded')
+    
     if af_method.is_continuous_focus_locked():  # True if autofocus is engaged
         autofocus_success = True
-        logger.debug('Autofocus is already engaged')
+        logger.debug('Continuous autofocus is already engaged')
     else:
         for z_offset in z_offsets:
             mmc.set_position(z_stage_name, z_position + z_offset)
@@ -204,8 +210,8 @@ def autofocus(mmc, mmStudio, z_stage_name: str, z_position):
                 logger.debug(f'Autofocus call failed with z offset of {z_offset} um')
 
     if error_occurred and autofocus_success:
-        logger.debug(f'Autofocus call succeeded with z offset of {z_offset} um')
-
+        logger.debug(f'Continuous autofocus call succeeded with z offset of {z_offset} um')
+    
     if not autofocus_success:
         logger.error(f'Autofocus call failed after {len(z_offsets)} tries')
 
