@@ -1,4 +1,5 @@
 import os
+
 import numpy as np
 import tifffile
 
@@ -8,9 +9,11 @@ datasets = [i for i in os.listdir(raw_data_path) if 'beads' in i]
 
 for dataset in datasets:
     # Load data
-    data =tifffile.imread(os.path.join(raw_data_path, dataset, dataset+'.tif'))
+    data = tifffile.imread(os.path.join(raw_data_path, dataset, dataset + '.tif'))
 
     proj = np.amax(data, axis=0)
 
-    os.remove(os.path.join(processed_data_path, dataset, dataset+'_max_proj.tif'))
-    tifffile.imwrite(os.path.join(processed_data_path, dataset, dataset+'_max_proj.tif'), proj)
+    os.remove(os.path.join(processed_data_path, dataset, dataset + '_max_proj.tif'))
+    tifffile.imwrite(
+        os.path.join(processed_data_path, dataset, dataset + '_max_proj.tif'), proj
+    )
