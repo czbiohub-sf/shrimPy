@@ -5,7 +5,7 @@ import napari
 import numpy as np
 import yaml
 
-from AnalysisSettings import DeskewSettings
+from mantis.analysis.AnalysisSettings import DeskewSettings
 from iohub import read_micromanager
 
 
@@ -92,5 +92,3 @@ def estimate_deskew(data_path, output_file):
 
 if __name__ == "__main__":
     estimate_deskew()
-
-DeskewSettings(pixel_size_um=0.116, ls_angle_deg=30, px_to_scan_ratio=0.3)
