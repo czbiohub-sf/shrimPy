@@ -1,6 +1,6 @@
 import os
 import csv
-from mantis.acquisition.BaseSettings import PositionSettings
+from acquisition.AcquisitionSettings import PositionSettings
 
 position_settings = PositionSettings(**{})
 

@@ -18,7 +18,7 @@ from mantis.acquisition.hook_functions import config
 from mantis.acquisition.logger import configure_logger
 
 # isort: off
-from mantis.acquisition.BaseSettings import (
+from acquisition.AcquisitionSettings import (
     TimeSettings,
     PositionSettings,
     ChannelSettings,
