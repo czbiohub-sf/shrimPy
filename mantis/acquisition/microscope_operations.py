@@ -159,36 +159,44 @@ def get_total_num_daq_counter_samples(CtrTask: nidaqmx.Task or list):
 
 
 def autofocus(mmc, mmStudio, z_stage_name: str, z_position):
-    """_summary_
-    0000000000000000 - Off and out of range?
-    0000000100000000 - Off
-    0000001100001001 - In Range
-    0000001100001010 - In range and engaged?
-    0000001000011001 - Out of Range
+    """
+    Attempt to engage Nikon PFS continuous autofocus. This function will log a
+    message and continue if continuous autofocus is already engaged. Otherwise,
+    it will attempt to engage autofocus, moving the z stage by amounts given in
+    `z_offsets`, if necessary.
 
-    Args:
-        mmc (_type_): _description_
-        mmStudio (_type_): _description_
-        z_stage_name (str): _description_
-        z_position (_type_): _description_
+    Nikon PFS status codes:
+        0000000000000000 - Off and out of range?
+        0000000100000000 - Off
+        0000001100001001 - In Range
+        0000001100001010 - In range and engaged?
+        0000001000011001 - Out of Range
+        0010001000001001 - ?
 
-    Returns:
-        _type_: _description_
+    Returns
+    -------
+    bool
+        True if continuous autofocus successfully engaged, False otherwise.
     """
     logger.debug('Engaging autofocus')
     autofocus_success = False
     error_occurred = False
 
     af_method = mmStudio.get_autofocus_manager().get_autofocus_method()
-    z_offsets = [0, -10, 10, -20, 20, -30, 30]
+    z_offsets = [0, -10, 10, -20, 20, -30, 30]  # in um
 
-    # turn on autofocus if it has been turned off
-    if af_method.get_property_value('PFS Status') in ['0000000000000000', '0000000100000000']:
+    # Turn on autofocus if it has been turned off. This call has no effect is
+    # continuous autofocus is already engaged
+    try:
         af_method.full_focus()
+    except Exception:
+        logger.debug('Call to full_focus() method failed')
+    else:
+        logger.debug('Call to full_focus() method succeeded')
 
     if af_method.is_continuous_focus_locked():  # True if autofocus is engaged
         autofocus_success = True
-        logger.debug('Autofocus is already engaged')
+        logger.debug('Continuous autofocus is already engaged')
     else:
         for z_offset in z_offsets:
             mmc.set_position(z_stage_name, z_position + z_offset)
@@ -204,7 +212,7 @@ def autofocus(mmc, mmStudio, z_stage_name: str, z_position):
                 logger.debug(f'Autofocus call failed with z offset of {z_offset} um')
 
     if error_occurred and autofocus_success:
-        logger.debug(f'Autofocus call succeeded with z offset of {z_offset} um')
+        logger.debug(f'Continuous autofocus call succeeded with z offset of {z_offset} um')
 
     if not autofocus_success:
         logger.error(f'Autofocus call failed after {len(z_offsets)} tries')

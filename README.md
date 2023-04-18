@@ -25,7 +25,7 @@ Data are acquired using the `run-mantis-acquisition` command. A list of the comm
 
 ```
 run-mantis-acquisition --help
-``` 
+```
 
 The mantis acquisition is configures using a YAML settings file. An example of a settings file can be found [here](mantis/acquisition/settings/example_acquisition_settings.yaml).
 
