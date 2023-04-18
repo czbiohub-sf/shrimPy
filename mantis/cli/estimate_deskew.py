@@ -5,8 +5,9 @@ import napari
 import numpy as np
 import yaml
 
-from mantis.analysis.AnalysisSettings import DeskewSettings
 from iohub import read_micromanager
+
+from mantis.analysis.AnalysisSettings import DeskewSettings
 
 
 @click.command()
