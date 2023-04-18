@@ -213,7 +213,7 @@ def autofocus(mmc, mmStudio, z_stage_name: str, z_position):
 
     if error_occurred and autofocus_success:
         logger.debug(f'Continuous autofocus call succeeded with z offset of {z_offset} um')
-    
+
     if not autofocus_success:
         logger.error(f'Autofocus call failed after {len(z_offsets)} tries')
 

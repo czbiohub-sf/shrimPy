@@ -578,7 +578,7 @@ class MantisAcquisition(object):
             microscope_operations.set_z_position(
                 self.lf_acq.mmc,
                 self.lf_acq.microscope_settings.autofocus_stage,
-                self.position_settings.xyz_positions[position_index][2]
+                self.position_settings.xyz_positions[position_index][2],
             )
             microscope_operations.wait_for_device(
                 self.lf_acq.mmc,
