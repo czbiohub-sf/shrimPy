@@ -159,39 +159,41 @@ def get_total_num_daq_counter_samples(CtrTask: nidaqmx.Task or list):
 
 
 def autofocus(mmc, mmStudio, z_stage_name: str, z_position):
-    """_summary_
-    0000000000000000 - Off and out of range?
-    0000000100000000 - Off
-    0000001100001001 - In Range
-    0000001100001010 - In range and engaged?
-    0000001000011001 - Out of Range
-    0010001000001001 - ?
+    """
+    Attempt to engage Nikon PFS continuous autofocus. This function will log a
+    message and continue if continuous autofocus is already engaged. Otherwise,
+    it will attempt to engage autofocus, moving the z stage by amounts given in
+    `z_offsets`, if necessary.
 
-    Args:
-        mmc (_type_): _description_
-        mmStudio (_type_): _description_
-        z_stage_name (str): _description_
-        z_position (_type_): _description_
+    Nikon PFS status codes:
+        0000000000000000 - Off and out of range?
+        0000000100000000 - Off
+        0000001100001001 - In Range
+        0000001100001010 - In range and engaged?
+        0000001000011001 - Out of Range
+        0010001000001001 - ?
 
-    Returns:
-        _type_: _description_
+    Returns
+    -------
+    bool
+        True if continuous autofocus successfully engaged, False otherwise.
     """
     logger.debug('Engaging autofocus')
     autofocus_success = False
     error_occurred = False
 
     af_method = mmStudio.get_autofocus_manager().get_autofocus_method()
-    z_offsets = [0, -10, 10, -20, 20, -30, 30]
+    z_offsets = [0, -10, 10, -20, 20, -30, 30]  # in um
 
     # Turn on autofocus if it has been turned off. This call has no effect is
     # continuous autofocus is already engaged
     try:
         af_method.full_focus()
-    except:
-        logger.debug(f'Call to full_focus() method failed')
+    except Exception:
+        logger.debug('Call to full_focus() method failed')
     else:
-        logger.debug(f'Call to full_focus() method succeeded')
-    
+        logger.debug('Call to full_focus() method succeeded')
+
     if af_method.is_continuous_focus_locked():  # True if autofocus is engaged
         autofocus_success = True
         logger.debug('Continuous autofocus is already engaged')
