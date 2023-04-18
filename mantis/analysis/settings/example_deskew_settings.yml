@@ -1,0 +1,4 @@
+pixel_size_um: 0.116
+ls_angle_deg: 36.17  # can be calibrated using estimate_deskew.py
+px_to_scan_ratio: 0.371  # Optional, can be calibrated using estimate_deskew.py
+scan_step_um: 0.313  # Optional, corresponds to 10 mV

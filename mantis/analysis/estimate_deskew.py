@@ -26,13 +26,16 @@ def estimate_deskew(data_path, output_file):
     >> python estimate_deskew.py </path/to/data_path>
 
     """
+    assert str(output_file).endswith(('.yaml', '.yml')), \
+        "Output file must be a YAML file."
+
     # Read p, t, c = (0, 0, 0) into an array
     reader = read_micromanager(data_path)
     data = reader.get_array(0)[0, 0, ...]  # zyx
 
-    pixel_size_um = input("Enter image pixel size in micrometers: ")
-    scan_step_um = input("Enter the estimated galvo scan step in micrometers: ")
-    approx_theta_deg = input("Enter the approximate light sheet angle in degrees: ")
+    pixel_size_um = float(input("Enter image pixel size in micrometers: "))
+    scan_step_um = float(input("Enter the estimated galvo scan step in micrometers: "))
+    approx_theta_deg = float(input("Enter the approximate light sheet angle in degrees: "))
     approx_px_to_scan_ratio = pixel_size_um / scan_step_um
 
     v = napari.Viewer()
@@ -47,8 +50,10 @@ def estimate_deskew(data_path, output_file):
     )
     rect = v.layers["rect"].data[0]
     px_to_scan_ratio = (rect[2, 0] - rect[0, 0]) / (rect[2, 2] - rect[0, 2])
-    print(f"px_to_scan_ratio : {px_to_scan_ratio:.3f}\n")
-    print(f"px_to_scan_ratio is a factor of {approx_px_to_scan_ratio/px_to_scan_ratio}x from your estimate")
+    print(f"Measured px_to_scan_ratio : {px_to_scan_ratio:.3f}\n")
+
+    factor = np.abs(1-approx_px_to_scan_ratio/px_to_scan_ratio) * 100
+    print(f"The measured px_to_scan_ratio is within {round(factor)}% from your estimate")
 
     # Estimate theta
     v.layers.remove("data")
@@ -65,15 +70,17 @@ def estimate_deskew(data_path, output_file):
     r_hat = r / np.linalg.norm(r)
     theta = np.arccos(r_hat[0] / r_hat[1] / px_to_scan_ratio)
     theta_deg = (theta % np.pi) * 180 / np.pi
-    print(f"theta_deg : {theta_deg:.2f}\n")
-    print(f"theta_deg is a factor of {approx_theta_deg/theta_deg}x from your estimate")
+    print(f"Measured light-sheet angle : {theta_deg:.2f}\n")
+
+    factor = np.abs(1-approx_theta_deg/theta_deg) * 100
+    print(f"The measured light-sheet angle is within {round(factor)}% from your estimate")
 
     # Create validated object
     settings = DeskewSettings(
-        pixel_size_um = pixel_size_um,
-        scan_step_um = scan_step_um,
+        pixel_size_um=pixel_size_um,
         ls_angle_deg=theta_deg,
-        px_to_scan_ratio=px_to_scan_ratio
+        px_to_scan_ratio=px_to_scan_ratio,
+        scan_step_um=scan_step_um,
     )
 
     # Write result
@@ -84,3 +91,5 @@ def estimate_deskew(data_path, output_file):
 
 if __name__ == "__main__":
     estimate_deskew()
+
+DeskewSettings(pixel_size_um=0.116, ls_angle_deg=30, px_to_scan_ratio=0.3)

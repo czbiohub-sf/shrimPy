@@ -86,8 +86,7 @@ def deskew(data_path, output_path, deskew_params_path, positions, view, keep_ove
         pos_hcs_idx = [(0, p, 0) for p in range(P)]
 
     # Loop through (P, T, C), deskewing and writing as we go
-    # TODO: remove hardcoded values
-    for p in [0, 3]:
+    for p in range(P):
         position = writer.create_position(*pos_hcs_idx[p])
         # Handle transforms and metadata
         transform = TransformationMeta(
