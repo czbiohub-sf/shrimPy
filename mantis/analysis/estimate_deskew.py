@@ -1,10 +1,12 @@
+from dataclasses import asdict
+
 import click
-from iohub import read_micromanager
 import napari
 import numpy as np
 import yaml
-from dataclasses import asdict
+
 from AnalysisSettings import DeskewSettings
+from iohub import read_micromanager
 
 
 @click.command()
@@ -26,8 +28,7 @@ def estimate_deskew(data_path, output_file):
     >> python estimate_deskew.py </path/to/data_path>
 
     """
-    assert str(output_file).endswith(('.yaml', '.yml')), \
-        "Output file must be a YAML file."
+    assert str(output_file).endswith(('.yaml', '.yml')), "Output file must be a YAML file."
 
     # Read p, t, c = (0, 0, 0) into an array
     reader = read_micromanager(data_path)
@@ -52,7 +53,7 @@ def estimate_deskew(data_path, output_file):
     px_to_scan_ratio = (rect[2, 0] - rect[0, 0]) / (rect[2, 2] - rect[0, 2])
     print(f"Measured px_to_scan_ratio : {px_to_scan_ratio:.3f}\n")
 
-    factor = np.abs(1-approx_px_to_scan_ratio/px_to_scan_ratio) * 100
+    factor = np.abs(1 - approx_px_to_scan_ratio / px_to_scan_ratio) * 100
     print(f"The measured px_to_scan_ratio is within {round(factor)}% from your estimate")
 
     # Estimate theta
@@ -72,7 +73,7 @@ def estimate_deskew(data_path, output_file):
     theta_deg = (theta % np.pi) * 180 / np.pi
     print(f"Measured light-sheet angle : {theta_deg:.2f}\n")
 
-    factor = np.abs(1-approx_theta_deg/theta_deg) * 100
+    factor = np.abs(1 - approx_theta_deg / theta_deg) * 100
     print(f"The measured light-sheet angle is within {round(factor)}% from your estimate")
 
     # Create validated object

@@ -1,12 +1,15 @@
+import csv
+
+from dataclasses import asdict
+
+import click
+import napari
 import numpy as np
 import scipy
-import click
-from AnalysisSettings import DeskewSettings
 import yaml
-import napari
-import csv
-from dataclasses import asdict
-from iohub import read_micromanager, open_ome_zarr
+
+from AnalysisSettings import DeskewSettings
+from iohub import open_ome_zarr, read_micromanager
 from iohub.ngff_meta import TransformationMeta
 
 
@@ -70,17 +73,12 @@ def deskew(data_path, output_path, deskew_params_path, positions, view, keep_ove
 
     P, T, C, Z, Y, X = reader.get_num_positions(), *reader.shape
     deskewed_shape, voxel_size = get_deskewed_data_shape(
-        (Z, Y, X), 
-        settings.pixel_size_um,
-        settings.ls_angle_deg,
-        settings.px_to_scan_ratio
+        (Z, Y, X), settings.pixel_size_um, settings.ls_angle_deg, settings.px_to_scan_ratio
     )
 
     if positions is not None:
         pos_hcs_idx = [
-            (
-            row['well_id'][0], row['well_id'][1:], row['site_num']
-            ) for row in pos_log
+            (row['well_id'][0], row['well_id'][1:], row['site_num']) for row in pos_log
         ]
     else:
         pos_hcs_idx = [(0, p, 0) for p in range(P)]
@@ -128,11 +126,11 @@ def deskew(data_path, output_path, deskew_params_path, positions, view, keep_ove
 
 
 def get_deskewed_data_shape(
-        raw_data_shape:tuple, 
-        pixel_size_um:float, 
-        ls_angle_deg:float, 
-        px_to_scan_ratio:float, 
-        keep_overhang:bool=True
+    raw_data_shape: tuple,
+    pixel_size_um: float,
+    ls_angle_deg: float,
+    px_to_scan_ratio: float,
+    keep_overhang: bool = True,
 ):
     """Get the shape of the deskewed data set and its voxel size
 
@@ -175,7 +173,9 @@ def get_deskewed_data_shape(
     return output_shape, voxel_size
 
 
-def mantis_deskew(raw_data, px_to_scan_ratio, ls_angle_deg, keep_overhang=True, order=1, cval=None):
+def mantis_deskew(
+    raw_data, px_to_scan_ratio, ls_angle_deg, keep_overhang=True, order=1, cval=None
+):
     """Deskews fluorescence data from the mantis microscope
 
     Parameters
@@ -218,7 +218,7 @@ def mantis_deskew(raw_data, px_to_scan_ratio, ls_angle_deg, keep_overhang=True, 
     Z_shift = 0
     if not keep_overhang:
         Z_shift = int(np.floor(Y * ct * px_to_scan_ratio))
-    
+
     matrix = np.array(
         [
             [
