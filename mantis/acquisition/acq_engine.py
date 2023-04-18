@@ -570,12 +570,20 @@ class MantisAcquisition(object):
         microscope_operations.wait_for_device(
             self.lf_acq.mmc, self.lf_acq.mmc.get_xy_stage_device()
         )
-        # Note: moving z stage disengages autofocus
-        # microscope_operations.set_z_position(
-        #     self.lf_acq.mmc,
-        #     self.lf_acq.microscope_settings.autofocus_stage,
-        #     self.position_settings.xyz_positions[position_index][2]
-        # )
+
+        # Note: only set the z position if not using autofocus. Calling
+        # set_z_position will disengage continuous autofocus. The autofocus
+        # algorithm sets the z position independently
+        if not self.lf_acq.microscope_settings.use_autofocus:
+            microscope_operations.set_z_position(
+                self.lf_acq.mmc,
+                self.lf_acq.microscope_settings.autofocus_stage,
+                self.position_settings.xyz_positions[position_index][2]
+            )
+            microscope_operations.wait_for_device(
+                self.lf_acq.mmc,
+                self.lf_acq.microscope_settings.autofocus_stage,
+            )
 
     def setup(self):
         """
@@ -704,16 +712,6 @@ class MantisAcquisition(object):
                             f'Autofocus failed. Aborting acquisition for timepoint {t_idx} at position {p_label}'
                         )
                         continue
-                else:
-                    microscope_operations.set_z_position(
-                        self.lf_acq.mmc,
-                        self.lf_acq.microscope_settings.autofocus_stage,
-                        self.position_settings.xyz_positions[p_idx][2]
-                    )
-                    microscope_operations.wait_for_device(
-                        self.lf_acq.mmc,
-                        self.lf_acq.microscope_settings.autofocus_stage,
-                    )
 
                 # start acquisition
                 for _event in lf_events:
