@@ -1,6 +1,5 @@
 import logging
 import os
-import time
 
 from dataclasses import asdict
 from datetime import datetime
@@ -14,7 +13,6 @@ from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, 
 from pycromanager.acq_util import cleanup
 
 from mantis.acquisition import microscope_operations
-from mantis.acquisition.hook_functions import config
 from mantis.acquisition.logger import configure_logger
 
 # isort: off
@@ -27,7 +25,6 @@ from acquisition.AcquisitionSettings import (
 )
 from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
     log_preparing_acquisition,
-    log_preparing_acquisition_check_counter,
     check_num_counter_samples,
 )
 from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
@@ -36,10 +33,6 @@ from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
 )
 from mantis.acquisition.hook_functions.post_camera_hook_functions import (
     start_daq_counters,
-)
-from mantis.acquisition.hook_functions.image_saved_hook_functions import (
-    check_lf_acq_finished,
-    check_ls_acq_finished,
 )
 
 # isort: on
@@ -621,36 +614,14 @@ class MantisAcquisition(object):
         positions and time points.
         """
 
-        # define LF hook functions
-        if self._demo_run:
-            lf_pre_hardware_hook_fn = partial(
-                log_preparing_acquisition, self.position_settings.position_labels
-            )
-            lf_post_camera_hook_fn = None
-        else:
-            lf_pre_hardware_hook_fn = partial(
-                log_preparing_acquisition_check_counter,
-                self.position_settings.position_labels,
-                [self._lf_z_ctr_task, self._lf_channel_ctr_task],
-            )
-            lf_post_camera_hook_fn = partial(
-                start_daq_counters, [self._lf_z_ctr_task, self._lf_channel_ctr_task]
-            )
-        lf_post_hardware_hook_fn = partial(
-            log_acquisition_start, self.position_settings.position_labels
+        # Generate LF events for all time points
+        lf_events = _generate_channel_slice_acq_events(
+            self.lf_acq.channel_settings, self.lf_acq.slice_settings
         )
-        lf_image_saved_fn = check_lf_acq_finished
-
-        # define LF acquisition
-        lf_acq = Acquisition(
-            directory=self._acq_dir,
-            name=f'{self._acq_name}_labelfree',
-            port=LF_ZMQ_PORT,
-            pre_hardware_hook_fn=lf_pre_hardware_hook_fn,
-            post_hardware_hook_fn=lf_post_hardware_hook_fn,
-            post_camera_hook_fn=lf_post_camera_hook_fn,
-            image_saved_fn=lf_image_saved_fn,  # data processing and display
-            show_display=False,
+        # Generate LS events for only one time point. The mantis acquisition
+        # engine will dispatch those multiple times over
+        ls_events = _generate_channel_slice_acq_events(
+            self.ls_acq.channel_settings, self.ls_acq.slice_settings
         )
 
         # define LS hook functions
@@ -667,7 +638,7 @@ class MantisAcquisition(object):
                 self.ls_acq.slice_settings.acquisition_rate,
             )
             ls_post_camera_hook_fn = partial(start_daq_counters, [self._ls_z_ctr_task])
-        ls_image_saved_fn = check_ls_acq_finished
+        ls_image_saved_fn = None
 
         # define LS acquisition
         ls_acq = Acquisition(
@@ -682,77 +653,100 @@ class MantisAcquisition(object):
             show_display=False,
         )
 
-        # define acquisition events
-        lf_events = _generate_channel_slice_acq_events(
-            self.lf_acq.channel_settings, self.lf_acq.slice_settings
+        def hook_fn(events: list):
+            events = log_preparing_acquisition(self.position_settings.position_labels, events)
+            events = check_num_counter_samples(
+                [self._lf_z_ctr_task, self._lf_channel_ctr_task], events
+            )
+            # abort acquisition at this time/position index
+            if events is None:
+                return None
+
+            t_idx = events[0]['axes']['time']
+            p_idx = events[0]['axes']['position']
+            p_label = self.position_settings.position_labels[p_idx]
+
+            # move to the given position
+            self.go_to_position(p_idx)
+
+            # autofocus
+            if self.lf_acq.microscope_settings.use_autofocus:
+                autofocus_success = microscope_operations.autofocus(
+                    self.lf_acq.mmc,
+                    self.lf_acq.mmStudio,
+                    self.lf_acq.microscope_settings.autofocus_stage,
+                    self.position_settings.xyz_positions[p_idx][2],
+                )
+                if not autofocus_success:
+                    # abort acquisition at this time/position index
+                    logger.error(
+                        f'Autofocus failed. Aborting acquisition for timepoint {t_idx} at position {p_label}'
+                    )
+                    return None
+
+            # dispatch LS events
+            for _event in ls_events:
+                _event['axes']['time'] = t_idx
+                _event['axes']['position'] = p_idx
+                _event['min_start_time'] = 0
+            ls_acq.acquire(ls_events)
+
+            return events
+
+        # define LF hook functions
+        if self._demo_run:
+            lf_pre_hardware_hook_fn = partial(
+                log_preparing_acquisition, self.position_settings.position_labels
+            )
+            lf_post_camera_hook_fn = None
+        else:
+            lf_pre_hardware_hook_fn = hook_fn
+            lf_post_camera_hook_fn = partial(
+                start_daq_counters, [self._lf_z_ctr_task, self._lf_channel_ctr_task]
+            )
+        lf_post_hardware_hook_fn = partial(
+            log_acquisition_start, self.position_settings.position_labels
         )
-        ls_events = _generate_channel_slice_acq_events(
-            self.ls_acq.channel_settings, self.ls_acq.slice_settings
+        lf_image_saved_fn = None
+
+        # define LF acquisition
+        lf_acq = Acquisition(
+            directory=self._acq_dir,
+            name=f'{self._acq_name}_labelfree',
+            port=LF_ZMQ_PORT,
+            pre_hardware_hook_fn=lf_pre_hardware_hook_fn,
+            post_hardware_hook_fn=lf_post_hardware_hook_fn,
+            post_camera_hook_fn=lf_post_camera_hook_fn,
+            image_saved_fn=lf_image_saved_fn,  # data processing and display
+            show_display=False,
         )
 
         logger.info('Starting acquisition')
         for t_idx in range(self.time_settings.num_timepoints):
-            t_start = time.time()
             for p_idx in range(self.position_settings.num_positions):
-                p_label = self.position_settings.position_labels[p_idx]
-
-                # move to position
-                self.go_to_position(p_idx)
-
-                # autofocus
-                if self.lf_acq.microscope_settings.use_autofocus:
-                    autofocus_success = microscope_operations.autofocus(
-                        self.lf_acq.mmc,
-                        self.lf_acq.mmStudio,
-                        self.lf_acq.microscope_settings.autofocus_stage,
-                        self.position_settings.xyz_positions[p_idx][2],
-                    )
-                    if not autofocus_success:
-                        logger.error(
-                            f'Autofocus failed. Aborting acquisition for timepoint {t_idx} at position {p_label}'
-                        )
-                        continue
 
                 # start acquisition
                 for _event in lf_events:
                     _event['axes']['time'] = t_idx
                     _event['axes']['position'] = p_idx
-                    _event['min_start_time'] = 0
+                    _event['min_start_time'] = t_idx * self.time_settings.time_internal_s
 
-                for _event in ls_events:
-                    _event['axes']['time'] = t_idx
-                    _event['axes']['position'] = p_idx
-                    _event['min_start_time'] = 0
-
-                config.lf_last_img_idx = lf_events[-1]['axes']
-                config.ls_last_img_idx = ls_events[-1]['axes']
-                config.lf_acq_finished = False
-                config.ls_acq_finished = False
-
-                ls_acq.acquire(ls_events)
                 lf_acq.acquire(lf_events)
 
-                # wait for PT acquisition to finish
-                while any((not config.lf_acq_finished, not config.ls_acq_finished)):
-                    time.sleep(0.2)
-                    # if not config.lf_acq_finished:
-                    #     print('Waiting for LF acquisition to finish')
-                    # if not config.ls_acq_finished:
-                    #     print('Waiting for LS acquisition to finish')
-            # wait for delay between timepoints
-            while time.time() - t_start < self.time_settings.time_internal_s:
-                time.sleep(1)
-
-        ls_acq.mark_finished()
+        # TODO: remove print statements
+        # All LF events have been dispatched. We can mark acquisition as
+        # finished and wait for its completion. There will be a long wait here
+        print('Waiting for LF acquisition to finish')
         lf_acq.mark_finished()
+        lf_acq.await_completion()
+        print('LF acquisition to finished')
 
-        logger.debug('Waiting for acquisition to finish')
-        if self.ls_acq.enabled:
-            ls_acq.await_completion()
-            logger.debug('Light-sheet acquisition finished')
-        if self.lf_acq.enabled:
-            lf_acq.await_completion()
-            logger.debug('Label-free acquisition finished')
+        # Mark LS acquisition as finished now that the LF has completed.
+        # Await_completion should return right away
+        print('Waiting for LS acquisition to finish')
+        ls_acq.mark_finished()
+        ls_acq.await_completion()
+        print('LS acquisition to finished')
 
         # TODO: move scan stages to zero
 
