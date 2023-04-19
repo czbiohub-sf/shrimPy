@@ -678,18 +678,18 @@ class MantisAcquisition(object):
             show_display=False,
         )
 
-        # Generate LF events for all time points
+        # Generate LF acquisition events
         lf_cz_events = _generate_channel_slice_acq_events(
             self.lf_acq.channel_settings, self.lf_acq.slice_settings
         )
-        # Generate LS events for only one time point. The mantis acquisition
-        # engine will dispatch those multiple times over
+        # Generate LS acquisition events
         ls_cz_events = _generate_channel_slice_acq_events(
             self.ls_acq.channel_settings, self.ls_acq.slice_settings
         )
 
         logger.info('Starting acquisition')
         for t_idx in range(self.time_settings.num_timepoints):
+            t_start = time.time()
             for p_idx in range(self.position_settings.num_positions):
                 p_label = self.position_settings.position_labels[p_idx]
 
@@ -727,15 +727,21 @@ class MantisAcquisition(object):
                 ls_acq.acquire(ls_events)
                 lf_acq.acquire(lf_events)
 
-        # All LF events have been dispatched. We can mark acquisition as
-        # finished and wait for its completion. There will be a long wait here
-        lf_acq.mark_finished()
-        lf_acq.await_completion()
+                # wait for CZYX acquisition to finish
+                self.await_cz_acq_completion()
 
-        # Mark LS acquisition as finished now that the LF has completed.
-        # Await_completion should return right away
+            # wait for time interval between time points
+            while time.time() - t_start < self.time_settings.time_interval_s and t_idx < self.time_settings.num_timepoints - 1:
+                time.sleep(1)
+
+        print('marking acquisitions as finished')
         ls_acq.mark_finished()
+        lf_acq.mark_finished()
+        
         ls_acq.await_completion()
+        print('ls acquisition finished')
+        lf_acq.await_completion()
+        print('lf acquisition finished')
 
         # TODO: move scan stages to zero
 
@@ -745,6 +751,27 @@ class MantisAcquisition(object):
 
         logger.info('Acquisition finished')
 
+    def await_cz_acq_completion(self):
+        buffer_s = 2
+
+        # LS acq time
+        num_slices = self.ls_acq.slice_settings.num_slices
+        slice_acq_rate = self.ls_acq.slice_settings.acquisition_rate  # list
+        num_channels = self.ls_acq.channel_settings.num_channels
+        ls_acq_time = sum([num_slices / rate for rate in slice_acq_rate]) + \
+            LS_CHANGE_TIME/1000 * (num_channels - 1) + buffer_s
+        
+        # LF acq time
+        num_slices = self.lf_acq.slice_settings.num_slices
+        slice_acq_rate = self.lf_acq.slice_settings.acquisition_rate  # float
+        num_channels = self.lf_acq.channel_settings.num_channels
+        lf_acq_time = num_slices / slice_acq_rate * num_channels + \
+            LC_CHANGE_TIME/1000 * (num_channels - 1) + buffer_s
+        
+        t_start = time.time()
+        wait_time = np.maximum(ls_acq_time, lf_acq_time)
+        while time.time() - t_start < wait_time:
+            time.sleep(1)
 
 def _generate_channel_slice_acq_events(channel_settings, slice_settings):
     events = multi_d_acquisition_events(
