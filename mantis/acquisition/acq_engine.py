@@ -1,5 +1,6 @@
 import logging
 import os
+from copy import deepcopy
 
 from dataclasses import asdict
 from datetime import datetime
@@ -16,7 +17,7 @@ from mantis.acquisition import microscope_operations
 from mantis.acquisition.logger import configure_logger
 
 # isort: off
-from acquisition.AcquisitionSettings import (
+from mantis.acquisition.AcquisitionSettings import (
     TimeSettings,
     PositionSettings,
     ChannelSettings,
@@ -350,8 +351,8 @@ class MantisAcquisition(object):
         self.lf_acq.reset()
         self.ls_acq.reset()
 
-        # Close PM bridges
-        cleanup()
+        # Close PM bridges - call to cleanup blocks exit!
+        # cleanup()
 
     def update_position_settings(self):
         """
@@ -568,15 +569,16 @@ class MantisAcquisition(object):
         # set_z_position will disengage continuous autofocus. The autofocus
         # algorithm sets the z position independently
         if not self.lf_acq.microscope_settings.use_autofocus:
-            microscope_operations.set_z_position(
-                self.lf_acq.mmc,
-                self.lf_acq.microscope_settings.autofocus_stage,
-                self.position_settings.xyz_positions[position_index][2],
-            )
-            microscope_operations.wait_for_device(
-                self.lf_acq.mmc,
-                self.lf_acq.microscope_settings.autofocus_stage,
-            )
+            if self.lf_acq.microscope_settings.autofocus_stage:
+                microscope_operations.set_z_position(
+                    self.lf_acq.mmc,
+                    self.lf_acq.microscope_settings.autofocus_stage,
+                    self.position_settings.xyz_positions[position_index][2],
+                )
+                microscope_operations.wait_for_device(
+                    self.lf_acq.mmc,
+                    self.lf_acq.microscope_settings.autofocus_stage,
+                )
 
     def setup(self):
         """
@@ -615,7 +617,7 @@ class MantisAcquisition(object):
         """
 
         # Generate LF events for all time points
-        lf_events = _generate_channel_slice_acq_events(
+        lf_cz_events = _generate_channel_slice_acq_events(
             self.lf_acq.channel_settings, self.lf_acq.slice_settings
         )
         # Generate LS events for only one time point. The mantis acquisition
@@ -655,9 +657,10 @@ class MantisAcquisition(object):
 
         def hook_fn(events: list):
             events = log_preparing_acquisition(self.position_settings.position_labels, events)
-            events = check_num_counter_samples(
-                [self._lf_z_ctr_task, self._lf_channel_ctr_task], events
-            )
+            if not self._demo_run:
+                events = check_num_counter_samples(
+                    [self._lf_z_ctr_task, self._lf_channel_ctr_task], events
+                )
             # abort acquisition at this time/position index
             if events is None:
                 return None
@@ -685,19 +688,18 @@ class MantisAcquisition(object):
                     return None
 
             # dispatch LS events
-            for _event in ls_events:
+            ls_dispatch_events = deepcopy(ls_events)
+            for _event in ls_dispatch_events:
                 _event['axes']['time'] = t_idx
                 _event['axes']['position'] = p_idx
                 _event['min_start_time'] = 0
-            ls_acq.acquire(ls_events)
+            ls_acq.acquire(ls_dispatch_events)
 
             return events
 
         # define LF hook functions
         if self._demo_run:
-            lf_pre_hardware_hook_fn = partial(
-                log_preparing_acquisition, self.position_settings.position_labels
-            )
+            lf_pre_hardware_hook_fn = hook_fn
             lf_post_camera_hook_fn = None
         else:
             lf_pre_hardware_hook_fn = hook_fn
@@ -726,12 +728,13 @@ class MantisAcquisition(object):
             for p_idx in range(self.position_settings.num_positions):
 
                 # start acquisition
-                for _event in lf_events:
+                events = deepcopy(lf_cz_events)
+                for _event in events:
                     _event['axes']['time'] = t_idx
                     _event['axes']['position'] = p_idx
-                    _event['min_start_time'] = t_idx * self.time_settings.time_internal_s
-
-                lf_acq.acquire(lf_events)
+                    _event['min_start_time'] = t_idx * self.time_settings.time_internal_s   
+                    
+                lf_acq.acquire(events)
 
         # TODO: remove print statements
         # All LF events have been dispatched. We can mark acquisition as
