@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from copy import deepcopy
 
 from dataclasses import asdict
@@ -11,7 +12,6 @@ import numpy as np
 
 from nidaqmx.constants import Slope
 from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, start_headless
-from pycromanager.acq_util import cleanup
 
 from mantis.acquisition import microscope_operations
 from mantis.acquisition.logger import configure_logger
@@ -26,6 +26,7 @@ from mantis.acquisition.AcquisitionSettings import (
 )
 from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
     log_preparing_acquisition,
+    log_preparing_acquisition_check_counter,
     check_num_counter_samples,
 )
 from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
@@ -616,14 +617,36 @@ class MantisAcquisition(object):
         positions and time points.
         """
 
-        # Generate LF events for all time points
-        lf_cz_events = _generate_channel_slice_acq_events(
-            self.lf_acq.channel_settings, self.lf_acq.slice_settings
+        # define LF hook functions
+        if self._demo_run:
+            lf_pre_hardware_hook_fn = partial(
+                log_preparing_acquisition, self.position_settings.position_labels
+            )
+            lf_post_camera_hook_fn = None
+        else:
+            lf_pre_hardware_hook_fn = partial(
+                log_preparing_acquisition_check_counter,
+                self.position_settings.position_labels,
+                [self._lf_z_ctr_task, self._lf_channel_ctr_task],
+            )
+            lf_post_camera_hook_fn = partial(
+                start_daq_counters, [self._lf_z_ctr_task, self._lf_channel_ctr_task]
+            )
+        lf_post_hardware_hook_fn = partial(
+            log_acquisition_start, self.position_settings.position_labels
         )
-        # Generate LS events for only one time point. The mantis acquisition
-        # engine will dispatch those multiple times over
-        ls_cz_events = _generate_channel_slice_acq_events(
-            self.ls_acq.channel_settings, self.ls_acq.slice_settings
+        lf_image_saved_fn = None
+
+        # define LF acquisition
+        lf_acq = Acquisition(
+            directory=self._acq_dir,
+            name=f'{self._acq_name}_labelfree',
+            port=LF_ZMQ_PORT,
+            pre_hardware_hook_fn=lf_pre_hardware_hook_fn,
+            post_hardware_hook_fn=lf_post_hardware_hook_fn,
+            post_camera_hook_fn=lf_post_camera_hook_fn,
+            image_saved_fn=lf_image_saved_fn,  # data processing and display
+            show_display=False,
         )
 
         # define LS hook functions
@@ -655,85 +678,53 @@ class MantisAcquisition(object):
             show_display=False,
         )
 
-        def hook_fn(events: list):
-            events = log_preparing_acquisition(self.position_settings.position_labels, events)
-            if not self._demo_run:
-                events = check_num_counter_samples(
-                    [self._lf_z_ctr_task, self._lf_channel_ctr_task], events
-                )
-            # abort acquisition at this time/position index
-            if events is None:
-                return None
-
-            t_idx = events[0]['axes']['time']
-            p_idx = events[0]['axes']['position']
-            p_label = self.position_settings.position_labels[p_idx]
-
-            # move to the given position
-            self.go_to_position(p_idx)
-
-            # autofocus
-            if self.lf_acq.microscope_settings.use_autofocus:
-                autofocus_success = microscope_operations.autofocus(
-                    self.lf_acq.mmc,
-                    self.lf_acq.mmStudio,
-                    self.lf_acq.microscope_settings.autofocus_stage,
-                    self.position_settings.xyz_positions[p_idx][2],
-                )
-                if not autofocus_success:
-                    # abort acquisition at this time/position index
-                    logger.error(
-                        f'Autofocus failed. Aborting acquisition for timepoint {t_idx} at position {p_label}'
-                    )
-                    return None
-
-            # dispatch LS events
-            ls_events = deepcopy(ls_cz_events)
-            for _event in ls_events:
-                _event['axes']['time'] = t_idx
-                _event['axes']['position'] = p_idx
-                _event['min_start_time'] = 0
-            ls_acq.acquire(ls_events)
-
-            return events
-
-        # define LF hook functions
-        if self._demo_run:
-            lf_pre_hardware_hook_fn = hook_fn
-            lf_post_camera_hook_fn = None
-        else:
-            lf_pre_hardware_hook_fn = hook_fn
-            lf_post_camera_hook_fn = partial(
-                start_daq_counters, [self._lf_z_ctr_task, self._lf_channel_ctr_task]
-            )
-        lf_post_hardware_hook_fn = partial(
-            log_acquisition_start, self.position_settings.position_labels
+        # Generate LF events for all time points
+        lf_cz_events = _generate_channel_slice_acq_events(
+            self.lf_acq.channel_settings, self.lf_acq.slice_settings
         )
-        lf_image_saved_fn = None
-
-        # define LF acquisition
-        lf_acq = Acquisition(
-            directory=self._acq_dir,
-            name=f'{self._acq_name}_labelfree',
-            port=LF_ZMQ_PORT,
-            pre_hardware_hook_fn=lf_pre_hardware_hook_fn,
-            post_hardware_hook_fn=lf_post_hardware_hook_fn,
-            post_camera_hook_fn=lf_post_camera_hook_fn,
-            image_saved_fn=lf_image_saved_fn,  # data processing and display
-            show_display=False,
+        # Generate LS events for only one time point. The mantis acquisition
+        # engine will dispatch those multiple times over
+        ls_cz_events = _generate_channel_slice_acq_events(
+            self.ls_acq.channel_settings, self.ls_acq.slice_settings
         )
 
         logger.info('Starting acquisition')
         for t_idx in range(self.time_settings.num_timepoints):
             for p_idx in range(self.position_settings.num_positions):
+                p_label = self.position_settings.position_labels[p_idx]
+
+                # move to the given position
+                self.go_to_position(p_idx)
+
+                # autofocus
+                if self.lf_acq.microscope_settings.use_autofocus:
+                    autofocus_success = microscope_operations.autofocus(
+                        self.lf_acq.mmc,
+                        self.lf_acq.mmStudio,
+                        self.lf_acq.microscope_settings.autofocus_stage,
+                        self.position_settings.xyz_positions[p_idx][2],
+                    )
+                    if not autofocus_success:
+                        # abort acquisition at this time/position index
+                        logger.error(
+                            f'Autofocus failed. Aborting acquisition for timepoint {t_idx} at position {p_label}'
+                        )
+                        continue
 
                 # start acquisition
                 lf_events = deepcopy(lf_cz_events)
                 for _event in lf_events:
                     _event['axes']['time'] = t_idx
                     _event['axes']['position'] = p_idx
-                    _event['min_start_time'] = t_idx * self.time_settings.time_internal_s   
-                    
+                    _event['min_start_time'] = 0
+
+                ls_events = deepcopy(ls_cz_events)
+                for _event in ls_events:
+                    _event['axes']['time'] = t_idx
+                    _event['axes']['position'] = p_idx
+                    _event['min_start_time'] = 0
+
+                ls_acq.acquire(ls_events)
                 lf_acq.acquire(lf_events)
 
         # All LF events have been dispatched. We can mark acquisition as
