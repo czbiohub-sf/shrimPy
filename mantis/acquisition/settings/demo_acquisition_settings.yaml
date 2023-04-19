@@ -3,7 +3,7 @@
 
 time_settings:
   num_timepoints: 3
-  time_internal_s: 5
+  time_interval_s: 5
 
 lf_channel_settings:
   exposure_time_ms: [10, 10]
