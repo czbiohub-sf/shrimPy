@@ -622,7 +622,7 @@ class MantisAcquisition(object):
         )
         # Generate LS events for only one time point. The mantis acquisition
         # engine will dispatch those multiple times over
-        ls_events = _generate_channel_slice_acq_events(
+        ls_cz_events = _generate_channel_slice_acq_events(
             self.ls_acq.channel_settings, self.ls_acq.slice_settings
         )
 
@@ -688,12 +688,12 @@ class MantisAcquisition(object):
                     return None
 
             # dispatch LS events
-            ls_dispatch_events = deepcopy(ls_events)
-            for _event in ls_dispatch_events:
+            ls_events = deepcopy(ls_cz_events)
+            for _event in ls_events:
                 _event['axes']['time'] = t_idx
                 _event['axes']['position'] = p_idx
                 _event['min_start_time'] = 0
-            ls_acq.acquire(ls_dispatch_events)
+            ls_acq.acquire(ls_events)
 
             return events
 
@@ -728,28 +728,23 @@ class MantisAcquisition(object):
             for p_idx in range(self.position_settings.num_positions):
 
                 # start acquisition
-                events = deepcopy(lf_cz_events)
-                for _event in events:
+                lf_events = deepcopy(lf_cz_events)
+                for _event in lf_events:
                     _event['axes']['time'] = t_idx
                     _event['axes']['position'] = p_idx
                     _event['min_start_time'] = t_idx * self.time_settings.time_internal_s   
                     
-                lf_acq.acquire(events)
+                lf_acq.acquire(lf_events)
 
-        # TODO: remove print statements
         # All LF events have been dispatched. We can mark acquisition as
         # finished and wait for its completion. There will be a long wait here
-        print('Waiting for LF acquisition to finish')
         lf_acq.mark_finished()
         lf_acq.await_completion()
-        print('LF acquisition to finished')
 
         # Mark LS acquisition as finished now that the LF has completed.
         # Await_completion should return right away
-        print('Waiting for LS acquisition to finish')
         ls_acq.mark_finished()
         ls_acq.await_completion()
-        print('LS acquisition to finished')
 
         # TODO: move scan stages to zero
 
