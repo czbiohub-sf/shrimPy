@@ -6,7 +6,6 @@ time_settings:
   time_internal_s: 5
 
 lf_channel_settings:
-  roi:
   exposure_time_ms: [10, 10]
   channel_group: 'Channel-Multiband'
   channels: ['DAPI', 'FITC']
@@ -33,7 +32,6 @@ lf_microscope_settings:
   use_autofocus: False
 
 ls_channel_settings:
-  roi: [0, 896, 2048, 256]
   exposure_time_ms: [20, 30]
   channel_group: 'Channel'
   channels: ['Rhodamine', 'Cy5']
@@ -47,6 +45,7 @@ ls_slice_settings:
   use_sequencing: True
 
 ls_microscope_settings:
+  roi: [0, 896, 2048, 256]
   config_group_settings:
     - ['LightPath', 'Camera-right']
   device_property_settings:
