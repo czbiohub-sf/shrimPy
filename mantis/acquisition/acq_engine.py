@@ -734,14 +734,15 @@ class MantisAcquisition(object):
             while time.time() - t_start < self.time_settings.time_interval_s and t_idx < self.time_settings.num_timepoints - 1:
                 time.sleep(1)
 
-        print('marking acquisitions as finished')
         ls_acq.mark_finished()
         lf_acq.mark_finished()
         
+        logger.debug('Waiting for acquisition to finish')
+        
         ls_acq.await_completion()
-        print('ls acquisition finished')
+        logger.debug('Light-sheet acquisition finished')
         lf_acq.await_completion()
-        print('lf acquisition finished')
+        logger.debug('Label-free acquisition finished')
 
         # TODO: move scan stages to zero
 
