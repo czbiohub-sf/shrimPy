@@ -738,7 +738,7 @@ class MantisAcquisition(object):
         lf_acq.mark_finished()
         
         logger.debug('Waiting for acquisition to finish')
-        
+
         ls_acq.await_completion()
         logger.debug('Light-sheet acquisition finished')
         lf_acq.await_completion()
@@ -769,10 +769,8 @@ class MantisAcquisition(object):
         lf_acq_time = num_slices / slice_acq_rate * num_channels + \
             LC_CHANGE_TIME/1000 * (num_channels - 1) + buffer_s
         
-        t_start = time.time()
-        wait_time = np.maximum(ls_acq_time, lf_acq_time)
-        while time.time() - t_start < wait_time:
-            time.sleep(1)
+        wait_time = np.ceil(np.maximum(ls_acq_time, lf_acq_time))
+        time.sleep(wait_time)
 
 def _generate_channel_slice_acq_events(channel_settings, slice_settings):
     events = multi_d_acquisition_events(
