@@ -731,11 +731,9 @@ class MantisAcquisition(object):
                 self.await_cz_acq_completion()
 
             # wait for time interval between time points
-            while (
-                time.time() - t_start < self.time_settings.time_interval_s
-                and t_idx < self.time_settings.num_timepoints - 1
-            ):
-                time.sleep(1)
+            t_wait = self.time_settings.time_interval_s - (time.time() - t_start)
+            if t_wait > 0 and t_idx < self.time_settings.num_timepoints - 1:
+                time.sleep(t_wait)
 
         ls_acq.mark_finished()
         lf_acq.mark_finished()
