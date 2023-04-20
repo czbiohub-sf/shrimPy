@@ -29,7 +29,7 @@ dependencies = [
     "pydantic",
     "pycromanager==0.25.40",
     "nidaqmx",
-    "iohub",
+    "iohub==0.1.0.dev3",
 ]
 
 
