@@ -733,6 +733,7 @@ class MantisAcquisition(object):
             # wait for time interval between time points
             t_wait = self.time_settings.time_interval_s - (time.time() - t_start)
             if t_wait > 0 and t_idx < self.time_settings.num_timepoints - 1:
+                logger.info(f"Waiting {t_wait/60:.2f} minutes until the next time point")
                 time.sleep(t_wait)
 
         ls_acq.mark_finished()
