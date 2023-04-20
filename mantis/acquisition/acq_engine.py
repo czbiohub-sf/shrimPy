@@ -1,8 +1,8 @@
 import logging
 import os
 import time
-from copy import deepcopy
 
+from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime
 from functools import partial
@@ -731,12 +731,15 @@ class MantisAcquisition(object):
                 self.await_cz_acq_completion()
 
             # wait for time interval between time points
-            while time.time() - t_start < self.time_settings.time_interval_s and t_idx < self.time_settings.num_timepoints - 1:
+            while (
+                time.time() - t_start < self.time_settings.time_interval_s
+                and t_idx < self.time_settings.num_timepoints - 1
+            ):
                 time.sleep(1)
 
         ls_acq.mark_finished()
         lf_acq.mark_finished()
-        
+
         logger.debug('Waiting for acquisition to finish')
 
         ls_acq.await_completion()
@@ -759,18 +762,25 @@ class MantisAcquisition(object):
         num_slices = self.ls_acq.slice_settings.num_slices
         slice_acq_rate = self.ls_acq.slice_settings.acquisition_rate  # list
         num_channels = self.ls_acq.channel_settings.num_channels
-        ls_acq_time = sum([num_slices / rate for rate in slice_acq_rate]) + \
-            LS_CHANGE_TIME/1000 * (num_channels - 1) + buffer_s
-        
+        ls_acq_time = (
+            sum([num_slices / rate for rate in slice_acq_rate])
+            + LS_CHANGE_TIME / 1000 * (num_channels - 1)
+            + buffer_s
+        )
+
         # LF acq time
         num_slices = self.lf_acq.slice_settings.num_slices
         slice_acq_rate = self.lf_acq.slice_settings.acquisition_rate  # float
         num_channels = self.lf_acq.channel_settings.num_channels
-        lf_acq_time = num_slices / slice_acq_rate * num_channels + \
-            LC_CHANGE_TIME/1000 * (num_channels - 1) + buffer_s
-        
+        lf_acq_time = (
+            num_slices / slice_acq_rate * num_channels
+            + LC_CHANGE_TIME / 1000 * (num_channels - 1)
+            + buffer_s
+        )
+
         wait_time = np.ceil(np.maximum(ls_acq_time, lf_acq_time))
         time.sleep(wait_time)
+
 
 def _generate_channel_slice_acq_events(channel_settings, slice_settings):
     events = multi_d_acquisition_events(
