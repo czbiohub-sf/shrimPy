@@ -21,6 +21,8 @@
 #### OkoLab temperature and humidifier
 Press and hold the okolab monitor button to switch on/off
 The `settings` window has better view of the individual connected components (i.e incubator, objective heater, humidity, etc)
+Hook up the humidifier tube to the left side golden port of the chamber.
+
 ##### CO2 Supply
 Open CO2 valve.
 Check CO2 levels 
@@ -29,12 +31,18 @@ Check CO2 levels
 Pass the thermometer probe through the side hole of the chamber. 
 Place the probe in one of the wells. 
 Use the kapton tape to fix the probe.
+## Sample Preparation
+### Oil
+1000cst
+nice layer of oil for the autofocus
 
 ## Acquisition setup with Mantis Acquisition Engine
 For setup open two micromanager instances:
 one is the latest nightly build and the other is 09.20 version
 ### Sample focus evaluation using the Epi-port
 Look at the sample in the epi port and focus the label free
+Check the sample is at ~4700um. We can offset with the piezo. 
+Filter cube in position number 6
 
 ### Setup autofocus
 One click to turn it on.
