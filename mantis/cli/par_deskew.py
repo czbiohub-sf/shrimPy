@@ -6,12 +6,20 @@ import click
 import napari
 import numpy as np
 import yaml
+import os
+from multiprocessing import Pool
+import itertools
+from functools import partial
+import dask.array as da
 
-from iohub import open_ome_zarr, read_micromanager
+from iohub import open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
+from ndtiff import Dataset
 
 from mantis.analysis.AnalysisSettings import DeskewSettings
 from mantis.analysis.deskew import deskew_data, get_deskewed_data_shape
+
+N_processes = 6
 
 
 @click.command()
@@ -67,14 +75,16 @@ def deskew(data_path, output_path, deskew_params_path, positions, view, keep_ove
             reader = csv.DictReader(csvfile)
             pos_log = [row for row in reader]
 
-    reader = read_micromanager(data_path)
+    dataset = Dataset(data_path)
+    dask_array = dataset.as_array()
+    # reader = read_micromanager(data_path)
     writer = open_ome_zarr(
-        output_path, mode="a", layout="hcs", channel_names=reader.channel_names
+        output_path, mode="w", layout="hcs", channel_names=dataset.get_channel_names()
     )
 
-    P, T, C, Z, Y, X = reader.get_num_positions(), *reader.shape
+    P, T, C, Z, Y, X = *dask_array.shape,
     deskewed_shape, voxel_size = get_deskewed_data_shape(
-        (Z, Y, X), settings.pixel_size_um, settings.ls_angle_deg, settings.px_to_scan_ratio, keep_overhang
+        (Z, Y, X), settings.pixel_size_um, settings.ls_angle_deg, settings.px_to_scan_ratio
     )
 
     if positions is not None:
@@ -84,7 +94,6 @@ def deskew(data_path, output_path, deskew_params_path, positions, view, keep_ove
     else:
         pos_hcs_idx = [(0, p, 0) for p in range(P)]
 
-    # Loop through (P, T, C), deskewing and writing as we go
     for p in range(P):
         position = writer.create_position(*pos_hcs_idx[p])
         # Handle transforms and metadata
@@ -92,7 +101,7 @@ def deskew(data_path, output_path, deskew_params_path, positions, view, keep_ove
             type="scale",
             scale=2 * (1,) + voxel_size,
         )
-        img = position.create_zeros(
+        position.create_zeros(
             name="0",
             shape=(
                 T,
@@ -102,28 +111,36 @@ def deskew(data_path, output_path, deskew_params_path, positions, view, keep_ove
             dtype=np.int16,
             transform=[transform],
         )
-        for t in range(T):
-            for c in range(C):
-                print(f"Deskewing c={c}/{C-1}, t={t}/{T-1}, p={p}/{P-1}")
-                data = reader.get_array(p)[t, c, ...]  # zyx
 
-                # Deskew
-                deskewed = deskew_data(
-                    data, settings.px_to_scan_ratio, settings.ls_angle_deg, keep_overhang
-                )
-
-                img[t, c, ...] = deskewed  # write to zarr
+    # Loop through (P, T, C), deskewing and writing as we go
+    with Pool(N_processes) as p:
+        p.starmap(
+            partial(fun, dask_array, writer, settings, keep_overhang, pos_hcs_idx),
+            itertools.product(range(P), range(T), range(C))
+        )
 
     # Write metadata
     writer.zattrs["deskewing"] = asdict(settings)
     writer.zattrs["mm-meta"] = reader.mm_meta["Summary"]
 
     # Optional view
-    if view:
-        v = napari.Viewer()
-        v.add_image(deskewed)
-        v.layers[-1].scale = voxel_size
-        napari.run()
+    # if view:
+    #     v = napari.Viewer()
+    #     v.add_image(deskewed)
+    #     v.layers[-1].scale = voxel_size
+    #     napari.run()
+
+
+def fun(data_array, writer, settings, keep_overhang, pos_hcs_idx, p, t, c):
+    # print(f"Deskewing c={c}/{C-1}, t={t}/{T-1}, p={p}/{P-1}")
+    data = np.asarray(data_array[p, t, c])  # zyx
+
+    # Deskew
+    deskewed = deskew_data(
+        data, settings.px_to_scan_ratio, settings.ls_angle_deg, keep_overhang
+    )
+
+    writer[os.path.join(*pos_hcs_idx[p])]["0"][t, c] = deskewed # write to zarr
 
 
 if __name__ == "__main__":
