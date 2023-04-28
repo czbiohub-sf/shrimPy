@@ -9,24 +9,31 @@ Organization of the raw data is constrained by the `pycromanager`-based acquisit
 
 ```text
 
-YYYY_MM_DD_<experiment_description>
-|--- <acq-name>
-|    |--- PositionList.json
+YYYY_MM_DD <experiment_description>
+|--- <acq-name>_<n>
+|    |--- mantis_acquisition_log_YYYYMMDDTHHMMSS.txt
 |
-|    |--- <acq-name>_labelfree_<n>  # contains PTCZYX dataset
+|    |--- positions.csv
+|
+|    |--- platemap.csv
+|
+|    |--- <plate_metadata>.csv
+|
+|    |--- <acq-name>_labelfree_1  # contains PTCZYX dataset
+|        |--- NDTiff.index
 |        |--- <acq-name>_labelfree_NDTiffStack.tif
 |        |--- <acq-name>_labelfree_NDTiffStack_1.tif
 |        ...
 |
-|    |--- <acq-name>_lightsheet_<n>  # contains PTCZYX dataset
+|    |--- <acq-name>_lightsheet_1  # contains PTCZYX dataset
+|        |--- NDTiff.index
 |        |--- <acq-name>_lightsheet_NDTiffStack.tif
 |        |--- <acq-name>_lightsheet_NDTiffStack_1.tif
 |        ...
 |
-|--- <acq-name>  # one experiment folder may contain multiple acquisitions
+|--- <acq-name>_<n>  # one experiment folder may contain multiple acquisitions
 |    ...
 |
-|--- mantis_acquisition_log_YYYYMMDDTHHMMSS.txt
 |
 |--- calibration
 |    |--- labelfree
@@ -38,9 +45,13 @@ An example dataset is provided in: `//ESS/comp_micro/rawdata/mantis/2023_02_21_m
 
 Each acquisition will contain a PTCZYX dataset; some dimensions may be singleton.
 
-The structure of the mantis acquisition log file is not final and is subject to change. Input is welcomed. The log file may contain logs from multiple acquisitions.
+The structure of the mantis acquisition log file is not final and is subject to change. Input is welcomed. Currently, we write one log file per acquisition.
 
-A `PositionList.pos` file will accompany each experiment. This file is useful as it carries information about the position labels, which is not saved by `pycromanager`. In the future, we may decide to manage that differently.
+A `positions.csv` file will accompany each acquisition. This file is needed as it carries information about the position labels, which is not saved by `pycromanager`. In the future, we may decide to manage that differently - see [pycro-manager#575](https://github.com/micro-manager/pycro-manager/issues/575). A template for this file is provided [here](positions.csv).
+
+A `platemap.csv` file will accompany each acquisition. This file carries information about the sample in each well and is populated by the user. Multiple wells may contain the same sample. A template for this file is provided [here](platemap.csv).
+
+Other plate metadata CSV files may also be present. They should follow the structure of `platemap.csv` and contain information on other experimental variables per well.
 
 Raw data files will be converted to `ome-zarr` for long-term storage and downstream processing.
 
