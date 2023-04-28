@@ -107,7 +107,7 @@ def deskew(data_path, output_path, deskew_params_path, positions, view, keep_ove
                 C,
             )
             + deskewed_shape,
-            dtype=np.int16,
+            dtype=np.uint16,
             transform=[transform],
         )
 
