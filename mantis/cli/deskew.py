@@ -99,6 +99,7 @@ def deskew(data_path, output_path, deskew_params_path, positions, view, keep_ove
                 C,
             )
             + deskewed_shape,
+            chunks = (1, 1, 64) + deskewed_shape[-2:],
             dtype=np.uint16,
             transform=[transform],
         )
