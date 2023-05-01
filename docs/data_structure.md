@@ -47,19 +47,17 @@ Each acquisition will contain a PTCZYX dataset; some dimensions may be singleton
 
 The structure of the mantis acquisition log file is not final and is subject to change. Input is welcome. Currently, acquisition script writes one log file per call.
 
-A `positions.csv` file will accompany each acquisition. This file is needed as it carries information about the position labels, which is not saved by `pycromanager`. In the future, we may decide to manage that differently - see [pycro-manager#575](https://github.com/micro-manager/pycro-manager/issues/575). A template for this file is provided [here](positions.csv).
+A `positions.csv` file will accompany each acquisition. This file is needed as it carries information about the position labels, which is not saved by `pycromanager`. In the future, we may decide to manage that differently - see [pycro-manager#575](https://github.com/micro-manager/pycro-manager/issues/575). A template for this file is provided [here](positions.csv). 
 
 A `platemap.csv` file will accompany each acquisition. This file carries information about the sample in each well and is populated by the user. Multiple wells may contain the same sample. A template for this file is provided [here](platemap.csv).
 
 Other plate metadata CSV files may also be present. They should follow the structure of `platemap.csv` and contain information on other experimental variables per well.
 
+## Format for storing deconvolved and registered volumes
+
 Raw data files will be converted to `ome-zarr` for long-term storage and downstream processing using [`iohub`](https://github.com/czbiohub/iohub).
 
-## Conversion to `ome-zarr` format
-
-The development of this converter is still upcoming.
-
-We will organize the data by positions with a dedicated folder for calibrations considering the following:
+The algorithms for deconvolution and registration of label-free and light-sheet data are being developed.  We will organize the data by positions with a dedicated folder for calibrations considering the following:
 
 * We can parallelize analysis by distributing the compute using `jobs` and `sbatch` commands on HPC.
 * We match the directory structure of OME-NGFF format, to make it easier to use the reader and writer modules implemented in `iohub`.
@@ -81,12 +79,17 @@ YYYY_MM_DD_<experiment_description>
 |    ...
 |
 |--- mantis_acquisition_log_YYYYMMDDTHHMMSS.txt
+|--- platemap.csv
+|--- positions.csv
+|--- <plate_metadata>.csv
 |
 |--- calibration
 |    |--- labelfree
 |    |--- lightsheet
 
 ```
+
+We will also store position metadata within [ome-zarr metadata](https://github.com/czbiohub/iohub/issues/103)
 
 ## Constraints and flexibilities in data hierarchy
 
