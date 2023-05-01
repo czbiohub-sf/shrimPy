@@ -74,7 +74,11 @@ def deskew(data_path, output_path, deskew_params_path, positions, view, keep_ove
 
     P, T, C, Z, Y, X = reader.get_num_positions(), *reader.shape
     deskewed_shape, voxel_size = get_deskewed_data_shape(
-        (Z, Y, X), settings.pixel_size_um, settings.ls_angle_deg, settings.px_to_scan_ratio, keep_overhang
+        (Z, Y, X),
+        settings.pixel_size_um,
+        settings.ls_angle_deg,
+        settings.px_to_scan_ratio,
+        keep_overhang,
     )
 
     if positions is not None:
@@ -99,7 +103,7 @@ def deskew(data_path, output_path, deskew_params_path, positions, view, keep_ove
                 C,
             )
             + deskewed_shape,
-            chunks = (1, 1, 64) + deskewed_shape[-2:],
+            chunks=(1, 1, 64) + deskewed_shape[-2:],
             dtype=np.uint16,
             transform=[transform],
         )

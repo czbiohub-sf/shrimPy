@@ -1,10 +1,7 @@
 # %%
-import os
 import csv
 
-import napari
 import numpy as np
-import tifffile
 
 from iohub import open_ome_zarr, read_micromanager
 from iohub.ngff_meta import TransformationMeta
@@ -26,15 +23,11 @@ if positions is not None:
         pos_log = [row for row in reader]
 
 reader = read_micromanager(data_path)
-writer = open_ome_zarr(
-    output_path, mode="a", layout="hcs", channel_names=channel_names
-)
+writer = open_ome_zarr(output_path, mode="a", layout="hcs", channel_names=channel_names)
 
 P, T, C, Z, Y, X = reader.get_num_positions(), *reader.shape
 if positions is not None:
-    pos_hcs_idx = [
-        (row['well_id'][0], row['well_id'][1:], row['site_num']) for row in pos_log
-    ]
+    pos_hcs_idx = [(row['well_id'][0], row['well_id'][1:], row['site_num']) for row in pos_log]
 else:
     pos_hcs_idx = [(0, p, 0) for p in range(P)]
 
@@ -74,7 +67,7 @@ for p in range(P):
     img = position.create_zeros(
         name="0",
         shape=(T, 1, Z, Y, X),
-        chunks = (1, 1, 32) + (Y, X),
+        chunks=(1, 1, 32) + (Y, X),
         dtype=np.double,
         transform=[transform],
     )
@@ -83,8 +76,6 @@ for p in range(P):
         data = reader.get_array(p)[t, 0, ...]  # zyx
 
         # Reconstruct
-        phase3D = reconstruct_phase3D(
-            data, reconstructor, method="Tikhonov", reg_re=1e-2
-        )
+        phase3D = reconstruct_phase3D(data, reconstructor, method="Tikhonov", reg_re=1e-2)
 
         img[t, 0, ...] = phase3D  # write to zarr
