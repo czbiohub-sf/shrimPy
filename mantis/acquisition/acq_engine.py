@@ -395,6 +395,13 @@ class MantisAcquisition(object):
         light-sheet acquisitions. Acquisition can be sequenced across z slices
         and channels
         """
+        if self._demo_run:
+            # Set approximate demo camera acquisition rate for use in await_cz_acq_completion
+            self.lf_acq.slice_settings.acquisition_rate = 10
+            self.ls_acq.slice_settings.acquisition_rate = [10] * self.ls_acq.channel_settings.num_channels
+            logger.debug('DAQ setup is not supported in demo mode')
+            return
+
         # Determine label-free acq timing
         oryx_framerate = float(self.lf_acq.mmc.get_property('Oryx', 'Frame Rate'))
         # assumes all channels have the same exposure time
@@ -599,11 +606,8 @@ class MantisAcquisition(object):
         logger.debug('Finished setting up light-sheet acquisition')
 
         logger.debug('Setting up DAQ')
-        if not self._demo_run:
-            self.setup_daq()
-            logger.debug('Finished setting up DAQ')
-        else:
-            logger.debug('DAQ setup is not supported in demo mode')
+        self.setup_daq()
+        logger.debug('Finished setting up DAQ')
 
         logger.debug('Setting up autofocus')
         self.setup_autofocus()
