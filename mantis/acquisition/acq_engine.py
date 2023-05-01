@@ -398,7 +398,9 @@ class MantisAcquisition(object):
         if self._demo_run:
             # Set approximate demo camera acquisition rate for use in await_cz_acq_completion
             self.lf_acq.slice_settings.acquisition_rate = 10
-            self.ls_acq.slice_settings.acquisition_rate = [10] * self.ls_acq.channel_settings.num_channels
+            self.ls_acq.slice_settings.acquisition_rate = [
+                10
+            ] * self.ls_acq.channel_settings.num_channels
             logger.debug('DAQ setup is not supported in demo mode')
             return
 
