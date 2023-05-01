@@ -55,7 +55,7 @@ Other plate metadata CSV files may also be present. They should follow the struc
 
 ## Format for storing deconvolved and registered volumes
 
-Raw data files will be converted to `ome-zarr` for long-term storage and downstream processing using [`iohub`](https://github.com/czbiohub/iohub).
+Raw data files will be converted to [OME-Zarr v0.4](https://ngff.openmicroscopy.org/0.4/) for long-term storage and downstream processing using [iohub](https://github.com/czbiohub/iohub).
 
 The algorithms for deconvolution and registration of label-free and light-sheet data are being developed.  We will organize the data by positions with a dedicated folder for calibrations considering the following:
 
