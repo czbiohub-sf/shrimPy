@@ -54,7 +54,7 @@ Mantis microscope is a fast multimodal microscope capable of acquiring label-fre
 ##### Micromanager with Label-free configuration
 2. Using the micromanager with the `label-free` configuration, set the `Imaging Path` propety group to `Epi`. Set the `Channel - LF` property group to `BF` and manually switch the microscope filter cube into position number `6`. This will allow you use BF on the epi camera. 
 3. Focus the sample and check the focus is ~4700um.
-4. Engage autofocus.[details](#setup-autofocus)
+4. Engage autofocus. [For more details](#setup-autofocus)
 5. Switch to the `Imaging Path` to the `label-free` path and use the `KDC101` to adjust the position of `O2` and match the focal planes.
 6. Inspect the fluorescence channels by switching the `Channel LS` property group to the respective fluorophore name or laser line (i.e GFP, TXR, Cy5, mCherry, etc)
 ##### Micromanager with Light-sheet configuration
