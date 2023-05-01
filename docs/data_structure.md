@@ -45,7 +45,7 @@ An example dataset is provided in: `//ESS/comp_micro/rawdata/mantis/2023_02_21_m
 
 Each acquisition will contain a PTCZYX dataset; some dimensions may be singleton.
 
-The structure of the mantis acquisition log file is not final and is subject to change. Input is welcomed. Currently, we write one log file per acquisition.
+The structure of the mantis acquisition log file is not final and is subject to change. Input is welcome. Currently, acquisition script writes one log file per call.
 
 A `positions.csv` file will accompany each acquisition. This file is needed as it carries information about the position labels, which is not saved by `pycromanager`. In the future, we may decide to manage that differently - see [pycro-manager#575](https://github.com/micro-manager/pycro-manager/issues/575). A template for this file is provided [here](positions.csv).
 
@@ -53,11 +53,11 @@ A `platemap.csv` file will accompany each acquisition. This file carries informa
 
 Other plate metadata CSV files may also be present. They should follow the structure of `platemap.csv` and contain information on other experimental variables per well.
 
-Raw data files will be converted to `ome-zarr` for long-term storage and downstream processing.
+Raw data files will be converted to `ome-zarr` for long-term storage and downstream processing using [`iohub`](https://github.com/czbiohub/iohub).
 
 ## Conversion to `ome-zarr` format
 
-The development of this converter is still upcoming. 
+The development of this converter is still upcoming.
 
 We will organize the data by positions with a dedicated folder for calibrations considering the following:
 
