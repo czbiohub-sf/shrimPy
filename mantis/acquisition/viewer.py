@@ -1,9 +1,11 @@
-import click
 import os
-from pycromanager import Dataset
-import napari
 import time
+
+import click
+import napari
+
 from napari.qt import thread_worker
+from pycromanager import Dataset
 
 _verbose = False
 LF_LAYER_NAME = 'label-free data'
@@ -11,6 +13,7 @@ LS_LAYER_NAME = 'light-sheet data'
 
 viewer = napari.Viewer()
 t_start = time.time()
+
 
 def update_layers(data):
     """
@@ -29,6 +32,7 @@ def update_layers(data):
             viewer.add_image(lf_data, name=LF_LAYER_NAME)
             viewer.add_image(ls_data, name=LS_LAYER_NAME)
 
+
 @thread_worker(connect={'yielded': update_layers})
 def napari_signaller(lf_dataset_path, ls_dataset_path):
     """
@@ -41,24 +45,30 @@ def napari_signaller(lf_dataset_path, ls_dataset_path):
 
         lf_data = lf_dataset.as_array()
         ls_data = ls_dataset.as_array()
-        if _verbose: print(f'LF data shape: {lf_data.shape}, LF data shape: {ls_data.shape}')
+        if _verbose:
+            print(f'LF data shape: {lf_data.shape}, LF data shape: {ls_data.shape}')
 
         yield (lf_data, ls_data)
 
         if time.time() - t_start < 60:
-            if _verbose: print('waiting 1 sec')
+            if _verbose:
+                print('waiting 1 sec')
             time.sleep(5)
         elif time.time() - t_start < 5 * 60:
-            if _verbose: print('waiting 15 sec')
+            if _verbose:
+                print('waiting 15 sec')
             time.sleep(15)
         elif time.time() - t_start < 60 * 60:
-            if _verbose: print('waiting 2 min')
+            if _verbose:
+                print('waiting 2 min')
             time.sleep(2 * 60)
         else:
-            if _verbose: print('waiting 10 min')
+            if _verbose:
+                print('waiting 10 min')
             time.sleep(10 * 60)
 
-        if _verbose: print('Closing datasets')
+        if _verbose:
+            print('Closing datasets')
         lf_dataset.close()
         ls_dataset.close()
 
@@ -79,6 +89,7 @@ def run_viewer(dataset_path):
 
     napari_signaller(lf_dataset_path, ls_dataset_path)
     napari.run()
+
 
 if __name__ == '__main__':
     run_viewer()
