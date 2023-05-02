@@ -1,4 +1,5 @@
 import click
+import os
 from pycromanager import Dataset
 import napari
 import time
@@ -59,19 +60,23 @@ def napari_signaller(lf_dataset_path, ls_dataset_path):
 
         if _verbose: print('Closing datasets')
         lf_dataset.close()
-        lf_dataset.close()
+        ls_dataset.close()
 
 
 @click.command()
 @click.argument(
-    "lf_dataset_path",
+    "dataset_path",
     type=click.Path(exists=True, file_okay=False),
 )
-@click.argument(
-    "ls_dataset_path",
-    type=click.Path(exists=True, file_okay=False),
-)
-def run_viewer(lf_dataset_path, ls_dataset_path):
+def run_viewer(dataset_path):
+    dirname, basename = os.path.split(dataset_path)
+
+    lf_dataset_name = '_'.join(basename.split('_')[:-1]) + '_labelfree_1'
+    lf_dataset_path = os.path.join(dirname, basename, lf_dataset_name)
+
+    ls_dataset_name = '_'.join(basename.split('_')[:-1]) + '_lightsheet_1'
+    ls_dataset_path = os.path.join(dirname, basename, ls_dataset_name)
+
     napari_signaller(lf_dataset_path, ls_dataset_path)
     napari.run()
 
