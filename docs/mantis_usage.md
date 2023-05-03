@@ -50,9 +50,9 @@ Mantis microscope is a fast multimodal microscope capable of acquiring label-fre
 ## Setting up the acquisition using `Mantis Acquisition Engine`
 1. Initialize two instances of micromanager to prepare both arms for acquisition. 
    1. Micromanager *230208* version with  `mantis-LF.cfg` configuration.
-   2. Micromanager *090122* version with `mantis_LS.cfg` configuration.
+   2. Micromanager *230208 Nightly Build* version with `mantis_LS.cfg` configuration.
 ##### Micromanager with Label-free configuration
-2. Using the micromanager with the `label-free` configuration, set the `Imaging Path` propety group to `Epi`. Set the `Channel - LF` property group to `BF` and manually switch the microscope filter cube into position number `6`. This will allow you use BF on the epi camera. 
+2. Using the micromanager with the `label-free` configuration, set `Channel LS` property group to `External Control`. This will reset the microscope to the default configurations including the filter cube to position 6. Then, set the `Imaging Path` propety group to `Epi`. Set the `Channel - LF` property group to `BF`. 
 3. Focus the sample and check the focus is ~4700um.
 4. Engage autofocus. [For more details](#setup-autofocus)
 5. Switch to the `Imaging Path` to the `label-free` path and use the `KDC101` to adjust the position of `O2` and match the focal planes.
@@ -97,9 +97,13 @@ Check the LED on the microscope body and find the PFS button on the microscope f
    3. Add the desired offset. Negative offsets == non-overlapping
 
 #### For HCS:
-4. Use the HCS generator to image all the wells. 
+4. Use the HCS generator under `Plugins -> Acquisition Tools -> HCS Site Generator` to image all the wells. 
 5. Use the 3 point interpolation to adjust objective z-position across the plate.
  ---
+
+#### For 8-well Ibidi Plate or other custom slides:
+6. Use the HCS generator as above to `Create Custom` plate format
+7. The 8-well Ibidi Plate can be found in the `Documents` folder. 
 
 ## Run the acquisition
 1. Open powershell
