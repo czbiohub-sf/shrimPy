@@ -4,7 +4,7 @@ import yaml
 from mantis.acquisition.acq_engine import MantisAcquisition
 
 # isort: off
-from mantis.acquisition.BaseSettings import (
+from mantis.acquisition.AcquisitionSettings import (
     TimeSettings,
     PositionSettings,
     ChannelSettings,

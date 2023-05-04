@@ -2,6 +2,7 @@ import logging
 import os
 import time
 
+from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime
 from functools import partial
@@ -11,14 +12,12 @@ import numpy as np
 
 from nidaqmx.constants import Slope
 from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, start_headless
-from pycromanager.acq_util import cleanup
 
 from mantis.acquisition import microscope_operations
-from mantis.acquisition.hook_functions import config
 from mantis.acquisition.logger import configure_logger
 
 # isort: off
-from mantis.acquisition.BaseSettings import (
+from mantis.acquisition.AcquisitionSettings import (
     TimeSettings,
     PositionSettings,
     ChannelSettings,
@@ -36,10 +35,6 @@ from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
 )
 from mantis.acquisition.hook_functions.post_camera_hook_functions import (
     start_daq_counters,
-)
-from mantis.acquisition.hook_functions.image_saved_hook_functions import (
-    check_lf_acq_finished,
-    check_ls_acq_finished,
 )
 
 # isort: on
@@ -357,8 +352,8 @@ class MantisAcquisition(object):
         self.lf_acq.reset()
         self.ls_acq.reset()
 
-        # Close PM bridges
-        cleanup()
+        # Close PM bridges - call to cleanup blocks exit!
+        # cleanup()
 
     def update_position_settings(self):
         """
@@ -400,6 +395,15 @@ class MantisAcquisition(object):
         light-sheet acquisitions. Acquisition can be sequenced across z slices
         and channels
         """
+        if self._demo_run:
+            # Set approximate demo camera acquisition rate for use in await_cz_acq_completion
+            self.lf_acq.slice_settings.acquisition_rate = 10
+            self.ls_acq.slice_settings.acquisition_rate = [
+                10
+            ] * self.ls_acq.channel_settings.num_channels
+            logger.debug('DAQ setup is not supported in demo mode')
+            return
+
         # Determine label-free acq timing
         oryx_framerate = float(self.lf_acq.mmc.get_property('Oryx', 'Frame Rate'))
         # assumes all channels have the same exposure time
@@ -575,15 +579,16 @@ class MantisAcquisition(object):
         # set_z_position will disengage continuous autofocus. The autofocus
         # algorithm sets the z position independently
         if not self.lf_acq.microscope_settings.use_autofocus:
-            microscope_operations.set_z_position(
-                self.lf_acq.mmc,
-                self.lf_acq.microscope_settings.autofocus_stage,
-                self.position_settings.xyz_positions[position_index][2],
-            )
-            microscope_operations.wait_for_device(
-                self.lf_acq.mmc,
-                self.lf_acq.microscope_settings.autofocus_stage,
-            )
+            if self.lf_acq.microscope_settings.autofocus_stage:
+                microscope_operations.set_z_position(
+                    self.lf_acq.mmc,
+                    self.lf_acq.microscope_settings.autofocus_stage,
+                    self.position_settings.xyz_positions[position_index][2],
+                )
+                microscope_operations.wait_for_device(
+                    self.lf_acq.mmc,
+                    self.lf_acq.microscope_settings.autofocus_stage,
+                )
 
     def setup(self):
         """
@@ -603,11 +608,8 @@ class MantisAcquisition(object):
         logger.debug('Finished setting up light-sheet acquisition')
 
         logger.debug('Setting up DAQ')
-        if not self._demo_run:
-            self.setup_daq()
-            logger.debug('Finished setting up DAQ')
-        else:
-            logger.debug('DAQ setup is not supported in demo mode')
+        self.setup_daq()
+        logger.debug('Finished setting up DAQ')
 
         logger.debug('Setting up autofocus')
         self.setup_autofocus()
@@ -639,7 +641,7 @@ class MantisAcquisition(object):
         lf_post_hardware_hook_fn = partial(
             log_acquisition_start, self.position_settings.position_labels
         )
-        lf_image_saved_fn = check_lf_acq_finished
+        lf_image_saved_fn = None
 
         # define LF acquisition
         lf_acq = Acquisition(
@@ -667,7 +669,7 @@ class MantisAcquisition(object):
                 self.ls_acq.slice_settings.acquisition_rate,
             )
             ls_post_camera_hook_fn = partial(start_daq_counters, [self._ls_z_ctr_task])
-        ls_image_saved_fn = check_ls_acq_finished
+        ls_image_saved_fn = None
 
         # define LS acquisition
         ls_acq = Acquisition(
@@ -682,11 +684,12 @@ class MantisAcquisition(object):
             show_display=False,
         )
 
-        # define acquisition events
-        lf_events = _generate_channel_slice_acq_events(
+        # Generate LF acquisition events
+        lf_cz_events = _generate_channel_slice_acq_events(
             self.lf_acq.channel_settings, self.lf_acq.slice_settings
         )
-        ls_events = _generate_channel_slice_acq_events(
+        # Generate LS acquisition events
+        ls_cz_events = _generate_channel_slice_acq_events(
             self.ls_acq.channel_settings, self.ls_acq.slice_settings
         )
 
@@ -696,7 +699,7 @@ class MantisAcquisition(object):
             for p_idx in range(self.position_settings.num_positions):
                 p_label = self.position_settings.position_labels[p_idx]
 
-                # move to position
+                # move to the given position
                 self.go_to_position(p_idx)
 
                 # autofocus
@@ -708,51 +711,46 @@ class MantisAcquisition(object):
                         self.position_settings.xyz_positions[p_idx][2],
                     )
                     if not autofocus_success:
+                        # abort acquisition at this time/position index
                         logger.error(
                             f'Autofocus failed. Aborting acquisition for timepoint {t_idx} at position {p_label}'
                         )
                         continue
 
                 # start acquisition
+                lf_events = deepcopy(lf_cz_events)
                 for _event in lf_events:
                     _event['axes']['time'] = t_idx
                     _event['axes']['position'] = p_idx
                     _event['min_start_time'] = 0
 
+                ls_events = deepcopy(ls_cz_events)
                 for _event in ls_events:
                     _event['axes']['time'] = t_idx
                     _event['axes']['position'] = p_idx
                     _event['min_start_time'] = 0
 
-                config.lf_last_img_idx = lf_events[-1]['axes']
-                config.ls_last_img_idx = ls_events[-1]['axes']
-                config.lf_acq_finished = False
-                config.ls_acq_finished = False
-
                 ls_acq.acquire(ls_events)
                 lf_acq.acquire(lf_events)
 
-                # wait for PT acquisition to finish
-                while any((not config.lf_acq_finished, not config.ls_acq_finished)):
-                    time.sleep(0.2)
-                    # if not config.lf_acq_finished:
-                    #     print('Waiting for LF acquisition to finish')
-                    # if not config.ls_acq_finished:
-                    #     print('Waiting for LS acquisition to finish')
-            # wait for delay between timepoints
-            while time.time() - t_start < self.time_settings.time_internal_s:
-                time.sleep(1)
+                # wait for CZYX acquisition to finish
+                self.await_cz_acq_completion()
+
+            # wait for time interval between time points
+            t_wait = self.time_settings.time_interval_s - (time.time() - t_start)
+            if t_wait > 0 and t_idx < self.time_settings.num_timepoints - 1:
+                logger.info(f"Waiting {t_wait/60:.2f} minutes until the next time point")
+                time.sleep(t_wait)
 
         ls_acq.mark_finished()
         lf_acq.mark_finished()
 
         logger.debug('Waiting for acquisition to finish')
-        if self.ls_acq.enabled:
-            ls_acq.await_completion()
-            logger.debug('Light-sheet acquisition finished')
-        if self.lf_acq.enabled:
-            lf_acq.await_completion()
-            logger.debug('Label-free acquisition finished')
+
+        ls_acq.await_completion()
+        logger.debug('Light-sheet acquisition finished')
+        lf_acq.await_completion()
+        logger.debug('Label-free acquisition finished')
 
         # TODO: move scan stages to zero
 
@@ -761,6 +759,32 @@ class MantisAcquisition(object):
         ls_acq._dataset.close()
 
         logger.info('Acquisition finished')
+
+    def await_cz_acq_completion(self):
+        buffer_s = 2
+
+        # LS acq time
+        num_slices = self.ls_acq.slice_settings.num_slices
+        slice_acq_rate = self.ls_acq.slice_settings.acquisition_rate  # list
+        num_channels = self.ls_acq.channel_settings.num_channels
+        ls_acq_time = (
+            sum([num_slices / rate for rate in slice_acq_rate])
+            + LS_CHANGE_TIME / 1000 * (num_channels - 1)
+            + buffer_s
+        )
+
+        # LF acq time
+        num_slices = self.lf_acq.slice_settings.num_slices
+        slice_acq_rate = self.lf_acq.slice_settings.acquisition_rate  # float
+        num_channels = self.lf_acq.channel_settings.num_channels
+        lf_acq_time = (
+            num_slices / slice_acq_rate * num_channels
+            + LC_CHANGE_TIME / 1000 * (num_channels - 1)
+            + buffer_s
+        )
+
+        wait_time = np.ceil(np.maximum(ls_acq_time, lf_acq_time))
+        time.sleep(wait_time)
 
 
 def _generate_channel_slice_acq_events(channel_settings, slice_settings):
