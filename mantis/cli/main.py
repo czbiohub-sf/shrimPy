@@ -6,7 +6,7 @@ from mantis.cli.run_acquisition import run_acquisition
 
 @click.group()
 def cli():
-    """mantis acquisition"""
+    """command-line tools for mantis"""
 
 
 cli.add_command(deskew)
