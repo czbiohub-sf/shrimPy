@@ -29,6 +29,7 @@ dependencies = [
     "pydantic",
     "pycromanager==0.25.40",
     "nidaqmx",
+    "iohub==0.1.0.dev3",
 ]
 
 
@@ -54,6 +55,8 @@ build = [
 
 [project.scripts]
 run-mantis-acquisition = "mantis.cli.run_acquisition:run_acquisition"
+mantis-deskew = "mantis.cli.deskew:deskew"
+mantis-estimate-deskew = "mantis.cli.estimate_deskew:estimate_deskew"
 
 [tool.setuptools]
 # explicitly specify the package name
