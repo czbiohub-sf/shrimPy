@@ -15,6 +15,11 @@ class DeskewSettings:
             raise ValueError("Light sheet angle must be be between 0 and 45 degrees")
         return round(float(v), 2)
 
+    @validator("px_to_scan_ratio")
+    def px_to_scan_ratio_check(cls, v):
+        if v is not None:
+            return round(float(v), 3)
+
     def __post_init__(self):
         if self.px_to_scan_ratio is None:
             if self.scan_step_um is not None:
