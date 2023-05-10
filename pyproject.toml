@@ -54,9 +54,7 @@ build = [
 ]
 
 [project.scripts]
-run-mantis-acquisition = "mantis.cli.run_acquisition:run_acquisition"
-mantis-deskew = "mantis.cli.deskew:deskew"
-mantis-estimate-deskew = "mantis.cli.estimate_deskew:estimate_deskew"
+mantis = "mantis.cli.main:cli"
 
 [tool.setuptools]
 # explicitly specify the package name
