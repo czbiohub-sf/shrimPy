@@ -48,7 +48,7 @@ def plot_bleaching_curves(tc_times, tczyx_data, channel_names, output_file, titl
         yerr = stds[:, c]
 
         # Plot curve fit
-        def func(x, a, b, c): 
+        def func(x, a, b, c):
             return a * np.exp(-x / b) + c
 
         try:
@@ -66,7 +66,8 @@ def plot_bleaching_curves(tc_times, tczyx_data, channel_names, output_file, titl
             label = channel_names[c] + f" - {popt[1]:0.0f} minutes"
             print("Curve fit successful!")
             print(label)
-        except:
+        except Exception as e:
+            print(e)
             label = channel_names[c]
             print("Curve fit failed!")
 
@@ -126,7 +127,8 @@ def estimate_bleaching(data_path, output_folder):
                 try:
                     t0 = np.float32(reader.get_image_metadata(p, 0, c, 0)["TimeStampMsec"])
                     time = np.float32(reader.get_image_metadata(p, t, c, 0)["TimeStampMsec"])
-                except:
+                except Exception as e:
+                    print(e)
                     print(f"WARNING: missing time metadata for p={p}, t={t}, c={c}")
                     t0 = np.nan
                     time = np.nan
