@@ -48,7 +48,8 @@ def plot_bleaching_curves(tc_times, tczyx_data, channel_names, output_file, titl
         yerr = stds[:, c]
 
         # Plot curve fit
-        func = lambda x, a, b, c: a * np.exp(-x / b) + c
+        def func(x, a, b, c): 
+            return a * np.exp(-x / b) + c
 
         try:
             popt, _ = curve_fit(
