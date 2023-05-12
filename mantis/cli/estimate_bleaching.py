@@ -1,10 +1,11 @@
-import click
-import numpy as np
 import os
-import matplotlib.pyplot as plt
 
-from scipy.optimize import curve_fit
+import click
+import matplotlib.pyplot as plt
+import numpy as np
+
 from iohub import read_micromanager
+from scipy.optimize import curve_fit
 from tqdm import tqdm
 
 MSECS_PER_MINUTE = 60000
