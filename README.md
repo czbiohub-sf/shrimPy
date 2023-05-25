@@ -24,7 +24,7 @@ pip install ".[napari]"
 Data are acquired using the `run-mantis-acquisition` command. A list of the command line argument can be obtained with:
 
 ```
-run-mantis-acquisition --help
+mantis run-acquisition --help
 ```
 
 The mantis acquisition is configures using a YAML settings file. An example of a settings file can be found [here](mantis/acquisition/settings/example_acquisition_settings.yaml).
@@ -32,7 +32,7 @@ The mantis acquisition is configures using a YAML settings file. An example of a
 This is an example of a command which will start an acquisition on the mantis microscope:
 
 ```
-run-mantis-acquisition \\
+mantis run-acquisition \\
     --data--dirpath ./test \\
     --name test_acquisition \\
     --settings path/to/settings/file
@@ -41,7 +41,7 @@ run-mantis-acquisition \\
 The acquisition may also be run in "demo" mode with the Micro-manager `MMConfig_Demo.cfg` config. This does not require any microscope hardware. A demo run can be started with:
 
 ```
-run-mantis-acquisition \\
+mantis run-acquisition \\
     --data--dirpath ./test \\
     --name test_acquisition \\
     --mm-config-file path/to/MMConfig_Demo.cfg/file \\
