@@ -29,6 +29,7 @@ dependencies = [
     "pydantic",
     "pycromanager==0.25.40",
     "nidaqmx",
+    "iohub==0.1.0.dev3",
 ]
 
 
@@ -53,7 +54,7 @@ build = [
 ]
 
 [project.scripts]
-run-mantis-acquisition = "mantis.cli.run_acquisition:run_acquisition"
+mantis = "mantis.cli.main:cli"
 
 [tool.setuptools]
 # explicitly specify the package name
