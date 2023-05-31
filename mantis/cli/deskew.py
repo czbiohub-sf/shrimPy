@@ -63,7 +63,7 @@ def _create_empty_zarr(position_paths, deskew_params_path, output_path, keep_ove
     click.echo(f"Output shape: {output_shape}")
     # Create output dataset
     output_dataset = open_ome_zarr(
-        output_path, layout="hcs", mode="w+", channel_names=channel_names
+        output_path, layout="hcs", mode="w", channel_names=channel_names
     )
     # This takes care of the logic for single position or multiple position by wildcards
     for filepath in position_paths:
