@@ -125,7 +125,6 @@ def deskew_cli(input_data_path, output_path, deskew_params_path, view, keep_over
                 input_dataset,
                 str(output_path[0]),
                 settings,
-                voxel_size,
                 keep_overhang,
             ),
             itertools.product(range(T), range(C)),
