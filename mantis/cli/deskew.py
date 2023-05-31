@@ -204,16 +204,19 @@ def single_process(data_array, output_path, settings, viewer, voxel_size, keep_o
         data = output_dataset[0][t, c]
         print(f'data shape: {data.shape}')
 
-        ## Deskew
-        deskewed = deskew_data(
-            data, settings.px_to_scan_ratio, settings.ls_angle_deg, keep_overhang
-        )
-        #TODO: The dimensions here don't match
+    # Deskew
+    deskewed = deskew_data(
+        data_array[0][t, c], settings.px_to_scan_ratio, settings.ls_angle_deg, keep_overhang
+    )
+
+    # Write to file
+    with open_ome_zarr(output_path, mode="r+") as output_dataset:
         output_dataset[0][t, c] = deskewed
-        # if viewer is not None:
-        #     curr_layer = 'deskew_' + str(t) + 'T_' + str(c) + 'C'
-        #     viewer.add_image(deskewed, name=curr_layer)
-        #     viewer.layers[curr_layer].scale = voxel_size
+
+    # if viewer is not None:
+    #     curr_layer = 'deskew_' + str(t) + 'T_' + str(c) + 'C'
+    #     viewer.add_image(deskewed, name=curr_layer)
+    #     viewer.layers[curr_layer].scale = voxel_size
 
 
 def parallel(func=None, **options):
