@@ -6,6 +6,14 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem-per-cpu=12G
+#SBATCH --output=./output/process_%A-%a.out
+env | grep "^SLURM" | sort
+
+#For saving the files stdouts
+now=$(date '+%y-%m-%d')
+logpath=./logs/$now
+mkdir -p $logpath
+logfile="$logpath/process_$SLURM_ARRAY_TASK_ID.out"
 
 FOV_NAME=/0/0/$SLURM_ARRAY_TASK_ID
 

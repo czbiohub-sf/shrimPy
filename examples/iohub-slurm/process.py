@@ -24,6 +24,7 @@ def parse_args():
 
 
 def process(image: ImageArray):
+    print(f'processing image {image.shape} with shape {os.environ.get("SLURM_JOB_ID")}')
     return np.zeros_like(image) + int(os.environ.get("SLURM_JOB_ID"))
 
 
