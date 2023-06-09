@@ -28,5 +28,5 @@ echo  "raw: $IN_DATA" >> ${logfile}
 echo "out: $OUT_DATA " >> ${logfile}
 echo "deskew params: $DESKEW_PARAMS " >> ${logfile}
 
-python -u ./empty_zarr.py $IN_DATA $DESKEW_PARAMS -o $OUT_DATA &>> ${logfile}
+python -u ./empty_zarr.py $IN_DATA $DESKEW_PARAMS -o $OUT_DATA >> ${logfile}
  

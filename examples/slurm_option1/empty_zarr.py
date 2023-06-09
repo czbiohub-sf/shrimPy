@@ -18,7 +18,7 @@ import numpy as np
 from datetime import datetime
 import os
 from iohub.ngff_meta import TransformationMeta
-
+from natsort import natsorted
 
 def _get_deskew_params(deskew_params_path):
     # Load params
@@ -48,6 +48,9 @@ def cli():
 @click.help_option("-h", "--help")
 def create_empty_zarr(input_data_path, deskew_param_path, output_path, keep_overhang):
     # Load the "0" position to infer dataset information
+    input_data_path = natsorted(input_data_path)
+    click.echo(f"Input data folders {input_data_path})")
+
     input_dataset = open_ome_zarr(str(input_data_path[0]), mode="r")
     T, C, Z, Y, X = input_dataset.data.shape
 
@@ -76,6 +79,8 @@ def create_empty_zarr(input_data_path, deskew_param_path, output_path, keep_over
     output_shape = (T, len(channel_names)) + deskewed_shape
     click.echo(f"Number of positions: {len(input_data_path)}")
     click.echo(f"Output shape: {output_shape}")
+    chunk_size = (1, 1, 64) + deskewed_shape[-2:]
+    click.echo(f"Chunk size {chunk_size}")
 
     # Create output dataset
     output_dataset = open_ome_zarr(
@@ -87,7 +92,6 @@ def create_empty_zarr(input_data_path, deskew_param_path, output_path, keep_over
         pos = output_dataset.create_position(
             str(path_strings[0]), str(path_strings[1]), str(path_strings[2])
         )
-
         _ = pos.create_zeros(
             name="0",
             shape=(
@@ -95,49 +99,10 @@ def create_empty_zarr(input_data_path, deskew_param_path, output_path, keep_over
                 C,
             )
             + deskewed_shape,
-            chunks=(1, 1, 64) + deskewed_shape[-2:],
+            chunks=chunk_size,
             dtype=np.uint16,
             transform=[transform],
         )
-
-
-# def create_empty_zarr(input_data_path, output_data_path):
-#     print(f'input:{input_data_path}')
-#     print(f'output:{output_data_path}')
-
-#     # Load datasets
-#     # Take position 0 as sample
-
-#     #Wildcard pattern
-#     wildcard_pattern='*/*/*'
-
-#     # Helper function to do the job o
-#     position_paths = get_files_with_pattern(input_data_path, wildcard_pattern)
-
-#     input_dataset = open_ome_zarr(str(position_paths[0]), mode="r")
-#     channel_names = input_dataset.channel_names
-
-#     # Create output dataset
-#     output_dataset = open_ome_zarr(
-#         output_data_path, layout="hcs", mode="a", channel_names=channel_names
-#     )
-#     for filepath in tqdm(position_paths):
-#         path_strings = filepath.split(os.path.sep)[-3:]
-#         pos = output_dataset.create_position(
-#             str(path_strings[0]), str(path_strings[1]), str(path_strings[2])
-#         )
-#         _ = pos.create_zeros(
-#             name="0",
-#             shape=input_dataset.data.shape,
-#             dtype=np.uint16,
-#             chunks=(
-#                 1,
-#                 1,
-#                 1,
-#             )
-#             + input_dataset.data.shape[3:],  # chunk by YX
-#         )
-
 
 if __name__ == "__main__":
     create_empty_zarr()

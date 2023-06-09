@@ -1,13 +1,13 @@
 #!/bin/bash
 
 INPUT_DATA="/hpc/instruments/cm.mantis/2023_05_10_PCNA_RAC1/timelapse_2_3/timelapse_2_lightsheet_1.zarr/*/*/*"
-OUTPUT_PATH="./deskew_slurm.zarr"
+OUTPUT_PATH="./timelapse_2_lightsheet_1_deskewed.zarr"
 DESKEW_PARAMS="./deskew_settings.yml"
 
 # Make an array of positions
-POSPATHS=($INPUT_DATA)
-# POSITIONS=${#POSPATHS[@]}
-POSITIONS=3
+POSPATHS=($(natsort -p $INPUT_DATA))
+POSITIONS=${#POSPATHS[@]}
+
 # Get the Zarrstore name
 IFS='/' read -ra path <<< "${POSPATHS[0]}"
 ZARR_STORE=$(IFS='/'; echo "${path[*]:0:${#path[@]}-3}")
