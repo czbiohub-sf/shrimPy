@@ -24,7 +24,7 @@ from iohub.ngff_meta import TransformationMeta
 from natsort import natsorted
 
 
-def _get_deskew_params(deskew_params_path):
+def _get_deskew_params(deskew_params_path: Path)-> None:
     # Load params
     with open(deskew_params_path) as file:
         raw_settings = yaml.safe_load(file)
@@ -32,12 +32,13 @@ def _get_deskew_params(deskew_params_path):
     click.echo(f"Deskewing parameters: {asdict(settings)}")
     return settings
 
+
 def create_empty_zarr(
     input_data_path: Path,
     deskew_param_path: Path,
     output_path: Path,
     keep_overhang: bool,
-):
+) -> None:
     # Load the "0" position to infer dataset information
     input_data_path = natsorted(input_data_path)
     click.echo(f"Input data folders {input_data_path})")
@@ -95,6 +96,7 @@ def create_empty_zarr(
             transform=[transform],
         )
 
+
 def _get_output_paths(list_pos, output_path):
     # From the position filepath generate the output filepath
     list_output_path = []
@@ -123,26 +125,8 @@ def slurm_deskew(
 
     if not slurm:
         # Create a zarr store output to mirror the input
-        create_empty_zarr(
-            input_data_path, deskew_params_path, output_path, keep_overhang
-        )
+        create_empty_zarr(input_data_path, deskew_params_path, output_path, keep_overhang)
 
-    # Parallel Position
-    # deskew_parameters = (
-    #     input_data_path,
-    #     list_output_pos,
-    #     deskew_param_path,
-    #     view,
-    #     keep_overhang,
-    #     num_cores,
-    # )
-
-    # deskew_params = (deskew_param_path, view, keep_overhang, num_cores)
-    # # Check number of processes and available cores
-    # # Multiprocess per position
-    # for pos_in, pos_out in zip(input_data_path, list_output_pos):
-    #     args = (pos_in,) + (pos_out,) + deskew_params
-    #     deskew_cli(*args)
     deskew_cli(
         input_data_path=input_data_path,
         deskew_params_path=deskew_params_path,
@@ -197,15 +181,17 @@ def main(
     slurm,
 ):
     input_data_path = natsorted(input_data_path)
-    output_dir = os.path.dirname(os.path.join(os.getcwd(), output_path))
     list_output_pos = _get_output_paths(input_data_path, output_path)
-
     click.echo(f"in: {input_data_path}, out: {list_output_pos}")
-    # SLURM OUTPUT STUFF
+
+    # Slurm output path
+    #TODO: we will probably end up using the logger instead of printf and click.echo.
+    output_dir = os.path.dirname(os.path.join(os.getcwd(), output_path))
     slurm_out_path = str(os.path.join(output_dir, "slurm_output/deskew-%j.out"))
 
     # Initialize the array
-    create_empty_zarr(input_data_path, deskew_param_path, output_path, keep_overhang)
+    if not slurm:
+        create_empty_zarr(input_data_path, deskew_param_path, output_path, keep_overhang)
 
     # Slurm Parameters for the deskew
     params = SlurmParams(
@@ -224,12 +210,15 @@ def main(
         slurm=slurm,
     )
 
+    # Submits the job with the input_data_path and output_path variables
+    # Adding the no_sbatch flag to match our slurm flag
     deskew_jobs = [
         submit_function(
             deskew_func,
             slurm_params=params,
             input_data_path=in_path,
             output_path=out_path,
+            no_sbatch=not slurm,
         )
         for in_path, out_path in zip(input_data_path, list_output_pos)
     ]
