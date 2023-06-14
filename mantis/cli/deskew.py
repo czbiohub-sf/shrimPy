@@ -33,7 +33,7 @@ def get_deskew_params(deskew_param_path: Path) -> Dict[str, Union[int, str, floa
     with open(deskew_param_path) as file:
         raw_settings = yaml.safe_load(file)
     settings = DeskewSettings(**raw_settings)
-    print(f"Deskewing parameters: {asdict(settings)}")
+    click.echo(f"Deskewing parameters: {asdict(settings)}")
     return settings
 
 

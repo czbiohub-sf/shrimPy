@@ -9,6 +9,7 @@ from mantis.cli.deskew import (
 )
 from slurmkit import SlurmParams, slurm_function, submit_function
 from natsort import natsorted
+import click
 
 # TODO: decide what logging we use (i.e click.echo, print, logging)
 
@@ -29,7 +30,7 @@ input_data_path = glob.glob(input_data_path)
 input_data_path = natsorted(input_data_path)
 output_dir = os.path.dirname(os.path.join(os.getcwd(), output_data_path))
 list_output_pos = get_output_paths(input_data_path, output_data_path)
-print(f"in: {input_data_path}, out: {list_output_pos}")
+click.echo(f"in: {input_data_path}, out: {list_output_pos}")
 
 # Slurm I/O
 slurm_out_path = str(os.path.join(output_dir, "slurm_output/deskew-%j.out"))
