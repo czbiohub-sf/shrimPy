@@ -31,7 +31,8 @@ dependencies = [
     "napari",
     "nidaqmx",
     "iohub==0.2.0.dev14",
-    "scipy"
+    "scipy",
+    "slurmkit==0.1.1"
 ]
 
 
