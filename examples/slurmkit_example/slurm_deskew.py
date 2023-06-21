@@ -26,7 +26,7 @@ time = 40  # minutes
 # path handling
 input_paths = glob.glob(input_paths)
 input_paths = natsorted(input_paths)
-output_dir = os.path.dirname(os.path.join(os.getcwd(), output_data_path))
+output_dir = os.path.dirname(output_data_path)
 output_paths = get_output_paths(input_paths, output_data_path)
 click.echo(f"in: {input_paths}, out: {output_paths}")
 slurm_out_path = str(os.path.join(output_dir, "slurm_output/deskew-%j.out"))
