@@ -30,8 +30,7 @@ dependencies = [
     "pycromanager==0.25.40",
     "nidaqmx",
     "iohub==0.1.0.dev3",
-    "matplotlib",
-    "pythonnet"
+    "matplotlib"
 ]
 
 
