@@ -29,7 +29,7 @@ dependencies = [
     "pycromanager==0.25.40",
     "napari",
     "nidaqmx",
-    "iohub==0.2.0.dev14",
+    "iohub==0.1.0.dev3",
     "scipy",
     "slurmkit==0.1.1"
 ]
