@@ -20,7 +20,7 @@ output_data_path = './deskewed.zarr'
 
 # sbatch parameters
 cpu_per_task = 16
-mem = "16G"
+mem = "16G"  # memory per node, consider mem_per_cpu as an alternative
 time = 40  # minutes
 
 # path handling
@@ -45,7 +45,8 @@ params = SlurmParams(
 # wrap our deskew_single_position() function with slurmkit
 slurm_deskew_single_position = slurm_function(deskew_single_position)
 deskew_func = slurm_deskew_single_position(
-    deskew_param_path=deskew_param_path, keep_overhang=keep_overhang
+    deskew_param_path=deskew_param_path,
+    keep_overhang=keep_overhang,
 )
 
 # generate an array of jobs by passing the in_path and out_path to slurm wrapped function
