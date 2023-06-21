@@ -15,7 +15,6 @@ from mantis.analysis.deskew import deskew_data, get_deskewed_data_shape
 
 from dataclasses import asdict
 from functools import partial
-from tqdm import tqdm
 from mantis.cli.parsing import (
     input_data_path_argument,
     deskew_param_argument,
