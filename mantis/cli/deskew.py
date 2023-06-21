@@ -190,10 +190,10 @@ def deskew(input_paths, deskew_param_path, output_path, keep_overhang, num_cores
     create_empty_zarr(input_paths, deskew_param_path, output_path, keep_overhang)
 
     # Loop over positions
-    for input_path, output_path in zip(input_paths, output_paths):
+    for input_position_path, output_position_path in zip(input_paths, output_paths):
         deskew_single_position(
-            input_data_path=input_path,
-            output_path=output_path,
+            input_data_path=input_position_path,
+            output_path=output_position_path,
             deskew_param_path=deskew_param_path,
             keep_overhang=keep_overhang,
             num_cores=num_cores,
