@@ -11,12 +11,12 @@ from natsort import natsorted
 import click
 
 # deskew parameters
+deskew_param_path = './deskew_settings.yml'
 keep_overhang = False
 
 # io parameters
 input_paths = '/hpc/projects/comp.micro/mantis/2023_05_10_PCNA_RAC1/timelapse_2_3/0-crop-convert-zarr/sample_short.zarr/*/*/*'
 output_data_path = './deskewed.zarr'
-deskew_param_path = './deskew_settings.yml'
 
 # sbatch parameters
 cpu_per_task = 16
@@ -24,8 +24,7 @@ mem = "16G"
 time = 40  # minutes
 
 # path handling
-input_paths = glob.glob(input_paths)
-input_paths = natsorted(input_paths)
+input_paths = natsorted(glob.glob(input_paths))
 output_dir = os.path.dirname(output_data_path)
 output_paths = get_output_paths(input_paths, output_data_path)
 click.echo(f"in: {input_paths}, out: {output_paths}")
@@ -44,8 +43,8 @@ params = SlurmParams(
 )
 
 # wrap our deskew_cli() function with slurmkit
-slurm_deskew_cli = slurm_function(deskew_single_position)
-deskew_func = slurm_deskew_cli(
+slurm_deskew_single_position = slurm_function(deskew_single_position)
+deskew_func = slurm_deskew_single_position(
     deskew_param_path=deskew_param_path, keep_overhang=keep_overhang
 )
 
