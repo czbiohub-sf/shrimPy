@@ -127,7 +127,7 @@ def deskew_zyx_and_save(
 def deskew_single_position(
     input_data_path: Path,
     output_path: Path = './deskewed.zarr',
-    deskew_param_path: Path = './deskew.zarr',
+    deskew_param_path: Path = './deskew_setting.yml',
     keep_overhang: bool = False,
     num_cores: int = mp.cpu_count(),
 ) -> None:
