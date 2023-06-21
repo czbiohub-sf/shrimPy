@@ -2,10 +2,10 @@ import click
 from typing import Callable
 
 
-def input_data_path_argument() -> Callable:
+def input_data_paths_argument() -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.argument(
-            "input-data-path",
+            "input-data-paths",
             type=click.Path(exists=True),
             nargs=-1,
         )(f)
@@ -18,6 +18,7 @@ def deskew_param_argument() -> Callable:
         return click.argument(
             "deskew-param-path", type=click.Path(exists=True, file_okay=True), nargs=1
         )(f)
+
     return decorator
 
 
