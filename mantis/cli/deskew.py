@@ -143,7 +143,7 @@ def deskew_single_position(
     click.echo(f'Dataset shape:\t{input_dataset.data.shape}')
 
     # Loop through (T, C), deskewing and writing as we go
-    click.echo(f"Starting multiprocess pool with cores {num_processes}")
+    click.echo(f"Starting multiprocess pool with {num_processes} processes")
     with mp.Pool(num_processes) as p:
         p.starmap(
             partial(
@@ -165,7 +165,7 @@ def deskew_single_position(
     help="Keep the overhanging region.",
 )
 @click.option(
-    "--num-cores",
+    "--num-processes",
     "-j",
     default=mp.cpu_count(),
     help="Number of cores",
