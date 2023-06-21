@@ -119,6 +119,7 @@ def deskew_zyx_and_save(
     # Write to file
     with open_ome_zarr(output_path, mode="r+") as output_dataset:
         output_dataset[0][t, c] = deskewed
+        output_dataset.zattrs["deskewing"] = asdict(settings)
 
     click.echo(f"Finished Writing.. c={c}, t={t}")
 
@@ -151,12 +152,6 @@ def deskew_single_position(
             ),
             itertools.product(range(T), range(C)),
         )
-    # Write metadata
-    output_zarr_root = str(output_path).split(os.path.sep)[:-3]
-    output_zarr_root = os.path.join(*output_zarr_root)
-    click.echo(f'output_zarr_root \t{output_zarr_root}')
-    with open_ome_zarr(output_zarr_root, mode='r+') as dataset:
-        dataset.zattrs["deskewing"] = asdict(settings)
 
 
 @click.command()
