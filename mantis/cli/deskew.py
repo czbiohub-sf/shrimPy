@@ -99,7 +99,7 @@ def create_empty_zarr(
 
 
 def get_output_paths(list_pos: List[str], output_path: Path) -> List[str]:
-    """ "  Generates a mirrored output path list given an the input list of positions"""
+    """Generates a mirrored output path list given an the input list of positions"""
     list_output_path = []
     for filepath in list_pos:
         path_strings = filepath.split(os.path.sep)[-3:]
@@ -132,9 +132,7 @@ def deskew_cli(
     keep_overhang: bool = False,
     num_cores: int = mp.cpu_count(),
 ) -> None:
-    """
-    Deskew a single position and parallelized over T and C
-    """
+    """Deskew a single position and parallelized over T and C"""
 
     # Get the reader and writer
     click.echo(f'Input data path:\t{input_data_path}')
