@@ -1,6 +1,7 @@
 import datetime
 import os
 import glob
+import multiprocessing as mp
 from mantis.cli.deskew import (
     deskew_single_position,
     create_empty_zarr,
@@ -18,10 +19,11 @@ keep_overhang = False
 input_paths = '/hpc/projects/comp.micro/mantis/2023_05_10_PCNA_RAC1/timelapse_2_3/0-crop-convert-zarr/sample_short.zarr/*/*/*'
 output_data_path = './deskewed.zarr'
 
-# sbatch parameters
+# sbatch and resource parameters
 cpu_per_task = 16
 mem = "16G"  # memory per node, consider mem_per_cpu as an alternative
 time = 40  # minutes
+num_processes = mp.cpu_count()  # number of cpus on your current node
 
 # path handling
 input_paths = natsorted(glob.glob(input_paths))
@@ -47,6 +49,7 @@ slurm_deskew_single_position = slurm_function(deskew_single_position)
 deskew_func = slurm_deskew_single_position(
     deskew_param_path=deskew_param_path,
     keep_overhang=keep_overhang,
+    num_processes=num_processes,
 )
 
 # generate an array of jobs by passing the in_path and out_path to slurm wrapped function
