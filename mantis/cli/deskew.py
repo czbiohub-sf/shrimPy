@@ -123,7 +123,7 @@ def deskew_zyx_and_save(
     click.echo(f"Finished Writing.. c={c}, t={t}")
 
 
-def deskew_cli(
+def deskew_single_position(
     input_data_path: Path,
     output_path: Path = './deskewed.zarr',
     deskew_param_path: Path = './deskew.zarr',
@@ -203,7 +203,7 @@ def deskew(input_paths, deskew_param_path, output_path, keep_overhang, num_cores
 
     # Loop over positions
     for input_path, output_path in zip(input_paths, output_paths):
-        deskew_cli(
+        deskew_single_position(
             input_data_path=input_path,
             output_path=output_path,
             deskew_param_path=deskew_param_path,

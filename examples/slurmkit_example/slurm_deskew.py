@@ -2,7 +2,7 @@ import datetime
 import os
 import glob
 from mantis.cli.deskew import (
-    deskew_cli,
+    deskew_single_position,
     create_empty_zarr,
     get_output_paths,
 )
@@ -44,7 +44,7 @@ params = SlurmParams(
 )
 
 # wrap our deskew_cli() function with slurmkit
-slurm_deskew_cli = slurm_function(deskew_cli)
+slurm_deskew_cli = slurm_function(deskew_single_position)
 deskew_func = slurm_deskew_cli(
     deskew_param_path=deskew_param_path, keep_overhang=keep_overhang
 )
