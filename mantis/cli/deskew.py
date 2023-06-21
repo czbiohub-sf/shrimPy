@@ -2,11 +2,10 @@ import multiprocessing as mp
 import itertools
 import os
 import click
-import napari
 import numpy as np
 import yaml
 from pathlib import Path
-from typing import List, Dict, Union
+from typing import List
 from numpy.typing import ArrayLike
 
 from iohub import open_ome_zarr

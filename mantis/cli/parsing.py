@@ -1,8 +1,5 @@
-
 import click
-import warnings
-import glob
-from typing import Callable, Sequence
+from typing import Callable
 
 
 def input_data_path_argument() -> Callable:
