@@ -42,7 +42,7 @@ params = SlurmParams(
     output=slurm_out_path,
 )
 
-# wrap our deskew_cli() function with slurmkit
+# wrap our deskew_single_position() function with slurmkit
 slurm_deskew_single_position = slurm_function(deskew_single_position)
 deskew_func = slurm_deskew_single_position(
     deskew_param_path=deskew_param_path, keep_overhang=keep_overhang
