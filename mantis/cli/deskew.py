@@ -105,7 +105,7 @@ def get_output_paths(list_pos: List[str], output_path: Path) -> List[str]:
     return list_output_path
 
 
-def single_process(
+def deskew_zyx_and_save(
     data_array: ArrayLike, output_path: Path, settings, keep_overhang: bool, t: int, c: int
 ) -> None:
     """Process a single position"""
@@ -154,7 +154,9 @@ def deskew_cli(
     click.echo(f"Starting multiprocess pool with cores {num_cores}")
     with mp.Pool(num_cores) as p:
         p.starmap(
-            partial(single_process, input_dataset, str(output_path), settings, keep_overhang),
+            partial(
+                deskew_zyx_and_save, input_dataset, str(output_path), settings, keep_overhang
+            ),
             itertools.product(range(T), range(C)),
         )
     # Write metadata
