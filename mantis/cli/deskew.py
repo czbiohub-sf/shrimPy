@@ -25,9 +25,8 @@ from mantis.cli.parsing import (
 from natsort import natsorted
 
 
-# TODO: possibly add this function to a util folder?
-# If we do move them, we need to make sure they also change in
-def get_deskew_params(deskew_param_path: Path) -> Dict[str, Union[int, str, float]]:
+# TODO: consider refactoring to utils
+def deskew_params_from_file(deskew_param_path: Path) -> DeskewSettings:
     """Parse the deskewing parameters from the yaml file"""
     # Load params
     with open(deskew_param_path) as file:
@@ -46,7 +45,7 @@ def create_empty_zarr(
     T, C, Z, Y, X = input_dataset.data.shape
 
     # Get the deskewing parameters
-    settings = get_deskew_params(deskew_param_path)
+    settings = deskew_params_from_file(deskew_param_path)
     deskewed_shape, voxel_size = get_deskewed_data_shape(
         (Z, Y, X),
         settings.pixel_size_um,
@@ -143,7 +142,7 @@ def deskew_cli(
     input_dataset = open_ome_zarr(str(input_data_path))
     click.echo(input_dataset.print_tree())
 
-    settings = get_deskew_params(deskew_param_path)
+    settings = deskew_params_from_file(deskew_param_path)
     T, C, Z, Y, X = input_dataset.data.shape
     click.echo(f'Dataset shape:\t{input_dataset.data.shape}')
 
