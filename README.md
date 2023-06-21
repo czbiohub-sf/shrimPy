@@ -6,10 +6,10 @@ This package facilitates acquiring and analyzing data from the mantis microscope
 
 **mantis** can be installed as follows:
 
-1. Create a new Python 3.9 virtual environment using conda:
+1. Create a new Python 3.10 virtual environment using conda:
 
 ```sh
-conda create -y --name mantis python=3.9
+conda create -y --name mantis python=3.10
 conda activate mantis
 ```
 
