@@ -31,6 +31,7 @@ dependencies = [
     "nidaqmx",
     "iohub==0.1.0.dev3",
     "matplotlib",
+    "pythonnet"
 ]
 
 
