@@ -6,9 +6,8 @@ import numpy as np
 import yaml
 from pathlib import Path
 from typing import List
-from numpy.typing import ArrayLike
 
-from iohub.ngff import open_ome_zarr, Plate
+from iohub.ngff import open_ome_zarr, Plate, Position
 from iohub.ngff_meta import TransformationMeta
 from mantis.analysis.AnalysisSettings import DeskewSettings
 from mantis.analysis.deskew import deskew_data, get_deskewed_data_shape
