@@ -130,7 +130,7 @@ def deskew_single_position(
     keep_overhang: bool = False,
     num_cores: int = mp.cpu_count(),
 ) -> None:
-    """Deskew a single position and parallelized over T and C"""
+    """Deskew a single position parallelized over T and C"""
 
     # Get the reader and writer
     click.echo(f'Input data path:\t{input_data_path}')
@@ -165,8 +165,6 @@ def deskew_single_position(
     click.echo(f'output_zarr_root \t{output_zarr_root}')
     with open_ome_zarr(output_zarr_root, mode='r+') as dataset:
         dataset.zattrs["deskewing"] = asdict(settings)
-        # TODO: not sure what this metadata was for
-        # dataset.zattrs["mm-meta"] = input_dataset.mm_meta["Summary"]
 
 
 @click.command()
