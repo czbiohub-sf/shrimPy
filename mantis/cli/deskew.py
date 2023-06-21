@@ -106,15 +106,15 @@ def get_output_paths(list_pos: List[str], output_path: Path) -> List[str]:
 
 
 def deskew_zyx_and_save(
-    data_array: ArrayLike, output_path: Path, settings, keep_overhang: bool, t: int, c: int
+    position: Position, output_path: Path, settings, keep_overhang: bool, t: int, c: int
 ) -> None:
-    """Process a single position"""
+    """Load a zyx array from a Position object, deskew it, and save the result to file"""
     click.echo(f"Deskewing c={c}, t={t}")
-    data = data_array[0][t, c]
+    zyx_data = position[0][t, c]
 
     # Deskew
     deskewed = deskew_data(
-        data, settings.px_to_scan_ratio, settings.ls_angle_deg, keep_overhang
+        zyx_data, settings.px_to_scan_ratio, settings.ls_angle_deg, keep_overhang
     )
     # Write to file
     with open_ome_zarr(output_path, mode="r+") as output_dataset:
