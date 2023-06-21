@@ -14,7 +14,7 @@ import click
 keep_overhang = False
 
 # io parameters
-input_data_path = '/hpc/projects/comp.micro/mantis/2023_05_10_PCNA_RAC1/0-crop-convert-zarr/sample_short.zarr/*/*/*'
+input_data_path = '/hpc/projects/comp.micro/mantis/2023_05_10_PCNA_RAC1/timelapse_2_3/0-crop-convert-zarr/sample_short.zarr/*/*/*'
 output_data_path = './deskewed.zarr'
 deskew_param_path = './deskew_settings.yml'
 
@@ -48,7 +48,6 @@ slurm_deskew_cli = slurm_function(deskew_single_position)
 deskew_func = slurm_deskew_cli(
     deskew_param_path=deskew_param_path, keep_overhang=keep_overhang
 )
-
 # generate an array of jobs by passing the in_path and out_path to slurm wrapped function
 deskew_jobs = [
     submit_function(
