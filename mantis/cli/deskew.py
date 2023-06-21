@@ -142,14 +142,6 @@ def deskew_single_position(
     T, C, Z, Y, X = input_dataset.data.shape
     click.echo(f'Dataset shape:\t{input_dataset.data.shape}')
 
-    deskewed_shape, voxel_size = get_deskewed_data_shape(
-        (Z, Y, X),
-        settings.pixel_size_um,
-        settings.ls_angle_deg,
-        settings.px_to_scan_ratio,
-        keep_overhang,
-    )
-
     # Loop through (T, C), deskewing and writing as we go
     click.echo(f"Starting multiprocess pool with cores {num_cores}")
     with mp.Pool(num_cores) as p:
