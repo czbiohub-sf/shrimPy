@@ -5,7 +5,7 @@ from typing import Callable
 def input_data_paths_argument() -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.argument(
-            "input-data-paths",
+            "input-paths",
             type=click.Path(exists=True),
             nargs=-1,
         )(f)
