@@ -32,6 +32,7 @@ dependencies = [
     "iohub==0.1.0.dev3",
     "scipy",
     "slurmkit @ git+https://github.com/royerlab/slurmkit"
+    "matplotlib",
 ]
 
 
