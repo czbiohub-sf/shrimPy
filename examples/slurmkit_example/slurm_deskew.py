@@ -20,10 +20,9 @@ input_paths = '/hpc/projects/comp.micro/mantis/2023_05_10_PCNA_RAC1/timelapse_2_
 output_data_path = './deskewed.zarr'
 
 # sbatch and resource parameters
-cpu_per_task = 16
-mem = "16G"  # memory per node, consider mem_per_cpu as an alternative
+cpus_per_task = 16
+mem_per_cpu = "16G"
 time = 40  # minutes
-num_processes = mp.cpu_count()  # number of cpus on your current node
 
 # path handling
 input_paths = natsorted(glob.glob(input_paths))
@@ -38,8 +37,8 @@ create_empty_zarr(input_paths, deskew_param_path, output_data_path, keep_overhan
 # prepare slurm parameters
 params = SlurmParams(
     partition="cpu",
-    cpus_per_task=cpu_per_task,
-    mem=mem,
+    cpus_per_task=cpus_per_task,
+    mem_per_cpu=mem_per_cpu,
     time=datetime.timedelta(minutes=time),
     output=slurm_out_path,
 )
@@ -49,7 +48,7 @@ slurm_deskew_single_position = slurm_function(deskew_single_position)
 deskew_func = slurm_deskew_single_position(
     deskew_param_path=deskew_param_path,
     keep_overhang=keep_overhang,
-    num_processes=num_processes,
+    num_processes=cpus_per_task,
 )
 
 # generate an array of jobs by passing the in_path and out_path to slurm wrapped function
