@@ -1,5 +1,6 @@
-from mantis.cli.main import cli
 from click.testing import CliRunner
+
+from mantis.cli.main import cli
 
 
 def test_main():

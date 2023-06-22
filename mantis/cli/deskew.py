@@ -1,25 +1,27 @@
-import multiprocessing as mp
 import itertools
+import multiprocessing as mp
 import os
-import click
-import numpy as np
-import yaml
-from pathlib import Path
-from typing import List
-
-from iohub.ngff import open_ome_zarr, Plate, Position
-from iohub.ngff_meta import TransformationMeta
-from mantis.analysis.AnalysisSettings import DeskewSettings
-from mantis.analysis.deskew import deskew_data, get_deskewed_data_shape
 
 from dataclasses import asdict
 from functools import partial
+from pathlib import Path
+from typing import List
+
+import click
+import numpy as np
+import yaml
+
+from iohub.ngff import Plate, Position, open_ome_zarr
+from iohub.ngff_meta import TransformationMeta
+from natsort import natsorted
+
+from mantis.analysis.AnalysisSettings import DeskewSettings
+from mantis.analysis.deskew import deskew_data, get_deskewed_data_shape
 from mantis.cli.parsing import (
-    input_data_paths_argument,
     deskew_param_argument,
+    input_data_paths_argument,
     output_dataset_options,
 )
-from natsort import natsorted
 
 
 # TODO: consider refactoring to utils

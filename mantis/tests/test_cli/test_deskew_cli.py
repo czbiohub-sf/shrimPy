@@ -1,8 +1,11 @@
-from mantis.cli.main import cli
-from iohub.ngff import open_ome_zarr
-from click.testing import CliRunner
-import numpy as np
 import pathlib
+
+import numpy as np
+
+from click.testing import CliRunner
+from iohub.ngff import open_ome_zarr
+
+from mantis.cli.main import cli
 
 
 def test_deskew_cli(tmp_path):

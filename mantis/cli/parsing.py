@@ -1,5 +1,6 @@
-import click
 from typing import Callable
+
+import click
 
 
 def input_data_paths_argument() -> Callable:

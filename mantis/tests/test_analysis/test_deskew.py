@@ -1,5 +1,6 @@
-from mantis.analysis import deskew
 import numpy as np
+
+from mantis.analysis import deskew
 
 
 def test_deskew_data():
