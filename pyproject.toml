@@ -27,7 +27,6 @@ dependencies = [
     "numpy",
     "pydantic",
     "pycromanager==0.25.40",
-    "napari",
     "nidaqmx",
     "iohub==0.1.0.dev3",
     "scipy",
