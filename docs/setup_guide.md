@@ -32,7 +32,7 @@ The mantis acquisition currently works with Micro-manager nightly build 2023-03-
 
 ## Test the hardware setup
 
-* Launch Micro-manager using the `mantis_LS.cfg` and `mantis_LF.cfg` config files. You should not encounter any errors during startup.
+* Launch Micro-manager using the `mantis-LS.cfg` and `mantis-LF.cfg` config files. You should not encounter any errors during startup.
 
 * Run the mantis acquisition in demo mode with
 
