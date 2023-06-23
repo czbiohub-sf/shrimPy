@@ -13,10 +13,10 @@ conda create -y --name mantis python=3.10
 conda activate mantis
 ```
 
-2. Clone the repo and install this package and the [napari](https://napari.org/) viewer:
+2. Clone the repo and install this package:
 
 ```sh
-pip install ".[napari]"
+pip install .
 ```
 
 ## Usage
