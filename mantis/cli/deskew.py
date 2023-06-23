@@ -71,7 +71,7 @@ def create_empty_zarr(
     output_dataset = open_ome_zarr(
         output_path, layout="hcs", mode="w", channel_names=channel_names
     )
-    chunk_size = (1, 1, 64) + deskewed_shape[-2:]
+    chunk_size = (1, 1) + deskewed_shape
     click.echo(f"Chunk size {chunk_size}")
 
     # This takes care of the logic for single position or multiple position by wildcards
