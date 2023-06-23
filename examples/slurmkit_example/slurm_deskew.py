@@ -12,8 +12,8 @@ from natsort import natsorted
 import click
 
 # deskew parameters
+# TODO: make sure that this settings file sets `keep_overhang` to false
 deskew_param_path = './deskew_settings.yml'
-keep_overhang = False
 
 # io parameters
 input_paths = '/hpc/projects/comp.micro/mantis/2023_05_10_PCNA_RAC1/timelapse_2_3/0-crop-convert-zarr/sample_short.zarr/*/*/*'
@@ -32,7 +32,7 @@ click.echo(f"in: {input_paths}, out: {output_paths}")
 slurm_out_path = str(os.path.join(output_dir, "slurm_output/deskew-%j.out"))
 
 # initialize zarr
-create_empty_zarr(input_paths, deskew_param_path, output_data_path, keep_overhang)
+create_empty_zarr(input_paths, deskew_param_path, output_data_path)
 
 # prepare slurm parameters
 params = SlurmParams(
@@ -47,7 +47,6 @@ params = SlurmParams(
 slurm_deskew_single_position = slurm_function(deskew_single_position)
 deskew_func = slurm_deskew_single_position(
     deskew_param_path=deskew_param_path,
-    keep_overhang=keep_overhang,
     num_processes=cpus_per_task,
 )
 

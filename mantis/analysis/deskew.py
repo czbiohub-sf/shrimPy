@@ -6,7 +6,7 @@ def get_deskewed_data_shape(
     raw_data_shape: tuple,
     ls_angle_deg: float,
     px_to_scan_ratio: float,
-    keep_overhang: bool = True,
+    keep_overhang: bool,
     pixel_size_um: float = 1,
 ):
     """Get the shape of the deskewed data set and its voxel size
@@ -58,7 +58,7 @@ def deskew_data(
     raw_data: np.ndarray,
     ls_angle_deg: float,
     px_to_scan_ratio: float,
-    keep_overhang: bool = True,
+    keep_overhang: bool,
     order: int = 1,
     cval: float = None,
 ):
@@ -116,7 +116,7 @@ def deskew_data(
         ]
     )
     output_shape, _ = get_deskewed_data_shape(
-        raw_data.shape, ls_angle_deg, px_to_scan_ratio, keep_overhang, 1
+        raw_data.shape, ls_angle_deg, px_to_scan_ratio, keep_overhang
     )
 
     # Apply transforms
@@ -128,5 +128,4 @@ def deskew_data(
         cval=cval,
     )
 
-    # Return transformed data with its voxel dimensions
     return deskewed_data

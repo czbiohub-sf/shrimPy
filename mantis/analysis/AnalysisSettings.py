@@ -8,6 +8,7 @@ class DeskewSettings:
     ls_angle_deg: float
     px_to_scan_ratio: float = None
     scan_step_um: float = None
+    keep_overhang: bool = True
 
     @validator("ls_angle_deg")
     def ls_angle_check(cls, v):

@@ -8,10 +8,8 @@ def test_deskew_data():
     px_to_scan_ratio = 0.386
     pixel_size_um = 1.0
     ls_angle_deg = 36
-    ko = True
-    deskewed_data = deskew.deskew_data(
-        raw_data, ls_angle_deg, px_to_scan_ratio, keep_overhang=ko
-    )
+    keep_overhang = True
+    deskewed_data = deskew.deskew_data(raw_data, ls_angle_deg, px_to_scan_ratio, keep_overhang)
     assert deskewed_data.shape[1] == 4
 
     assert (
@@ -20,7 +18,7 @@ def test_deskew_data():
             raw_data.shape,
             ls_angle_deg,
             px_to_scan_ratio,
-            keep_overhang=ko,
+            keep_overhang,
             pixel_size_um=pixel_size_um,
         )[0]
     )
