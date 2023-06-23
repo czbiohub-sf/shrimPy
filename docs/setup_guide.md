@@ -22,13 +22,13 @@ CellDrive provides control of the [Meadowlark Optics](https://www.meadowlark.com
 
 ## Install Micro-manager
 
-The mantis acquisition currently works with Micro-manager nightly build 2023-04-26.
+The mantis acquisition currently works with Micro-manager nightly build 2023-03-12.
 
-* Download [Micro-Manager nightly build 2023-04-26](https://download.micro-manager.org/nightly/2.0/Windows/MMSetup_64bit_2.0.1_20230426.exe) and install following the installer prompts in the `C:\Program Files\Micro-Manager-2.0_04_26_2023` directory.
+* Download [Micro-Manager nightly build 2023-03-12](https://download.micro-manager.org/nightly/2.0/Windows/MMSetup_64bit_2.0.1_20230312.exe) and install following the installer prompts in the `C:\Program Files\Micro-Manager-2.0_03_12_2023` directory.
   
   * Copy the `Ti2_Mic_Driver.dll` device adapter located at `C:\Program Files\Nikon\Ti2-SDK\bin` to the Micro-manager install directory, as described [here](https://micro-manager.org/NikonTi2).
 
-* Install another copy of [Micro-Manager nightly build 2023-04-26](https://download.micro-manager.org/nightly/2.0/Windows/MMSetup_64bit_2.0.1_20230426.exe) in the `C:\Program Files\Micro-Manager-nightly` directory. This copy of Micro-manager will be used by the headless light-sheet acquisition engine.
+* Install another copy of [Micro-Manager nightly build 2023-03-12](https://download.micro-manager.org/nightly/2.0/Windows/MMSetup_64bit_2.0.1_20230312.exe) in the `C:\Program Files\Micro-Manager-nightly` directory. This copy of Micro-manager will be used by the headless light-sheet acquisition engine.
 
 ## Test the hardware setup
 
