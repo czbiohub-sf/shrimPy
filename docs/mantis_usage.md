@@ -112,7 +112,7 @@ Check the LED on the microscope body and find the PFS button on the microscope f
 3. Navigate to the acquisition folder:
     -`cd /path/to/acquisition` 
 4. Run the acquisition engine
-    -`run_mantis_acquisition --help` for instructions.
+    -`mantis run-acquisition --help` for instructions.
 
 ---
 ## FAQ

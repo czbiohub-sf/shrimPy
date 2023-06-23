@@ -22,7 +22,7 @@ class DevicePropertySettings:
 @dataclass
 class TimeSettings:
     num_timepoints: Optional[int] = 0
-    time_internal_s: Optional[float] = 0  # in seconds
+    time_interval_s: Optional[float] = 0  # in seconds
 
 
 @dataclass

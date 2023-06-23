@@ -7,7 +7,7 @@ from mantis.acquisition.acq_engine import (
 
 pt_acq_settins = PositionTimeAcquisitionSettings(
     num_timepoints = 3,
-    time_internal_s = 15,
+    time_interval_s = 15,
     xyz_positions = None,  # will be acquired from MM later
     position_labels = None,
     focus_stage = 'ZDrive',

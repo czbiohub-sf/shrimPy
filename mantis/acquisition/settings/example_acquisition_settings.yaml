@@ -10,12 +10,12 @@ AP_GALVO_DAC: &AP_GALVO_DAC 'TS2_DAC03'
 
 # The label-free and the light-sheet acquisition share the same time settings
 # which are controlled by the mantis acquisition engine. Data are acquired in
-# TPCZYX order. `time_internal_s` is the minimum time between positions, i.e.
+# TPCZYX order. `time_interval_s` is the minimum time between positions, i.e.
 # the acquisition will continue immediately if the elapsed time to acquire all
 # positions is greater
 time_settings:
   num_timepoints: 10
-  time_internal_s: 60
+  time_interval_s: 60
 
 # Define channel settings for the label-free acquisition. All channels must be
 # within the same config group. `exposure_time_ms` must be a list of length

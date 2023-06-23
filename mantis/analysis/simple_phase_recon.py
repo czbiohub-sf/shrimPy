@@ -1,23 +1,35 @@
 # %%
-import os
+import csv
 
-import napari
 import numpy as np
-import tifffile
 
-from ndtiff import Dataset
+from iohub import open_ome_zarr, read_micromanager
+from iohub.ngff_meta import TransformationMeta
 from recOrder.compute.reconstructions import initialize_reconstructor, reconstruct_phase3D
 
 # %% Load data
-raw_data_path = r'D:\2023_03_30_kidney_tissue'
-processed_data_path = r'D:\2023_03_30_kidney_tissue'
-dataset = 'FOV_grid_1'
 
-lf_dataset_name = '_'.join(dataset.split('_')[:-1]) + '_labelfree_1'
-ds = Dataset(os.path.join(raw_data_path, dataset, lf_dataset_name))
+data_path = r'Z:\rawdata\mantis\2023_04_20 HEK RAC1 PCNA\timelapse_2\timelapse_labelfree_1'
+output_path = r'Z:\projects\mantis\2023_04_20 HEK RAC1 PCNA\timelapse_2_phase.zarr'
+positions = r'Z:\rawdata\mantis\2023_04_20 HEK RAC1 PCNA\timelapse_2\positions.csv'
 
-data = np.asarray(ds.as_array())
-P, T, C, Z, Y, X = data.shape
+channel_names = ['phase3D']
+
+# %%
+# Load positions log and generate pos_hcs_idx
+if positions is not None:
+    with open(positions, newline='') as csvfile:
+        reader = csv.DictReader(csvfile)
+        pos_log = [row for row in reader]
+
+reader = read_micromanager(data_path)
+writer = open_ome_zarr(output_path, mode="a", layout="hcs", channel_names=channel_names)
+
+P, T, C, Z, Y, X = reader.get_num_positions(), *reader.shape
+if positions is not None:
+    pos_hcs_idx = [(row['well_id'][0], row['well_id'][1:], row['site_num']) for row in pos_log]
+else:
+    pos_hcs_idx = [(0, p, 0) for p in range(P)]
 
 # %% Init reconstructor
 
@@ -37,26 +49,33 @@ reconstructor_args = {
     "gpu_id": 0,
 }
 reconstructor = initialize_reconstructor(pipeline="PhaseFromBF", **reconstructor_args)
-
-# %%
-phase3D = reconstruct_phase3D(data[0, 0, 0], reconstructor, method="Tikhonov", reg_re=1e-2)
-# %%
-napari.view_image(phase3D)
-# %%
-
-tifffile.imwrite(
-    os.path.join(processed_data_path, dataset, 'phase3D.tif'), phase3D.astype('single')
+voxel_size = (
+    reconstructor_args["z_step_um"],
+    reconstructor_args["pixel_size_um"] / reconstructor_args["mag"],
+    reconstructor_args["pixel_size_um"] / reconstructor_args["mag"],
 )
-# %%
-
-for p_idx in range(P):
-    phase3D = reconstruct_phase3D(
-        data[p_idx, 0, 0], reconstructor, method="Tikhonov", reg_re=1e-2
-    )
-
-    tifffile.imwrite(
-        os.path.join(processed_data_path, dataset, f'phase3D_Pos{p_idx}.tif'),
-        phase3D.astype('single'),
-    )
 
 # %%
+# Loop through (P, T, C), deskewing and writing as we go
+for p in range(P):
+    position = writer.create_position(*pos_hcs_idx[p])
+    # Handle transforms and metadata
+    transform = TransformationMeta(
+        type="scale",
+        scale=2 * (1,) + voxel_size,
+    )
+    img = position.create_zeros(
+        name="0",
+        shape=(T, 1, Z, Y, X),
+        chunks=(1, 1, 32) + (Y, X),
+        dtype=np.double,
+        transform=[transform],
+    )
+    for t in range(T):
+        print(f"Reconstructing t={t}/{T-1}, p={p}/{P-1}")
+        data = reader.get_array(p)[t, 0, ...]  # zyx
+
+        # Reconstruct
+        phase3D = reconstruct_phase3D(data, reconstructor, method="Tikhonov", reg_re=1e-2)
+
+        img[t, 0, ...] = phase3D  # write to zarr

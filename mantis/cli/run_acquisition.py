@@ -4,7 +4,7 @@ import yaml
 from mantis.acquisition.acq_engine import MantisAcquisition
 
 # isort: off
-from mantis.acquisition.BaseSettings import (
+from mantis.acquisition.AcquisitionSettings import (
     TimeSettings,
     PositionSettings,
     ChannelSettings,
@@ -57,6 +57,7 @@ def run_acquisition(
     mm_app_path,
     mm_config_file,
 ):
+    """Acquire data using a settings file."""
 
     demo_run = True if 'demo' in mm_config_file else False
 
@@ -81,7 +82,6 @@ def run_acquisition(
         demo_run=demo_run,
         verbose=False,
     ) as acq:
-
         acq.time_settings = time_settings
         acq.position_settings = position_settings
         acq.lf_acq.channel_settings = lf_channel_settings
