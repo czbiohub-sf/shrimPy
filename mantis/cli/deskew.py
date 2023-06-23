@@ -47,10 +47,10 @@ def create_empty_zarr(
     settings = deskew_params_from_file(deskew_param_path)
     deskewed_shape, voxel_size = get_deskewed_data_shape(
         (Z, Y, X),
-        settings.pixel_size_um,
         settings.ls_angle_deg,
         settings.px_to_scan_ratio,
         keep_overhang,
+        settings.pixel_size_um,
     )
 
     click.echo("Creating empty array...")
@@ -115,7 +115,7 @@ def deskew_zyx_and_save(
 
     # Deskew
     deskewed = deskew_data(
-        zyx_data, settings.px_to_scan_ratio, settings.ls_angle_deg, keep_overhang
+        zyx_data, settings.ls_angle_deg, settings.px_to_scan_ratio, keep_overhang
     )
     # Write to file
     with open_ome_zarr(output_path, mode="r+") as output_dataset:

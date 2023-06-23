@@ -4,29 +4,35 @@ import scipy
 
 def get_deskewed_data_shape(
     raw_data_shape: tuple,
-    pixel_size_um: float,
     ls_angle_deg: float,
     px_to_scan_ratio: float,
     keep_overhang: bool = True,
+    pixel_size_um: float = 1,
 ):
     """Get the shape of the deskewed data set and its voxel size
     Parameters
     ----------
     raw_data_shape : tuple
         Shape of the raw data, must be len = 3
-    pixel_size_um : float
-        Pixel size in micrometers
     ls_angle_deg : float
         Angle of the light sheet relative to the optical axis, in degrees
     px_to_scan_ratio : float
         Ratio of the pixel size to light sheet scan step
-    keep_overhang : bool
+    keep_overhang : bool, optional
+        If true, the shape of the whole volume within the tilted parallelepiped
+        will be returned
+        If false, the shape of the deskewed volume within a cuboid region will
+        be returned
+    pixel_size_um : float, optional
+        Pixel size in micrometers. If not provided, a default value of 1 will be
+        used and the returned voxel size will represent a voxel scale
     Returns
     -------
     output_shape : tuple
         Output shape of the deskewed data in ZYX order
     voxel_size : tuple
-        Size of the deskewed voxels in micrometers
+        Size of the deskewed voxels in micrometers. If the default
+        pixel_size_um = 1 is used this parameter will represent the voxel scale
     """
 
     # Trig
@@ -49,7 +55,12 @@ def get_deskewed_data_shape(
 
 
 def deskew_data(
-    raw_data, px_to_scan_ratio, ls_angle_deg, keep_overhang=True, order=1, cval=None
+    raw_data: np.ndarray,
+    ls_angle_deg: float,
+    px_to_scan_ratio: float,
+    keep_overhang: bool = True,
+    order: int = 1,
+    cval: float = None,
 ):
     """Deskews fluorescence data from the mantis microscope
     Parameters
@@ -105,7 +116,7 @@ def deskew_data(
         ]
     )
     output_shape, _ = get_deskewed_data_shape(
-        raw_data.shape, 1, ls_angle_deg, px_to_scan_ratio, keep_overhang
+        raw_data.shape, ls_angle_deg, px_to_scan_ratio, keep_overhang, 1
     )
 
     # Apply transforms
