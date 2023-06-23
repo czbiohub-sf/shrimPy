@@ -38,7 +38,7 @@ The mantis acquisition currently works with Micro-manager nightly build 2023-03-
 
 ```pwsh
 mantis run-acquisition `
-    --data--dirpath path/to/data/directory `
+    --data-dirpath path/to/data/directory `
     --name test_acquisition `
     --mm-config-file path/to/MMConfig_Demo.cfg `
     --settings mantis/acquisition/settings/demo_acquisition_settings.yaml
