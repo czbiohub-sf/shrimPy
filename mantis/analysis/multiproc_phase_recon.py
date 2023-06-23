@@ -95,8 +95,7 @@ def reconstruct_phase3D_n_save(position, output_path, recon_params, t):
     # Initialize torch module in each worker process
     torch.set_num_threads(1)
     torch.set_num_interop_threads(1)
-    torch.manual_seed(0)
-
+    
     # Get reconstruction paremeters
     # TODO: these should be obtained from metadata or yaml?
     (
