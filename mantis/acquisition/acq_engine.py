@@ -299,7 +299,9 @@ class MantisAcquisition(object):
         logger.debug(f'Starting mantis acquisition log at: {self._acq_dir}')
 
         # Log conda environment
-        outs, errs = log_conda_environment(os.path.join(self._acq_dir, f'conda_environment_log_{timestamp}.txt'))
+        outs, errs = log_conda_environment(
+            os.path.join(self._acq_dir, f'conda_environment_log_{timestamp}.txt')
+        )
         if errs is None:
             logger.debug(outs.decode('ascii').strip())
         else:
