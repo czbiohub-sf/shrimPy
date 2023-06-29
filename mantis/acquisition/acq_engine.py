@@ -14,7 +14,7 @@ from nidaqmx.constants import Slope
 from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, start_headless
 
 from mantis.acquisition import microscope_operations
-from mantis.acquisition.logger import configure_logger
+from mantis.acquisition.logger import configure_logger, log_conda_environment
 
 # isort: off
 from mantis.acquisition.AcquisitionSettings import (
@@ -289,6 +289,9 @@ class MantisAcquisition(object):
         configure_logger(
             os.path.join(self._acq_dir, f'mantis_acquisition_log_{timestamp}.txt')
         )
+
+        # Log conda environment
+        log_conda_environment(os.path.join(self._acq_dir, 'conda_environment_log.txt'))
 
         # initialize time and position settings
         self._time_settings = TimeSettings()
