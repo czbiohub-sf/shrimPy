@@ -4,20 +4,20 @@ import click
 import matplotlib.pyplot as plt
 import numpy as np
 
-from iohub import read_micromanager
+from iohub.ngff import open_ome_zarr, Plate
 from scipy.optimize import curve_fit
 from tqdm import tqdm
 
 MSECS_PER_MINUTE = 60000
 
 
-def plot_bleaching_curves(tc_times, tczyx_data, channel_names, output_file, title=''):
+def plot_bleaching_curves(times, tczyx_data, channel_names, output_file, title=''):
     """Plots bleaching curves and estimates bleaching lifetimes
 
     Parameters
     ----------
-    tc_times : NDArray with shape (T, C)
-        Times of acquisition for each time point and channel (minutes)
+    tc_times : NDArray with shape (T,)
+        Times of acquisition for each time point (minutes)
     tczyx_data : NDArray with shape (T, C, Z, Y, X)
         Raw data
     channel_names : list of strings with length (C)
@@ -28,8 +28,8 @@ def plot_bleaching_curves(tc_times, tczyx_data, channel_names, output_file, titl
     num_times = tczyx_data.shape[0]
     num_channels = tczyx_data.shape[1]
 
-    means = np.zeros_like(tc_times)
-    stds = np.zeros_like(tc_times)
+    means = np.zeros((num_times, num_channels))
+    stds = np.zeros_like(means)
 
     # Calculate statistics
     for t in tqdm(range(num_times)):
@@ -43,7 +43,7 @@ def plot_bleaching_curves(tc_times, tczyx_data, channel_names, output_file, titl
 
     f, ax = plt.subplots(1, 1, figsize=(4, 4))
     for c in range(num_channels):
-        xdata = tc_times[:, c]
+        xdata = times[:]
         ydata = means[:, c]
         yerr = stds[:, c]
 
@@ -95,7 +95,7 @@ def plot_bleaching_curves(tc_times, tczyx_data, channel_names, output_file, titl
 
 @click.command()
 @click.argument(
-    "data_path",
+    "input_path",
     type=click.Path(exists=True),
 )
 @click.option(
@@ -105,37 +105,39 @@ def plot_bleaching_curves(tc_times, tczyx_data, channel_names, output_file, titl
     required=False,
     help="Path to output folder",
 )
-def estimate_bleaching(data_path, output_folder):
+def estimate_bleaching(input_path, output_folder):
     """Estimate bleaching from raw data"""
-    # Read data
-    reader = read_micromanager(data_path)
-    num_positions = reader.get_num_positions()
+    reader = open_ome_zarr(input_path)
+    if not isinstance(reader, Plate):
+        raise ValueError("Please supply an HCS plate .zarr store.")
 
     # Handle paths
-    input_folder = os.path.basename(os.path.normpath(data_path))
+    input_folder = os.path.splitext(os.path.basename(os.path.normpath(input_path)))[0]
     if output_folder is None:
         output_folder = input_folder + "_bleaching"
-    os.makedirs(output_folder, exist_ok=True)
 
-    # Generate plot for each position
-    for p in range(num_positions):
-        print(f"Generating bleaching curves for position {p+1}/{num_positions}")
+    # Read timing metadata and generate plots
+    for well_name, position in reader.positions():
+        print(f"Generating bleaching curves for position {well_name}")
 
-        tc_times = np.zeros((reader.shape[0], reader.shape[1]))
-        for t in range(reader.shape[0]):
-            for c in range(reader.shape[1]):
-                try:
-                    t0 = np.float32(reader.get_image_metadata(p, 0, c, 0)["TimeStampMsec"])
-                    time = np.float32(reader.get_image_metadata(p, t, c, 0)["TimeStampMsec"])
-                except Exception as e:
-                    print(e)
-                    print(f"WARNING: missing time metadata for p={p}, t={t}, c={c}")
-                    t0 = np.nan
-                    time = np.nan
-                tc_times[t, c] = (time - t0) / MSECS_PER_MINUTE
+        # Generate plot for each position
+        T = position.data.shape[0]
+        try:
+            dt = np.float32(reader.zattrs['Summary']['Interval_ms'] / MSECS_PER_MINUTE)
+        except Exception as e:
+            print(e)
+            print(f"WARNING: missing time metadata for p={p}, t={t}, c={c}")
+            dt = 1
 
-        channel_names = [x.split(' ')[0] for x in reader.channel_names]
-        tczyx_data = reader.get_zarr(p)
-        output_file = os.path.join(output_folder, f"{p:03d}.svg")
-        title = input_folder + f" - position = {p}"
-        plot_bleaching_curves(tc_times, tczyx_data, channel_names, output_file, title)
+        times = np.arange(0, T * dt, step=dt)
+        tczyx_data = position.data
+        output_file = os.path.join(output_folder, well_name)
+        os.makedirs(output_file, exist_ok=True)
+        title = input_folder + f" - position = {well_name}"
+        plot_bleaching_curves(
+            times,
+            tczyx_data,
+            reader.channel_names,
+            os.path.join(output_file, "bleaching.svg"),
+            title,
+        )
