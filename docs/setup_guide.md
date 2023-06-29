@@ -14,11 +14,21 @@ SpinView provides control of [FLIR](https://www.flir.com/) cameras on the micros
 
 CellDrive provides control of the [Meadowlark Optics](https://www.meadowlark.com/) liquid crystals (LCs) on the microscope. Install the latest version of the software which can be obtained from our Meadowlark representative. Copies of the installer are also available on ESS at TODO. We currently use software version 1.04. Ensure that both LCs can be controlled through CellDrive. The mantis acquisition controls the LCs via external voltage input - put both LCs in External Input mode.
 
-## TODO: TriggerScope Firmware
+## Update TriggerScope Firmware
 
-## TODO: Vortran lasers
+The [TriggerScope](https://advancedresearch-consulting.com/product/triggerscope-4/) is used to generate electrical signals which synchronize the acquisition on the mantis microscope. Firmware for the TriggerScope is available on the [micro-manager/TriggerScopeMM](https://github.com/micro-manager/TriggerScopeMM) GitHub repo. Different versions of the TriggerScope board are available - for example V3, V4, V4B. Be sure to follow the installation instruction and install the right firmware version for a given TriggerScope board. To track the version of the firmware that is currently installed, write the 7 digit Git hash of the last commit.
 
-## TODO: Thorlabs Kinesis
+## Install Vortran Stradus
+
+The [Vortran](https://www.vortranlaser.com/) lasers on the mantis microscope are controlled using the Stradus GUI application. Install the latest version of the software which can be obtained from our Vortran representative or on ESS at `software\StradusV4_0_0`. We currently use software version 4.0.0. The mantis acquisition engine uses [coPylot](https://github.com/czbiohub-sf/coPylot) to control the lasers during acquisition.
+
+TODO: Update setup instructions to reflect requirements for coPylot control.
+
+## Install Thorlabs Kinesis
+
+Thorlabs Kinesis is used to control the [PIA13](https://www.thorlabs.com/thorproduct.cfm?partnumber=PIA13) stages for positioning objectives in the microscope remote refocus paths. Install the latest version of the software available from the manufacturer's [website](https://www.thorlabs.com/newgrouppage9.cfm?objectgroup_id=10285). We currently use version 1.14.30. The mantis acquisition engine uses [coPylot](https://github.com/czbiohub-sf/coPylot) to control the stages during acquisition.
+
+TODO: Update the setup instructions to reflect requirements for coPylot control.
 
 ## Install Micro-manager
 
@@ -43,3 +53,7 @@ mantis run-acquisition `
     --mm-config-file path/to/MMConfig_Demo.cfg `
     --settings mantis/acquisition/settings/demo_acquisition_settings.yaml
 ```
+
+* TODO: Write mantis test, some of which will test the microscope hardware
+
+* TODO: Compose an acquisition that can test the microscope hardware without requiring a sample
