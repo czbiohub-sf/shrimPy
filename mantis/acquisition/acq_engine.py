@@ -291,7 +291,7 @@ class MantisAcquisition(object):
         )
 
         # Log conda environment
-        log_conda_environment(os.path.join(self._acq_dir, 'conda_environment_log.txt'))
+        log_conda_environment(os.path.join(self._acq_dir, f'conda_environment_log_{timestamp}.txt'))
 
         # initialize time and position settings
         self._time_settings = TimeSettings()
