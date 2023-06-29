@@ -1,6 +1,5 @@
 import logging
-import subprocess
-import sys
+from subprocess import Popen, PIPE, STDOUT
 import os
 
 def log_conda_environment(log_path: str):
@@ -14,6 +13,11 @@ def log_conda_environment(log_path: str):
     ----------
     log_path : str
         Path where the environment log file will be written
+
+    Returns
+    -------
+    output : str
+    errors : str
     """
 
     # Validate log_path input
@@ -29,7 +33,10 @@ def log_conda_environment(log_path: str):
     # need co call `conda activate` to activate the correct conda environment,
     # otherwise a log of the `base` environment is written 
     cmd = f"pwsh -Command conda activate {conda_environment}; {log_script_path} {log_path}"
-    subprocess.run(cmd, shell=True, stdout=sys.stdout)
+    process = Popen(cmd, shell=True, stdout=PIPE, stderr=STDOUT)
+    output, errors = process.communicate()
+
+    return output, errors
 
 
 # Setup console handler
