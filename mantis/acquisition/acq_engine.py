@@ -47,6 +47,8 @@ LS_POST_READOUT_DELAY = 0.05  # delay before acquiring next frame, in ms
 MCL_STEP_TIME = 1.5  # in ms
 LC_CHANGE_TIME = 20  # in ms
 LS_CHANGE_TIME = 200  # time needed to change LS filter wheel, in ms
+LS_KIM101_SN = 74000291
+LF_KIM101_SN = 74000565
 
 logger = logging.getLogger(__name__)
 
