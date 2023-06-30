@@ -7,7 +7,12 @@ import nidaqmx
 
 from nidaqmx.constants import AcquisitionType
 
+from copylot.hardware.stages.thorlabs.KIM001 import KCube_PiezoInertia
+
 logger = logging.getLogger(__name__)
+
+LS_KIM101_SN = 74000291
+LF_KIM101_SN = 74000565
 
 
 def _try_mmc_call(mmc, mmc_call_name, *mmc_carr_args):
@@ -218,3 +223,21 @@ def autofocus(mmc, mmStudio, z_stage_name: str, z_position):
         logger.error(f'Autofocus call failed after {len(z_offsets)} tries')
 
     return autofocus_success
+
+def setup_ls_o3_stage(step_rate = 500, step_acceleration = 1000):
+    stage = KCube_PiezoInertia(serial_number=str(LS_KIM101_SN))
+
+    # Change the acceleration and step rate
+    stage.step_rate = step_rate
+    stage.step_acceleration = step_acceleration
+
+    return stage
+
+def setup_lf_o3_stage(step_rate = 500, step_acceleration = 1000):
+    stage = KCube_PiezoInertia(serial_number=str(LF_KIM101_SN))
+
+    # Change the acceleration and step rate
+    stage.step_rate = step_rate
+    stage.step_acceleration = step_acceleration
+
+    return stage
