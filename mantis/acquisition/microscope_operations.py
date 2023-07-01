@@ -275,6 +275,7 @@ def acquire_defocus_stack(
     """
     data = []
 
+    # get z0 and define move_z callable for the given stage
     if isinstance(z_stage, str):
         # this is a MM stage
         z0 = mmc.get_position(z_stage)
@@ -321,9 +322,9 @@ def acquire_ls_defocus_stack(
     mmc: Core,
     mmStudio: Studio,
     z_stage,
-    z_start: float,
-    z_end: float,
-    z_step: float,
+    z_range: Iterable,
+    galvo: str,
+    galvo_range: Iterable,
     config_group: str = None,
     config_name: str = None,
 ):
@@ -354,7 +355,6 @@ def acquire_ls_defocus_stack(
 
     """
     datastore = create_ram_datastore(mmStudio)
-    z_range = np.arange(z_start, z_end + z_step, z_step)
     data = []
 
     # Set config
@@ -366,9 +366,13 @@ def acquire_ls_defocus_stack(
     auto_shutter_state, shutter_state = get_shutter_state(mmc)
     open_shutter(mmc)
 
+    # get galvo starting position
+    p0 = mmc.get_position(galvo)
+
     # acquire stack at different galvo positions
-    for p_idx, p in enumerate(range(3)):
-        # TODO: set galvo position
+    for p_idx, p in enumerate(galvo_range):
+        # set galvo position
+        mmc.set_position(galvo, p0 + p)
 
         # acquire defocus stack
         z_stack = acquire_defocus_stack(
@@ -378,6 +382,9 @@ def acquire_ls_defocus_stack(
 
     # freeze datastore to indicate that we are finished writing to it
     datastore.freeze()
+
+    # Reset galvo
+    mmc.set_position(p0)
 
     # Reset shutter
     reset_shutter(mmc, auto_shutter_state, shutter_state)
@@ -414,6 +421,7 @@ def open_shutter(mmc: Core):
     """
 
     if mmc.get_shutter_device():
+        mmc.set_auto_shutter(False)
         mmc.set_shutter_open(True)
 
 
@@ -429,5 +437,5 @@ def reset_shutter(mmc: Core, auto_shutter_state: bool, shutter_state: bool):
     """
 
     if mmc.get_shutter_device():
-        mmc.set_auto_shutter(auto_shutter_state)
         mmc.set_shutter_open(shutter_state)
+        mmc.set_auto_shutter(auto_shutter_state)
