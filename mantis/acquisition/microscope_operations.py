@@ -4,6 +4,7 @@ import numpy as np
 from pycromanager import Core, Studio
 
 from typing import Tuple, Iterable
+from functools import partial
 
 import nidaqmx
 
@@ -272,16 +273,20 @@ def acquire_defocus_stack(
     """
     data = []
 
+    if isinstance(z_stage, str):
+        # this is a MM stage
+        z0 = mmc.get_position(z_stage)
+        move_z = partial(mmc.set_position, z_stage)  # test if this works
+    elif issubclass(type(z_stage), AbstractStage):
+        # this is a copylot stage
+        z0 = z_stage.position
+        move_z = z_stage.move_absolute
+    else:
+        raise RuntimeError(f'Unknown z stage: {z_stage}')
+
     for z_ind, z in enumerate(z_range):
         # set z position
-        if isinstance(z_stage, str):
-            # this is a MM stage
-            mmc.set_relative_position(z_stage, float(z))
-        elif issubclass(z_stage, AbstractStage):
-            # this is a copylot stage
-            z_stage.move_relative(z)
-        else:
-            raise RuntimeError(f'Unknown z stage: {z_stage}')
+        move_z(z0 + z)
 
         # snap image
         mmc.snap_image()
@@ -305,6 +310,9 @@ def acquire_defocus_stack(
         image = image.copy_at_coords(mm_coords)
         datastore.put_image(image)
 
+    # reset z stage
+    move_z(z0)
+    
     return np.asarray(data)
 
 def acquire_ls_defocus_stack(
