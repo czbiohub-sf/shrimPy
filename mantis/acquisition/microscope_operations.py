@@ -1,17 +1,16 @@
 import logging
 import time
-import numpy as np
-from pycromanager import Core, Studio
 
-from typing import Tuple, Iterable
+from typing import Iterable, Tuple
 from functools import partial
 
 import nidaqmx
-
-from nidaqmx.constants import AcquisitionType
+import numpy as np
 
 from copylot.hardware.stages.abstract_stage import AbstractStage
 from copylot.hardware.stages.thorlabs.KIM001 import KCube_PiezoInertia
+from nidaqmx.constants import AcquisitionType
+from pycromanager import Core, Studio
 
 logger = logging.getLogger(__name__)
 
@@ -225,7 +224,8 @@ def autofocus(mmc, mmStudio, z_stage_name: str, z_position):
 
     return autofocus_success
 
-def setup_kim101_stage(serial_number: int, step_rate = 500, step_acceleration = 1000):
+
+def setup_kim101_stage(serial_number: int, step_rate=500, step_acceleration=1000):
     stage = KCube_PiezoInertia(serial_number=str(serial_number))
 
     # Change the acceleration and step rate
@@ -233,6 +233,7 @@ def setup_kim101_stage(serial_number: int, step_rate = 500, step_acceleration = 
     stage.step_acceleration = step_acceleration
 
     return stage
+
 
 def create_ram_datastore(
     mmStudio: Studio,
@@ -242,14 +243,15 @@ def create_ram_datastore(
 
     return datastore
 
+
 def acquire_defocus_stack(
     mmc: Core,
     mmStudio: Studio,
     datastore,
     z_stage,
     z_range: Iterable,
-    channel_ind: int=0,
-    position_ind: int=0,
+    channel_ind: int = 0,
+    position_ind: int = 0,
 ):
     """Snap image at every z position and put image in the datastore
 
@@ -294,8 +296,7 @@ def acquire_defocus_stack(
 
         # get image data
         image_data = np.reshape(
-            tagged_image.pix, 
-            (tagged_image.tags['Height'], tagged_image.tags['Width'])
+            tagged_image.pix, (tagged_image.tags['Height'], tagged_image.tags['Width'])
         )
         data.append(image_data.astype('uint16'))
 
@@ -315,15 +316,16 @@ def acquire_defocus_stack(
     
     return np.asarray(data)
 
+
 def acquire_ls_defocus_stack(
     mmc: Core,
     mmStudio: Studio,
     z_stage,
-    z_start: float, 
-    z_end: float, 
+    z_start: float,
+    z_end: float,
     z_step: float,
-    config_group: str=None, 
-    config_name: str=None,
+    config_group: str = None,
+    config_name: str = None,
 ):
     """Acquire defocus stacks at different galvo positions
 
@@ -352,7 +354,7 @@ def acquire_ls_defocus_stack(
 
     """
     datastore = create_ram_datastore(mmStudio)
-    z_range = np.arange(z_start, z_end+z_step, z_step)
+    z_range = np.arange(z_start, z_end + z_step, z_step)
     data = []
 
     # Set config
@@ -382,6 +384,7 @@ def acquire_ls_defocus_stack(
 
     return np.asarray(data)
 
+
 def get_shutter_state(mmc: Core):
     """Return the current state of the shutter
 
@@ -400,6 +403,7 @@ def get_shutter_state(mmc: Core):
 
     return auto_shutter_state, shutter_state
 
+
 def open_shutter(mmc: Core):
     """Open shutter if mechanical shutter exists
 
@@ -411,6 +415,7 @@ def open_shutter(mmc: Core):
 
     if mmc.get_shutter_device():
         mmc.set_shutter_open(True)
+
 
 def reset_shutter(mmc: Core, auto_shutter_state: bool, shutter_state: bool):
     """Reset shutter if mechanical shutter exists
