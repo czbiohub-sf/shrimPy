@@ -32,7 +32,7 @@ def log_conda_environment(log_path: str):
 
     # `pwsh` command launches PowerShell 7. Do not use `powershell` as it
     # launches PowerShell 6 which is not configured with conda
-    # need co call `conda activate` to activate the correct conda environment,
+    # need to call `conda activate` to activate the correct conda environment,
     # otherwise a log of the `base` environment is written
     cmd = f"pwsh -Command conda activate {conda_environment}; {log_script_path} {log_path}"
     process = Popen(cmd, shell=True, stdout=PIPE, stderr=STDOUT)
