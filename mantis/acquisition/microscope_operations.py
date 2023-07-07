@@ -7,8 +7,7 @@ from functools import partial
 import nidaqmx
 import numpy as np
 
-from copylot.hardware.stages.abstract_stage import AbstractStage
-from copylot.hardware.stages.thorlabs.KIM001 import KCube_PiezoInertia
+from pylablib.devices.Thorlabs import KinesisPiezoMotor
 from nidaqmx.constants import AcquisitionType
 from pycromanager import Core, Studio
 
@@ -225,12 +224,29 @@ def autofocus(mmc, mmStudio, z_stage_name: str, z_position):
     return autofocus_success
 
 
-def setup_kim101_stage(serial_number: int, step_rate=500, step_acceleration=1000):
-    stage = KCube_PiezoInertia(serial_number=str(serial_number))
+def setup_kim101_stage(serial_number: int, max_voltage=112, velocity=500, acceleration=1000):
+    """Setup stage on a KIM101 with given drive parameters
 
-    # Change the acceleration and step rate
-    stage.step_rate = step_rate
-    stage.step_acceleration = step_acceleration
+    Parameters
+    ----------
+    serial_number : int
+        8-digit serial number of the KIM101 controller
+    max_voltage : int, optional
+        Max drive voltage in units of Volts, by default 112
+    velocity : int, optional
+        Drive velocity in unit of steps per second, by default 500
+    acceleration : int, optional
+        Drive acceleration in units of steps/s^2, by default 1000
+
+    Returns
+    -------
+    stage : KinesisPiezoMotor
+
+    """
+    stage = KinesisPiezoMotor(str(serial_number))
+
+    # Set drive parameters
+    stage.setup_drive(max_voltage, velocity, acceleration)
 
     return stage
 
@@ -274,22 +290,25 @@ def acquire_defocus_stack(
 
     """
     data = []
+    relative_z_steps = np.hstack((z_range[0], np.diff(z_range)))
+
+    def move_kim101_relative(step):
+        z_stage.move_by(step)
+        z_stage.wait_move()
 
     # get z0 and define move_z callable for the given stage
     if isinstance(z_stage, str):
         # this is a MM stage
-        z0 = mmc.get_position(z_stage)
-        move_z = partial(mmc.set_position, z_stage)  # test if this works
-    elif issubclass(type(z_stage), AbstractStage):
-        # this is a copylot stage
-        z0 = z_stage.position
-        move_z = z_stage.move_absolute
+        move_z = partial(mmc.set_relative_position, z_stage)  # test if this works
+    elif isinstance(z_stage, KinesisPiezoMotor):
+        # this is a pylablib stage
+        move_z = move_kim101_relative
     else:
         raise RuntimeError(f'Unknown z stage: {z_stage}')
 
-    for z_ind, z in enumerate(z_range):
+    for z_ind, rel_z in enumerate(relative_z_steps):
         # set z position
-        move_z(z0 + z)
+        move_z(rel_z)
 
         # snap image
         mmc.snap_image()
@@ -313,7 +332,7 @@ def acquire_defocus_stack(
         datastore.put_image(image)
 
     # reset z stage
-    move_z(z0)
+    move_z(-relative_z_steps.sum())
     
     return np.asarray(data)
 
@@ -329,6 +348,7 @@ def acquire_ls_defocus_stack(
     config_name: str = None,
 ):
     """Acquire defocus stacks at different galvo positions
+    TODO: move to acq_engine.py
 
     Parameters
     ----------

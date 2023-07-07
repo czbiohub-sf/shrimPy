@@ -30,7 +30,7 @@ dependencies = [
     "pycromanager==0.25.40",
     "nidaqmx",
     "iohub==0.1.0.dev3",
-    "coPylot@git+https://github.com/czbiohub-sf/coPylot.git#egg=thorlabs_stage",
+    "pylablib==1.4.1",
     "matplotlib",
 ]
 
