@@ -243,9 +243,11 @@ def setup_kim101_stage(serial_number: int, max_voltage=112, velocity=500, accele
     stage : KinesisPiezoMotor
 
     """
+    logger.debug(f'Setting up Kinesis Piezo Motor stage with serial number {serial_number}')
     stage = KinesisPiezoMotor(str(serial_number))
 
     # Set drive parameters
+    logger.debug('Applying drive parameters max voltage: %s, velocity: %s, acceleration: %s', max_voltage, velocity, acceleration)
     stage.setup_drive(max_voltage, velocity, acceleration)
 
     return stage

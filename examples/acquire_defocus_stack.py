@@ -2,6 +2,15 @@ import numpy as np
 from pycromanager import Core, Studio
 from mantis.acquisition.microscope_operations import setup_kim101_stage, acquire_ls_defocus_stack
 
+import logging
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)
+console_format = logging.Formatter('%(levelname)s - %(module)s.%(funcName)s - %(message)s')
+console_handler.setFormatter(console_format)
+logger.addHandler(console_handler)
+
 mmc = Core()
 mmStudio = Studio()
 z_start = -200
