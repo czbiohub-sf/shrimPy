@@ -4,9 +4,9 @@ from mantis.acquisition.microscope_operations import setup_kim101_stage, acquire
 
 mmc = Core()
 mmStudio = Studio()
-z_start = 10
-z_end = 100
-z_step = 10
+z_start = -200
+z_end = 200
+z_step = 25
 config_group = 'Channel - LS'
 config_name = 'GFP EX488 EM525-45'
 galvo = 'AP Galvo'
