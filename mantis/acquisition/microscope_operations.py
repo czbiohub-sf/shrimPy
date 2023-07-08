@@ -424,7 +424,7 @@ def acquire_ls_defocus_stack(
     datastore.freeze()
 
     # Reset galvo
-    mmc.set_position(p0)
+    mmc.set_position(galvo, p0)
 
     # Reset shutter
     reset_shutter(mmc, auto_shutter_state, shutter_state)
