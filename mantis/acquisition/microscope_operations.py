@@ -13,6 +13,7 @@ from pycromanager import Core, Studio
 
 logger = logging.getLogger(__name__)
 
+KIM101_COMPENSATION_FACTOR = 1.08
 
 def _try_mmc_call(mmc, mmc_call_name, *mmc_carr_args):
     """Wrapper that tries to repeat calls to mmCore if they fail. Largely copied
@@ -252,6 +253,27 @@ def setup_kim101_stage(serial_number: int, max_voltage=112, velocity=500, accele
 
     return stage
 
+def set_relative_kim101_position(
+        stage:KinesisPiezoMotor, 
+        step:int, 
+):
+    """Make a relative move with a KIM101 stage, compensating for different 
+    travel distance per step in the positive and negative directions 
+
+    Parameters
+    ----------
+    stage : KinesisPiezoMotor
+        _description_
+    step : int
+        _description_
+    """
+
+    if step < 0:
+        step *= KIM101_COMPENSATION_FACTOR
+
+    stage.move_by(int(step))
+    stage.wait_move()
+
 
 def create_ram_datastore(
     mmStudio: Studio,
@@ -294,17 +316,13 @@ def acquire_defocus_stack(
     data = []
     relative_z_steps = np.hstack((z_range[0], np.diff(z_range)))
 
-    def move_kim101_relative(step):
-        z_stage.move_by(step)
-        z_stage.wait_move()
-
     # get z0 and define move_z callable for the given stage
     if isinstance(z_stage, str):
         # this is a MM stage
         move_z = partial(mmc.set_relative_position, z_stage)  # test if this works
     elif isinstance(z_stage, KinesisPiezoMotor):
         # this is a pylablib stage
-        move_z = move_kim101_relative
+        move_z = partial(set_relative_kim101_position, z_stage)
     else:
         raise RuntimeError(f'Unknown z stage: {z_stage}')
 
