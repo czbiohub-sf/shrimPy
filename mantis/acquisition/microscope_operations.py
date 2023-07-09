@@ -1,19 +1,20 @@
 import logging
 import time
 
-from typing import Iterable, Tuple
 from functools import partial
+from typing import Iterable, Tuple
 
 import nidaqmx
 import numpy as np
 
-from pylablib.devices.Thorlabs import KinesisPiezoMotor
 from nidaqmx.constants import AcquisitionType
 from pycromanager import Core, Studio
+from pylablib.devices.Thorlabs import KinesisPiezoMotor
 
 logger = logging.getLogger(__name__)
 
 KIM101_COMPENSATION_FACTOR = 1.08
+
 
 def _try_mmc_call(mmc, mmc_call_name, *mmc_carr_args):
     """Wrapper that tries to repeat calls to mmCore if they fail. Largely copied
@@ -248,17 +249,23 @@ def setup_kim101_stage(serial_number: int, max_voltage=112, velocity=500, accele
     stage = KinesisPiezoMotor(str(serial_number))
 
     # Set drive parameters
-    logger.debug('Applying drive parameters max voltage: %s, velocity: %s, acceleration: %s', max_voltage, velocity, acceleration)
+    logger.debug(
+        'Applying drive parameters max voltage: %s, velocity: %s, acceleration: %s',
+        max_voltage,
+        velocity,
+        acceleration,
+    )
     stage.setup_drive(max_voltage, velocity, acceleration)
 
     return stage
 
+
 def set_relative_kim101_position(
-        stage:KinesisPiezoMotor, 
-        step:int, 
+    stage: KinesisPiezoMotor,
+    step: int,
 ):
-    """Make a relative move with a KIM101 stage, compensating for different 
-    travel distance per step in the positive and negative directions 
+    """Make a relative move with a KIM101 stage, compensating for different
+    travel distance per step in the positive and negative directions
 
     Parameters
     ----------
@@ -353,7 +360,7 @@ def acquire_defocus_stack(
 
     # reset z stage
     move_z(-relative_z_steps.sum())
-    
+
     return np.asarray(data)
 
 
