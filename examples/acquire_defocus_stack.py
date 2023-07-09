@@ -19,7 +19,7 @@ z_step = 25
 config_group = 'Channel - LS'
 config_name = 'GFP EX488 EM525-45'
 galvo = 'AP Galvo'
-galvo_range = [-1, 0, 1]
+galvo_range = [-0.5, 0, 0.5]
 
 z_stage = setup_kim101_stage('74000291')
 z_range = np.arange(z_start, z_end + z_step, z_step)
