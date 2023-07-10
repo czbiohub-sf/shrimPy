@@ -19,6 +19,7 @@ Mantis microscope is a fast multimodal microscope capable of acquiring label-fre
   - [YAML file:](#yaml-file)
   - [Defining XYZ positions:](#defining-xyz-positions)
     - [For HCS:](#for-hcs)
+    - [For 8-well Ibidi Plate or other custom slides:](#for-8-well-ibidi-plate-or-other-custom-slides)
 - [Run the acquisition](#run-the-acquisition)
 - [FAQ](#faq)
 
@@ -120,4 +121,3 @@ Check the LED on the microscope body and find the PFS button on the microscope f
    - Most likely the objective is on `escape` move and the `escape` button on the microscope body is on (green). Press and hold to disable. This ensures we can manually raise/lower the objective and avoid creating bubbles with the focus knob.
 
   
-

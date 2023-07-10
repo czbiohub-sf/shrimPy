@@ -10,17 +10,17 @@ Set up the microscope hardware according to the [Setup Guide](docs/setup_guide.m
 
 **mantis** can be installed as follows:
 
-1. Create a new Python 3.9 virtual environment using conda:
+1. Create a new Python 3.10 virtual environment using conda:
 
 ```sh
-conda create -y --name mantis python=3.9
+conda create -y --name mantis python=3.10
 conda activate mantis
 ```
 
-2. Clone the repo and install this package and the [napari](https://napari.org/) viewer:
+2. Clone the repo and install this package:
 
 ```sh
-pip install ".[napari]"
+pip install .
 ```
 
 ## Usage
