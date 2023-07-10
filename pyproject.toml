@@ -109,3 +109,6 @@ skip_glob = ["examples/*"]
 disable = ["C", "R", "W", "unsubscriptable-object", "import-error"]
 msg-template = "{line},{column},{category},{symbol}:{msg}"
 reports = "n"
+
+[tool.pytest.ini_options]
+addopts = "--ignore examples/"
