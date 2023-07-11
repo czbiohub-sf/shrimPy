@@ -1,198 +1,135 @@
-import itertools
-import multiprocessing as mp
+import csv
 
 from dataclasses import asdict
-from functools import partial
-from pathlib import Path
-from typing import List
 
 import click
+import napari
 import numpy as np
 import yaml
 
-from iohub.ngff import Plate, Position, open_ome_zarr
+from iohub import open_ome_zarr, read_micromanager
 from iohub.ngff_meta import TransformationMeta
-from natsort import natsorted
 
 from mantis.analysis.AnalysisSettings import DeskewSettings
 from mantis.analysis.deskew import deskew_data, get_deskewed_data_shape
-from mantis.cli.parsing import (
-    deskew_param_argument,
-    input_data_paths_argument,
-    output_dataset_options,
+
+
+@click.command()
+@click.argument(
+    "data_path",
+    type=click.Path(exists=True, file_okay=False),
 )
+@click.argument(
+    "output_path",
+    type=click.Path(exists=False, file_okay=False),
+)
+@click.argument(
+    "deskew_params_path",
+    type=click.Path(exists=True, file_okay=True),
+)
+@click.option(
+    "--positions",
+    type=click.Path(exists=True, file_okay=True),
+    required=False,
+    help="Path to positions CSV log file",
+)
+@click.option(
+    "--view",
+    "-v",
+    default=False,
+    required=False,
+    is_flag=True,
+    help="View the correctly scaled result in napari",
+)
+@click.option(
+    "--keep-overhang",
+    "-ko",
+    default=False,
+    is_flag=True,
+    help="Keep the overhanging region.",
+)
+def deskew(data_path, output_path, deskew_params_path, positions, view, keep_overhang):
+    """
+    Deskews across P, T, C axes using a parameter file generated with estimate_deskew.py
+    """
 
+    assert str(output_path).endswith('.zarr'), "Output path must be a zarr store"
 
-# TODO: consider refactoring to utils
-def deskew_params_from_file(deskew_param_path: Path) -> DeskewSettings:
-    """Parse the deskewing parameters from the yaml file"""
     # Load params
-    with open(deskew_param_path) as file:
+    with open(deskew_params_path) as file:
         raw_settings = yaml.safe_load(file)
     settings = DeskewSettings(**raw_settings)
-    click.echo(f"Deskewing parameters: {asdict(settings)}")
-    return settings
+    print(f"Deskewing parameters: {asdict(settings)}")
 
+    # Load positions log and generate pos_hcs_idx
+    if positions is not None:
+        with open(positions, newline='') as csvfile:
+            reader = csv.DictReader(csvfile)
+            pos_log = [row for row in reader]
 
-def create_empty_zarr(
-    position_paths: List[Path], deskew_param_path: Path, output_path: Path
-) -> None:
-    """Create an empty zarr array for the deskewing"""
-    # Load the first position to infer dataset information
-    input_dataset = open_ome_zarr(str(position_paths[0]), mode="r")
-    T, C, Z, Y, X = input_dataset.data.shape
+    reader = read_micromanager(data_path)
+    writer = open_ome_zarr(
+        output_path, mode="a", layout="hcs", channel_names=reader.channel_names
+    )
 
-    # Get the deskewing parameters
-    settings = deskew_params_from_file(deskew_param_path)
+    P, T, C, Z, Y, X = reader.get_num_positions(), *reader.shape
     deskewed_shape, voxel_size = get_deskewed_data_shape(
         (Z, Y, X),
+        settings.pixel_size_um,
         settings.ls_angle_deg,
         settings.px_to_scan_ratio,
-        settings.keep_overhang,
-        settings.pixel_size_um,
+        keep_overhang,
     )
 
-    click.echo("Creating empty array...")
+    if positions is not None:
+        pos_hcs_idx = [
+            (row['well_id'][0], row['well_id'][1:], row['site_num']) for row in pos_log
+        ]
+    else:
+        pos_hcs_idx = [(0, p, 0) for p in range(P)]
 
-    # Handle transforms and metadata
-    transform = TransformationMeta(
-        type="scale",
-        scale=2 * (1,) + voxel_size,
-    )
-
-    # Prepare output dataset
-    channel_names = input_dataset.channel_names
-
-    # Output shape based on the type of reconstruction
-    output_shape = (T, len(channel_names)) + deskewed_shape
-    click.echo(f"Number of positions: {len(position_paths)}")
-    click.echo(f"Output shape: {output_shape}")
-    # Create output dataset
-    output_dataset = open_ome_zarr(
-        output_path, layout="hcs", mode="w", channel_names=channel_names
-    )
-    chunk_size = (1, 1) + deskewed_shape
-    click.echo(f"Chunk size {chunk_size}")
-
-    # This takes care of the logic for single position or multiple position by wildcards
-    for path in position_paths:
-        path_strings = Path(path).parts[-3:]
-        pos = output_dataset.create_position(
-            str(path_strings[0]), str(path_strings[1]), str(path_strings[2])
+    # Loop through (P, T, C), deskewing and writing as we go
+    for p in range(P):
+        position = writer.create_position(*pos_hcs_idx[p])
+        # Handle transforms and metadata
+        transform = TransformationMeta(
+            type="scale",
+            scale=2 * (1,) + voxel_size,
         )
-
-        _ = pos.create_zeros(
+        img = position.create_zeros(
             name="0",
             shape=(
                 T,
                 C,
             )
             + deskewed_shape,
-            chunks=chunk_size,
+            chunks=(1, 1, 64) + deskewed_shape[-2:],
             dtype=np.uint16,
             transform=[transform],
         )
+        for t in range(T):
+            for c in range(C):
+                print(f"Deskewing c={c}/{C-1}, t={t}/{T-1}, p={p}/{P-1}")
+                data = reader.get_array(p)[t, c, ...]  # zyx
 
-    input_dataset.close()
+                # Deskew
+                deskewed = deskew_data(
+                    data, settings.px_to_scan_ratio, settings.ls_angle_deg, keep_overhang
+                )
 
+                img[t, c, ...] = deskewed  # write to zarr
 
-def get_output_paths(input_paths: List[Path], output_zarr_path: Path) -> List[Path]:
-    """Generates a mirrored output path list given an input list of positions"""
-    list_output_path = []
-    for path in input_paths:
-        # Select the Row/Column/FOV parts of input path
-        path_strings = Path(path).parts[-3:]
-        # Append the same Row/Column/FOV to the output zarr path
-        list_output_path.append(Path(output_zarr_path, *path_strings))
-    return list_output_path
+    # Write metadata
+    writer.zattrs["deskewing"] = asdict(settings)
+    writer.zattrs["mm-meta"] = reader.mm_meta["Summary"]
 
-
-def deskew_zyx_and_save(
-    position: Position, output_path: Path, settings: DeskewSettings, t_idx: int, c_idx: int
-) -> None:
-    """Load a zyx array from a Position object, deskew it, and save the result to file"""
-    click.echo(f"Deskewing c={c_idx}, t={t_idx}")
-    zyx_data = position[0][t_idx, c_idx]
-
-    # Deskew
-    deskewed = deskew_data(
-        zyx_data, settings.ls_angle_deg, settings.px_to_scan_ratio, settings.keep_overhang
-    )
-    # Write to file
-    with open_ome_zarr(output_path, mode="r+") as output_dataset:
-        output_dataset[0][t_idx, c_idx] = deskewed
-        output_dataset.zattrs["deskewing"] = asdict(settings)
-
-    click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
+    # Optional view
+    if view:
+        v = napari.Viewer()
+        v.add_image(deskewed)
+        v.layers[-1].scale = voxel_size
+        napari.run()
 
 
-def deskew_single_position(
-    input_data_path: Path,
-    output_path: Path = './deskewed.zarr',
-    deskew_param_path: Path = './deskew_setting.yml',
-    num_processes: int = mp.cpu_count(),
-) -> None:
-    """Deskew a single position with multiprocessing parallelization over T and C"""
-
-    # Get the reader and writer
-    click.echo(f'Input data path:\t{input_data_path}')
-    click.echo(f'Output data path:\t{str(output_path)}')
-    input_dataset = open_ome_zarr(str(input_data_path))
-    click.echo(input_dataset.print_tree())
-
-    settings = deskew_params_from_file(deskew_param_path)
-    T, C, Z, Y, X = input_dataset.data.shape
-    click.echo(f'Dataset shape:\t{input_dataset.data.shape}')
-
-    # Loop through (T, C), deskewing and writing as we go
-    click.echo(f"Starting multiprocess pool with {num_processes} processes")
-    with mp.Pool(num_processes) as p:
-        p.starmap(
-            partial(deskew_zyx_and_save, input_dataset, str(output_path), settings),
-            itertools.product(range(T), range(C)),
-        )
-
-
-@click.command()
-@input_data_paths_argument()
-@deskew_param_argument()
-@output_dataset_options(default="./deskewed.zarr")
-@click.option(
-    "--num-processes",
-    "-j",
-    default=mp.cpu_count(),
-    help="Number of cores",
-    required=False,
-    type=int,
-)
-def deskew(
-    input_paths: List[str], deskew_param_path: str, output_path: str, num_processes: int
-):
-    "Deskews a single position across T and C axes using a parameter file generated by estimate_deskew.py"
-    if isinstance(open_ome_zarr(input_paths[0]), Plate):
-        raise ValueError(
-            "Please supply a single position instead of an HCS plate. Likely fix: replace input.zarr with 'input.zarr/0/0/0'"
-        )
-
-    # Sort the input as nargs=-1 will not be natsorted
-    input_paths = [Path(path) for path in natsorted(input_paths)]
-
-    # Convert string paths to Path objects
-    output_path = Path(output_path)
-    deskew_param_path = Path(deskew_param_path)
-
-    # Handle single position or wildcard filepath
-    output_paths = get_output_paths(input_paths, output_path)
-    click.echo(f'List of input_pos:{input_paths} output_pos:{output_paths}')
-
-    # Create a zarr store output to mirror the input
-    create_empty_zarr(input_paths, deskew_param_path, output_path)
-
-    # Loop over positions
-    for input_position_path, output_position_path in zip(input_paths, output_paths):
-        deskew_single_position(
-            input_data_path=input_position_path,
-            output_path=output_position_path,
-            deskew_param_path=deskew_param_path,
-            num_processes=num_processes,
-        )
+if __name__ == "__main__":
+    deskew()
