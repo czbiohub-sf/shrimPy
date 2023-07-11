@@ -1,6 +1,7 @@
 import numpy as np
 from pycromanager import Core, Studio
-from mantis.acquisition.microscope_operations import setup_kim101_stage, acquire_ls_defocus_stack
+from mantis.acquisition.microscope_operations import setup_kim101_stage
+from mantis.acquisition.acq_engine import acquire_ls_defocus_stack
 
 import logging
 logger = logging.getLogger()

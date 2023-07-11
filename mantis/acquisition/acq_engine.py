@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from typing import Iterable
 
 from copy import deepcopy
 from dataclasses import asdict
@@ -15,6 +16,8 @@ from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, 
 
 from mantis.acquisition import microscope_operations
 from mantis.acquisition.logger import configure_logger
+
+from waveorder.focus import focus_from_transverse_band
 
 # isort: off
 from mantis.acquisition.AcquisitionSettings import (
@@ -49,6 +52,9 @@ LC_CHANGE_TIME = 20  # in ms
 LS_CHANGE_TIME = 200  # time needed to change LS filter wheel, in ms
 LS_KIM101_SN = 74000291
 LF_KIM101_SN = 74000565
+
+NA_DETECTION = 1.35
+PIXEL_SIZE = 6.5 / (40 * 1.4)  # in um
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +93,7 @@ class BaseChannelSliceAcquisition(object):
         self.type = 'light-sheet' if self.headless else 'label-free'
         self.mmc = None
         self.mmStudio = None
+        self.o3_stage = None
 
         logger.debug(f'Initializing {self.type} acquisition engine')
         if enabled:
@@ -184,6 +191,10 @@ class BaseChannelSliceAcquisition(object):
             microscope_operations.set_property(
                 self.mmc, 'Core', 'Focus', self.slice_settings.z_stage_name
             )
+
+            # Setup O3 scan stage
+            if self.microscope_settings.use_o3_refocus:
+                self.o3_stage = microscope_operations.setup_kim101_stage(LS_KIM101_SN)
 
             # Note: sequencing should be turned off by default
             # Setup z sequencing
@@ -592,6 +603,52 @@ class MantisAcquisition(object):
                     self.lf_acq.microscope_settings.autofocus_stage,
                 )
 
+    def refocus_ls_path(self):
+        # Define O3 z range
+        # 1 step is approx 20 nm, 25 steps are 500 nm which is approx Nyquist sampling
+        z_start = -200
+        z_end = 200
+        z_step = 25
+        z_range = np.arange(z_start, z_end + z_step, z_step)
+
+        # Define galvo range, i.e. galvo positions at which O3 defocus stacks
+        # are acquired, should be odd number
+        galvo_scan_range = self.ls_acq.slice_settings.z_start
+        len_galvo_scan_range = len(galvo_scan_range)
+        galvo_range = [
+            galvo_scan_range[int(0.3*len_galvo_scan_range)],
+            galvo_scan_range[int(0.5*len_galvo_scan_range)],
+            galvo_scan_range[int(0.7*len_galvo_scan_range)],
+        ]
+        
+        # Acquire defocus stacks at several galvo positions
+        data = acquire_ls_defocus_stack(
+            mmc=self.ls_acq.mmc,
+            mmStudio=self.ls_acq.mmStudio,
+            z_stage=self.ls_acq.o3_stage,
+            z_range=z_range,
+            galvo=self.ls_acq.slice_settings.z_stage_name,
+            galvo_range=galvo_range,
+            config_group=self.ls_acq.microscope_settings.o3_refocus_config[0],
+            config_name=self.ls_acq.microscope_settings.o3_refocus_config[1],
+        )
+
+        # Find in-focus slice
+        wavelength = 0.55  # in um, approx
+        focus_indices = []
+        for stack in data:
+            idx = focus_from_transverse_band(
+                stack, NA_det=NA_DETECTION, lambda_ill=wavelength, pixel_size=PIXEL_SIZE
+            )
+            focus_indices.append(idx)
+        
+        # Refocus O3
+        focus_idx = int(np.median(focus_indices))
+        microscope_operations.set_relative_kim101_position(
+            self.ls_acq.o3_stage,
+            z_range[focus_idx]
+        )
+    
     def setup(self):
         """
         Setup the mantis acquisition. This method sets up the label-free
@@ -812,3 +869,77 @@ def _create_acquisition_directory(root_dir, acq_name, idx=1):
     except OSError:
         return _create_acquisition_directory(root_dir, acq_name, idx + 1)
     return acq_dir
+
+
+def acquire_ls_defocus_stack(
+    mmc: Core,
+    mmStudio: Studio,
+    z_stage,
+    z_range: Iterable,
+    galvo: str,
+    galvo_range: Iterable,
+    config_group: str = None,
+    config_name: str = None,
+):
+    """Acquire defocus stacks at different galvo positions
+
+    Parameters
+    ----------
+    mmc : Core
+        _description_
+    mmStudio : Studio
+        _description_
+    z_stage : _type_
+        _description_
+    z_start : float
+        _description_
+    z_end : float
+        _description_
+    z_step : float
+        _description_
+    config_group : str, optional
+        _description_, by default None
+    config_name : str, optional
+        _description_, by default None
+
+    Returns
+    -------
+    data : np.array
+
+    """
+    datastore = microscope_operations.create_ram_datastore(mmStudio)
+    data = []
+
+    # Set config
+    if config_name is not None:
+        mmc.set_config(config_group, config_name)
+        mmc.wait_for_config(config_group, config_name)
+
+    # Open shutter
+    auto_shutter_state, shutter_state = microscope_operations.get_shutter_state(mmc)
+    microscope_operations.open_shutter(mmc)
+
+    # get galvo starting position
+    p0 = mmc.get_position(galvo)
+
+    # acquire stack at different galvo positions
+    for p_idx, p in enumerate(galvo_range):
+        # set galvo position
+        mmc.set_position(galvo, p0 + p)
+
+        # acquire defocus stack
+        z_stack = microscope_operations.acquire_defocus_stack(
+            mmc, mmStudio, datastore, z_stage, z_range, channel_ind=0, position_ind=p_idx
+        )
+        data.append(z_stack)
+
+    # freeze datastore to indicate that we are finished writing to it
+    datastore.freeze()
+
+    # Reset galvo
+    mmc.set_position(galvo, p0)
+
+    # Reset shutter
+    microscope_operations.reset_shutter(mmc, auto_shutter_state, shutter_state)
+
+    return np.asarray(data)

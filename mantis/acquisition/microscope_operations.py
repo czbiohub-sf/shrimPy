@@ -257,6 +257,10 @@ def setup_kim101_stage(serial_number: int, max_voltage=112, velocity=500, accele
     )
     stage.setup_drive(max_voltage, velocity, acceleration)
 
+    # manually keep track of the stage true position based on the relative
+    # number of steps in each direction
+    stage.true_position = 0
+
     return stage
 
 
@@ -274,6 +278,10 @@ def set_relative_kim101_position(
     step : int
         _description_
     """
+
+    # keep track of the stage actual position, in steps, not accounting for the
+    # compensation factor
+    stage.true_position += step
 
     if step < 0:
         step *= KIM101_COMPENSATION_FACTOR
@@ -364,81 +372,6 @@ def acquire_defocus_stack(
     return np.asarray(data)
 
 
-def acquire_ls_defocus_stack(
-    mmc: Core,
-    mmStudio: Studio,
-    z_stage,
-    z_range: Iterable,
-    galvo: str,
-    galvo_range: Iterable,
-    config_group: str = None,
-    config_name: str = None,
-):
-    """Acquire defocus stacks at different galvo positions
-    TODO: move to acq_engine.py
-
-    Parameters
-    ----------
-    mmc : Core
-        _description_
-    mmStudio : Studio
-        _description_
-    z_stage : _type_
-        _description_
-    z_start : float
-        _description_
-    z_end : float
-        _description_
-    z_step : float
-        _description_
-    config_group : str, optional
-        _description_, by default None
-    config_name : str, optional
-        _description_, by default None
-
-    Returns
-    -------
-    data : np.array
-
-    """
-    datastore = create_ram_datastore(mmStudio)
-    data = []
-
-    # Set config
-    if config_name is not None:
-        mmc.set_config(config_group, config_name)
-        mmc.wait_for_config(config_group, config_name)
-
-    # Open shutter
-    auto_shutter_state, shutter_state = get_shutter_state(mmc)
-    open_shutter(mmc)
-
-    # get galvo starting position
-    p0 = mmc.get_position(galvo)
-
-    # acquire stack at different galvo positions
-    for p_idx, p in enumerate(galvo_range):
-        # set galvo position
-        mmc.set_position(galvo, p0 + p)
-
-        # acquire defocus stack
-        z_stack = acquire_defocus_stack(
-            mmc, mmStudio, datastore, z_stage, z_range, channel_ind=0, position_ind=p_idx
-        )
-        data.append(z_stack)
-
-    # freeze datastore to indicate that we are finished writing to it
-    datastore.freeze()
-
-    # Reset galvo
-    mmc.set_position(galvo, p0)
-
-    # Reset shutter
-    reset_shutter(mmc, auto_shutter_state, shutter_state)
-
-    return np.asarray(data)
-
-
 def get_shutter_state(mmc: Core):
     """Return the current state of the shutter
 
@@ -467,7 +400,9 @@ def open_shutter(mmc: Core):
 
     """
 
-    if mmc.get_shutter_device():
+    shutter_device = mmc.get_shutter_device()
+    if shutter_device:
+        logger.debug(f'Opening shutter {shutter_device}')
         mmc.set_auto_shutter(False)
         mmc.set_shutter_open(True)
 
@@ -483,6 +418,13 @@ def reset_shutter(mmc: Core, auto_shutter_state: bool, shutter_state: bool):
 
     """
 
-    if mmc.get_shutter_device():
+    shutter_device = mmc.get_shutter_device()
+    if shutter_device:
+        logger.debug(
+            'Resetting shutter %s to state Open:%s, Autoshutter: %s', 
+            shutter_device, 
+            shutter_state, 
+            auto_shutter_state
+        )
         mmc.set_shutter_open(shutter_state)
         mmc.set_auto_shutter(auto_shutter_state)
