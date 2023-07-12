@@ -294,13 +294,15 @@ class MantisAcquisition(object):
         if not enable_lf_acq or not enable_ls_acq:
             raise Exception('Disabling LF or LS acquisition is not currently supported')
 
-        # Create acquisition directory
+        # Create acquisition directory and log directory
         self._acq_dir = _create_acquisition_directory(self._root_dir, self._acq_name)
+        self._logs_dir = os.path.join(self._acq_dir, 'logs')
+        os.mkdir(self._logs_dir)
 
         # Setup logger
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         configure_logger(
-            os.path.join(self._acq_dir, f'mantis_acquisition_log_{timestamp}.txt')
+            os.path.join(self._logs_dir, f'acquisition_log_{timestamp}.txt')
         )
 
         # initialize time and position settings
