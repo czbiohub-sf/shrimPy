@@ -1,7 +1,6 @@
 import numpy as np
 from pycromanager import Core, Studio
-from mantis.acquisition.microscope_operations import setup_kim101_stage
-from mantis.acquisition.acq_engine import acquire_ls_defocus_stack
+from mantis.acquisition.microscope_operations import setup_kim101_stage, acquire_ls_defocus_stack_and_display
 
 import logging
 logger = logging.getLogger()
@@ -25,7 +24,7 @@ galvo_range = [-0.5, 0, 0.5]
 z_stage = setup_kim101_stage('74000291')
 z_range = np.arange(z_start, z_end + z_step, z_step)
 
-data = acquire_ls_defocus_stack(
+data = acquire_ls_defocus_stack_and_display(
     mmc, 
     mmStudio, 
     z_stage, 
