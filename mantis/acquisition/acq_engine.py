@@ -315,7 +315,7 @@ class MantisAcquisition(object):
 
         # Log conda environment
         outs, errs = log_conda_environment(
-            os.path.join(self._acq_dir, f'conda_environment_log_{timestamp}.txt')
+            os.path.join(self._logs_dir, f'conda_environment_log_{timestamp}.txt')
         )
         if errs is None:
             logger.debug(outs.decode('ascii').strip())
