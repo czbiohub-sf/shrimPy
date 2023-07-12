@@ -33,6 +33,7 @@ dependencies = [
     "scipy",
     "slurmkit @ git+https://github.com/royerlab/slurmkit",
     "natsort",
+    "tifffile",
     "napari[all]; 'arm64' not in platform_machine", # with Qt5 and skimage
     "napari; 'arm64' in platform_machine", # without Qt5 and skimage
     "PyQt6; 'arm64' in platform_machine",

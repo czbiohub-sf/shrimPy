@@ -8,6 +8,7 @@ from dataclasses import asdict
 from datetime import datetime
 from functools import partial
 
+import tifffile
 import nidaqmx
 import numpy as np
 
@@ -644,6 +645,13 @@ class MantisAcquisition(object):
             galvo_range=galvo_range,
             config_group=self.ls_acq.microscope_settings.o3_refocus_config.config_group,
             config_name=self.ls_acq.microscope_settings.o3_refocus_config.config_name,
+        )
+
+        # Save acquired stacks
+        timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+        tifffile.imwrite(
+            os.path.join(self._logs_dir, f'ls_refocus_data_{timestamp}.ome.tif'),
+            np.expand_dims(data, -3).astype('uint16')
         )
 
         # Find in-focus slice
