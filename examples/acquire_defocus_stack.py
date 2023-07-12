@@ -34,6 +34,7 @@ data = acquire_ls_defocus_stack(
     galvo_range,
     config_group, 
     config_name,
+    close_display=False,
 )
 
 print(data.shape)

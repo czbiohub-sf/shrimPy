@@ -54,7 +54,7 @@ LS_KIM101_SN = 74000291
 LF_KIM101_SN = 74000565
 
 NA_DETECTION = 1.35
-PIXEL_SIZE = 6.5 / (40 * 1.4)  # in um
+LS_PIXEL_SIZE = 6.5 / (40 * 1.4)  # in um
 
 logger = logging.getLogger(__name__)
 
@@ -604,6 +604,8 @@ class MantisAcquisition(object):
                 )
 
     def refocus_ls_path(self):
+        logger.info('Running O3 refocus algorithm on light-sheet arm')
+
         # Define O3 z range
         # 1 step is approx 20 nm, 25 steps are 500 nm which is approx Nyquist sampling
         z_start = -200
@@ -631,6 +633,7 @@ class MantisAcquisition(object):
             galvo_range=galvo_range,
             config_group=self.ls_acq.microscope_settings.o3_refocus_config[0],
             config_name=self.ls_acq.microscope_settings.o3_refocus_config[1],
+            close_display=True,
         )
 
         # Find in-focus slice
@@ -638,16 +641,25 @@ class MantisAcquisition(object):
         focus_indices = []
         for stack in data:
             idx = focus_from_transverse_band(
-                stack, NA_det=NA_DETECTION, lambda_ill=wavelength, pixel_size=PIXEL_SIZE
+                stack, NA_det=NA_DETECTION, lambda_ill=wavelength, pixel_size=LS_PIXEL_SIZE
             )
             focus_indices.append(idx)
+        logger.debug(f'Stacks at galvo positions {galvo_range} are in focus at slice {focus_indices}')
         
         # Refocus O3
-        focus_idx = int(np.median(focus_indices))
-        microscope_operations.set_relative_kim101_position(
-            self.ls_acq.o3_stage,
-            z_range[focus_idx]
-        )
+        # Some focus_indices may be None, e.g. if there is no sample
+        valid_focus_indices = [idx for idx in focus_indices if idx is not None]
+        if valid_focus_indices:
+            focus_idx = int(np.median(valid_focus_indices))
+            o3_displacement = int(z_range[focus_idx])
+
+            logger.info(f'Moving O3 by {o3_displacement} steps')
+            microscope_operations.set_relative_kim101_position(
+                self.ls_acq.o3_stage,
+                o3_displacement
+            )
+        else:
+            logger.error('Could not determine the correct O3 in-focus position. O3 will not move')
     
     def setup(self):
         """
@@ -880,6 +892,7 @@ def acquire_ls_defocus_stack(
     galvo_range: Iterable,
     config_group: str = None,
     config_name: str = None,
+    close_display: bool = True,
 ):
     """Acquire defocus stacks at different galvo positions
 
@@ -901,6 +914,8 @@ def acquire_ls_defocus_stack(
         _description_, by default None
     config_name : str, optional
         _description_, by default None
+    close_display: bool. optional
+        _description_, by default True
 
     Returns
     -------
@@ -941,5 +956,10 @@ def acquire_ls_defocus_stack(
 
     # Reset shutter
     microscope_operations.reset_shutter(mmc, auto_shutter_state, shutter_state)
+
+    # Close datastore and associated displays; if close_display=False, display
+    # window must be manually closed
+    if close_display:
+        datastore.close()
 
     return np.asarray(data)
