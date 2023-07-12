@@ -10,7 +10,7 @@ name =  "mantis"
 description = "Acquisition engine for collecting data on the mantis microscope"
 readme = "README.md"
 license = {file = "LICENSE"}
-requires-python = ">=3.9, <4.0"
+requires-python = ">=3.10, <4.0"
 
 # the dynamically determined project metadata attributes
 dynamic = ["version"]
@@ -19,7 +19,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10"
 ]
 
@@ -31,16 +30,17 @@ dependencies = [
     "nidaqmx",
     "iohub==0.1.0.dev3",
     "pylablib==1.4.1",
+    "scipy",
+    "slurmkit @ git+https://github.com/royerlab/slurmkit",
+    "natsort",
+    "napari[all]; 'arm64' not in platform_machine", # with Qt5 and skimage
+    "napari; 'arm64' in platform_machine", # without Qt5 and skimage
+    "PyQt6; 'arm64' in platform_machine",
     "matplotlib",
 ]
 
 
 [project.optional-dependencies]
-napari = [
-    "napari[all]; 'arm64' not in platform_machine", # with Qt5 and skimage
-    "napari; 'arm64' in platform_machine", # without Qt5 and skimage
-    "PyQt6; 'arm64' in platform_machine",
-]
 # note that dev dependencies are only pinned to major versions
 dev = [
     "black==22.3.0",

@@ -15,7 +15,7 @@ from nidaqmx.constants import Slope
 from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, start_headless
 
 from mantis.acquisition import microscope_operations
-from mantis.acquisition.logger import configure_logger
+from mantis.acquisition.logger import configure_logger, log_conda_environment
 
 from waveorder.focus import focus_from_transverse_band
 
@@ -312,6 +312,15 @@ class MantisAcquisition(object):
         if self._demo_run:
             logger.info('NOTE: This is a demo run')
         logger.debug(f'Starting mantis acquisition log at: {self._acq_dir}')
+
+        # Log conda environment
+        outs, errs = log_conda_environment(
+            os.path.join(self._acq_dir, f'conda_environment_log_{timestamp}.txt')
+        )
+        if errs is None:
+            logger.debug(outs.decode('ascii').strip())
+        else:
+            logger.error(errs.decode('ascii'))
 
         # Connect to MM running LF acq
         self.lf_acq = BaseChannelSliceAcquisition(
