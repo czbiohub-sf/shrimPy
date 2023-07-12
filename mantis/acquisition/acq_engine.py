@@ -302,7 +302,7 @@ class MantisAcquisition(object):
         # Setup logger
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         configure_logger(
-            os.path.join(self._logs_dir, f'acquisition_log_{timestamp}.txt')
+            os.path.join(self._logs_dir, f'mantis_acquisition_log_{timestamp}.txt')
         )
 
         # initialize time and position settings
