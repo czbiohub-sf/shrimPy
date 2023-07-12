@@ -608,6 +608,7 @@ class MantisAcquisition(object):
 
         # Define O3 z range
         # 1 step is approx 20 nm, 25 steps are 500 nm which is approx Nyquist sampling
+        # The stack starts away from O2 and moves closer
         z_start = -200
         z_end = 200
         z_step = 25
@@ -615,7 +616,7 @@ class MantisAcquisition(object):
 
         # Define galvo range, i.e. galvo positions at which O3 defocus stacks
         # are acquired, should be odd number
-        galvo_scan_range = self.ls_acq.slice_settings.z_start
+        galvo_scan_range = self.ls_acq.slice_settings.z_range
         len_galvo_scan_range = len(galvo_scan_range)
         galvo_range = [
             galvo_scan_range[int(0.3*len_galvo_scan_range)],
@@ -626,14 +627,12 @@ class MantisAcquisition(object):
         # Acquire defocus stacks at several galvo positions
         data = acquire_ls_defocus_stack(
             mmc=self.ls_acq.mmc,
-            mmStudio=self.ls_acq.mmStudio,
             z_stage=self.ls_acq.o3_stage,
             z_range=z_range,
             galvo=self.ls_acq.slice_settings.z_stage_name,
             galvo_range=galvo_range,
-            config_group=self.ls_acq.microscope_settings.o3_refocus_config[0],
-            config_name=self.ls_acq.microscope_settings.o3_refocus_config[1],
-            close_display=True,
+            config_group=self.ls_acq.microscope_settings.o3_refocus_config.config_group,
+            config_name=self.ls_acq.microscope_settings.o3_refocus_config.config_name,
         )
 
         # Find in-focus slice
@@ -644,7 +643,11 @@ class MantisAcquisition(object):
                 stack, NA_det=NA_DETECTION, lambda_ill=wavelength, pixel_size=LS_PIXEL_SIZE
             )
             focus_indices.append(idx)
-        logger.debug(f'Stacks at galvo positions {galvo_range} are in focus at slice {focus_indices}')
+        logger.debug(
+            'Stacks at galvo positions %s are in focus at slice %s', 
+            np.round(galvo_range, 3), 
+            focus_indices
+        )
         
         # Refocus O3
         # Some focus_indices may be None, e.g. if there is no sample
@@ -788,6 +791,11 @@ class MantisAcquisition(object):
                         )
                         continue
 
+                # O3 refocus
+                # Failing to refocus O3 will not abort the acquisition at the current PT index
+                if self.ls_acq.microscope_settings.use_o3_refocus:
+                    self.refocus_ls_path()
+
                 # start acquisition
                 lf_events = deepcopy(lf_cz_events)
                 for _event in lf_events:
@@ -885,14 +893,12 @@ def _create_acquisition_directory(root_dir, acq_name, idx=1):
 
 def acquire_ls_defocus_stack(
     mmc: Core,
-    mmStudio: Studio,
     z_stage,
     z_range: Iterable,
     galvo: str,
     galvo_range: Iterable,
     config_group: str = None,
     config_name: str = None,
-    close_display: bool = True,
 ):
     """Acquire defocus stacks at different galvo positions
 
@@ -922,7 +928,6 @@ def acquire_ls_defocus_stack(
     data : np.array
 
     """
-    datastore = microscope_operations.create_ram_datastore(mmStudio)
     data = []
 
     # Set config
@@ -937,29 +942,26 @@ def acquire_ls_defocus_stack(
     # get galvo starting position
     p0 = mmc.get_position(galvo)
 
+    # set camera to internal trigger
+    # TODO: do this properly, context manager?
+    microscope_operations.set_property(mmc, 'Prime BSI Express', 'TriggerMode', 'Internal Trigger')
+
     # acquire stack at different galvo positions
     for p_idx, p in enumerate(galvo_range):
         # set galvo position
         mmc.set_position(galvo, p0 + p)
 
         # acquire defocus stack
-        z_stack = microscope_operations.acquire_defocus_stack(
-            mmc, mmStudio, datastore, z_stage, z_range, channel_ind=0, position_ind=p_idx
-        )
+        z_stack = microscope_operations.acquire_defocus_stack(mmc, z_stage, z_range)
         data.append(z_stack)
 
-    # freeze datastore to indicate that we are finished writing to it
-    datastore.freeze()
+    # Reset camera triggering
+    microscope_operations.set_property(mmc, 'Prime BSI Express', 'TriggerMode', 'Edge Trigger')
 
     # Reset galvo
     mmc.set_position(galvo, p0)
 
     # Reset shutter
     microscope_operations.reset_shutter(mmc, auto_shutter_state, shutter_state)
-
-    # Close datastore and associated displays; if close_display=False, display
-    # window must be manually closed
-    if close_display:
-        datastore.close()
 
     return np.asarray(data)

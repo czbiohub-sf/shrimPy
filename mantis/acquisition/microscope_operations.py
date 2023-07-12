@@ -301,10 +301,10 @@ def create_ram_datastore(
 
 def acquire_defocus_stack(
     mmc: Core,
-    mmStudio: Studio,
-    datastore,
     z_stage,
     z_range: Iterable,
+    mmStudio: Studio = None,
+    datastore = None,
     channel_ind: int = 0,
     position_ind: int = 0,
 ):
@@ -313,11 +313,12 @@ def acquire_defocus_stack(
     Parameters
     ----------
     mmc : Core
-    mmStudio : Studio
-    datastore : micromanager.data.Datastore
-        Micro-manager datastore object
     z_stage : str or coPylot stage object
     z_range : Iterable
+    mmStudio : Studio, optional
+        If not None, images will be added to a Micro-manager RAM datastore
+    datastore : micromanager.data.Datastore
+        Micro-manager datastore object
     channel_ind : int, optional
         Channel index of acquired images in the Micro-manager datastore, by default 0
     position_ind : int, optional
@@ -341,6 +342,7 @@ def acquire_defocus_stack(
     else:
         raise RuntimeError(f'Unknown z stage: {z_stage}')
 
+    # mmc.wait_for_image_synchro()
     for z_ind, rel_z in enumerate(relative_z_steps):
         # set z position
         move_z(rel_z)
@@ -356,18 +358,100 @@ def acquire_defocus_stack(
         data.append(image_data.astype('uint16'))
 
         # set image coordinates and put in datastore
-        image = mmStudio.get_data_manager().convert_tagged_image(tagged_image)
-        coords_builder = image.get_coords().copy()
-        coords_builder = coords_builder.z(z_ind)
-        coords_builder = coords_builder.channel(channel_ind)
-        coords_builder = coords_builder.stage_position(position_ind)
-        mm_coords = coords_builder.build()
+        if mmStudio is not None:
+            image = mmStudio.get_data_manager().convert_tagged_image(tagged_image)
+            coords_builder = image.get_coords().copy()
+            coords_builder = coords_builder.z(z_ind)
+            coords_builder = coords_builder.channel(channel_ind)
+            coords_builder = coords_builder.stage_position(position_ind)
+            mm_coords = coords_builder.build()
 
-        image = image.copy_at_coords(mm_coords)
-        datastore.put_image(image)
+            image = image.copy_at_coords(mm_coords)
+            datastore.put_image(image)
 
     # reset z stage
     move_z(-relative_z_steps.sum())
+
+    return np.asarray(data)
+
+def acquire_ls_defocus_stack_and_display(
+    mmc: Core,
+    mmStudio: Studio,
+    z_stage,
+    z_range: Iterable,
+    galvo: str,
+    galvo_range: Iterable,
+    config_group: str = None,
+    config_name: str = None,
+    close_display: bool = True,
+):
+    """Acquire defocus stacks at different galvo positions
+
+    Parameters
+    ----------
+    mmc : Core
+        _description_
+    mmStudio : Studio
+        _description_
+    z_stage : _type_
+        _description_
+    z_start : float
+        _description_
+    z_end : float
+        _description_
+    z_step : float
+        _description_
+    config_group : str, optional
+        _description_, by default None
+    config_name : str, optional
+        _description_, by default None
+    close_display: bool. optional
+        _description_, by default True
+
+    Returns
+    -------
+    data : np.array
+
+    """
+    datastore = create_ram_datastore(mmStudio)
+    data = []
+
+    # Set config
+    if config_name is not None:
+        mmc.set_config(config_group, config_name)
+        mmc.wait_for_config(config_group, config_name)
+
+    # Open shutter
+    auto_shutter_state, shutter_state = get_shutter_state(mmc)
+    open_shutter(mmc)
+
+    # get galvo starting position
+    p0 = mmc.get_position(galvo)
+
+    # acquire stack at different galvo positions
+    for p_idx, p in enumerate(galvo_range):
+        # set galvo position
+        mmc.set_position(galvo, p0 + p)
+
+        # acquire defocus stack
+        z_stack = acquire_defocus_stack(
+            mmc, z_stage, z_range, mmStudio, datastore, channel_ind=0, position_ind=p_idx
+        )
+        data.append(z_stack)
+
+    # freeze datastore to indicate that we are finished writing to it
+    datastore.freeze()
+
+    # Reset galvo
+    mmc.set_position(galvo, p0)
+
+    # Reset shutter
+    reset_shutter(mmc, auto_shutter_state, shutter_state)
+
+    # Close datastore and associated displays; if close_display=False, display
+    # window must be manually closed
+    if close_display:
+        datastore.close()
 
     return np.asarray(data)
 

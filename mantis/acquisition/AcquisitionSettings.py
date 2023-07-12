@@ -81,4 +81,5 @@ class MicroscopeSettings:
     autofocus_stage: Optional[str] = None
     autofocus_method: Optional[str] = None
     use_o3_refocus: bool = False
-    o3_refocus_config: Optional[Tuple[str, str]] = None
+    o3_refocus_config: Optional[ConfigSettings] = None
+    o3_refocus_interval_min: Optional[int] = None
