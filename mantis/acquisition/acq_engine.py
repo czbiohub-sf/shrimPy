@@ -302,17 +302,12 @@ class MantisAcquisition(object):
 
         # Setup logger
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-        configure_logger(
-            os.path.join(self._logs_dir, f'mantis_acquisition_log_{timestamp}.txt')
-        )
-
-        # initialize time and position settings
-        self._time_settings = TimeSettings()
-        self._position_settings = PositionSettings()
+        acq_log_path = os.path.join(self._logs_dir, f'mantis_acquisition_log_{timestamp}.txt')
+        configure_logger(acq_log_path)
 
         if self._demo_run:
             logger.info('NOTE: This is a demo run')
-        logger.debug(f'Starting mantis acquisition log at: {self._acq_dir}')
+        logger.debug(f'Starting mantis acquisition log at: {acq_log_path}')
 
         # Log conda environment
         outs, errs = log_conda_environment(
@@ -322,6 +317,10 @@ class MantisAcquisition(object):
             logger.debug(outs.decode('ascii').strip())
         else:
             logger.error(errs.decode('ascii'))
+
+        # initialize time and position settings
+        self._time_settings = TimeSettings()
+        self._position_settings = PositionSettings()
 
         # Connect to MM running LF acq
         self.lf_acq = BaseChannelSliceAcquisition(
