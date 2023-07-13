@@ -304,7 +304,7 @@ def acquire_defocus_stack(
     z_stage,
     z_range: Iterable,
     mmStudio: Studio = None,
-    datastore = None,
+    datastore=None,
     channel_ind: int = 0,
     position_ind: int = 0,
 ):
@@ -373,6 +373,7 @@ def acquire_defocus_stack(
     move_z(-relative_z_steps.sum())
 
     return np.asarray(data)
+
 
 def acquire_ls_defocus_stack_and_display(
     mmc: Core,
@@ -505,10 +506,10 @@ def reset_shutter(mmc: Core, auto_shutter_state: bool, shutter_state: bool):
     shutter_device = mmc.get_shutter_device()
     if shutter_device:
         logger.debug(
-            'Resetting shutter %s to state Open:%s, Autoshutter: %s', 
-            shutter_device, 
-            shutter_state, 
-            auto_shutter_state
+            'Resetting shutter %s to state Open:%s, Autoshutter: %s',
+            shutter_device,
+            shutter_state,
+            auto_shutter_state,
         )
         mmc.set_shutter_open(shutter_state)
         mmc.set_auto_shutter(auto_shutter_state)

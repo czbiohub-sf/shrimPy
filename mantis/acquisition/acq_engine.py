@@ -1,24 +1,23 @@
 import logging
 import os
 import time
-from typing import Iterable
 
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime
 from functools import partial
+from typing import Iterable
 
-import tifffile
 import nidaqmx
 import numpy as np
+import tifffile
 
 from nidaqmx.constants import Slope
 from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, start_headless
+from waveorder.focus import focus_from_transverse_band
 
 from mantis.acquisition import microscope_operations
 from mantis.acquisition.logger import configure_logger, log_conda_environment
-
-from waveorder.focus import focus_from_transverse_band
 
 # isort: off
 from mantis.acquisition.AcquisitionSettings import (
@@ -630,7 +629,9 @@ class MantisAcquisition(object):
         target_z_position = z_stage.true_position + z_range
         max_z_position = 500  # O3 is allowed to travel ~10 um towards O2
         min_z_position = -1000  # O3 is allowed to travel ~20 um away from O2
-        if np.any(target_z_position > max_z_position) or np.any(target_z_position < min_z_position):
+        if np.any(target_z_position > max_z_position) or np.any(
+            target_z_position < min_z_position
+        ):
             logger.error('O3 relative travel limits will be exceeded. Aborting O3 refocus.')
             return
 
@@ -639,11 +640,11 @@ class MantisAcquisition(object):
         galvo_scan_range = self.ls_acq.slice_settings.z_range
         len_galvo_scan_range = len(galvo_scan_range)
         galvo_range = [
-            galvo_scan_range[int(0.3*len_galvo_scan_range)],
-            galvo_scan_range[int(0.5*len_galvo_scan_range)],
-            galvo_scan_range[int(0.7*len_galvo_scan_range)],
+            galvo_scan_range[int(0.3 * len_galvo_scan_range)],
+            galvo_scan_range[int(0.5 * len_galvo_scan_range)],
+            galvo_scan_range[int(0.7 * len_galvo_scan_range)],
         ]
-        
+
         # Acquire defocus stacks at several galvo positions
         data = acquire_ls_defocus_stack(
             mmc=self.ls_acq.mmc,
@@ -659,7 +660,7 @@ class MantisAcquisition(object):
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         tifffile.imwrite(
             os.path.join(self._logs_dir, f'ls_refocus_data_{timestamp}.ome.tif'),
-            np.expand_dims(data, -3).astype('uint16')
+            np.expand_dims(data, -3).astype('uint16'),
         )
 
         # Find in-focus slice
@@ -671,11 +672,11 @@ class MantisAcquisition(object):
             )
             focus_indices.append(idx)
         logger.debug(
-            'Stacks at galvo positions %s are in focus at slice %s', 
-            np.round(galvo_range, 3), 
-            focus_indices
+            'Stacks at galvo positions %s are in focus at slice %s',
+            np.round(galvo_range, 3),
+            focus_indices,
         )
-        
+
         # Refocus O3
         # Some focus_indices may be None, e.g. if there is no sample
         valid_focus_indices = [idx for idx in focus_indices if idx is not None]
@@ -685,12 +686,13 @@ class MantisAcquisition(object):
 
             logger.info(f'Moving O3 by {o3_displacement} steps')
             microscope_operations.set_relative_kim101_position(
-                self.ls_acq.o3_stage,
-                o3_displacement
+                self.ls_acq.o3_stage, o3_displacement
             )
         else:
-            logger.error('Could not determine the correct O3 in-focus position. O3 will not move')
-    
+            logger.error(
+                'Could not determine the correct O3 in-focus position. O3 will not move'
+            )
+
     def setup(self):
         """
         Setup the mantis acquisition. This method sets up the label-free
@@ -824,8 +826,11 @@ class MantisAcquisition(object):
                 if self.ls_acq.microscope_settings.use_o3_refocus:
                     current_time = time.time()
                     # Always refocus at the start
-                    if (t_idx==0 and p_idx==0) or \
-                            current_time-ls_o3_refocus_time > self.ls_acq.microscope_settings.o3_refocus_interval_min * 60:
+                    if (
+                        (t_idx == 0 and p_idx == 0)
+                        or current_time - ls_o3_refocus_time
+                        > self.ls_acq.microscope_settings.o3_refocus_interval_min * 60
+                    ):
                         self.refocus_ls_path()
                         ls_o3_refocus_time = current_time
 
@@ -977,7 +982,9 @@ def acquire_ls_defocus_stack(
 
     # set camera to internal trigger
     # TODO: do this properly, context manager?
-    microscope_operations.set_property(mmc, 'Prime BSI Express', 'TriggerMode', 'Internal Trigger')
+    microscope_operations.set_property(
+        mmc, 'Prime BSI Express', 'TriggerMode', 'Internal Trigger'
+    )
 
     # acquire stack at different galvo positions
     for p_idx, p in enumerate(galvo_range):
