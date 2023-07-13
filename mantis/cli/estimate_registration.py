@@ -18,7 +18,7 @@ from skimage import transform
 @click.option(
     "--output-file",
     "-o",
-    default="./registration_output.yml",
+    default="./registration_output.zarr",
     required=False,
     help="Path to saved registration",
 )
