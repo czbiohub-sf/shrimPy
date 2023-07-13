@@ -626,6 +626,15 @@ class MantisAcquisition(object):
         z_step = 15
         z_range = np.arange(z_start, z_end + z_step, z_step)
 
+        # Define relative travel limits, in steps
+        z_stage = self.ls_acq.o3_stage
+        target_z_position = z_stage.true_position + z_range
+        max_z_position = 500  # O3 is allowed to travel ~10 um towards O2
+        min_z_position = -1000  # O3 is allowed to travel ~20 um away from O2
+        if np.any(target_z_position > max_z_position) or np.any(target_z_position < min_z_position):
+            logger.error('O3 relative travel limits will be exceeded. Aborting O3 refocus.')
+            return
+
         # Define galvo range, i.e. galvo positions at which O3 defocus stacks
         # are acquired, should be odd number
         galvo_scan_range = self.ls_acq.slice_settings.z_range
@@ -639,7 +648,7 @@ class MantisAcquisition(object):
         # Acquire defocus stacks at several galvo positions
         data = acquire_ls_defocus_stack(
             mmc=self.ls_acq.mmc,
-            z_stage=self.ls_acq.o3_stage,
+            z_stage=z_stage,
             z_range=z_range,
             galvo=self.ls_acq.slice_settings.z_stage_name,
             galvo_range=galvo_range,
