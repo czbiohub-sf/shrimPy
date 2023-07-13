@@ -4,7 +4,7 @@ from mantis.cli.deskew import deskew
 from mantis.cli.estimate_bleaching import estimate_bleaching
 from mantis.cli.estimate_deskew import estimate_deskew
 from mantis.cli.run_acquisition import run_acquisition
-
+from mantis.cli.estimate_registration import manual_registration
 
 @click.group()
 def cli():
@@ -15,3 +15,4 @@ cli.add_command(deskew)
 cli.add_command(estimate_bleaching)
 cli.add_command(estimate_deskew)
 cli.add_command(run_acquisition)
+cli.add_command(manual_registration)
