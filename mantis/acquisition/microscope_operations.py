@@ -13,7 +13,7 @@ from pylablib.devices.Thorlabs import KinesisPiezoMotor
 
 logger = logging.getLogger(__name__)
 
-KIM101_COMPENSATION_FACTOR = 1.10
+KIM101_COMPENSATION_FACTOR = 1.03
 
 
 def _try_mmc_call(mmc, mmc_call_name, *mmc_carr_args):

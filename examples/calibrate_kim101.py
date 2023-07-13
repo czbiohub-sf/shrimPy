@@ -8,18 +8,20 @@
 #%%
 import numpy as np
 from pycromanager import Core, Studio
+import matplotlib.pyplot as plt
 from mantis.acquisition.microscope_operations import setup_kim101_stage, acquire_ls_defocus_stack_and_display
 
 #%%
 mmc = Core()
 mmStudio = Studio()
+z_stage = setup_kim101_stage('74000291')
+
 z_start = 0
-z_end = 150
+z_end = 105
 z_step = 15
 galvo = 'AP Galvo'
 galvo_range = [0]*5
 
-z_stage = setup_kim101_stage('74000291')
 z_range = np.hstack(
     (
         np.arange(z_start, z_end + z_step, z_step),
@@ -35,11 +37,12 @@ data = acquire_ls_defocus_stack_and_display(
     z_range,
     galvo,
     galvo_range,
+    close_display = False
 )
 
 # %%
 steps_per_direction = len(z_range)//2
-intensity = data.sum(axis=(-1, -2))
+intensity = data.max(axis=(-1, -2))
 
 pos_int = intensity[:, :steps_per_direction]
 pos_z = z_range[:steps_per_direction]
@@ -58,5 +61,8 @@ for i in range(len(galvo_range)):
 
 compensation_factor = np.mean(pos_slope) / np.mean(neg_slope)
 print(compensation_factor)
+
+# %%
+plt.plot(intensity.flatten())
 
 # %%
