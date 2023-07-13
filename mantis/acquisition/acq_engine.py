@@ -619,11 +619,11 @@ class MantisAcquisition(object):
         logger.info('Running O3 refocus algorithm on light-sheet arm')
 
         # Define O3 z range
-        # 1 step is approx 20 nm, 25 steps are 500 nm which is approx Nyquist sampling
+        # 1 step is approx 20 nm, 15 steps are 300 nm which is sub-Nyquist sampling
         # The stack starts away from O2 and moves closer
-        z_start = -200
-        z_end = 200
-        z_step = 25
+        z_start = -105
+        z_end = 105
+        z_step = 15
         z_range = np.arange(z_start, z_end + z_step, z_step)
 
         # Define galvo range, i.e. galvo positions at which O3 defocus stacks
@@ -787,8 +787,9 @@ class MantisAcquisition(object):
         )
 
         logger.info('Starting acquisition')
+        ls_o3_refocus_time = time.time()
         for t_idx in range(self.time_settings.num_timepoints):
-            t_start = time.time()
+            timepoint_start_time = time.time()
             for p_idx in range(self.position_settings.num_positions):
                 p_label = self.position_settings.position_labels[p_idx]
 
@@ -813,7 +814,12 @@ class MantisAcquisition(object):
                 # O3 refocus
                 # Failing to refocus O3 will not abort the acquisition at the current PT index
                 if self.ls_acq.microscope_settings.use_o3_refocus:
-                    self.refocus_ls_path()
+                    current_time = time.time()
+                    # Always refocus at the start
+                    if (t_idx==0 and p_idx==0) or \
+                            current_time-ls_o3_refocus_time > self.ls_acq.microscope_settings.o3_refocus_interval_min * 60:
+                        self.refocus_ls_path()
+                        ls_o3_refocus_time = current_time
 
                 # start acquisition
                 lf_events = deepcopy(lf_cz_events)
@@ -835,7 +841,7 @@ class MantisAcquisition(object):
                 self.await_cz_acq_completion()
 
             # wait for time interval between time points
-            t_wait = self.time_settings.time_interval_s - (time.time() - t_start)
+            t_wait = self.time_settings.time_interval_s - (time.time() - timepoint_start_time)
             if t_wait > 0 and t_idx < self.time_settings.num_timepoints - 1:
                 logger.info(f"Waiting {t_wait/60:.2f} minutes until the next time point")
                 time.sleep(t_wait)
