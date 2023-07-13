@@ -8,14 +8,14 @@
 #%%
 import numpy as np
 from pycromanager import Core, Studio
-from mantis.acquisition.microscope_operations import setup_kim101_stage, acquire_ls_defocus_stack
+from mantis.acquisition.microscope_operations import setup_kim101_stage, acquire_ls_defocus_stack_and_display
 
 #%%
 mmc = Core()
 mmStudio = Studio()
 z_start = 0
-z_end = 200
-z_step = 25
+z_end = 150
+z_step = 15
 galvo = 'AP Galvo'
 galvo_range = [0]*5
 
@@ -28,7 +28,7 @@ z_range = np.hstack(
 )
 
 #%%
-data = acquire_ls_defocus_stack(
+data = acquire_ls_defocus_stack_and_display(
     mmc, 
     mmStudio, 
     z_stage, 
@@ -57,3 +57,6 @@ for i in range(len(galvo_range)):
     neg_slope.append(m)
 
 compensation_factor = np.mean(pos_slope) / np.mean(neg_slope)
+print(compensation_factor)
+
+# %%
