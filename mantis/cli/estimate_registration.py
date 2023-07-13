@@ -14,9 +14,9 @@ from skimage import transform
 
 @click.command()
 @click.argument(
-    "fluor_data_path", type=click.Path(exists=True), help="Path to fluorescence dataset"
+    "fluor_data_path", type=click.Path(exists=True)
 )
-@click.argument("phase_data_path", type=click.Path(exists=True), help="Path to phase dataset")
+@click.argument("phase_data_path", type=click.Path(exists=True))
 @click.option(
     "--output-file",
     "-o",
@@ -25,6 +25,11 @@ from skimage import transform
     help="Path to saved registration",
 )
 def manual_registration(fluor_data_path, phase_data_path, output_file):
+    """
+    Estimate the affine transform between two channels by manual inputs.
+
+    python estimate_registration.py  <path/to/channel_1.zarr/0/0/0> <path/to/channel_2.zarr/0/0/0>
+    """
     # Get a napari viewer()
     viewer = napari.Viewer()
 
@@ -32,7 +37,7 @@ def manual_registration(fluor_data_path, phase_data_path, output_file):
 
     # Find focus fluor channel
     print('Finding the fluorescence best focus position at t=0')
-    with open_ome_zarr(fluor_data_path, phase_data_path, mode="r") as fluor_position:
+    with open_ome_zarr(fluor_data_path, mode="r") as fluor_position:
         focus_fluor_idx = focus_from_transverse_band(
             fluor_position[0][0, 0],
             NA_det=1.35,
@@ -72,16 +77,12 @@ def manual_registration(fluor_data_path, phase_data_path, output_file):
                 cursor_position = np.array(viewer.cursor.position)
                 layer.add(cursor_position)
 
-                print(f"curr lay1 color {layer.current_face_color}")
-
                 # Change the colors
                 current_index = COLOR_CYCLE.index(layer.current_face_color)
                 next_index = (current_index + 1) % len(COLOR_CYCLE)
                 next_color = COLOR_CYCLE[next_index]
-                print(f"next color {next_color}")
                 next_layer.current_face_color = next_color
             else:
-                print(f"curr lay2 color {layer.current_face_color}")
                 next_layer = points_fluor
                 cursor_position = np.array(viewer.cursor.position)
                 layer.add(cursor_position)
@@ -90,7 +91,6 @@ def manual_registration(fluor_data_path, phase_data_path, output_file):
                 current_index = COLOR_CYCLE.index(layer.current_face_color)
                 next_index = (current_index) % len(COLOR_CYCLE)
                 next_color = COLOR_CYCLE[next_index]
-                print(f"next color {next_color}")
                 next_layer.current_face_color = next_color
 
             # Switch to the next layer
@@ -131,12 +131,16 @@ def manual_registration(fluor_data_path, phase_data_path, output_file):
 
     # Get the transformation matrix
     matrix = affine_transform.params
-    print(f"Affine Transform Matrix: {matrix}")
+    print(f"Affine Transform Matrix:\n {matrix}\n")
 
     # Apply the affine transform to the image
     Y, X = phase_img.shape
     aligned_image = transform.warp(fluor_img, inverse_map=affine_transform.inverse, clip=False)
     viewer.add_image(aligned_image, name="aligned", opacity=0.5)
+    viewer.layers.remove("pts_phase")
+    viewer.layers.remove("pts_fluor")
+    viewer.layers["focus_fluor"].visible = False
+    viewer.layers["aligned"].colormap = "magenta"
 
     # %%
     # Write and Save the matrix
@@ -148,7 +152,11 @@ def manual_registration(fluor_data_path, phase_data_path, output_file):
         output_dataset["pts_fluor"] = pts_fluor[None, None, None, ...]
         output_dataset["focus_fluor_idx"] = focus_fluor_idx[None, None, None, None, None, ...]
         output_dataset["focus_phase_idx"] = focus_phase_idx[None, None, None, None, None, ...]
+    print(f"Finished saving registration parameters in: {output_file}")
 
+    input(
+        "\n Displaying registered channels. Press <enter> to close..."
+    )
 
 if __name__ == '__main__':
     manual_registration()
