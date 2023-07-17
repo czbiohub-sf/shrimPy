@@ -665,10 +665,21 @@ class MantisAcquisition(object):
 
         # Find in-focus slice
         wavelength = 0.55  # in um, approx
+        # works well to distinguish between noise and sample when using z_step = 15
+        # the idea is that true features in the sample will come in focus slowly
+        threshold_FWHM = 3.0
+
         focus_indices = []
-        for stack in data:
+        for stack_idx, stack in enumerate(data):
             idx = focus_from_transverse_band(
-                stack, NA_det=NA_DETECTION, lambda_ill=wavelength, pixel_size=LS_PIXEL_SIZE
+                stack,
+                NA_det=NA_DETECTION,
+                lambda_ill=wavelength,
+                pixel_size=LS_PIXEL_SIZE,
+                threshold_FWHM=threshold_FWHM,
+                plot_path=os.path.join(
+                    self._logs_dir, f'ls_refocus_plot_{timestamp}_Pos{stack_idx}.png'
+                ),
             )
             focus_indices.append(idx)
         logger.debug(
