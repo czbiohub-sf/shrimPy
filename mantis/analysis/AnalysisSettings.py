@@ -1,14 +1,16 @@
-from pydantic import validator
+from typing import Optional
+from pydantic import validator, PositiveInt, PositiveFloat
 from pydantic.dataclasses import dataclass
 
 
 @dataclass
 class DeskewSettings:
-    pixel_size_um: float
-    ls_angle_deg: float
-    px_to_scan_ratio: float = None
-    scan_step_um: float = None
+    pixel_size_um: PositiveFloat
+    ls_angle_deg: PositiveFloat
+    px_to_scan_ratio: Optional[PositiveFloat] = None
+    scan_step_um: Optional[PositiveFloat] = None
     keep_overhang: bool = True
+    average_n_slices: PositiveInt = 3
 
     @validator("ls_angle_deg")
     def ls_angle_check(cls, v):
