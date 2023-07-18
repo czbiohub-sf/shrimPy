@@ -49,6 +49,7 @@ def create_empty_zarr(
         settings.ls_angle_deg,
         settings.px_to_scan_ratio,
         settings.keep_overhang,
+        settings.average_n_slices,
         settings.pixel_size_um,
     )
 
@@ -116,7 +117,11 @@ def deskew_zyx_and_save(
 
     # Deskew
     deskewed = deskew_data(
-        zyx_data, settings.ls_angle_deg, settings.px_to_scan_ratio, settings.keep_overhang
+        zyx_data,
+        settings.ls_angle_deg,
+        settings.px_to_scan_ratio,
+        settings.keep_overhang,
+        settings.average_n_slices,
     )
     # Write to file
     with open_ome_zarr(output_path, mode="r+") as output_dataset:
