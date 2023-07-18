@@ -1,5 +1,6 @@
 from typing import Optional
-from pydantic import validator, PositiveInt, PositiveFloat
+
+from pydantic import PositiveFloat, PositiveInt, validator
 from pydantic.dataclasses import dataclass
 
 
