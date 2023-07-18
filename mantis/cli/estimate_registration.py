@@ -158,16 +158,6 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
     pts_channel_1 = points_channel_1.data
     pts_channel_2 = points_channel_2.data
 
-    pts_channel_1 = np.array([[   0.        ,  299.27558608,  575.06444763],
-       [   0.        ,  712.51585715, 1161.51920358],
-       [   0.        ,  752.71660219,  380.36647624],
-       [   0.        ,  460.72647054,  311.08068229]])
-
-    pts_channel_2 = np.array([[   0.        ,  321.54601985, 2200.80611286],
-       [   0.        ,  852.31940309, 2980.5870999 ],
-       [   0.        ,  920.98210179, 1973.93973714],
-       [   0.        ,  544.85922033, 1867.53655357]])
-
     pts_channel_2[:, 2] -= channel_1_X  # subtract the translation offset for display
     
     # Estimate the affine transform between the points in-focus
