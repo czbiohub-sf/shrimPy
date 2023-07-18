@@ -209,7 +209,7 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
     )
 
     viewer.add_image(aligned_image, name=f"registered_{channel_2_str}", opacity=0.5)
-    viewer.layers["aligned"].colormap = "magenta"
+    viewer.layers[f"registered_{channel_2_str}"].colormap = "magenta"
     viewer.layers.remove(f"pts_{channel_1_str}")
     viewer.layers.remove(f"pts_{channel_2_str}")
     viewer.layers[channel_2_str].visible = False
@@ -250,10 +250,10 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
             np.linalg.inv(zyx_affine_transform),
             output_shape=output_shape_volume,
         )
-        viewer.add_image(registered_3D_volume,name=f'registered_volume_{channel_1_str}', opacity=1.0)
+        viewer.add_image(registered_3D_volume, name=f'registered_volume_{channel_1_str}', opacity=1.0)
 
-        viewer.add_image(channel_2_position[0][0, channel_2_idx],name=f'channel_2_str', opacity=0.5,colormap='magenta')
-        viewer.layers["aligned"].visible = False
+        viewer.add_image(channel_2_position[0][0, channel_2_idx],name=f'{channel_2_str}', opacity=0.5,colormap='magenta')
+        viewer.layers[f"registered_{channel_2_str}"].visible = False
 
 
 
