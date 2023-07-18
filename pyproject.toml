@@ -34,7 +34,7 @@ dependencies = [
   "scipy",
   "slurmkit @ git+https://github.com/royerlab/slurmkit",
   "tifffile",
-  "waveorder",
+  "waveorder @ git+https://github.com/mehta-lab/waveorder",
 ]
 
 
