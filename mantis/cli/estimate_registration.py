@@ -212,11 +212,11 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
         # Scaling and translation factor based on metadata.
         magnification_LF_remote_volume = 1.4
         step_size_LF_remote_volume = 0.4  # [um]
-        phase_remote_volume_sample_size = (
+        phase_remote_volume_step_size = (
             step_size_LF_remote_volume / magnification_LF_remote_volume
         )
-        scaling_factor_z =  z_sampling_channel_2/phase_remote_volume_sample_size
-        translation_z = (focus_channel_2_idx * scaling_factor_z) - focus_channel_1_idx
+        scaling_factor_z =  z_sampling_channel_2/phase_remote_volume_step_size
+        translation_z = (focus_channel_1_idx * scaling_factor_z) - focus_channel_2_idx
         # 2D to 3D matrix
         z_shift = np.array([scaling_factor_z, 0, 0, -translation_z])
         print(f'Z-transform: {z_shift}')
@@ -235,7 +235,7 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
 
         # TODO: logic that takes care of replicating channels/shape of input
         with open_ome_zarr(
-            output_file, mode='a', layout='hcs', channel_names=[f'registered']
+            output_file, mode='w', layout='hcs', channel_names=['registered']
         ) as output_dataset:
             position = output_dataset.create_position(0, 0, 0)
             img = position.create_zeros(
@@ -247,6 +247,27 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
             img[0, 0] = registered_3D_volume
 
         viewer.add_image(registered_3D_volume, opacity=0.5)
+    else:
+        # Write and Save the matrix
+        with open_ome_zarr(
+            output_file, mode="a", channel_names=["None"]
+        ) as output_dataset:
+            output_dataset["affine_transform_zyx"] = zyx_points_transformation_matrix[None, None, None, ...]
+            output_dataset["pts_channel_1"] = pts_channel_1[None, None, None, ...]
+            output_dataset["pts_channel_2"] = pts_channel_2[None, None, None, ...]
+
+            # Write extra registration metadata
+            registration_params = {
+                "channel_1": channel_1_data_path,
+                "channel_1_name": channel_1_str,
+                "channel_1_focused_slice": focus_channel_1_idx,
+                "channel_2": channel_2_data_path,
+                "channel_2_name": channel_2_str,
+                "channel_2_focused_slice": focus_channel_2_idx,
+            }
+            output_dataset.zattrs["registration"] = registration_params
+
+        print(f"Finished saving registration output in: {output_file}")
 
     # Write and Save the matrix
     with open_ome_zarr(
