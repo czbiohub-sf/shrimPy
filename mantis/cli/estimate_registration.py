@@ -68,7 +68,7 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
             channel_2_position[0][0, channel_2_idx],
             NA_det=1.35,
             lambda_ill=0.55,
-            pixel_size=6.5/ (40 * 1.4),
+            pixel_size=6.5 / (40 * 1.4),
         )
         channel_2_Z, channel_2_Y, channel_2_X = channel_2_position[0][0, channel_2_idx].shape
         print(f"channel_2 focus idx: {focus_channel_2_idx}")
@@ -222,7 +222,7 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
         phase_remote_volume_sample_size = (
             step_size_LF_remote_volume / magnification_LF_remote_volume
         )
-        scaling_factor_z =  phase_remote_volume_sample_size/z_sampling_channel_2
+        scaling_factor_z = phase_remote_volume_sample_size / z_sampling_channel_2
         translation_z = (focus_channel_1_idx * scaling_factor_z) - focus_channel_2_idx
         # 2D to 3D matrix
         z_shift = np.array([scaling_factor_z, 0, 0, -translation_z])
@@ -239,12 +239,17 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
             np.linalg.inv(zyx_affine_transform),
             output_shape=output_shape_volume,
         )
-        viewer.add_image(registered_3D_volume, name=f'registered_volume_{channel_1_str}', opacity=1.0)
+        viewer.add_image(
+            registered_3D_volume, name=f'registered_volume_{channel_1_str}', opacity=1.0
+        )
 
-        viewer.add_image(channel_2_position[0][0, channel_2_idx],name=f'{channel_2_str}', opacity=0.5,colormap='magenta')
+        viewer.add_image(
+            channel_2_position[0][0, channel_2_idx],
+            name=f'{channel_2_str}',
+            opacity=0.5,
+            colormap='magenta',
+        )
         viewer.layers[f"registered_{channel_2_str}"].visible = False
-
-
 
     # Write and Save the matrix
     with open_ome_zarr(
@@ -264,13 +269,14 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
             "channel_2_focused_slice": focus_channel_2_idx,
             "channel_2_90deg_CCW_rotation": ROTATE_90deg_CCW,
             "channel_1_shape": list((channel_1_Z, channel_1_Y, channel_1_X)),
-            "channel_2_shape": list((channel_2_Z, channel_2_Y, channel_2_X))
+            "channel_2_shape": list((channel_2_Z, channel_2_Y, channel_2_X)),
         }
         output_dataset.zattrs["registration"] = registration_params
 
     print(f"Finished saving registration output in: {output_file}")
 
     input("\n Displaying registered channels. Press <enter> to close...")
+
 
 if __name__ == "__main__":
     manual_registration()
