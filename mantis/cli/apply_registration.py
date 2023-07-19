@@ -104,7 +104,7 @@ def register_zyx_and_save(
 def deskew_single_position(
     input_data_path: Path,
     output_path: Path = "./registered.zarr",
-    registration_param_path: Path = "./registration_output.zarr",
+    registration_param_path: Path = "./registration_parameters.zarr",
     num_processes: int = mp.cpu_count(),
 ) -> None:
     """Register a single position with multiprocessing parallelization over T and C"""

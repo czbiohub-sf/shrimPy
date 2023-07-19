@@ -24,7 +24,7 @@ ROTATE_90deg_CCW = True
 @click.option(
     "--output-file",
     "-o",
-    default="./registration_output.zarr",
+    default="./registration_parameters.zarr",
     required=False,
     help="Path to saved registration",
 )
