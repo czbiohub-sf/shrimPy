@@ -87,7 +87,6 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
         channel_2_img = scipy.ndimage.rotate(
             channel_2_img, angle=90, axes=(1, 2), reshape=True
         )
-        _, channel_2_Y, channel_2_X = channel_2_img.shape
 
     layer_channel_2 = viewer.add_image(channel_2_img, name=channel_2_str)
     layer_channel_2.translate = (0, 0, channel_1_X)
@@ -168,12 +167,12 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
     # TODO: make this optional: return the identity matrix if no rotation is needed.
     if ROTATE_90deg_CCW:
         rotation_matrix = np.array(
-            [[1, 0, 0, 0], [0, 0, 1, 0], [0, -1, 0, channel_2_Y - 1], [0, 0, 0, 1]]
+            [[1, 0, 0, 0], [0, 0, 1, 0], [0, -1, 0, channel_2_X - 1], [0, 0, 0, 1]]
         )
         # rotated_image = scipy.ndimage.affine_transform(
         #     channel_2_position[0][0, channel_2_idx, focus_channel_2_idx : focus_channel_2_idx + 1],
         #     rotation_matrix,
-        #     output_shape=(1, channel_2_Y, channel_2_X),
+        #     output_shape=(1, channel_2_X, channel_2_Y),
         # )
     else:
         rotation_matrix = np.eye(4)
@@ -234,7 +233,7 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
         zyx_affine_transform = rotation_matrix @ zyx_points_transformation_matrix
         print(f"Affine Transform Matrix:\n {zyx_affine_transform}\n")
 
-        output_shape_volume = (channel_2_Z, channel_2_X, channel_2_Y)
+        output_shape_volume = (channel_2_Z, channel_2_Y, channel_2_X)
         registered_3D_volume = scipy.ndimage.affine_transform(
             channel_1_position[0][0, channel_1_idx],
             np.linalg.inv(zyx_affine_transform),
@@ -264,6 +263,8 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
             "channel_2_name": channel_2_str,
             "channel_2_focused_slice": focus_channel_2_idx,
             "channel_2_90deg_CCW_rotation": ROTATE_90deg_CCW,
+            "channel_1_shape": list((channel_1_Z, channel_1_Y, channel_1_X)),
+            "channel_2_shape": list((channel_2_Z, channel_2_Y, channel_2_X))
         }
         output_dataset.zattrs["registration"] = registration_params
 
