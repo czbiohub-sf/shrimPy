@@ -1,18 +1,16 @@
 # %%
 import os
 
-from dataclasses import asdict
 
 import click
 import napari
 import numpy as np
 import scipy
-import yaml
 
-from iohub import open_ome_zarr, read_micromanager
+from iohub import open_ome_zarr
 from waveorder.focus import focus_from_transverse_band
 
-from mantis.analysis.registration import estimate_transformation_matrix
+from skimage.transform import SimilarityTransform
 
 # TODO: remove this for non mantis datasets
 ROTATE_90deg_CCW = True
@@ -38,14 +36,14 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
     viewer = napari.Viewer()
 
     print("Getting dataset info")
-    print('\n Channel 1 INFO:')
+    print("\n Channel 1 INFO:")
     os.system(f"iohub info {channel_1_data_path} ")
-    print('\n Channel 2 INFO:')
+    print("\n Channel 2 INFO:")
     os.system(f"iohub info {channel_2_data_path} ")
 
     channel_1_idx = int(input("Enter channel_1 index to process: "))
     channel_2_idx = int(input("Enter channel_2 index to process: "))
-    #%%
+    # %%
     # TODO: get the microscope parameters through a yaml file? Currently hard-coded
     # Find focus channel_1
     print("Finding the channel_1 best focus position at t=0")
@@ -57,7 +55,9 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
             lambda_ill=0.55,
             pixel_size=3.45 / (46.2 * 1.4),
         )
-        channel_1_Z, channel_1_Y, channel_1_X = channel_1_position[0][0, channel_1_idx].shape
+        channel_1_Z, channel_1_Y, channel_1_X = channel_1_position[0][
+            0, channel_1_idx
+        ].shape
         print(f"{channel_1_str} focus idx: {focus_channel_1_idx}")
 
     # Find focus channel_2
@@ -70,7 +70,9 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
             lambda_ill=0.55,
             pixel_size=6.5 / (40 * 1.4),
         )
-        channel_2_Z, channel_2_Y, channel_2_X = channel_2_position[0][0, channel_2_idx].shape
+        channel_2_Z, channel_2_Y, channel_2_X = channel_2_position[0][
+            0, channel_2_idx
+        ].shape
         print(f"channel_2 focus idx: {focus_channel_2_idx}")
 
     # Display only the in-focus slices
@@ -80,7 +82,7 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
     channel_2_img = channel_2_position[0][
         0, channel_2_idx, focus_channel_2_idx : focus_channel_2_idx + 1
     ]
-    layer_channel_1 = viewer.add_image(channel_1_img, name=channel_1_str)
+    viewer.add_image(channel_1_img, name=channel_1_str)
 
     # TODO: Need to find a better way to handle rotations or just assume data is passed in the right orientation
     if ROTATE_90deg_CCW:
@@ -91,7 +93,7 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
     layer_channel_2 = viewer.add_image(channel_2_img, name=channel_2_str)
     layer_channel_2.translate = (0, 0, channel_1_X)
 
-    #%%
+    # %%
     # Manual annotation of features
     COLOR_CYCLE = [
         "white",
@@ -158,11 +160,12 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
     pts_channel_2 = points_channel_2.data
 
     pts_channel_2[:, 2] -= channel_1_X  # subtract the translation offset for display
-    
+
     # Estimate the affine transform between the points in-focus
-    yx_points_transformation_matrix = estimate_transformation_matrix(
-        pts_channel_1[:, 1:], pts_channel_2[:, 1:]
-    )
+    transform = SimilarityTransform()
+    transform.estimate(pts_channel_1[:, 1:], pts_channel_2[:, 1:])
+    yx_points_transformation_matrix = transform.params
+
     # Add rotation matrix
     # TODO: make this optional: return the identity matrix if no rotation is needed.
     if ROTATE_90deg_CCW:
@@ -185,14 +188,16 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
     )  # Insert 0 in the third entry of each row
 
     zyx_affine_transform = rotation_matrix @ zyx_points_transformation_matrix
-    
+
     # Get the transformation matrix
     print(f"Affine Transform Matrix:\n {zyx_affine_transform}\n")
     output_shape_volume = (1, channel_1_Y, channel_1_X)
 
     # Apply the affine transform to the image
     aligned_image = scipy.ndimage.affine_transform(
-        channel_2_position[0][0, channel_2_idx, focus_channel_2_idx : focus_channel_2_idx + 1],
+        channel_2_position[0][
+            0, channel_2_idx, focus_channel_2_idx : focus_channel_2_idx + 1
+        ],
         zyx_affine_transform,
         output_shape=output_shape_volume,
     )
@@ -206,12 +211,12 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
     # Compute the 3D registration
     flag_estimate_3D_transform = input("\n Estimate and apply 3D registration (Y/N):")
     if flag_estimate_3D_transform == "Y" or flag_estimate_3D_transform == "y":
-        print('Applying 3D Affine Transform...')
+        print("Applying 3D Affine Transform...")
         # Use deskew metadta
         try:
-            _, _, z_sampling_channel_2, _, _ = channel_2_position.zattrs["multiscales"][0][
-                "coordinateTransformations"
-            ][0]["scale"]
+            _, _, z_sampling_channel_2, _, _ = channel_2_position.zattrs["multiscales"][
+                0
+            ]["coordinateTransformations"][0]["scale"]
         except:
             z_sampling_channel_2 = 1
 
@@ -226,7 +231,7 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
         translation_z = (focus_channel_1_idx * scaling_factor_z) - focus_channel_2_idx
         # 2D to 3D matrix
         z_shift = np.array([scaling_factor_z, 0, 0, -translation_z])
-        print(f'Z-transform: {z_shift}')
+        print(f"Z-transform: {z_shift}")
         zyx_points_transformation_matrix = np.vstack(
             (z_shift, np.insert(yx_points_transformation_matrix, 0, 0, axis=1))
         )
@@ -240,22 +245,24 @@ def manual_registration(channel_1_data_path, channel_2_data_path, output_file):
             output_shape=output_shape_volume,
         )
         viewer.add_image(
-            registered_3D_volume, name=f'registered_volume_{channel_1_str}', opacity=1.0
+            registered_3D_volume, name=f"registered_volume_{channel_1_str}", opacity=1.0
         )
 
         viewer.add_image(
             channel_2_position[0][0, channel_2_idx],
-            name=f'{channel_2_str}',
+            name=f"{channel_2_str}",
             opacity=0.5,
-            colormap='magenta',
+            colormap="magenta",
         )
         viewer.layers[f"registered_{channel_2_str}"].visible = False
 
     # Write and Save the matrix
     with open_ome_zarr(
-        output_file, layout="fov", mode='w', channel_names=["None"]
+        output_file, layout="fov", mode="w", channel_names=["None"]
     ) as output_dataset:
-        output_dataset["affine_transform_zyx"] = zyx_affine_transform[None, None, None, ...]
+        output_dataset["affine_transform_zyx"] = zyx_affine_transform[
+            None, None, None, ...
+        ]
         output_dataset["pts_channel_1"] = pts_channel_1[None, None, None, ...]
         output_dataset["pts_channel_2"] = pts_channel_2[None, None, None, ...]
 
