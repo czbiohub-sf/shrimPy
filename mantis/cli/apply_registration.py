@@ -1,13 +1,8 @@
 from iohub.ngff import Plate, Position, open_ome_zarr
-import numpy as np
 from mantis.analysis import registration
 from mantis.cli.deskew import get_output_paths
-import os
-import napari
 import click
-import yaml
 
-from dataclasses import asdict
 from functools import partial
 from pathlib import Path
 from typing import List
@@ -17,10 +12,10 @@ import multiprocessing as mp
 import itertools
 
 from mantis.cli.parsing import (
-    deskew_param_argument,
     input_data_paths_argument,
     output_dataset_options,
 )
+from iohub.ngff_meta import TransformationMeta
 
 
 def create_empty_zarr(
@@ -32,10 +27,17 @@ def create_empty_zarr(
     T, C, Z, Y, X = input_dataset.data.shape
 
     # Get the deskewing parameters
+    # TODO: where should we get the voxel size from?
     with open_ome_zarr(registration_param_path, mode="r") as parameters:
         zyx_output_shape = tuple(parameters.zattrs["registration"]["channel_2_shape"])
-
+        voxel_size = tuple(parameters.zattrs["registration"]["voxel_size"])
     click.echo("Creating empty array...")
+
+    # Handle transforms and metadata
+    transform = TransformationMeta(
+        type="scale",
+        scale=2 * (1,) + voxel_size,
+    )
 
     # Prepare output dataset
     channel_names = input_dataset.channel_names
@@ -67,6 +69,7 @@ def create_empty_zarr(
             + zyx_output_shape,
             chunks=chunk_size,
             dtype=input_dataset[0].dtype,
+            transform=[transform],
         )
 
     input_dataset.close()
