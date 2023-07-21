@@ -266,7 +266,7 @@ def setup_kim101_stage(serial_number: int, max_voltage=112, velocity=500, accele
 
 def set_relative_kim101_position(
     stage: KinesisPiezoMotor,
-    step: int,
+    distance: int,
 ):
     """Make a relative move with a KIM101 stage, compensating for different
     travel distance per step in the positive and negative directions
@@ -274,25 +274,35 @@ def set_relative_kim101_position(
     Parameters
     ----------
     stage : KinesisPiezoMotor
-        _description_
-    step : int
-        _description_
+    distance : int
+        Travel distance, in number of steps
     """
 
     # keep track of the stage actual position, in steps, not accounting for the
     # compensation factor
-    stage.true_position += step
+    stage.true_position += distance
 
-    if step < 0:
-        step *= KIM101_COMPENSATION_FACTOR
+    if distance < 0:
+        distance *= KIM101_COMPENSATION_FACTOR
 
-    stage.move_by(int(step))
+    stage.move_by(int(distance))
     stage.wait_move()
 
 
 def create_ram_datastore(
     mmStudio: Studio,
 ):
+    """Create a Micro-manager RAM datastore and associate a display window with it
+
+    Parameters
+    ----------
+    mmStudio : Studio
+
+    Returns
+    -------
+    datastore
+
+    """
     datastore = mmStudio.get_data_manager().create_ram_datastore()
     mmStudio.get_display_manager().create_display(datastore)
 
@@ -308,7 +318,7 @@ def acquire_defocus_stack(
     channel_ind: int = 0,
     position_ind: int = 0,
 ):
-    """Snap image at every z position and put image in the datastore
+    """Snap image at every z position and put image in a Micro-manager datastore
 
     Parameters
     ----------
@@ -316,8 +326,9 @@ def acquire_defocus_stack(
     z_stage : str or coPylot stage object
     z_range : Iterable
     mmStudio : Studio, optional
-        If not None, images will be added to a Micro-manager RAM datastore
-    datastore : micromanager.data.Datastore
+        If not None, images will be added to a Micro-manager RAM datastore and
+        displayed. If None, acquired images will only be returned as np.array
+    datastore : micromanager.data.Datastore, optional
         Micro-manager datastore object
     channel_ind : int, optional
         Channel index of acquired images in the Micro-manager datastore, by default 0
@@ -342,7 +353,6 @@ def acquire_defocus_stack(
     else:
         raise RuntimeError(f'Unknown z stage: {z_stage}')
 
-    # mmc.wait_for_image_synchro()
     for z_ind, rel_z in enumerate(relative_z_steps):
         # set z position
         move_z(rel_z)
@@ -378,7 +388,7 @@ def acquire_defocus_stack(
 def acquire_ls_defocus_stack_and_display(
     mmc: Core,
     mmStudio: Studio,
-    z_stage,
+    z_stage: str or KinesisPiezoMotor,
     z_range: Iterable,
     galvo: str,
     galvo_range: Iterable,
@@ -386,28 +396,21 @@ def acquire_ls_defocus_stack_and_display(
     config_name: str = None,
     close_display: bool = True,
 ):
-    """Acquire defocus stacks at different galvo positions
+    """Utility function similar to MantisAcquisition.acquire_ls_defocus_stack
+    which can acquire O3 defocus stacks at multiple galvo positions and
+    display them in a Micro-manager window
 
     Parameters
     ----------
     mmc : Core
-        _description_
     mmStudio : Studio
-        _description_
-    z_stage : _type_
-        _description_
-    z_start : float
-        _description_
-    z_end : float
-        _description_
-    z_step : float
-        _description_
+    z_stage : str or KinesisPiezoMotor
+    z_range : Iterable
+    galvo : str
+    galvo_range : Iterable
     config_group : str, optional
-        _description_, by default None
     config_name : str, optional
-        _description_, by default None
-    close_display: bool. optional
-        _description_, by default True
+    close_display : bool, optional
 
     Returns
     -------
