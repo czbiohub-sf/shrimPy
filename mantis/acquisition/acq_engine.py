@@ -613,6 +613,76 @@ class MantisAcquisition(object):
                     self.lf_acq.microscope_settings.autofocus_stage,
                 )
 
+    @staticmethod
+    def acquire_ls_defocus_stack(
+        mmc: Core,
+        z_stage,
+        z_range: Iterable,
+        galvo: str,
+        galvo_range: Iterable,
+        config_group: str = None,
+        config_name: str = None,
+    ):
+        """Acquire defocus stacks at different galvo positions and return image data
+
+        Parameters
+        ----------
+        mmc : Core
+        mmStudio : Studio
+        z_stage : str or KinesisPiezoMotor
+        z_range : Iterable
+        galvo : str
+        galvo_range : Iterable
+        config_group : str, optional
+        config_name : str, optional
+
+        Returns
+        -------
+        data : np.array
+
+        """
+        data = []
+
+        # Set config
+        if config_name is not None:
+            mmc.set_config(config_group, config_name)
+            mmc.wait_for_config(config_group, config_name)
+
+        # Open shutter
+        auto_shutter_state, shutter_state = microscope_operations.get_shutter_state(mmc)
+        microscope_operations.open_shutter(mmc)
+
+        # get galvo starting position
+        p0 = mmc.get_position(galvo)
+
+        # set camera to internal trigger
+        # TODO: do this properly, context manager?
+        microscope_operations.set_property(
+            mmc, 'Prime BSI Express', 'TriggerMode', 'Internal Trigger'
+        )
+
+        # acquire stack at different galvo positions
+        for p_idx, p in enumerate(galvo_range):
+            # set galvo position
+            mmc.set_position(galvo, p0 + p)
+
+            # acquire defocus stack
+            z_stack = microscope_operations.acquire_defocus_stack(mmc, z_stage, z_range)
+            data.append(z_stack)
+
+        # Reset camera triggering
+        microscope_operations.set_property(
+            mmc, 'Prime BSI Express', 'TriggerMode', 'Edge Trigger'
+        )
+
+        # Reset galvo
+        mmc.set_position(galvo, p0)
+
+        # Reset shutter
+        microscope_operations.reset_shutter(mmc, auto_shutter_state, shutter_state)
+
+        return np.asarray(data)
+
     def refocus_ls_path(self):
         logger.info('Running O3 refocus algorithm on light-sheet arm')
 
@@ -636,7 +706,7 @@ class MantisAcquisition(object):
             return
 
         # Define galvo range, i.e. galvo positions at which O3 defocus stacks
-        # are acquired, should be odd number
+        # are acquired, here at 30%, 50%, and 70% of galvo range. Should be odd number
         galvo_scan_range = self.ls_acq.slice_settings.z_range
         len_galvo_scan_range = len(galvo_scan_range)
         galvo_range = [
@@ -646,7 +716,7 @@ class MantisAcquisition(object):
         ]
 
         # Acquire defocus stacks at several galvo positions
-        data = acquire_ls_defocus_stack(
+        data = self.acquire_ls_defocus_stack(
             mmc=self.ls_acq.mmc,
             z_stage=z_stage,
             z_range=z_range,
@@ -656,7 +726,7 @@ class MantisAcquisition(object):
             config_name=self.ls_acq.microscope_settings.o3_refocus_config.config_name,
         )
 
-        # Save acquired stacks
+        # Save acquired stacks in logs
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         tifffile.imwrite(
             os.path.join(self._logs_dir, f'ls_refocus_data_{timestamp}.ome.tif'),
@@ -938,81 +1008,3 @@ def _create_acquisition_directory(root_dir, acq_name, idx=1):
     except OSError:
         return _create_acquisition_directory(root_dir, acq_name, idx + 1)
     return acq_dir
-
-
-def acquire_ls_defocus_stack(
-    mmc: Core,
-    z_stage,
-    z_range: Iterable,
-    galvo: str,
-    galvo_range: Iterable,
-    config_group: str = None,
-    config_name: str = None,
-):
-    """Acquire defocus stacks at different galvo positions
-
-    Parameters
-    ----------
-    mmc : Core
-        _description_
-    mmStudio : Studio
-        _description_
-    z_stage : _type_
-        _description_
-    z_start : float
-        _description_
-    z_end : float
-        _description_
-    z_step : float
-        _description_
-    config_group : str, optional
-        _description_, by default None
-    config_name : str, optional
-        _description_, by default None
-    close_display: bool. optional
-        _description_, by default True
-
-    Returns
-    -------
-    data : np.array
-
-    """
-    data = []
-
-    # Set config
-    if config_name is not None:
-        mmc.set_config(config_group, config_name)
-        mmc.wait_for_config(config_group, config_name)
-
-    # Open shutter
-    auto_shutter_state, shutter_state = microscope_operations.get_shutter_state(mmc)
-    microscope_operations.open_shutter(mmc)
-
-    # get galvo starting position
-    p0 = mmc.get_position(galvo)
-
-    # set camera to internal trigger
-    # TODO: do this properly, context manager?
-    microscope_operations.set_property(
-        mmc, 'Prime BSI Express', 'TriggerMode', 'Internal Trigger'
-    )
-
-    # acquire stack at different galvo positions
-    for p_idx, p in enumerate(galvo_range):
-        # set galvo position
-        mmc.set_position(galvo, p0 + p)
-
-        # acquire defocus stack
-        z_stack = microscope_operations.acquire_defocus_stack(mmc, z_stage, z_range)
-        data.append(z_stack)
-
-    # Reset camera triggering
-    microscope_operations.set_property(mmc, 'Prime BSI Express', 'TriggerMode', 'Edge Trigger')
-
-    # Reset galvo
-    mmc.set_position(galvo, p0)
-
-    # Reset shutter
-    microscope_operations.reset_shutter(mmc, auto_shutter_state, shutter_state)
-
-    return np.asarray(data)
