@@ -1,3 +1,5 @@
+import contextlib
+import io
 import itertools
 import multiprocessing as mp
 
@@ -86,9 +88,7 @@ def register_zyx_and_save(
 
     with open_ome_zarr(registration_param_path, mode="r") as registration_parameters:
         affine_transform_zyx = registration_parameters["affine_transform_zyx"][0, 0, 0]
-        output_shape = tuple(
-            registration_parameters.zattrs["registration"]["channel_2_shape"]
-        )
+        output_shape = tuple(registration_parameters.zattrs["registration"]["channel_2_shape"])
 
     # Deskew
     registered = registration.register_data(
@@ -114,7 +114,10 @@ def deskew_single_position(
     click.echo(f"Input data path:\t{input_data_path}")
     click.echo(f"Output data path:\t{str(output_path)}")
     input_dataset = open_ome_zarr(str(input_data_path))
-    click.echo(input_dataset.print_tree())
+    stdout_buffer = io.StringIO()
+    with contextlib.redirect_stdout(stdout_buffer):
+        input_dataset.print_tree()
+    click.echo(f" Zarr Store info: {stdout_buffer.getvalue()}")
 
     T, C, Z, Y, X = input_dataset.data.shape
 
