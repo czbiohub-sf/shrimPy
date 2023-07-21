@@ -1,5 +1,6 @@
 import os
 
+from pathlib import Path
 
 import click
 import napari
@@ -7,7 +8,6 @@ import numpy as np
 import scipy
 
 from iohub import open_ome_zarr
-from pathlib import Path
 from skimage.transform import SimilarityTransform
 from waveorder.focus import focus_from_transverse_band
 

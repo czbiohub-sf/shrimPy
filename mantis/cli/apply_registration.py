@@ -1,21 +1,19 @@
-from iohub.ngff import Plate, Position, open_ome_zarr
-from mantis.analysis import registration
-from mantis.cli.deskew import get_output_paths
-import click
+import itertools
+import multiprocessing as mp
 
 from functools import partial
 from pathlib import Path
 from typing import List
 
-from natsort import natsorted
-import multiprocessing as mp
-import itertools
+import click
 
-from mantis.cli.parsing import (
-    input_data_paths_argument,
-    output_dataset_options,
-)
+from iohub.ngff import Plate, Position, open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
+from natsort import natsorted
+
+from mantis.analysis import registration
+from mantis.cli.deskew import get_output_paths
+from mantis.cli.parsing import input_data_paths_argument, output_dataset_options
 
 
 def create_empty_zarr(
@@ -140,6 +138,7 @@ def deskew_single_position(
 @input_data_paths_argument()
 @click.argument("registration_param_path", type=click.Path(exists=True))
 @output_dataset_options(default="./registered.zarr")
+# @click.option("--inverse", "-i", default=False, help="Apply the inverse transform")
 @click.option(
     "--num-processes",
     "-j",
