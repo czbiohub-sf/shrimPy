@@ -1,9 +1,12 @@
-# Calibration procedure 
+# Calibration procedure
+
 # Image a 1 um fluorescent bead with epi illumination and LS detection. Focus O3
 # on the bead. This script will defocus on one side of the bead and measure the
 # image intensity. The stage calibration factor is determined from the
 # difference in slope of average image intensity vs z position when traveling
-# in the positive or negative direction 
+# in the positive or negative direction
+
+# This calibration procedure works alright, but could be improved
 
 #%%
 import numpy as np
