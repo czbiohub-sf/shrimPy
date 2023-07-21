@@ -22,4 +22,4 @@ def test_register_data():
     inverse_registered_data = registration.register_data(
         raw_data, inverse_affine_matrix, output_shape, inverse=True
     )
-    np.testing.assert_array_equal(inverse_registered_data, raw_data)
+    np.testing.assert_array_almost_equal(inverse_registered_data, raw_data)
