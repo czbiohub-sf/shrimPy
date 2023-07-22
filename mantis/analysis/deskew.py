@@ -36,7 +36,7 @@ def _get_averaged_shape(deskewed_data_shape: tuple, average_window_width: int) -
 
     Parameters
     ----------
-    raw_data_shape : tuple
+    deskewed_data_shape : tuple
         Shape of the original data before averaging.
 
     average_window_width : int
