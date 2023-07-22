@@ -49,6 +49,7 @@ def create_empty_zarr(
         settings.ls_angle_deg,
         settings.px_to_scan_ratio,
         settings.keep_overhang,
+        settings.average_n_slices,
         settings.pixel_size_um,
     )
 
@@ -93,6 +94,11 @@ def create_empty_zarr(
             transform=[transform],
         )
 
+        # Save deskew settings as zarr attributes
+        pos.zattrs["deskew"] = asdict(settings)
+
+        pos.close()
+
     input_dataset.close()
 
 
@@ -116,12 +122,15 @@ def deskew_zyx_and_save(
 
     # Deskew
     deskewed = deskew_data(
-        zyx_data, settings.ls_angle_deg, settings.px_to_scan_ratio, settings.keep_overhang
+        zyx_data,
+        settings.ls_angle_deg,
+        settings.px_to_scan_ratio,
+        settings.keep_overhang,
+        settings.average_n_slices,
     )
     # Write to file
     with open_ome_zarr(output_path, mode="r+") as output_dataset:
-        output_dataset[0][t_idx, c_idx] = deskewed
-        output_dataset.zattrs["deskewing"] = asdict(settings)
+        output_dataset[0][t_idx, c_idx] = np.uint16(deskewed)
 
     click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
 
