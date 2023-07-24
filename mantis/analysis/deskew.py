@@ -2,33 +2,91 @@ import numpy as np
 import scipy
 
 
+def _average_n_slices(data, average_window_width=1):
+    """Average an array over its first axis
+
+    Parameters
+    ----------
+    data : np.array
+
+    average_window_width : int, optional
+        Averaging window applied to the first axis.
+
+    Returns
+    -------
+    data_averaged : np.array
+
+    """
+    # If first dimension isn't divisible by average_window_width, pad it
+    remainder = data.shape[0] % average_window_width
+    if remainder > 0:
+        padding_width = average_window_width - remainder
+        data = np.pad(data, [(0, padding_width)] + [(0, 0)] * (data.ndim - 1), mode='edge')
+
+    # Reshape then average over the first dimension
+    new_shape = (data.shape[0] // average_window_width, average_window_width) + data.shape[1:]
+    data_averaged = np.mean(data.reshape(new_shape), axis=1)
+
+    return data_averaged
+
+
+def _get_averaged_shape(deskewed_data_shape: tuple, average_window_width: int) -> tuple:
+    """
+    Compute the shape of the data returned from `_average_n_slices` function.
+
+    Parameters
+    ----------
+    deskewed_data_shape : tuple
+        Shape of the original data before averaging.
+
+    average_window_width : int
+        Averaging window applied to the first axis.
+
+    Returns
+    -------
+    averaged_shape : tuple
+        Shape of the data returned from `_average_n_slices`.
+    """
+    averaged_shape = (
+        int(np.ceil(deskewed_data_shape[0] / average_window_width)),
+    ) + deskewed_data_shape[1:]
+    return averaged_shape
+
+
 def get_deskewed_data_shape(
     raw_data_shape: tuple,
-    pixel_size_um: float,
     ls_angle_deg: float,
     px_to_scan_ratio: float,
-    keep_overhang: bool = True,
+    keep_overhang: bool,
+    average_n_slices: int = 1,
+    pixel_size_um: float = 1,
 ):
     """Get the shape of the deskewed data set and its voxel size
-
     Parameters
     ----------
     raw_data_shape : tuple
         Shape of the raw data, must be len = 3
-    pixel_size_um : float
-        Pixel size in micrometers
     ls_angle_deg : float
         Angle of the light sheet relative to the optical axis, in degrees
     px_to_scan_ratio : float
         Ratio of the pixel size to light sheet scan step
-    keep_overhang : bool
-
+    keep_overhang : bool, optional
+        If true, the shape of the whole volume within the tilted parallelepiped
+        will be returned
+        If false, the shape of the deskewed volume within a cuboid region will
+        be returned
+    average_n_slices : int, optional
+        after deskewing, averages every n slices (default = 1 applies no averaging)
+    pixel_size_um : float, optional
+        Pixel size in micrometers. If not provided, a default value of 1 will be
+        used and the returned voxel size will represent a voxel scale
     Returns
     -------
     output_shape : tuple
         Output shape of the deskewed data in ZYX order
     voxel_size : tuple
-        Size of the deskewed voxels in micrometers
+        Size of the deskewed voxels in micrometers. If the default
+        pixel_size_um = 1 is used this parameter will represent the voxel scale
     """
 
     # Trig
@@ -45,16 +103,23 @@ def get_deskewed_data_shape(
         Xp = int(np.ceil((Z / px_to_scan_ratio) - (Y * ct)))
 
     output_shape = (Y, X, Xp)
-    voxel_size = (st * pixel_size_um, pixel_size_um, pixel_size_um)
+    voxel_size = (average_n_slices * st * pixel_size_um, pixel_size_um, pixel_size_um)
 
-    return output_shape, voxel_size
+    averaged_output_shape = _get_averaged_shape(output_shape, average_n_slices)
+
+    return averaged_output_shape, voxel_size
 
 
 def deskew_data(
-    raw_data, px_to_scan_ratio, ls_angle_deg, keep_overhang=True, order=1, cval=None
+    raw_data: np.ndarray,
+    ls_angle_deg: float,
+    px_to_scan_ratio: float,
+    keep_overhang: bool,
+    average_n_slices: int = 1,
+    order: int = 1,
+    cval: float = None,
 ):
     """Deskews fluorescence data from the mantis microscope
-
     Parameters
     ----------
     raw_data : NDArray with ndim == 3
@@ -72,12 +137,13 @@ def deskew_data(
     keep_overhang : bool
         If true, compute the whole volume within the tilted parallelepiped.
         If false, only compute the deskewed volume within a cuboid region.
+    average_n_slices : int, optional
+        after deskewing, averages every n slices (default = 1 applies no averaging)
     order : int, optional
         interpolation order (default 1 is linear interpolation)
     cval : float, optional
         fill value area outside of the measured volume (default None fills
         with the minimum value of the input array)
-
     Returns
     -------
     deskewed_data : NDArray with ndim == 3
@@ -109,7 +175,7 @@ def deskew_data(
         ]
     )
     output_shape, _ = get_deskewed_data_shape(
-        raw_data.shape, 1, ls_angle_deg, px_to_scan_ratio, keep_overhang
+        raw_data.shape, ls_angle_deg, px_to_scan_ratio, keep_overhang
     )
 
     # Apply transforms
@@ -121,5 +187,8 @@ def deskew_data(
         cval=cval,
     )
 
-    # Return transformed data with its voxel dimensions
-    return deskewed_data
+    # Apply averaging
+    averaged_deskewed_data = _average_n_slices(
+        deskewed_data, average_window_width=average_n_slices
+    )
+    return averaged_deskewed_data

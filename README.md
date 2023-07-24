@@ -2,6 +2,10 @@
 
 This package facilitates acquiring and analyzing data from the mantis microscope. The microscope simultaneously acquires label-free and fluorescence light-sheet data using two independent arms. The acquisition module coordinates data collection using [Micro-manager](https://micro-manager.org/) and [pycromanager](https://pycro-manager.readthedocs.io/). The analysis module is used to process raw data (e.g. reconstruct, deskew, deconvolve, register) to enable biological interpretation.
 
+## Hardware setup
+
+Set up the microscope hardware according to the [Setup Guide](docs/setup_guide.md)
+
 ## Installation
 
 **mantis** can be installed as follows:
@@ -13,17 +17,17 @@ conda create -y --name mantis python=3.10
 conda activate mantis
 ```
 
-2. Clone the repo and install this package and the [napari](https://napari.org/) viewer:
+2. Clone the repo and install this package:
 
 ```sh
-pip install ".[napari]"
+pip install .
 ```
 
 ## Usage
 
-Data are acquired using the `run-mantis-acquisition` command. A list of the command line argument can be obtained with:
+Data are acquired using the `mantis run-acquisition` command. A list of the command line arguments can be obtained with:
 
-```
+```sh
 mantis run-acquisition --help
 ```
 
@@ -31,20 +35,20 @@ The mantis acquisition is configures using a YAML settings file. An example of a
 
 This is an example of a command which will start an acquisition on the mantis microscope:
 
-```
-mantis run-acquisition \\
-    --data--dirpath ./test \\
-    --name test_acquisition \\
+```pwsh
+mantis run-acquisition `
+    --data-dirpath ./test `
+    --name test_acquisition `
     --settings path/to/settings/file
 ```
 
 The acquisition may also be run in "demo" mode with the Micro-manager `MMConfig_Demo.cfg` config. This does not require any microscope hardware. A demo run can be started with:
 
-```
-mantis run-acquisition \\
-    --data--dirpath ./test \\
-    --name test_acquisition \\
-    --mm-config-file path/to/MMConfig_Demo.cfg/file \\
+```pwsh
+mantis run-acquisition `
+    --data-dirpath ./test `
+    --name test_acquisition `
+    --mm-config-file path/to/MMConfig_Demo.cfg `
     --settings path/to/settings/file
 ```
 
