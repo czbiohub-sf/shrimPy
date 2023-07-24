@@ -1,4 +1,4 @@
-## Overview
+## Overview - unofficial
 Mantis microscope is a fast multimodal microscope capable of acquiring label-free and fluorescence measurments simultaneously via two remote-refocus based arms that quickly acquire volumetric information. 
 
 ---

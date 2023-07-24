@@ -1,9 +1,9 @@
 
-# Data format 
+# Data format
 
 This document defines the standard for organizing data acquired by the mantis microscope.
 
-## Raw directory organization 
+## Raw directory organization
 
 Organization of the raw data is constrained by the `pycromanager`-based acquisitioon engine. Currently, we structure raw data in the following hierarchy:
 
@@ -47,7 +47,7 @@ Each acquisition will contain a PTCZYX dataset; some dimensions may be singleton
 
 The structure of the mantis acquisition log file is not final and is subject to change. Input is welcome. Currently, acquisition script writes one log file per call.
 
-A `positions.csv` file will accompany each acquisition. This file is needed as it carries information about the position labels, which is not saved by `pycromanager`. In the future, we may decide to manage that differently - see [pycro-manager#575](https://github.com/micro-manager/pycro-manager/issues/575). A template for this file is provided [here](positions.csv). 
+A `positions.csv` file will accompany each acquisition. This file is needed as it carries information about the position labels, which is not saved by `pycromanager`. In the future, we may decide to manage that differently - see [pycro-manager#575](https://github.com/micro-manager/pycro-manager/issues/575). A template for this file is provided [here](positions.csv).
 
 A `platemap.csv` file will accompany each acquisition. This file carries information about the sample in each well and is populated by the user. Multiple wells may contain the same sample. A template for this file is provided [here](platemap.csv).
 
