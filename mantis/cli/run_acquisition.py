@@ -36,17 +36,13 @@ from mantis.acquisition.AcquisitionSettings import (
 )
 @click.option(
     '--mm-app-path',
-    default='C:\\Program Files\\Micro-Manager-nightly',
     type=click.Path(exists=True, file_okay=False, dir_okay=True),
-    show_default=True,
     help='''Path to Micro-manager installation directory
       which will run the light-sheet acquisition''',
 )
 @click.option(
     '--mm-config-file',
-    default='C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg',
     type=click.Path(exists=True, file_okay=True, dir_okay=False),
-    show_default=True,
     help='''Path to Micro-manager config file
       which will run the light-sheet acquisition''',
 )
@@ -74,13 +70,17 @@ def run_acquisition(
     ls_slice_settings = SliceSettings(**raw_settings.get('ls_slice_settings'))
     ls_microscope_settings = MicroscopeSettings(**raw_settings.get('ls_microscope_settings'))
 
+    kwargs = {
+        "acquisition_directory": data_dirpath,
+        "acquisition_name": name,
+        "mm_app_path": mm_app_path,
+        "mm_config_file": mm_config_file,
+        "demo_run": demo_run,
+        "verbose": False,
+    }
+
     with MantisAcquisition(
-        acquisition_directory=data_dirpath,
-        acquisition_name=name,
-        mm_app_path=mm_app_path,
-        mm_config_file=mm_config_file,
-        demo_run=demo_run,
-        verbose=False,
+        **{key: value for key, value in kwargs.items() if value is not None}
     ) as acq:
         acq.time_settings = time_settings
         acq.position_settings = position_settings
