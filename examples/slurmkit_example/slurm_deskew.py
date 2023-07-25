@@ -1,9 +1,9 @@
 import datetime
 import os
 import glob
-import multiprocessing as mp
-from mantis.cli.deskew import (
-    deskew_single_position,
+from mantis.cli.deskew import deskew_single_position
+
+from mantis.cli.utils import (
     create_empty_zarr,
     get_output_paths,
 )
