@@ -1,4 +1,8 @@
-# %%
+# This script tests controlling the KIM101 O3 stage using copylot. Ivan found
+# that copylot control of the stage runs into errors after ~100 relative moves
+# of the stage. We currently control the stage with pylablib and have not run
+# into such problems
+
 from copylot.hardware.stages.thorlabs.KIM001 import KCube_PiezoInertia
 import time
 from copylot import logger
