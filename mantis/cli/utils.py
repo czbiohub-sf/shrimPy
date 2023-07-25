@@ -1,9 +1,9 @@
 from pathlib import Path
-from iohub import open_ome_zarr, Position
+from iohub.ngff import open_ome_zarr, Position
 import click
 from iohub.ngff_meta import TransformationMeta
 from typing import Tuple
-import multiprocesing as mp
+import multiprocessing as mp
 from functools import partial
 import itertools
 import contextlib
@@ -43,7 +43,7 @@ def create_empty_zarr(
     )
     if chunk_zyx_shape is None:
         chunk_zyx_shape = output_zyx_shape
-    chunk_size = (1, 1) + chunk_zyx_shape
+    chunk_size = 2 * (1,) + chunk_zyx_shape
     click.echo(f"Chunk size {chunk_size}")
 
     # This takes care of the logic for single position or multiple position by wildcards
@@ -82,12 +82,11 @@ def apply_transform_to_zyx_and_save(
     click.echo(f"Registering c={c_idx}, t={t_idx}")
     zyx_data = position[0][t_idx, c_idx]
 
-    # with open_ome_zarr(registration_param_path, mode="r") as registration_parameters:
-    #     registration_parameters["affine_transform_zyx"][0, 0, 0]
-    #     tuple(registration_parameters.zattrs["registration"]["channel_2_shape"])
-
     # Apply transformation
     registered_zyx = func(zyx_data, **kwargs)
+
+    click.echo('testing arguments')
+    click.echo(kwargs)
 
     # Write to file
     with open_ome_zarr(output_path, mode="r+") as output_dataset:
@@ -104,6 +103,8 @@ def process_single_position(
     **kwargs,
 ) -> None:
     """Register a single position with multiprocessing parallelization over T and C"""
+    # Function to be applied
+    click.echo(f"Function to be applied: \t{func}")
 
     # Get the reader and writer
     click.echo(f"Input data path:\t{input_data_path}")
@@ -114,16 +115,16 @@ def process_single_position(
         input_dataset.print_tree()
     click.echo(f" Zarr Store info: {stdout_buffer.getvalue()}")
 
-    T, C, Z, Y, X = input_dataset.data.shape
+    T, C, _, _, _ = input_dataset.data.shape
 
-    click.echo(f"Dataset shape:\t{input_dataset.data.shape}")
+    click.echo(f"Input dataset shape:\t{input_dataset.data.shape}")
 
     # Loop through (T, C), deskewing and writing as we go
-    click.echo(f"Starting multiprocess pool with {num_processes} processes")
+    click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
     with mp.Pool(num_processes) as p:
         p.starmap(
             partial(
-                utils.apply_transform_to_zyx_and_save,
+                apply_transform_to_zyx_and_save,
                 func,
                 input_dataset,
                 str(output_path),
