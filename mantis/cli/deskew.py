@@ -7,13 +7,11 @@ from pathlib import Path
 from typing import List
 
 import click
-import numpy as np
-import yaml
 
 from iohub.ngff import Plate, Position, open_ome_zarr
-from iohub.ngff_meta import TransformationMeta
 from natsort import natsorted
 
+from mantis.cli import utils
 from mantis.analysis.AnalysisSettings import DeskewSettings
 from mantis.analysis.deskew import deskew_data, get_deskewed_data_shape
 from mantis.cli.parsing import (
@@ -21,6 +19,7 @@ from mantis.cli.parsing import (
     input_data_paths_argument,
     output_dataset_options,
 )
+import yaml
 
 
 # TODO: consider refactoring to utils
@@ -32,79 +31,6 @@ def deskew_params_from_file(deskew_param_path: Path) -> DeskewSettings:
     settings = DeskewSettings(**raw_settings)
     click.echo(f"Deskewing parameters: {asdict(settings)}")
     return settings
-
-
-def create_empty_zarr(
-    position_paths: List[Path], deskew_param_path: Path, output_path: Path
-) -> None:
-    """Create an empty zarr array for the deskewing"""
-    # Load the first position to infer dataset information
-    input_dataset = open_ome_zarr(str(position_paths[0]), mode="r")
-    T, C, Z, Y, X = input_dataset.data.shape
-
-    # Get the deskewing parameters
-    settings = deskew_params_from_file(deskew_param_path)
-    deskewed_shape, voxel_size = get_deskewed_data_shape(
-        (Z, Y, X),
-        settings.ls_angle_deg,
-        settings.px_to_scan_ratio,
-        settings.keep_overhang,
-        settings.pixel_size_um,
-    )
-
-    click.echo("Creating empty array...")
-
-    # Handle transforms and metadata
-    transform = TransformationMeta(
-        type="scale",
-        scale=2 * (1,) + voxel_size,
-    )
-
-    # Prepare output dataset
-    channel_names = input_dataset.channel_names
-
-    # Output shape based on the type of reconstruction
-    output_shape = (T, len(channel_names)) + deskewed_shape
-    click.echo(f"Number of positions: {len(position_paths)}")
-    click.echo(f"Output shape: {output_shape}")
-    # Create output dataset
-    output_dataset = open_ome_zarr(
-        output_path, layout="hcs", mode="w", channel_names=channel_names
-    )
-    chunk_size = (1, 1) + deskewed_shape
-    click.echo(f"Chunk size {chunk_size}")
-
-    # This takes care of the logic for single position or multiple position by wildcards
-    for path in position_paths:
-        path_strings = Path(path).parts[-3:]
-        pos = output_dataset.create_position(
-            str(path_strings[0]), str(path_strings[1]), str(path_strings[2])
-        )
-
-        _ = pos.create_zeros(
-            name="0",
-            shape=(
-                T,
-                C,
-            )
-            + deskewed_shape,
-            chunks=chunk_size,
-            dtype=np.uint16,
-            transform=[transform],
-        )
-
-    input_dataset.close()
-
-
-def get_output_paths(input_paths: List[Path], output_zarr_path: Path) -> List[Path]:
-    """Generates a mirrored output path list given an input list of positions"""
-    list_output_path = []
-    for path in input_paths:
-        # Select the Row/Column/FOV parts of input path
-        path_strings = Path(path).parts[-3:]
-        # Append the same Row/Column/FOV to the output zarr path
-        list_output_path.append(Path(output_zarr_path, *path_strings))
-    return list_output_path
 
 
 def deskew_zyx_and_save(
@@ -182,17 +108,43 @@ def deskew(
     deskew_param_path = Path(deskew_param_path)
 
     # Handle single position or wildcard filepath
-    output_paths = get_output_paths(input_paths, output_path)
+    output_paths = utils.get_output_paths(input_paths, output_path)
     click.echo(f'List of input_pos:{input_paths} output_pos:{output_paths}')
 
-    # Create a zarr store output to mirror the input
-    create_empty_zarr(input_paths, deskew_param_path, output_path)
+    # Get the deskewing parameters
+    # Load the first position to infer dataset information
+    with open_ome_zarr(str(input_paths[0]), mode="r") as input_dataset:
+        T, C, Z, Y, X = input_dataset.data.shape
+        settings = deskew_params_from_file(deskew_param_path)
+        deskewed_shape, voxel_size = get_deskewed_data_shape(
+            (Z, Y, X),
+            settings.ls_angle_deg,
+            settings.px_to_scan_ratio,
+            settings.keep_overhang,
+            settings.pixel_size_um,
+        )
 
+        # Create a zarr store output to mirror the input
+        utils.create_empty_zarr(
+            input_paths,
+            output_path,
+            output_zyx_shape=deskewed_shape,
+            chunk_zyx_shape=deskewed_shape,
+            voxel_size=voxel_size,
+        )
+
+    deskew_args = {
+        'ls_angle_deg': settings.ls_angle_deg,
+        'px_to_scan_ratio': settings.px_to_scan_ratio,
+        'keep_overhang': settings.keep_overhang,
+    }
     # Loop over positions
     for input_position_path, output_position_path in zip(input_paths, output_paths):
-        deskew_single_position(
+        utils.process_single_position(
+            deskew_zyx_and_save,
             input_data_path=input_position_path,
             output_path=output_position_path,
             deskew_param_path=deskew_param_path,
             num_processes=num_processes,
+            **deskew_args,
         )
