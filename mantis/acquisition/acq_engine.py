@@ -689,14 +689,14 @@ class MantisAcquisition(object):
         # Define O3 z range
         # 1 step is approx 20 nm, 15 steps are 300 nm which is sub-Nyquist sampling
         # The stack starts away from O2 and moves closer
-        z_start = -105
-        z_end = 105
-        z_step = 15
-        z_range = np.arange(z_start, z_end + z_step, z_step)
+        o3_z_start = -105
+        o3_z_end = 105
+        o3_z_step = 15
+        o3_z_range = np.arange(o3_z_start, o3_z_end + o3_z_step, o3_z_step)
 
         # Define relative travel limits, in steps
-        z_stage = self.ls_acq.o3_stage
-        target_z_position = z_stage.true_position + z_range
+        o3_z_stage = self.ls_acq.o3_stage
+        target_z_position = o3_z_stage.true_position + o3_z_range
         max_z_position = 500  # O3 is allowed to travel ~10 um towards O2
         min_z_position = -1000  # O3 is allowed to travel ~20 um away from O2
         if np.any(target_z_position > max_z_position) or np.any(
@@ -718,8 +718,8 @@ class MantisAcquisition(object):
         # Acquire defocus stacks at several galvo positions
         data = self.acquire_ls_defocus_stack(
             mmc=self.ls_acq.mmc,
-            z_stage=z_stage,
-            z_range=z_range,
+            z_stage=o3_z_stage,
+            z_range=o3_z_range,
             galvo=self.ls_acq.slice_settings.z_stage_name,
             galvo_range=galvo_range,
             config_group=self.ls_acq.microscope_settings.o3_refocus_config.config_group,
@@ -763,7 +763,7 @@ class MantisAcquisition(object):
         valid_focus_indices = [idx for idx in focus_indices if idx is not None]
         if valid_focus_indices:
             focus_idx = int(np.median(valid_focus_indices))
-            o3_displacement = int(z_range[focus_idx])
+            o3_displacement = int(o3_z_range[focus_idx])
 
             logger.info(f'Moving O3 by {o3_displacement} steps')
             microscope_operations.set_relative_kim101_position(
