@@ -32,7 +32,13 @@ lf_slice_settings:
   z_stage_name: 'MCL Piezo'
   z_start: -10
   z_end: 10
-  z_step: 0.4
+  # When using 0.52 NA transmission light illumination, Nyquist sampling of this
+  # dimension will be achieved by using 300 nm in sample space or by using 420
+  # nm steps of the mirror due to the 1.4x magnification of the remote volume.
+  # Here we chose to oversample the data to match the light-sheet axial
+  # sampling. The 285 nm mirror steps correspond to ~205 nm axial sampling of
+  # the data, matching the light-sheet sampling after deskew and 3x binning.
+  z_step: 0.285
   use_sequencing: True
 
 # Define channel settings for the light-sheet acquisition. Channels may have
@@ -46,8 +52,13 @@ ls_channel_settings:
 # Define slice (i.e. z-stack) settings for the light-sheet acquisition.
 ls_slice_settings:
   z_stage_name: 'AP Galvo'
-  z_start: -2.5  # in Volts
-  z_end: 2.5  # 5V range corresponds to 155 um scan range
+  # 5.5 V range corresponds to 170 um scan range which matches the label-free
+  # field of view
+  z_start: -2.75  # in Volts
+  z_end: 2.75
+  # Nyquist sampling of this dimensions will be achieved by using 3.75 mV steps
+  # (corresponding to ~116 nm). When imaging live cells we chose to undersample
+  # this dimension to decrease photobleaching and photodamage.
   z_step: 0.01  # 10 mV is equivalent to 310 nm
   use_sequencing: True
 
