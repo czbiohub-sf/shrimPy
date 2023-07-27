@@ -11,8 +11,6 @@ Organization of the raw data is constrained by the `pycromanager`-based acquisit
 
 YYYY_MM_DD <experiment_description>
 |--- <acq-name>_<n>
-|    |--- mantis_acquisition_log_YYYYMMDDTHHMMSS.txt
-|
 |    |--- positions.csv
 |
 |    |--- platemap.csv
@@ -31,6 +29,10 @@ YYYY_MM_DD <experiment_description>
 |        |--- <acq-name>_lightsheet_NDTiffStack_1.tif
 |        ...
 |
+|    |--- logs  # contains acquisition logs
+|        |--- mantis_acquisition_log_YYYYMMDDTHHMMSS.txt
+|        |--- conda_environment_log_YYYYMMDDTHHMMSS.txt
+|
 |--- <acq-name>_<n>  # one experiment folder may contain multiple acquisitions
 |    ...
 |
@@ -41,7 +43,7 @@ YYYY_MM_DD <experiment_description>
 
 ```
 
-An example dataset is provided in: `//ESS/comp_micro/rawdata/mantis/2023_02_21_mantis_dataset_standard/`.
+An example dataset is provided in: `//ESS/comp_micro/rawdata/mantis/2023_02_21_mantis_dataset_standard/`. (TODO: this example is now outdates)
 
 Each acquisition will contain a PTCZYX dataset; some dimensions may be singleton.
 
