@@ -382,33 +382,24 @@ class MantisAcquisition(object):
         """
         Fetch positions defined in the Micro-manager Position List Manager
         """
-        mm_pos_list = self.lf_acq.mmStudio.get_position_list_manager().get_position_list()
-        mm_number_of_positions = mm_pos_list.get_number_of_positions()
         autofocus_stage = self.lf_acq.microscope_settings.autofocus_stage
 
         if self.position_settings.num_positions == 0:
-            if mm_number_of_positions > 0:
-                logger.debug('Fetching position list from Micro-manager')
+            logger.debug('Fetching position list from Micro-manager')
 
-                xyz_position_list, position_labels = microscope_operations.get_position_list(
-                    self.lf_acq.mmStudio, autofocus_stage
+            xyz_positions, position_labels = microscope_operations.get_position_list(
+                self.lf_acq.mmStudio, autofocus_stage
+            )
+
+            if not xyz_positions:
+                logger.debug('Micro-manager position list is empty. Fetching current position')
+
+                xyz_positions, position_labels = microscope_operations.get_current_position(
+                    self.lf_acq.mmc, autofocus_stage
                 )
-            else:
-                logger.debug('Fetching current position from Micro-manager')
-
-                xyz_position_list = [
-                    (
-                        self.lf_acq.mmc.get_x_position(),
-                        self.lf_acq.mmc.get_y_position(),
-                        self.lf_acq.mmc.get_position(autofocus_stage)
-                        if autofocus_stage
-                        else None,
-                    )
-                ]
-                position_labels = ['Current']
 
             self.position_settings = PositionSettings(
-                xyz_positions=xyz_position_list,
+                xyz_positions=xyz_positions,
                 position_labels=position_labels,
             )
 

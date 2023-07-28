@@ -74,11 +74,11 @@ def get_position_list(mmStudio, z_stage_name):
     mm_pos_list = mmStudio.get_position_list_manager().get_position_list()
     number_of_positions = mm_pos_list.get_number_of_positions()
 
-    xyz_position_list = []
+    xyz_positions = []
     position_labels = []
     for i in range(number_of_positions):
         _pos = mm_pos_list.get_position(i)
-        xyz_position_list.append(
+        xyz_positions.append(
             [
                 _pos.get_x(),
                 _pos.get_y(),
@@ -87,7 +87,20 @@ def get_position_list(mmStudio, z_stage_name):
         )
         position_labels.append(_pos.get_label())
 
-    return xyz_position_list, position_labels
+    return xyz_positions, position_labels
+
+
+def get_current_position(mmc, z_stage_name):
+    xyz_position = [
+        (
+            mmc.get_x_position(),
+            mmc.get_y_position(),
+            mmc.get_position(z_stage_name) if z_stage_name else None,
+        )
+    ]
+    position_label = ['Current']
+
+    return xyz_position, position_label
 
 
 def set_z_position(mmc, z_stage_name: str, z_position: float):
