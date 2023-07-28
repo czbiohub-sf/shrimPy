@@ -50,8 +50,8 @@ Mantis microscope is a fast multimodal microscope capable of acquiring label-fre
 ---
 ## Setting up the acquisition using `Mantis Acquisition Engine`
 1. Initialize two instances of micromanager to prepare both arms for acquisition. 
-   1. Micromanager *230208* version with  `mantis-LF.cfg` configuration.
-   2. Micromanager *230208 Nightly Build* version with `mantis_LS.cfg` configuration.
+   1. Micromanager *230312* version with  `mantis-LF.cfg` configuration.
+   2. Micromanager *230312 Nightly Build* version with `mantis-LS.cfg` configuration.
 ##### Micromanager with Label-free configuration
 2. Using the micromanager with the `label-free` configuration, set `Channel LS` property group to `External Control`. This will reset the microscope to the default configurations including the filter cube to position 6. Then, set the `Imaging Path` propety group to `Epi`. Set the `Channel - LF` property group to `BF`. 
 3. Focus the sample and check the focus is ~4700um.
@@ -118,6 +118,6 @@ Check the LED on the microscope body and find the PFS button on the microscope f
 ---
 ## FAQ
 1. _ The objective won't move up with the focus knobs_
-   - Most likely the objective is on `escape` move and the `escape` button ont he microscope body is on (green). Press and hold to disable. This ensures we can manually raise/lower the objective and avoid creating bubbles with the focus knob.
+   - Most likely the objective is on `escape` move and the `escape` button on the microscope body is on (green). Press and hold to disable. This ensures we can manually raise/lower the objective and avoid creating bubbles with the focus knob.
 
   
