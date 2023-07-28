@@ -910,13 +910,13 @@ class MantisAcquisition(object):
                 lf_events = deepcopy(lf_cz_events)
                 for _event in lf_events:
                     _event['axes']['time'] = t_idx
-                    _event['axes']['position'] = p_idx
+                    _event['axes']['position'] = p_label
                     _event['min_start_time'] = 0
 
                 ls_events = deepcopy(ls_cz_events)
                 for _event in ls_events:
                     _event['axes']['time'] = t_idx
-                    _event['axes']['position'] = p_idx
+                    _event['axes']['position'] = p_label
                     _event['min_start_time'] = 0
 
                 ls_acq.acquire(ls_events)
