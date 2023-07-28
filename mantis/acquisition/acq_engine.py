@@ -800,22 +800,17 @@ class MantisAcquisition(object):
 
         # define LF hook functions
         if self._demo_run:
-            lf_pre_hardware_hook_fn = partial(
-                log_preparing_acquisition, self.position_settings.position_labels
-            )
+            lf_pre_hardware_hook_fn = log_preparing_acquisition
             lf_post_camera_hook_fn = None
         else:
             lf_pre_hardware_hook_fn = partial(
                 log_preparing_acquisition_check_counter,
-                self.position_settings.position_labels,
                 [self._lf_z_ctr_task, self._lf_channel_ctr_task],
             )
             lf_post_camera_hook_fn = partial(
                 start_daq_counters, [self._lf_z_ctr_task, self._lf_channel_ctr_task]
             )
-        lf_post_hardware_hook_fn = partial(
-            log_acquisition_start, self.position_settings.position_labels
-        )
+        lf_post_hardware_hook_fn = log_acquisition_start
         lf_image_saved_fn = None
 
         # define LF acquisition
