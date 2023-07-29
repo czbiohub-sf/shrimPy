@@ -2,9 +2,11 @@ import os
 
 import click
 import matplotlib.pyplot as plt
+import matplotlib.colors
 import numpy as np
 
 from iohub.ngff import open_ome_zarr, Plate
+from iohub.display_utils import channel_display_settings
 from scipy.optimize import curve_fit
 from tqdm import tqdm
 
@@ -33,19 +35,21 @@ def plot_bleaching_curves(times, tczyx_data, channel_names, output_file, title='
 
     # Calculate statistics
     for t in tqdm(range(num_times)):
-        for c in range(num_channels):
-            zyx_data = tczyx_data[t, c, ...]  # zyx
-            means[t, c] = np.mean(zyx_data)
-            stds[t, c] = np.std(zyx_data)
+        for channel_index in range(num_channels):
+            zyx_data = tczyx_data[t, channel_index, ...]  # zyx
+            means[t, channel_index] = np.mean(zyx_data)
+            stds[t, channel_index] = np.std(zyx_data)
 
     # Generate and save plots
-    colors = ['g', 'r', 'b', 'c', 'm', 'k']
-
     f, ax = plt.subplots(1, 1, figsize=(4, 4))
-    for c in range(num_channels):
+    for channel_index in range(num_channels):
+        channel_color = matplotlib.colors.to_rgb(
+            "#" + channel_display_settings(channel_names[channel_index]).color
+        )
+
         xdata = times[:]
-        ydata = means[:, c]
-        yerr = stds[:, c]
+        ydata = means[:, channel_index]
+        yerr = stds[:, channel_index]
 
         # Plot curve fit
         def func(x, a, b, c):
@@ -62,13 +66,13 @@ def plot_bleaching_curves(times, tczyx_data, channel_names, output_file, title='
             )
 
             xx = np.linspace(0, np.max(xdata), 100)
-            ax.plot(xx, func(xx, *popt), color=colors[c], alpha=0.5)
-            label = channel_names[c] + f" - {popt[1]:0.0f} minutes"
+            ax.plot(xx, func(xx, *popt), color=channel_color, alpha=0.5)
+            label = channel_names[channel_index] + f" - {popt[1]:0.0f} minutes"
             print("Curve fit successful!")
             print(label)
         except Exception as e:
             print(e)
-            label = channel_names[c]
+            label = channel_names[channel_index]
             print("Curve fit failed!")
 
         # Plot data
@@ -79,7 +83,7 @@ def plot_bleaching_curves(times, tczyx_data, channel_names, output_file, title='
             marker='o',
             markeredgewidth=0,
             linewidth=0,
-            color=colors[c],
+            color=channel_color,
         )
 
     ax.set_title(title, {'fontsize': 8})
@@ -126,7 +130,7 @@ def estimate_bleaching(input_path, output_folder):
             dt = np.float32(reader.zattrs['Summary']['Interval_ms'] / MSECS_PER_MINUTE)
         except Exception as e:
             print(e)
-            print(f"WARNING: missing time metadata for p={p}, t={t}, c={c}")
+            print(f"WARNING: missing time metadata for p={well_name}")
             dt = 1
 
         times = np.arange(0, T * dt, step=dt)
