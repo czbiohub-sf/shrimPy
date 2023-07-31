@@ -1,21 +1,24 @@
 import multiprocessing as mp
 
-from pathlib import Path
 
 import click
 
-from iohub.ngff import Plate, open_ome_zarr
-from natsort import natsorted
+from iohub.ngff import open_ome_zarr
 
 from mantis.cli import utils
-from mantis.cli.parsing import input_data_paths_argument, output_dataset_options
+from mantis.cli.parsing import (
+    input_data_paths_argument,
+    output_dataset_options,
+    registration_param_argument,
+)
 from scipy.ndimage import affine_transform
 import numpy as np
+from pathlib import Path
 
 
 @click.command()
 @input_data_paths_argument()
-@click.argument("registration_param_path", type=click.Path(exists=True))
+@registration_param_argument()
 @output_dataset_options(default="./registered.zarr")
 # @click.option("--inverse", "-i", default=False, help="Apply the inverse transform")
 @click.option(
@@ -27,23 +30,12 @@ import numpy as np
     type=int,
 )
 def register(
-    input_paths: list[str],
-    registration_param_path: str,
-    output_path: str,
+    input_paths: list[Path],
+    registration_param_path: Path,
+    output_path: Path,
     num_processes: int,
 ):
     "Registers a single position across T and C axes using the pathfile for affine transform"
-    if isinstance(open_ome_zarr(input_paths[0]), Plate):
-        raise ValueError(
-            "Please supply a single position instead of an HCS plate. Likely fix: replace input.zarr with 'input.zarr/0/0/0'"
-        )
-
-    # Sort the input as nargs=-1 will not be natsorted
-    input_paths = [Path(path) for path in natsorted(input_paths)]
-
-    # Convert string paths to Path objects
-    output_path = Path(output_path)
-    registration_param_path = Path(registration_param_path)
 
     # Handle single position or wildcard filepath
     output_paths = utils.get_output_paths(input_paths, output_path)

@@ -85,9 +85,6 @@ def apply_transform_to_zyx_and_save(
     # Apply transformation
     registered_zyx = func(zyx_data, **kwargs)
 
-    click.echo('testing arguments')
-    click.echo(kwargs)
-
     # Write to file
     with open_ome_zarr(output_path, mode="r+") as output_dataset:
         output_dataset[0][t_idx, c_idx] = registered_zyx
