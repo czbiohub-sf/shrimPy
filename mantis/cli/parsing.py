@@ -40,7 +40,10 @@ def input_data_paths_argument() -> Callable:
 def deskew_param_argument() -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.argument(
-            "deskew-param-path", type=click.Path(exists=True, file_okay=True), nargs=1
+            "deskew-param-path",
+            type=click.Path(exists=True, file_okay=True),
+            nargs=1,
+            callback=_convert_to_Path,
         )(f)
 
     return decorator
