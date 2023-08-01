@@ -2,6 +2,7 @@ from mantis.acquisition.AcquisitionSettings import (
     AcquisitionSettings,
     ConfigSettings,
     DevicePropertySettings,
+    PositionSettings,
     TimeSettings,
 )
 import pytest
@@ -31,6 +32,16 @@ def test_time_settings():
     # Test negative time interval = 0
     with pytest.raises(ValueError):
         s = TimeSettings(time_interval_s=-0.1)
+
+
+def test_position_settings():
+    # Test extra parameter
+    with pytest.raises(ValueError):
+        s = PositionSettings(device_str="test")
+
+    # Test non-equal
+    with pytest.raises(ValueError):
+        s = PositionSettings(xyz_positions=[0, 1], num_positions=3)
 
 
 # def test_example_settings(example_settings):

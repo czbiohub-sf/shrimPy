@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 
 from pydantic.dataclasses import dataclass
-from pydantic import BaseModel, Extra, PositiveInt, NonNegativeFloat
+from pydantic import BaseModel, Extra, PositiveInt, NonNegativeFloat, NonNegativeInt, validator
 
 
 # All settings classes inherit from NoExtrasModel,
@@ -29,15 +29,17 @@ class TimeSettings(NoExtrasModel):
     time_interval_s: NonNegativeFloat = 0  # in seconds, must allow zero for MDA
 
 
-@dataclass
-class PositionSettings:
-    xyz_positions: list = field(default_factory=list)
-    position_labels: List[str] = field(default_factory=list)
-    num_positions: int = field(init=False, default=0)
+class PositionSettings(NoExtrasModel):
+    xyz_positions: list = []
+    position_labels: List[str] = []
+    num_positions: NonNegativeInt = 0
 
-    def __post_init__(self):
-        assert len(self.xyz_positions) == len(self.position_labels)
-        self.num_positions = len(self.xyz_positions)
+    @validator("num_positions")
+    def check_n_pos(cls, v, values):
+        p = len(values.get("xyz_positions"))
+        if v != p:
+            raise ValueError(f"num_positions = {v} must be equal to len(xyz_positions) = {p}")
+        return v
 
 
 @dataclass
