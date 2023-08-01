@@ -3,10 +3,11 @@
 
 # Here we define variables (YAML anchors) which will be used later, for
 # convenience
-LCA_DAC: &LCA_DAC 'TS1_DAC01'
-LCB_DAC: &LCB_DAC 'TS1_DAC02'
-MCL_DAC: &MCL_DAC 'TS1_DAC06'
-AP_GALVO_DAC: &AP_GALVO_DAC 'TS2_DAC03'
+global_settings:
+- &LCA_DAC 'TS1_DAC01'
+- &LCB_DAC 'TS1_DAC02'
+- &MCL_DAC 'TS1_DAC06'
+- &AP_GALVO_DAC 'TS2_DAC03'
 
 # The label-free and the light-sheet acquisition share the same time settings
 # which are controlled by the mantis acquisition engine. Data are acquired in

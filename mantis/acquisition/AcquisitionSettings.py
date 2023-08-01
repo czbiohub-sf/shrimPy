@@ -4,6 +4,13 @@ from typing import List, Optional, Tuple
 import numpy as np
 
 from pydantic.dataclasses import dataclass
+from pydantic import BaseModel, Extra
+
+
+# All settings classes inherit from NoExtrasModel,
+# which forbids extra parameters to guard against typos
+class NoExtrasModel(BaseModel, extra=Extra.forbid):
+    pass
 
 
 @dataclass
@@ -83,3 +90,14 @@ class MicroscopeSettings:
     use_o3_refocus: bool = False
     o3_refocus_config: Optional[ConfigSettings] = None
     o3_refocus_interval_min: Optional[int] = None
+
+
+class AcquisitionSettings(NoExtrasModel):
+    global_settings: Optional[List[str]] = None
+    time_settings: TimeSettings
+    lf_channel_settings: ChannelSettings
+    lf_slice_settings: SliceSettings
+    lf_microscope_settings: MicroscopeSettings
+    ls_channel_settings: ChannelSettings
+    ls_slice_settings: SliceSettings
+    ls_microscope_settings: MicroscopeSettings
