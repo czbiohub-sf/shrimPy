@@ -1,12 +1,12 @@
 import os
 
 import click
-import matplotlib.pyplot as plt
 import matplotlib.colors
+import matplotlib.pyplot as plt
 import numpy as np
 
-from iohub.ngff import open_ome_zarr, Plate
 from iohub.display_utils import channel_display_settings
+from iohub.ngff import Plate, open_ome_zarr
 from scipy.optimize import curve_fit
 from tqdm import tqdm
 
