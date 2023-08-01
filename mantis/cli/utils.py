@@ -8,6 +8,7 @@ from functools import partial
 import itertools
 import contextlib
 import io
+import inspect
 
 
 def create_empty_zarr(
@@ -95,7 +96,7 @@ def apply_transform_to_zyx_and_save(
 def process_single_position(
     func,
     input_data_path: Path,
-    output_path: Path = "./registered.zarr",
+    output_path: Path,
     num_processes: int = mp.cpu_count(),
     **kwargs,
 ) -> None:
@@ -113,8 +114,27 @@ def process_single_position(
     click.echo(f" Zarr Store info: {stdout_buffer.getvalue()}")
 
     T, C, _, _, _ = input_dataset.data.shape
-
     click.echo(f"Input dataset shape:\t{input_dataset.data.shape}")
+
+    # Check the arguments for the function
+    all_func_params = inspect.signature(func).parameters.keys()
+    # Extract the relevant kwargs for the function 'func'
+    func_args = {}
+    non_func_args = {}
+
+    for k, v in kwargs.items():
+        if k in all_func_params:
+            func_args[k] = v
+        else:
+            non_func_args[k] = v
+
+    # Write the settings into the metadata if existing
+    # TODO: alternatively we can throw all extra arguments as metadata.
+    if 'extra_metadata' in non_func_args:
+        # For each dictionary in the nest
+        with open_ome_zarr(output_path, mode='r+') as output_dataset:
+            for params_metadata_keys in kwargs['extra_metadata'].keys():
+                output_dataset.zattrs['extra_metadata'] = non_func_args['extra_metadata']
 
     # Loop through (T, C), deskewing and writing as we go
     click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
@@ -125,7 +145,7 @@ def process_single_position(
                 func,
                 input_dataset,
                 str(output_path),
-                **kwargs,
+                **func_args,
             ),
             itertools.product(range(T), range(C)),
         )

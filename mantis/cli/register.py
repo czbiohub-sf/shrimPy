@@ -63,8 +63,13 @@ def register(
     )
 
     # Get the affine transformation matrix
-
-    affine_transform_args = {'matrix': matrix, 'output_shape': output_shape}
+    # TODO: add the metadta from yaml
+    extra_metadata = {'affine_transformation': {'affine_transform': matrix.tolist()}}
+    affine_transform_args = {
+        'matrix': matrix,
+        'output_shape': output_shape,
+        'extra_metadata': extra_metadata,
+    }
 
     # Loop over positions
     for input_position_path, output_position_path in zip(input_paths, output_paths):
