@@ -42,20 +42,22 @@ class PositionSettings(NoExtrasModel):
         return v
 
 
-@dataclass
-class ChannelSettings:
-    exposure_time_ms: List[float] = field(default_factory=list)  # in ms
+class ChannelSettings(NoExtrasModel):
+    exposure_time_ms: List[float] = []  # in ms
     channel_group: Optional[str] = None
-    channels: List[str] = field(default_factory=list)
+    channels: List[str] = []
     use_sequencing: bool = False
-    num_channels: int = field(init=False, default=0)
-    acquisition_rate: float = field(init=False, default=None)
+    num_channels: int = 0  #
+    acquisition_rate: Optional[float] = None
 
-    def __post_init__(self):
-        self.num_channels = len(self.channels)
-        assert len(self.exposure_time_ms) == len(
-            self.channels
-        ), 'Number of channels must equal number of exposure times'
+    @validator("channels")
+    def check_n_ch(cls, v, values):
+        exps = len(values.get("exposure_time_ms"))
+        ch = len(v)
+        if v != ch:
+            raise ValueError(
+                f"Number of channels = {ch} must equal number of exposure times {exps}"
+            )
 
 
 @dataclass

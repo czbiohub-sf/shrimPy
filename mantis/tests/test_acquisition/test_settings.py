@@ -1,5 +1,6 @@
 from mantis.acquisition.AcquisitionSettings import (
     AcquisitionSettings,
+    ChannelSettings,
     ConfigSettings,
     DevicePropertySettings,
     PositionSettings,
@@ -42,6 +43,16 @@ def test_position_settings():
     # Test non-equal
     with pytest.raises(ValueError):
         s = PositionSettings(xyz_positions=[0, 1], num_positions=3)
+
+
+def test_channel_settings():
+    # Test extra parameter
+    with pytest.raises(ValueError):
+        s = ChannelSettings(device_str="test")
+
+    # Test non-equal
+    with pytest.raises(ValueError):
+        s = ChannelSettings(exposure_time_ms=[0, 1], channels=['GFP'])
 
 
 # def test_example_settings(example_settings):
