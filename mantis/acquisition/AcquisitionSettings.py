@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 
 from pydantic.dataclasses import dataclass
-from pydantic import BaseModel, Extra
+from pydantic import BaseModel, Extra, PositiveInt, NonNegativeFloat
 
 
 # All settings classes inherit from NoExtrasModel,
@@ -13,23 +13,20 @@ class NoExtrasModel(BaseModel, extra=Extra.forbid):
     pass
 
 
-@dataclass
-class ConfigSettings:
+class ConfigSettings(NoExtrasModel):
     config_group: str
     config_name: str
 
 
-@dataclass
-class DevicePropertySettings:
+class DevicePropertySettings(NoExtrasModel):
     device_name: str
     property_name: str
     property_value: str
 
 
-@dataclass
-class TimeSettings:
-    num_timepoints: Optional[int] = 0
-    time_interval_s: Optional[float] = 0  # in seconds
+class TimeSettings(NoExtrasModel):
+    num_timepoints: PositiveInt = 1
+    time_interval_s: NonNegativeFloat = 0  # in seconds, must allow zero for MDA
 
 
 @dataclass
