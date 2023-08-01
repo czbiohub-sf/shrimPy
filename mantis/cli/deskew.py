@@ -1,14 +1,12 @@
-import itertools
 import multiprocessing as mp
 
 from dataclasses import asdict
-from functools import partial
 from pathlib import Path
 from typing import List
 
 import click
 
-from iohub.ngff import Plate, Position, open_ome_zarr
+from iohub.ngff import Plate, open_ome_zarr
 
 from mantis.cli import utils
 from mantis.analysis.AnalysisSettings import DeskewSettings
@@ -30,52 +28,6 @@ def deskew_params_from_file(deskew_param_path: Path) -> DeskewSettings:
     settings = DeskewSettings(**raw_settings)
     click.echo(f"Deskewing parameters: {asdict(settings)}")
     return settings
-
-
-def deskew_zyx_and_save(
-    position: Position, output_path: Path, settings: DeskewSettings, t_idx: int, c_idx: int
-) -> None:
-    """Load a zyx array from a Position object, deskew it, and save the result to file"""
-    click.echo(f"Deskewing c={c_idx}, t={t_idx}")
-    zyx_data = position[0][t_idx, c_idx]
-
-    # Deskew
-    deskewed = deskew_data(
-        zyx_data, settings.ls_angle_deg, settings.px_to_scan_ratio, settings.keep_overhang
-    )
-    # Write to file
-    with open_ome_zarr(output_path, mode="r+") as output_dataset:
-        output_dataset[0][t_idx, c_idx] = deskewed
-        output_dataset.zattrs["deskewing"] = asdict(settings)
-
-    click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
-
-
-def deskew_single_position(
-    input_data_path: Path,
-    output_path: Path = './deskewed.zarr',
-    deskew_param_path: Path = './deskew_setting.yml',
-    num_processes: int = mp.cpu_count(),
-) -> None:
-    """Deskew a single position with multiprocessing parallelization over T and C"""
-
-    # Get the reader and writer
-    click.echo(f'Input data path:\t{input_data_path}')
-    click.echo(f'Output data path:\t{str(output_path)}')
-    input_dataset = open_ome_zarr(str(input_data_path))
-    click.echo(input_dataset.print_tree())
-
-    settings = deskew_params_from_file(deskew_param_path)
-    T, C, Z, Y, X = input_dataset.data.shape
-    click.echo(f'Dataset shape:\t{input_dataset.data.shape}')
-
-    # Loop through (T, C), deskewing and writing as we go
-    click.echo(f"Starting multiprocess pool with {num_processes} processes")
-    with mp.Pool(num_processes) as p:
-        p.starmap(
-            partial(deskew_zyx_and_save, input_dataset, str(output_path), settings),
-            itertools.product(range(T), range(C)),
-        )
 
 
 @click.command()
@@ -129,14 +81,15 @@ def deskew(
         'ls_angle_deg': settings.ls_angle_deg,
         'px_to_scan_ratio': settings.px_to_scan_ratio,
         'keep_overhang': settings.keep_overhang,
+        'extra_metadata': {'deskew': asdict(settings)},
     }
+
     # Loop over positions
     for input_position_path, output_position_path in zip(input_paths, output_paths):
         utils.process_single_position(
-            deskew_zyx_and_save,
+            deskew_data,
             input_data_path=input_position_path,
             output_path=output_position_path,
-            deskew_param_path=deskew_param_path,
             num_processes=num_processes,
             **deskew_args,
         )
