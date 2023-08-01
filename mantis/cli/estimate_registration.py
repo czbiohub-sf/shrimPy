@@ -1,4 +1,5 @@
 import os
+from dataclasses import asdict
 
 from pathlib import Path
 
@@ -10,6 +11,8 @@ import scipy
 from iohub import open_ome_zarr
 from skimage.transform import SimilarityTransform
 from waveorder.focus import focus_from_transverse_band
+import yaml
+from mantis.analysis.AnalysisSettings import RegistrationSettings
 
 # TODO: remove this for non mantis datasets
 ROTATE_90deg_CCW = True
@@ -70,7 +73,7 @@ def find_focus_channel_pairs(
 @click.option(
     "--output-file",
     "-o",
-    default="./registration_parameters.zarr",
+    default="./registration_parameters.yml",
     required=False,
     help="Path to saved registration",
 )
@@ -80,6 +83,8 @@ def manual_registration(phase_channel_data_path, fluor_channel_data_path, output
 
     python estimate_registration.py  <path/to/phase_channel.zarr/0/0/0> <path/to/fluor_channel.zarr/0/0/0>
     """
+    assert str(output_file).endswith(('.yaml', '.yml')), "Output file must be a YAML file."
+
     # Get a napari viewer()
     viewer = napari.Viewer()
 
@@ -249,7 +254,7 @@ def manual_registration(phase_channel_data_path, fluor_channel_data_path, output
 
     # Get the transformation matrix
     print(f"Affine Transform Matrix:\n {zyx_affine_transform}\n")
-    output_shape_volume = (1, phase_channel_Y, phase_channel_X)
+    output_shape_volume = (fluor_channel_Z, fluor_channel_Y, fluor_channel_X)
 
     # Demo: apply the affine transform to the image at the middle of the stack
     aligned_image = scipy.ndimage.affine_transform(
@@ -257,7 +262,7 @@ def manual_registration(phase_channel_data_path, fluor_channel_data_path, output
             0, fluor_channel_idx, fluor_channel_Z // 2 : fluor_channel_Z // 2 + 1
         ],
         zyx_affine_transform,
-        output_shape=output_shape_volume,
+        output_shape=(1, phase_channel_Y, phase_channel_X),
     )
     viewer.add_image(
         phase_channel_position[0][
@@ -272,33 +277,46 @@ def manual_registration(phase_channel_data_path, fluor_channel_data_path, output
     viewer.layers[fluor_channel_str].visible = False
 
     # Compute the 3D registration
-    flag_estimate_3D_transform = input("\n Estimate and apply 3D registration (Y/N):")
-    if flag_estimate_3D_transform == "Y" or flag_estimate_3D_transform == "y":
+    # Use deskew metadta
+    try:
+        _, _, z_sampling_fluor_channel, _, _ = fluor_channel_position.zattrs["multiscales"][0][
+            "coordinateTransformations"
+        ][0]["scale"]
+    except LookupError("Could not find coordinateTransformation scale in metadata"):
+        z_sampling_fluor_channel = 1
+
+    print(z_sampling_fluor_channel)
+    # Estimate the Similarity Transform (rotation,scaling,translation)
+    transform = SimilarityTransform()
+    transform.estimate(pts_phase_channel, pts_fluor_channel)
+    zyx_points_transformation_matrix = transform.params
+
+    z_scaling_matrix = np.array(
+        [[scaling_factor_z, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+    )
+    # Composite of all transforms
+    zyx_affine_transform = (
+        rotation_matrix @ zyx_points_transformation_matrix @ z_scaling_matrix
+    )
+    print(f"Affine Transform Matrix:\n {zyx_affine_transform}\n")
+    settings = RegistrationSettings(
+        affine_transform_zyx=zyx_affine_transform.tolist(),
+        voxel_size=list(voxel_size),
+        output_shape=list(output_shape_volume),
+        pts_phase_registration=pts_phase_channel.tolist(),
+        pts_fluor_registration=pts_fluor_channel.tolist(),
+        phase_channel_path=str(phase_channel_data_path),
+        fluor_channel_path=str(fluor_channel_data_path),
+        fluor_channel_90deg_CCW_rotation=ROTATE_90deg_CCW,
+    )
+    print(f"Writing deskewing parameters to {output_file}")
+    with open(output_file, "w") as f:
+        yaml.dump(asdict(settings), f)
+
+    # Apply the transformation to 3D volume
+    flag_apply_3D_transform = input("\n Apply 3D registration (Y/N):")
+    if flag_apply_3D_transform == "Y" or flag_apply_3D_transform == "y":
         print("Applying 3D Affine Transform...")
-        # Use deskew metadta
-        try:
-            _, _, z_sampling_fluor_channel, _, _ = fluor_channel_position.zattrs[
-                "multiscales"
-            ][0]["coordinateTransformations"][0]["scale"]
-        except LookupError("Could not find coordinateTransformation scale in metadata"):
-            z_sampling_fluor_channel = 1
-
-        print(z_sampling_fluor_channel)
-        # Estimate the Similarity Transform (rotation,scaling,translation)
-        transform = SimilarityTransform()
-        transform.estimate(pts_phase_channel, pts_fluor_channel)
-        zyx_points_transformation_matrix = transform.params
-
-        z_scaling_matrix = np.array(
-            [[scaling_factor_z, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
-        )
-        # Composite of all transforms
-        zyx_affine_transform = (
-            rotation_matrix @ zyx_points_transformation_matrix @ z_scaling_matrix
-        )
-        print(f"Affine Transform Matrix:\n {zyx_affine_transform}\n")
-
-        output_shape_volume = (fluor_channel_Z, fluor_channel_Y, fluor_channel_X)
         registered_3D_volume = scipy.ndimage.affine_transform(
             phase_channel_position[0][0, phase_channel_idx],
             np.linalg.inv(zyx_affine_transform),
@@ -317,29 +335,6 @@ def manual_registration(phase_channel_data_path, fluor_channel_data_path, output
         viewer.layers[f"registered_{fluor_channel_str}"].visible = False
         viewer.layers[f"{phase_channel_str}"].visible = False
         viewer.layers[f"middle_plane_{phase_channel_str}"].visible = False
-
-    # Write and Save the matrix
-    with open_ome_zarr(
-        output_file, layout="fov", mode="w", channel_names=["None"]
-    ) as output_dataset:
-        output_dataset["affine_transform_zyx"] = zyx_affine_transform[None, None, None, ...]
-        output_dataset["pts_phase_channel"] = pts_phase_channel[None, None, None, ...]
-        output_dataset["pts_fluor_channel"] = pts_fluor_channel[None, None, None, ...]
-
-        # Write extra registration metadata
-        registration_params = {
-            "phase_channel": phase_channel_data_path,
-            "phase_channel_name": phase_channel_str,
-            "fluor_channel": fluor_channel_data_path,
-            "fluor_channel_name": fluor_channel_str,
-            "fluor_channel_90deg_CCW_rotation": ROTATE_90deg_CCW,
-            "phase_channel_shape": list((phase_channel_Z, phase_channel_Y, phase_channel_X)),
-            "fluor_channel_shape": list((fluor_channel_Z, fluor_channel_Y, fluor_channel_X)),
-            "voxel_size": list(voxel_size),
-        }
-        output_dataset.zattrs["registration"] = registration_params
-
-    print(f"Finished saving registration output in: {output_file}")
 
     input("\n Displaying registered channels. Press <enter> to close...")
 

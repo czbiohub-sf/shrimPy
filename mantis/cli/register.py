@@ -3,7 +3,6 @@ import multiprocessing as mp
 
 import click
 
-from iohub.ngff import open_ome_zarr
 
 from mantis.cli import utils
 from mantis.cli.parsing import (
@@ -11,9 +10,23 @@ from mantis.cli.parsing import (
     output_dataset_options,
     registration_param_argument,
 )
+from mantis.analysis.AnalysisSettings import RegistrationSettings
+
 from scipy.ndimage import affine_transform
 import numpy as np
 from pathlib import Path
+import yaml
+from dataclasses import asdict
+
+
+def registration_params_from_file(registration_param_path: Path) -> RegistrationSettings:
+    """Parse the deskewing parameters from the yaml file"""
+    # Load params
+    with open(registration_param_path) as file:
+        raw_settings = yaml.safe_load(file)
+    settings = RegistrationSettings(**raw_settings)
+    click.echo(f"Registration parameters: {asdict(settings)}")
+    return settings
 
 
 @click.command()
@@ -41,18 +54,18 @@ def register(
     output_paths = utils.get_output_paths(input_paths, output_path)
     click.echo(f"List of input_pos:{input_paths} output_pos:{output_paths}")
 
-    # Create a zarr store output to mirror the input
-    with open_ome_zarr(registration_param_path, mode="r") as registration_parameters:
-        matrix = np.linalg.inv(registration_parameters["affine_transform_zyx"][0, 0, 0])
-        output_shape = tuple(registration_parameters.zattrs["registration"]["channel_2_shape"])
-        voxel_size = tuple(registration_parameters.zattrs["registration"]["voxel_size"])
-        click.echo('\nREGISTRATION PARAMETERS:')
-        click.echo(f'Affine transform: {matrix}')
-        click.echo(f'Position zyx shape: {output_shape}')
-        click.echo(f'Voxel size: {voxel_size}')
-        # TODO: dont know what would be the best chunking size. we have a limit with blosc
-        chunk_zyx_shape = (output_shape[0] // 10,) + output_shape[1:]
-        click.echo(f'Chunk zyx size: {chunk_zyx_shape}')
+    # Parse from the yaml file
+    settings = registration_params_from_file(registration_param_path)
+    matrix = np.linalg.inv(np.array(settings.affine_transform_zyx))
+    output_shape = tuple(settings.output_shape)
+    voxel_size = tuple(settings.voxel_size)
+
+    click.echo('\nREGISTRATION PARAMETERS:')
+    click.echo(f'Affine transform: {matrix}')
+    click.echo(f'Output shape: {output_shape}')
+    click.echo(f'Voxel size: {voxel_size}')
+    chunk_zyx_shape = (output_shape[0] // 10,) + output_shape[1:]
+    click.echo(f'Chunk size output {chunk_zyx_shape}')
 
     utils.create_empty_zarr(
         position_paths=input_paths,
@@ -64,10 +77,15 @@ def register(
 
     # Get the affine transformation matrix
     # TODO: add the metadta from yaml
-    extra_metadata = {'affine_transformation': {'affine_transform': matrix.tolist()}}
+    extra_metadata = {
+        'registration': {
+            'affine_matrix': matrix.tolist(),
+            'fluor_channel_90deg_CCW_rot': settings.fluor_channel_90deg_CCW_rotation,
+        }
+    }
     affine_transform_args = {
         'matrix': matrix,
-        'output_shape': output_shape,
+        'output_shape': settings.output_shape,
         'extra_metadata': extra_metadata,
     }
 
