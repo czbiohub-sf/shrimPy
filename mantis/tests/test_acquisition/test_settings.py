@@ -28,9 +28,13 @@ def test_time_settings():
     with pytest.raises(TypeError):
         TimeSettings(device_str="test")
 
-    # Test negative time interval = 0
-    # with pytest.raises(ValueError):
-    #     TimeSettings(time_interval_s=-0.1)
+    # Test negative time interval
+    with pytest.raises(ValueError):
+        TimeSettings(time_interval_s=-0.1)
+
+    # Test None value
+    with pytest.raises(ValueError):
+        TimeSettings(time_interval_s=None)
 
 
 def test_position_settings():

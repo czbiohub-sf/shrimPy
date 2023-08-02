@@ -3,7 +3,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, NonNegativeInt, NonNegativeFloat
 from pydantic.dataclasses import dataclass
 
 config = ConfigDict(extra='forbid')
@@ -24,8 +24,8 @@ class DevicePropertySettings:
 
 @dataclass(config=config)
 class TimeSettings:
-    num_timepoints: Optional[int] = 0
-    time_interval_s: Optional[float] = 0  # in seconds
+    num_timepoints: NonNegativeInt = 0
+    time_interval_s: NonNegativeFloat = 0  # in seconds
 
 
 @dataclass(config=config)
