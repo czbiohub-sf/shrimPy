@@ -3,29 +3,32 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
+from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
 
+config = ConfigDict(extra='forbid')
 
-@dataclass
+
+@dataclass(config=config)
 class ConfigSettings:
     config_group: str
     config_name: str
 
 
-@dataclass
+@dataclass(config=config)
 class DevicePropertySettings:
     device_name: str
     property_name: str
     property_value: str
 
 
-@dataclass
+@dataclass(config=config)
 class TimeSettings:
     num_timepoints: Optional[int] = 0
     time_interval_s: Optional[float] = 0  # in seconds
 
 
-@dataclass
+@dataclass(config=config)
 class PositionSettings:
     xyz_positions: list = field(default_factory=list)
     position_labels: List[str] = field(default_factory=list)
@@ -36,7 +39,7 @@ class PositionSettings:
         self.num_positions = len(self.xyz_positions)
 
 
-@dataclass
+@dataclass(config=config)
 class ChannelSettings:
     exposure_time_ms: List[float] = field(default_factory=list)  # in ms
     channel_group: Optional[str] = None
@@ -52,7 +55,7 @@ class ChannelSettings:
         ), 'Number of channels must equal number of exposure times'
 
 
-@dataclass
+@dataclass(config=config)
 class SliceSettings:
     z_stage_name: Optional[str] = None
     z_start: Optional[float] = None
@@ -69,7 +72,7 @@ class SliceSettings:
             self.num_slices = len(self.z_range)
 
 
-@dataclass
+@dataclass(config=config)
 class MicroscopeSettings:
     roi: Optional[Tuple[int, int, int, int]] = None
     config_group_settings: List[ConfigSettings] = field(default_factory=list)
