@@ -41,7 +41,7 @@ class PositionSettings:
 
 @dataclass(config=config)
 class ChannelSettings:
-    exposure_time_ms: List[float] = field(default_factory=list)  # in ms
+    exposure_time_ms: List[NonNegativeFloat] = field(default_factory=list)  # in ms
     channel_group: Optional[str] = None
     channels: List[str] = field(default_factory=list)
     use_sequencing: bool = False

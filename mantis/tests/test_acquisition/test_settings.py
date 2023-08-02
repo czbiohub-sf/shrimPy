@@ -56,6 +56,10 @@ def test_channel_settings():
     with pytest.raises(AssertionError):
         ChannelSettings(exposure_time_ms=[0, 1], channels=['GFP'])
 
+    # Test negative
+    with pytest.raises(ValueError):
+        ChannelSettings(exposure_time_ms=[-0.1], channels=['GFP'])
+
 
 def test_example_settings(example_settings):
     settings = example_settings
