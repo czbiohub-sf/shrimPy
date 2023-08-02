@@ -44,7 +44,7 @@ def test_position_settings():
 
     # Test non-equal
     with pytest.raises(AssertionError):
-        s = PositionSettings(xyz_positions=[0, 1], position_labels=['a', 'b', 'c'])
+        _ = PositionSettings(xyz_positions=[0, 1], position_labels=['a', 'b', 'c'])
 
 
 def test_channel_settings():
