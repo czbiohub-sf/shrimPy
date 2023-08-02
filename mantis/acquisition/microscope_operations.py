@@ -207,9 +207,10 @@ def autofocus(mmc, mmStudio, z_stage_name: str, z_position):
         for z_offset in z_offsets:
             mmc.set_position(z_stage_name, z_position + z_offset)
             mmc.wait_for_device(z_stage_name)
-            time.sleep(1)  # wait an extra second
 
             af_method.enable_continuous_focus(True)  # this call engages autofocus
+            time.sleep(1)  # wait an extra second
+
             if af_method.is_continuous_focus_locked():
                 autofocus_success = True
                 break
