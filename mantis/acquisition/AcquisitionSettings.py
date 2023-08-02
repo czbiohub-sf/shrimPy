@@ -3,7 +3,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-from pydantic import ConfigDict, NonNegativeInt, NonNegativeFloat
+from pydantic import ConfigDict, NonNegativeFloat, NonNegativeInt
 from pydantic.dataclasses import dataclass
 
 config = ConfigDict(extra='forbid')
