@@ -1,10 +1,12 @@
 from typing import Optional
 
-from pydantic import PositiveFloat, PositiveInt, validator
+from pydantic import ConfigDict, PositiveFloat, PositiveInt, validator
 from pydantic.dataclasses import dataclass
 
+config = ConfigDict(extra='forbid')
 
-@dataclass
+
+@dataclass(config=config)
 class DeskewSettings:
     pixel_size_um: PositiveFloat
     ls_angle_deg: PositiveFloat
