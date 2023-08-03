@@ -1,10 +1,12 @@
 from typing import Optional
 
-from pydantic import PositiveFloat, PositiveInt, validator
+from pydantic import ConfigDict, PositiveFloat, PositiveInt, validator
 from pydantic.dataclasses import dataclass
 
+config = ConfigDict(extra='forbid')
 
-@dataclass
+
+@dataclass(config=config)
 class DeskewSettings:
     pixel_size_um: PositiveFloat
     ls_angle_deg: PositiveFloat
@@ -29,4 +31,4 @@ class DeskewSettings:
             if self.scan_step_um is not None:
                 self.px_to_scan_ratio = round(self.pixel_size_um / self.scan_step_um, 3)
             else:
-                raise Exception("px_to_scan_ratio is not valid")
+                raise TypeError("px_to_scan_ratio is not valid")
