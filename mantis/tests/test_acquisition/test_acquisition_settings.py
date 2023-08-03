@@ -77,8 +77,8 @@ def test_slice_settings():
         SliceSettings(z_stage_name="Z", z_start=0, z_end=10)
 
 
-def test_example_settings(example_settings):
-    settings = example_settings
+def test_example_settings(example_acquisition_settings):
+    settings = example_acquisition_settings
 
     # Test constructing settings objects
     TimeSettings(**settings.get('time_settings'))
@@ -101,8 +101,8 @@ def test_example_settings(example_settings):
     MicroscopeSettings(**settings.get('ls_microscope_settings'))
 
 
-def test_demo_settings(demo_settings):
-    settings = demo_settings
+def test_demo_settings(demo_acquisition_settings):
+    settings = demo_acquisition_settings
 
     # Test constructing settings objects
     TimeSettings(**settings.get('time_settings'))
