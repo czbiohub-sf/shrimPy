@@ -21,7 +21,7 @@ def config_filepath() -> Callable:
             "-c",
             required=True,
             type=click.Path(exists=True, file_okay=True, dir_okay=False),
-            help="Path to configuration file",
+            help="Path to YAML configuration file",
         )(f)
 
     return decorator
