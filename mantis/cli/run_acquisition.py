@@ -19,13 +19,15 @@ from mantis.acquisition.AcquisitionSettings import (
 @click.command()
 @output_dirpath()
 @click.option(
-    '--name',
+    "--name",
+    "-n",
     required=True,
     help='Name of the acquisition',
 )
 @config_filepath()
 @click.option(
-    '--mm-app-path',
+    "--mm-app-path",
+    "-ma",
     default='C:\\Program Files\\Micro-Manager-nightly',
     type=click.Path(exists=True, file_okay=False, dir_okay=True),
     show_default=True,
@@ -33,7 +35,8 @@ from mantis.acquisition.AcquisitionSettings import (
       which will run the light-sheet acquisition''',
 )
 @click.option(
-    '--mm-config-filepath',
+    "--mm-config-filepath",
+    "-mc",
     default='C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg',
     type=click.Path(exists=True, file_okay=True, dir_okay=False),
     show_default=True,
@@ -47,7 +50,10 @@ def run_acquisition(
     mm_app_path,
     mm_config_filepath,
 ):
-    """Acquire data using a settings file."""
+    """Acquire data using a settings file.
+
+    >> mantis run-acquisition -o ./test -n test_acquisition -c path/to/config.yaml
+    """
 
     demo_run = True if 'demo' in mm_config_filepath else False
 
