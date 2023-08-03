@@ -38,3 +38,16 @@ def output_dirpath() -> Callable:
         )(f)
 
     return decorator
+
+
+def output_filepath() -> Callable:
+    def decorator(f: Callable) -> Callable:
+        return click.option(
+            "--output-filepath",
+            "-o",
+            required=True,
+            type=click.Path(exists=False, file_okay=True, dir_okay=False),
+            help="Path to output file",
+        )(f)
+
+    return decorator
