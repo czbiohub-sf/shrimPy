@@ -61,6 +61,22 @@ def test_channel_settings():
         ChannelSettings(exposure_time_ms=[-0.1], channels=['GFP'])
 
 
+def test_slice_settings():
+    # Test extra parameter
+    with pytest.raises(TypeError):
+        SliceSettings(device_str="test")
+
+    # Test one of z_stage_name, z_start_, z_end, or z_step not provided
+    with pytest.raises(TypeError):
+        SliceSettings(z_stage_name="Z")
+
+    with pytest.raises(TypeError):
+        SliceSettings(z_start=0, z_end=10, z_step=1)
+
+    with pytest.raises(TypeError):
+        SliceSettings(z_stage_name="Z", z_start=0, z_end=10)
+
+
 def test_example_settings(example_settings):
     settings = example_settings
 

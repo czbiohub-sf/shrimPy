@@ -49,10 +49,10 @@ class ChannelSettings:
     acquisition_rate: float = field(init=False, default=None)
 
     def __post_init__(self):
-        self.num_channels = len(self.channels)
         assert len(self.exposure_time_ms) == len(
             self.channels
         ), 'Number of channels must equal number of exposure times'
+        self.num_channels = len(self.channels)
 
 
 @dataclass(config=config)
@@ -67,6 +67,13 @@ class SliceSettings:
     z_range: List[float] = field(init=False, repr=False, default_factory=list)
 
     def __post_init__(self):
+        # If one of z_params is provided, then they all need to be provided
+        z_params = (self.z_stage_name, self.z_start, self.z_end, self.z_step)
+        if any(z_params) and None in z_params:
+            raise TypeError(
+                'All of z_stage_name, z_start_, z_end, and z_step must be provided'
+            )
+
         if self.z_step is not None:
             self.z_range = list(np.arange(self.z_start, self.z_end + self.z_step, self.z_step))
             self.num_slices = len(self.z_range)
