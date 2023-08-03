@@ -48,7 +48,7 @@ The acquisition may also be run in "demo" mode with the Micro-manager `MMConfig_
 mantis run-acquisition `
     --output-dirpath ./test `
     --name test_acquisition `
-    --mm-config-file path/to/MMConfig_Demo.cfg `
+    --mm-config-filepath path/to/MMConfig_Demo.cfg `
     --config-filepath path/to/settings/file
 ```
 

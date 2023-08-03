@@ -33,7 +33,7 @@ from mantis.acquisition.AcquisitionSettings import (
       which will run the light-sheet acquisition''',
 )
 @click.option(
-    '--mm-config-file',
+    '--mm-config-filepath',
     default='C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg',
     type=click.Path(exists=True, file_okay=True, dir_okay=False),
     show_default=True,
@@ -45,11 +45,11 @@ def run_acquisition(
     name,
     config_filepath,
     mm_app_path,
-    mm_config_file,
+    mm_config_filepath,
 ):
     """Acquire data using a settings file."""
 
-    demo_run = True if 'demo' in mm_config_file else False
+    demo_run = True if 'demo' in mm_config_filepath else False
 
     with open(config_filepath) as file:
         raw_settings = yaml.safe_load(file)
@@ -68,7 +68,7 @@ def run_acquisition(
         acquisition_directory=output_dirpath,
         acquisition_name=name,
         mm_app_path=mm_app_path,
-        mm_config_file=mm_config_file,
+        mm_config_file=mm_config_filepath,
         demo_run=demo_run,
         verbose=False,
     ) as acq:
