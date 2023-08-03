@@ -39,7 +39,7 @@ This is an example of a command which will start an acquisition on the mantis mi
 mantis run-acquisition `
     --output-dirpath ./test `
     --name test_acquisition `
-    --settings path/to/settings/file
+    --config-filepath path/to/settings/file
 ```
 
 The acquisition may also be run in "demo" mode with the Micro-manager `MMConfig_Demo.cfg` config. This does not require any microscope hardware. A demo run can be started with:
@@ -49,7 +49,7 @@ mantis run-acquisition `
     --output-dirpath ./test `
     --name test_acquisition `
     --mm-config-file path/to/MMConfig_Demo.cfg `
-    --settings path/to/settings/file
+    --config-filepath path/to/settings/file
 ```
 
 ## Contributing

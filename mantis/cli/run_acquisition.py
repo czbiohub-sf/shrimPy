@@ -1,7 +1,7 @@
 import click
 import yaml
 
-from mantis.cli.parsing import output_dirpath
+from mantis.cli.parsing import config_filepath, output_dirpath
 from mantis.acquisition.acq_engine import MantisAcquisition
 
 # isort: off
@@ -23,12 +23,7 @@ from mantis.acquisition.AcquisitionSettings import (
     required=True,
     help='Name of the acquisition',
 )
-@click.option(
-    '--settings',
-    required=True,
-    type=click.Path(exists=True, file_okay=True, dir_okay=False),
-    help='YAML file containing the acquisition settings',
-)
+@config_filepath()
 @click.option(
     '--mm-app-path',
     default='C:\\Program Files\\Micro-Manager-nightly',
@@ -48,7 +43,7 @@ from mantis.acquisition.AcquisitionSettings import (
 def run_acquisition(
     output_dirpath,
     name,
-    settings,
+    config_filepath,
     mm_app_path,
     mm_config_file,
 ):
@@ -56,7 +51,7 @@ def run_acquisition(
 
     demo_run = True if 'demo' in mm_config_file else False
 
-    with open(settings) as file:
+    with open(config_filepath) as file:
         raw_settings = yaml.safe_load(file)
 
     # Load and validate YAML settings
