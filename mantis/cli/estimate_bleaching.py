@@ -102,8 +102,8 @@ def plot_bleaching_curves(tc_times, tczyx_data, channel_names, output_file, titl
 def estimate_bleaching(input_position_dirpaths, output_dirpath):
     """
     Estimate bleaching from raw data
-    
-    >> mantis estimate-bleaching ./input.zarr/0/0/0 -o ./deskew_params.yml
+
+    >> mantis estimate-bleaching -i ./input.zarr/0/0/0 -o ./deskew_params.yml
     """
     # Read data
     reader = read_micromanager(input_position_dirpaths)
