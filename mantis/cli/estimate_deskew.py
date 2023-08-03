@@ -19,7 +19,6 @@ def estimate_deskew(input_position_dirpaths, output_filepath):
     Routine for estimating deskewing parameters from calibration data.
 
     >> mantis estimate-deskew ./input.zarr/0/0/0 -o ./deskew_params.yml
-
     """
     assert str(output_filepath).endswith(('.yaml', '.yml')), "Output file must be a YAML file."
 

@@ -8,7 +8,7 @@ from iohub import read_micromanager
 from scipy.optimize import curve_fit
 from tqdm import tqdm
 
-from mantis.cli.parsing import input_position_dirpaths, output_filepath
+from mantis.cli.parsing import input_position_dirpaths, output_dirpath
 
 
 MSECS_PER_MINUTE = 60000
@@ -98,9 +98,13 @@ def plot_bleaching_curves(tc_times, tczyx_data, channel_names, output_file, titl
 
 @click.command()
 @input_position_dirpaths()
-@output_filepath()
+@output_dirpath()
 def estimate_bleaching(input_position_dirpaths, output_dirpath):
-    """Estimate bleaching from raw data"""
+    """
+    Estimate bleaching from raw data
+    
+    >> mantis estimate-bleaching ./input.zarr/0/0/0 -o ./deskew_params.yml
+    """
     # Read data
     reader = read_micromanager(input_position_dirpaths)
     num_positions = reader.get_num_positions()
