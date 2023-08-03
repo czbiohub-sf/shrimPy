@@ -29,6 +29,8 @@ def test_deskew_cli(tmp_path):
 
     # Test deskew cli
     runner = CliRunner()
-    runner.invoke(cli, ["deskew", str(input_path), str(config_path), "-o", str(output_path)])
+    runner.invoke(
+        cli, ["deskew", str(input_path), "-c", str(config_path), "-o", str(output_path)]
+    )
 
     assert output_path.exists()
