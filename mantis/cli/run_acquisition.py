@@ -46,7 +46,7 @@ from mantis.acquisition.AcquisitionSettings import (
       which will run the light-sheet acquisition''',
 )
 def run_acquisition(
-    data_dirpath,
+    output_dirpath,
     name,
     settings,
     mm_app_path,
@@ -70,7 +70,7 @@ def run_acquisition(
     ls_microscope_settings = MicroscopeSettings(**raw_settings.get('ls_microscope_settings'))
 
     with MantisAcquisition(
-        acquisition_directory=data_dirpath,
+        acquisition_directory=output_dirpath,
         acquisition_name=name,
         mm_app_path=mm_app_path,
         mm_config_file=mm_config_file,
