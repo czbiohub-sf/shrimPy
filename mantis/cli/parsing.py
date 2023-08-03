@@ -1,3 +1,4 @@
+from mantis.cli.option_eat_all import OptionEatAll
 from typing import Callable
 
 import click
@@ -5,11 +6,7 @@ import click
 
 def input_position_dirpaths() -> Callable:
     def decorator(f: Callable) -> Callable:
-        return click.argument(
-            "input-position-dirpaths",
-            type=click.Path(exists=True, file_okay=False, dir_okay=True),
-            nargs=-1,
-        )(f)
+        return click.option("--input-position-dirpaths", "-i", cls=OptionEatAll, type=tuple)(f)
 
     return decorator
 
