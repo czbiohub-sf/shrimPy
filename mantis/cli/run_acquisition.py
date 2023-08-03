@@ -16,7 +16,6 @@ from mantis.acquisition.AcquisitionSettings import (
 
 
 @click.command()
-@click.help_option("-h", "--help")
 @click.option(
     '--data-dirpath',
     required=True,
