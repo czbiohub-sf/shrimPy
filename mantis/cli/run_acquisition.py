@@ -1,6 +1,7 @@
 import click
 import yaml
 
+from mantis.cli.parsing import output_dirpath
 from mantis.acquisition.acq_engine import MantisAcquisition
 
 # isort: off
@@ -16,12 +17,7 @@ from mantis.acquisition.AcquisitionSettings import (
 
 
 @click.command()
-@click.option(
-    '--data-dirpath',
-    required=True,
-    type=click.Path(exists=True, file_okay=False, dir_okay=True),
-    help='Directory where acquired data will be saved',
-)
+@output_dirpath()
 @click.option(
     '--name',
     required=True,

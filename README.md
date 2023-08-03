@@ -37,7 +37,7 @@ This is an example of a command which will start an acquisition on the mantis mi
 
 ```pwsh
 mantis run-acquisition `
-    --data-dirpath ./test `
+    --output-dirpath ./test `
     --name test_acquisition `
     --settings path/to/settings/file
 ```
@@ -46,7 +46,7 @@ The acquisition may also be run in "demo" mode with the Micro-manager `MMConfig_
 
 ```pwsh
 mantis run-acquisition `
-    --data-dirpath ./test `
+    --output-dirpath ./test `
     --name test_acquisition `
     --mm-config-file path/to/MMConfig_Demo.cfg `
     --settings path/to/settings/file
