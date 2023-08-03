@@ -8,6 +8,9 @@ from iohub import read_micromanager
 from scipy.optimize import curve_fit
 from tqdm import tqdm
 
+from mantis.cli.parsing import input_position_dirpaths, output_filepath
+
+
 MSECS_PER_MINUTE = 60000
 
 
@@ -94,28 +97,19 @@ def plot_bleaching_curves(tc_times, tczyx_data, channel_names, output_file, titl
 
 
 @click.command()
-@click.argument(
-    "data_path",
-    type=click.Path(exists=True),
-)
-@click.option(
-    "--output-folder",
-    "-o",
-    default=None,
-    required=False,
-    help="Path to output folder",
-)
-def estimate_bleaching(data_path, output_folder):
+@input_position_dirpaths()
+@output_filepath()
+def estimate_bleaching(input_position_dirpaths, output_dirpath):
     """Estimate bleaching from raw data"""
     # Read data
-    reader = read_micromanager(data_path)
+    reader = read_micromanager(input_position_dirpaths)
     num_positions = reader.get_num_positions()
 
     # Handle paths
-    input_folder = os.path.basename(os.path.normpath(data_path))
-    if output_folder is None:
-        output_folder = input_folder + "_bleaching"
-    os.makedirs(output_folder, exist_ok=True)
+    input_folder = os.path.basename(os.path.normpath(input_position_dirpaths))
+    if output_dirpath is None:
+        output_dirpath = input_folder + "_bleaching"
+    os.makedirs(output_dirpath, exist_ok=True)
 
     # Generate plot for each position
     for p in range(num_positions):
@@ -136,6 +130,6 @@ def estimate_bleaching(data_path, output_folder):
 
         channel_names = [x.split(' ')[0] for x in reader.channel_names]
         tczyx_data = reader.get_zarr(p)
-        output_file = os.path.join(output_folder, f"{p:03d}.svg")
+        output_file = os.path.join(output_dirpath, f"{p:03d}.svg")
         title = input_folder + f" - position = {p}"
         plot_bleaching_curves(tc_times, tczyx_data, channel_names, output_file, title)
