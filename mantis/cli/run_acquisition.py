@@ -1,19 +1,6 @@
 import click
-import yaml
 
-from mantis.acquisition.acq_engine import MantisAcquisition
 from mantis.cli.parsing import config_filepath, output_dirpath
-
-# isort: off
-from mantis.acquisition.AcquisitionSettings import (
-    TimeSettings,
-    PositionSettings,
-    ChannelSettings,
-    SliceSettings,
-    MicroscopeSettings,
-)
-
-# isort: on
 
 
 @click.command()
@@ -54,6 +41,20 @@ def run_acquisition(
 
     >> mantis run-acquisition -o ./test -n test_acquisition -c path/to/config.yaml
     """
+    import yaml
+
+    from mantis.acquisition.acq_engine import MantisAcquisition
+
+    # isort: off
+    from mantis.acquisition.AcquisitionSettings import (
+        TimeSettings,
+        PositionSettings,
+        ChannelSettings,
+        SliceSettings,
+        MicroscopeSettings,
+    )
+
+    # isort: on
 
     demo_run = True if 'demo' in mm_config_filepath else False
 
