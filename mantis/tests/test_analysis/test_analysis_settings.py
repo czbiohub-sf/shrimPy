@@ -18,6 +18,6 @@ def test_deskew_settings():
 
 
 def test_example_deskew_settings(example_deskew_settings):
-    settings = example_deskew_settings
+    _, settings = example_deskew_settings
 
     DeskewSettings(**settings)

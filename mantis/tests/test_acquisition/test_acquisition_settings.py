@@ -78,7 +78,7 @@ def test_slice_settings():
 
 
 def test_example_settings(example_acquisition_settings):
-    settings = example_acquisition_settings
+    _, settings = example_acquisition_settings
 
     # Test constructing settings objects
     TimeSettings(**settings.get('time_settings'))
@@ -102,7 +102,7 @@ def test_example_settings(example_acquisition_settings):
 
 
 def test_demo_settings(demo_acquisition_settings):
-    settings = demo_acquisition_settings
+    _, settings = demo_acquisition_settings
 
     # Test constructing settings objects
     TimeSettings(**settings.get('time_settings'))
