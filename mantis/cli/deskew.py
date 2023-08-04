@@ -16,11 +16,7 @@ from natsort import natsorted
 
 from mantis.analysis.AnalysisSettings import DeskewSettings
 from mantis.analysis.deskew import deskew_data, get_deskewed_data_shape
-from mantis.cli.parsing import (
-    config_filepath,
-    input_position_dirpaths,
-    output_dirpath,
-)
+from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
 
 
 # TODO: consider refactoring to utils

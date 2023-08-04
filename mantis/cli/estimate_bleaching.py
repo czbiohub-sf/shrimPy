@@ -10,7 +10,6 @@ from tqdm import tqdm
 
 from mantis.cli.parsing import input_position_dirpaths, output_dirpath
 
-
 MSECS_PER_MINUTE = 60000
 
 

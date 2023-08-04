@@ -1,7 +1,8 @@
-from mantis.cli.option_eat_all import OptionEatAll
 from typing import Callable
 
 import click
+
+from mantis.cli.option_eat_all import OptionEatAll
 
 
 def input_position_dirpaths() -> Callable:

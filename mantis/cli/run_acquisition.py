@@ -1,8 +1,8 @@
 import click
 import yaml
 
-from mantis.cli.parsing import config_filepath, output_dirpath
 from mantis.acquisition.acq_engine import MantisAcquisition
+from mantis.cli.parsing import config_filepath, output_dirpath
 
 # isort: off
 from mantis.acquisition.AcquisitionSettings import (
