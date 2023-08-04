@@ -23,7 +23,7 @@ def estimate_deskew(input_position_dirpaths, output_filepath):
     assert str(output_filepath).endswith(('.yaml', '.yml')), "Output file must be a YAML file."
 
     # Read p, t, c = (0, 0, 0) into an array
-    with open_ome_zarr(input_position_dirpaths) as reader:
+    with open_ome_zarr(input_position_dirpaths[0]) as reader:
         data = reader["0"][0, 0]  # zyx
 
     pixel_size_um = float(input("Enter image pixel size in micrometers: "))
