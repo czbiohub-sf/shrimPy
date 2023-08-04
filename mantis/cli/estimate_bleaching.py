@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from iohub.display_utils import channel_display_settings
-from iohub.ngff import Plate, open_ome_zarr
+from iohub.ngff import open_ome_zarr
 from scipy.optimize import curve_fit
 from tqdm import tqdm
 
@@ -117,6 +117,7 @@ def estimate_bleaching(input_position_dirpaths, output_dirpath):
         with open_ome_zarr(plate_path) as plate_reader:
             plate_zattrs = plate_reader.zattrs
     except Exception as e:
+        print(e)
         print(
             "WARNING: this position has no plate metadata, so the time metadata will be missing."
         )
