@@ -5,7 +5,7 @@ import napari
 import numpy as np
 import yaml
 
-from iohub import read_micromanager
+from iohub.ngff import open_ome_zarr
 
 from mantis.analysis.AnalysisSettings import DeskewSettings
 
@@ -32,8 +32,8 @@ def estimate_deskew(data_path, output_file):
     assert str(output_file).endswith(('.yaml', '.yml')), "Output file must be a YAML file."
 
     # Read p, t, c = (0, 0, 0) into an array
-    reader = read_micromanager(data_path)
-    data = reader.get_array(0)[0, 0, ...]  # zyx
+    with open_ome_zarr(data_path) as reader:
+        data = reader["0"][0, 0]  # zyx
 
     pixel_size_um = float(input("Enter image pixel size in micrometers: "))
     scan_step_um = float(input("Enter the estimated galvo scan step in micrometers: "))
