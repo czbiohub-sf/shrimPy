@@ -3,8 +3,8 @@ from click.testing import CliRunner
 from mantis.cli.main import cli
 
 
-def test_estimate_deskew_cli(tmp_path, example_fov):
-    fov_path, _ = example_fov
+def test_estimate_deskew_cli(tmp_path, example_plate):
+    plate_path, _ = example_plate
     output_path = tmp_path / "config.yaml"
 
     runner = CliRunner()
@@ -13,7 +13,7 @@ def test_estimate_deskew_cli(tmp_path, example_fov):
         [
             "estimate-deskew",
             "-i",
-            str(fov_path),
+            str(plate_path) + "/A/1/0",
             "-o",
             str(output_path),
         ],

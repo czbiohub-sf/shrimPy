@@ -34,16 +34,25 @@ def example_deskew_settings():
 
 
 @pytest.fixture(scope="function")
-def example_fov(tmp_path):
-    fov_path = tmp_path / "fov.zarr"
+def example_plate(tmp_path):
+    plate_path = tmp_path / "plate.zarr"
+
+    position_list = (
+        ("A", "1", "0"),
+        ("B", "1", "0"),
+        ("B", "2", "0"),
+    )
 
     # Generate input dataset
-    fov_dataset = open_ome_zarr(
-        fov_path,
-        layout="fov",
+    plate_dataset = open_ome_zarr(
+        plate_path,
+        layout="hcs",
         mode="w",
         channel_names=["GFP", "RFP"],
     )
 
-    fov_dataset.create_zeros("0", (3, 2, 4, 5, 6), dtype=np.uint)
-    yield fov_path, fov_dataset
+    for row, col, fov in position_list:
+        position = plate_dataset.create_position(row, col, fov)
+        position.create_zeros("0", (3, 2, 4, 5, 6), dtype=np.uint16)
+
+    yield plate_path, plate_dataset
