@@ -29,13 +29,13 @@ Mantis acquisitions and analyses use a command-line interface.
 
 A list of `mantis` commands can be displayed with:
 ```sh
-mantis -h
+mantis --help
 ```
 
 Data are acquired using `mantis run-acquisition`, and a list of arguments can be displayed with:
 
 ```sh
-mantis run-acquisition -h
+mantis run-acquisition --help
 ```
 
 The mantis acquisition is configured using a YAML settings file. An example of a settings file can be found [here](mantis/acquisition/settings/example_acquisition_settings.yaml).
@@ -59,9 +59,9 @@ mantis run-acquisition `
     --config-filepath path/to/config.yaml
 ```
 
-After data has been acquired, we can run analyses from the command line. All analysis calls take an input `-i` and an output `-o`, and the main analysis calls (`deskew`, `reconstruct`, `register`) use configuration files passed via a `-c` flag. 
+After data has been acquired, we can run analyses from the command line. All analysis calls take an input `-i` and an output `-o`, and the main analysis calls (`deskew`, `reconstruct`, `register`) use configuration files passed via a `-c` flag.
 
-A typical set of CLI calls to go from raw data to registerred volumes looks like:
+A typical set of CLI calls to go from raw data to registered volumes looks like:
 
 ```sh
 # CONVERT TO ZARR
@@ -69,7 +69,7 @@ iohub convert `
     -i ./acq_name/acq_name_labelfree_1 `
     -o ./acq_name_labelfree.zarr `
 iohub convert `
-    -i ./acq_name/acq_name_lightsheet_1 
+    -i ./acq_name/acq_name_lightsheet_1
     -o ./acq_name_lightsheet.zarr
 
 # DESKEW
@@ -77,7 +77,7 @@ mantis estimate-deskew `
     -i ./acq_name_lightsheet.zarr/0/0/0 `
     -o ./deskew.yml
 mantis deskew `
-    -i ./acq_name_lightsheet.zarr/*/*/* 
+    -i ./acq_name_lightsheet.zarr/*/*/*
     -c ./deskew_params.yml `
     -o ./acq_name_lightsheet_deskewed.zarr
 
