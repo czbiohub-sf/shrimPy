@@ -69,7 +69,7 @@ def run_acquisition(
     ls_microscope_settings = MicroscopeSettings(**raw_settings.get('ls_microscope_settings'))
 
     with MantisAcquisition(
-        acquisition_directory=str(acq_directory),
+        acquisition_directory=acq_directory,
         acquisition_name=acq_name,
         mm_app_path=mm_app_path,
         mm_config_file=mm_config_filepath,
