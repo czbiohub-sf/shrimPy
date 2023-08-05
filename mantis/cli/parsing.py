@@ -2,41 +2,50 @@ from typing import Callable
 
 import click
 
+from mantis.cli.option_eat_all import OptionEatAll
 
-def input_data_paths_argument() -> Callable:
+
+def input_position_dirpaths() -> Callable:
     def decorator(f: Callable) -> Callable:
-        return click.argument(
-            "input-paths",
-            type=click.Path(exists=True),
-            nargs=-1,
+        return click.option("--input-position-dirpaths", "-i", cls=OptionEatAll, type=tuple)(f)
+
+    return decorator
+
+
+def config_filepath() -> Callable:
+    def decorator(f: Callable) -> Callable:
+        return click.option(
+            "--config-filepath",
+            "-c",
+            required=True,
+            type=click.Path(exists=True, file_okay=True, dir_okay=False),
+            help="Path to YAML configuration file",
         )(f)
 
     return decorator
 
 
-def deskew_param_argument() -> Callable:
+def output_dirpath() -> Callable:
     def decorator(f: Callable) -> Callable:
-        return click.argument(
-            "deskew-param-path", type=click.Path(exists=True, file_okay=True), nargs=1
-        )(f)
-
-    return decorator
-
-
-def output_dataset_options(default) -> Callable:
-    click_options = [
-        click.option(
-            "--output-path",
+        return click.option(
+            "--output-dirpath",
             "-o",
-            default=default,
-            help="Path to output.zarr",
-        )
-    ]
-    # good place to add chunking, overwrite flag, etc
+            required=True,
+            type=click.Path(exists=False, file_okay=False, dir_okay=True),
+            help="Path to output directory",
+        )(f)
 
+    return decorator
+
+
+def output_filepath() -> Callable:
     def decorator(f: Callable) -> Callable:
-        for opt in click_options:
-            f = opt(f)
-        return f
+        return click.option(
+            "--output-filepath",
+            "-o",
+            required=True,
+            type=click.Path(exists=False, file_okay=True, dir_okay=False),
+            help="Path to output file",
+        )(f)
 
     return decorator

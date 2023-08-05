@@ -1,4 +1,7 @@
 import os
+import warnings
+
+from pathlib import Path
 
 import click
 import matplotlib.colors
@@ -6,9 +9,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from iohub.display_utils import channel_display_settings
-from iohub.ngff import Plate, open_ome_zarr
+from iohub.ngff import open_ome_zarr
 from scipy.optimize import curve_fit
 from tqdm import tqdm
+
+from mantis.cli.parsing import input_position_dirpaths, output_dirpath
 
 MSECS_PER_MINUTE = 60000
 
@@ -98,46 +103,47 @@ def plot_bleaching_curves(times, tczyx_data, channel_names, output_file, title='
 
 
 @click.command()
-@click.argument(
-    "input_path",
-    type=click.Path(exists=True),
-)
-@click.option(
-    "--output-folder",
-    "-o",
-    default=None,
-    required=False,
-    help="Path to output folder",
-)
-def estimate_bleaching(input_path, output_folder):
-    """Estimate bleaching from raw data"""
-    reader = open_ome_zarr(input_path)
-    if not isinstance(reader, Plate):
-        raise ValueError("Please supply an HCS plate .zarr store.")
+@input_position_dirpaths()
+@output_dirpath()
+def estimate_bleaching(input_position_dirpaths, output_dirpath):
+    """
+    Estimate bleaching from raw data
 
-    # Handle paths
-    input_folder = os.path.splitext(os.path.basename(os.path.normpath(input_path)))[0]
-    if output_folder is None:
-        output_folder = input_folder + "_bleaching"
+    >> mantis estimate-bleaching -i ./input.zarr/0/0/0 -o ./bleaching-curves/
+    """
 
-    # Read timing metadata and generate plots
-    for well_name, position in reader.positions():
+    # Read plate metadata if it exists
+    try:
+        plate_path = Path(*Path(input_position_dirpaths[0]).parts[:-3])
+        with open_ome_zarr(plate_path) as plate_reader:
+            plate_zattrs = plate_reader.zattrs
+    except Exception as e:
+        print(e)
+        warnings.warn(
+            "WARNING: this position has no plate metadata, so the time metadata will be missing."
+        )
+
+    # Loop through position
+    for input_position_dirpath in input_position_dirpaths:
+        with open_ome_zarr(input_position_dirpath) as reader:
+            well_name = "/".join(Path(input_position_dirpath).parts[-3:])
+            tczyx_data = reader["0"]
+
         print(f"Generating bleaching curves for position {well_name}")
 
         # Generate plot for each position
-        T = position.data.shape[0]
+        T = tczyx_data.shape[0]
         try:
-            dt = np.float32(reader.zattrs['Summary']['Interval_ms'] / MSECS_PER_MINUTE)
+            dt = np.float32(plate_zattrs['Summary']['Interval_ms'] / MSECS_PER_MINUTE)
         except Exception as e:
             print(e)
-            print(f"WARNING: missing time metadata for p={well_name}")
+            warnings.warn(f"WARNING: missing time metadata for p={well_name}")
             dt = 1
 
         times = np.arange(0, T * dt, step=dt)
-        tczyx_data = position.data
-        output_file = os.path.join(output_folder, well_name)
+        output_file = os.path.join(output_dirpath, well_name)
         os.makedirs(output_file, exist_ok=True)
-        title = input_folder + f" - position = {well_name}"
+        title = input_position_dirpath + f" - position = {well_name}"
         plot_bleaching_curves(
             times,
             tczyx_data,
@@ -145,3 +151,5 @@ def estimate_bleaching(input_path, output_folder):
             os.path.join(output_file, "bleaching.svg"),
             title,
         )
+
+    reader.close()
