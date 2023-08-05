@@ -88,12 +88,13 @@ recorder reconstruct `
 
 # REGISTER
 mantis estimate-registration `
-    -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 `
     -lf ./acq_name_labelfree_reconstructed.zarr/0/0/0 `
-    -o register.yml
+    -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 `
+    -o ./register.yml
 mantis register `
-    -ls ./acq_name_lightsheet_deskewed.zarr `
     -lf ./acq_name_lightsheet_deskewed.zarr `
+    -ls ./acq_name_lightsheet_deskewed.zarr `
+    -c ./register.yml
     -o ./acq_name_registerred.zarr
 
 ```
