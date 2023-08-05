@@ -76,7 +76,7 @@ def find_focus_channel_pairs(
 @click.command()
 @labelfree_position_dirpaths()
 @lightsheet_position_dirpaths()
-@output_filepath
+@output_filepath()
 def estimate_registration(
     labelfree_position_dirpaths, lightsheet_position_dirpaths, output_filepath
 ):
