@@ -5,8 +5,9 @@ from pathlib import Path
 from typing import List
 
 import click
+import yaml
 
-from iohub.ngff import Plate, open_ome_zarr
+from iohub.ngff import open_ome_zarr
 
 from mantis.analysis.AnalysisSettings import DeskewSettings
 from mantis.analysis.deskew import deskew_data, get_deskewed_data_shape
@@ -48,33 +49,54 @@ def deskew(
 
     >> mantis deskew -i ./input.zarr/*/*/* -c ./deskew_params.yml -o ./output.zarr
     """
-    if isinstance(open_ome_zarr(input_position_dirpaths[0]), Plate):
-        raise ValueError(
-            "Please supply a single position instead of an HCS plate. Likely fix: replace input.zarr with 'input.zarr/0/0/0'"
-        )
-
-    # Sort the input as nargs=-1 will not be natsorted
-    input_position_dirpaths = [Path(path) for path in natsorted(input_position_dirpaths)]
 
     # Convert string paths to Path objects
     output_dirpath = Path(output_dirpath)
     config_filepath = Path(config_filepath)
 
     # Handle single position or wildcard filepath
-    output_paths = get_output_paths(input_position_dirpaths, output_dirpath)
+    output_paths = utils.get_output_paths(input_position_dirpaths, output_dirpath)
     click.echo(f'List of input_pos:{input_position_dirpaths} output_pos:{output_paths}')
 
-    # Create a zarr store output to mirror the input
-    create_empty_zarr(input_position_dirpaths, config_filepath, output_dirpath)
+    # Get the deskewing parameters
+    # Load the first position to infer dataset information
+    with open_ome_zarr(str(input_position_dirpaths[0]), mode="r") as input_dataset:
+        T, C, Z, Y, X = input_dataset.data.shape
+        settings = deskew_params_from_file(config_filepath)
+        deskewed_shape, voxel_size = get_deskewed_data_shape(
+            (Z, Y, X),
+            settings.ls_angle_deg,
+            settings.px_to_scan_ratio,
+            settings.keep_overhang,
+            settings.average_n_slices,
+            settings.pixel_size_um,
+        )
+
+        # Create a zarr store output to mirror the input
+        utils.create_empty_zarr(
+            input_position_dirpaths,
+            output_dirpath,
+            output_zyx_shape=deskewed_shape,
+            chunk_zyx_shape=deskewed_shape,
+            voxel_size=voxel_size,
+        )
+
+    deskew_args = {
+        'ls_angle_deg': settings.ls_angle_deg,
+        'px_to_scan_ratio': settings.px_to_scan_ratio,
+        'keep_overhang': settings.keep_overhang,
+        'average_n_slices': settings.average_n_slices,
+        'extra_metadata': {'deskew': asdict(settings)},
+    }
 
     # Loop over positions
     for input_position_path, output_position_path in zip(
         input_position_dirpaths, output_paths
     ):
-        deskew_single_position(
+        utils.process_single_position(
+            deskew_data,
             input_data_path=input_position_path,
             output_path=output_position_path,
-            deskew_param_path=config_filepath,
             num_processes=num_processes,
             **deskew_args,
         )
