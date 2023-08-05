@@ -33,7 +33,7 @@ def run_acquisition(
 ):
     """Acquire mantis data as specified by a configuration file.
 
-    >> mantis run-acquisition -o ./test -n test_acquisition -c path/to/config.yaml
+    >> mantis run-acquisition -c path/to/config.yaml -o ./YYYY_MM_DD_experiment_name/acquisition_name
     """
 
     # These imports are placed here to accelerate CLI help calls

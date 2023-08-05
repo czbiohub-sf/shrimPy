@@ -44,19 +44,17 @@ This is an example of a command which will start an acquisition on the mantis mi
 
 ```pwsh
 mantis run-acquisition `
-    --output-dirpath ./test `
-    --name test_acquisition `
-    --config-filepath path/to/config.yaml
+    --config-filepath path/to/config.yaml `
+    --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name
 ```
 
 The acquisition may also be run in "demo" mode with the Micro-manager `MMConfig_Demo.cfg` config. This does not require any microscope hardware. A demo run can be started with:
 
 ```pwsh
 mantis run-acquisition `
-    --output-dirpath ./test `
-    --name test_acquisition `
-    --mm-config-filepath path/to/MMConfig_Demo.cfg `
-    --config-filepath path/to/config.yaml
+    --config-filepath path/to/config.yaml `
+    --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name `
+    --mm-config-filepath path/to/MMConfig_Demo.cfg
 ```
 
 After data has been acquired, we can run analyses from the command line. All analysis calls take an input `-i` and an output `-o`, and the main analysis calls (`deskew`, `reconstruct`, `register`) use configuration files passed via a `-c` flag.
