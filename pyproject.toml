@@ -26,6 +26,7 @@ dependencies = [
   "napari[all]; 'arm64' not in platform_machine",        # with Qt5 and skimage
   "PyQt6; 'arm64' in platform_machine",
   "natsort",
+  "ndtiff<2.0",
   "nidaqmx",
   "numpy",
   "pycromanager==0.25.40",
