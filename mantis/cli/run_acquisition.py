@@ -1,20 +1,16 @@
+from pathlib import Path
+
 import click
+import yaml
 
 from mantis.cli.parsing import config_filepath, output_dirpath
 
 
 @click.command()
+@config_filepath()
 @output_dirpath()
 @click.option(
-    "--name",
-    "-n",
-    required=True,
-    help='Name of the acquisition',
-)
-@config_filepath()
-@click.option(
     "--mm-app-path",
-    "-ma",
     default='C:\\Program Files\\Micro-Manager-nightly',
     type=click.Path(exists=True, file_okay=False, dir_okay=True),
     show_default=True,
@@ -23,7 +19,6 @@ from mantis.cli.parsing import config_filepath, output_dirpath
 )
 @click.option(
     "--mm-config-filepath",
-    "-mc",
     default='C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg',
     type=click.Path(exists=True, file_okay=True, dir_okay=False),
     show_default=True,
@@ -31,18 +26,17 @@ from mantis.cli.parsing import config_filepath, output_dirpath
       which will run the light-sheet acquisition''',
 )
 def run_acquisition(
-    output_dirpath,
-    name,
     config_filepath,
+    output_dirpath,
     mm_app_path,
     mm_config_filepath,
 ):
-    """Acquire data using a settings file.
+    """Acquire mantis data as specified by a configuration file.
 
     >> mantis run-acquisition -o ./test -n test_acquisition -c path/to/config.yaml
     """
-    import yaml
 
+    # These imports are placed here to accelerate CLI help calls
     from mantis.acquisition.acq_engine import MantisAcquisition
 
     # isort: off
@@ -58,6 +52,9 @@ def run_acquisition(
 
     demo_run = True if 'demo' in mm_config_filepath else False
 
+    output_dirpath = Path(output_dirpath)
+    acq_directory, acq_name = output_dirpath.parent, output_dirpath.name
+
     with open(config_filepath) as file:
         raw_settings = yaml.safe_load(file)
 
@@ -72,8 +69,8 @@ def run_acquisition(
     ls_microscope_settings = MicroscopeSettings(**raw_settings.get('ls_microscope_settings'))
 
     with MantisAcquisition(
-        acquisition_directory=output_dirpath,
-        acquisition_name=name,
+        acquisition_directory=str(acq_directory),
+        acquisition_name=acq_name,
         mm_app_path=mm_app_path,
         mm_config_file=mm_config_filepath,
         demo_run=demo_run,
