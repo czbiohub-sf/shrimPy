@@ -5,8 +5,10 @@ from mantis.cli.estimate_bleaching import estimate_bleaching
 from mantis.cli.estimate_deskew import estimate_deskew
 from mantis.cli.run_acquisition import run_acquisition
 
+CONTEXT = {"help_option_names": ["-h", "--help"]}
 
-@click.group()
+
+@click.group(context_settings=CONTEXT)
 def cli():
     """command-line tools for mantis"""
 

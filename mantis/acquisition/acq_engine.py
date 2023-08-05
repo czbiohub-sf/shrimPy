@@ -6,12 +6,16 @@ from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime
 from functools import partial
+from pathlib import Path
+from typing import Iterable, Union
 
 import nidaqmx
 import numpy as np
+import tifffile
 
 from nidaqmx.constants import Slope
 from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, start_headless
+from waveorder.focus import focus_from_transverse_band
 
 from mantis.acquisition import microscope_operations
 from mantis.acquisition.logger import configure_logger, log_conda_environment
@@ -47,6 +51,11 @@ LS_POST_READOUT_DELAY = 0.05  # delay before acquiring next frame, in ms
 MCL_STEP_TIME = 1.5  # in ms
 LC_CHANGE_TIME = 20  # in ms
 LS_CHANGE_TIME = 200  # time needed to change LS filter wheel, in ms
+LS_KIM101_SN = 74000291
+LF_KIM101_SN = 74000565
+
+NA_DETECTION = 1.35
+LS_PIXEL_SIZE = 6.5 / (40 * 1.4)  # in um
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +94,7 @@ class BaseChannelSliceAcquisition(object):
         self.type = 'light-sheet' if self.headless else 'label-free'
         self.mmc = None
         self.mmStudio = None
+        self.o3_stage = None
 
         logger.debug(f'Initializing {self.type} acquisition engine')
         if enabled:
@@ -183,6 +193,10 @@ class BaseChannelSliceAcquisition(object):
                 self.mmc, 'Core', 'Focus', self.slice_settings.z_stage_name
             )
 
+            # Setup O3 scan stage
+            if self.microscope_settings.use_o3_refocus:
+                self.o3_stage = microscope_operations.setup_kim101_stage(LS_KIM101_SN)
+
             # Note: sequencing should be turned off by default
             # Setup z sequencing
             if self.slice_settings.use_sequencing:
@@ -226,7 +240,7 @@ class MantisAcquisition(object):
 
     Parameters
     ----------
-    acquisition_directory : str
+    acquisition_directory : str or PathLike
         Directory where acquired data will be saved
     acquisition_name : str
         Name of the acquisition
@@ -263,7 +277,7 @@ class MantisAcquisition(object):
 
     def __init__(
         self,
-        acquisition_directory: str,
+        acquisition_directory: Union[str, os.PathLike],
         acquisition_name: str,
         mm_app_path: str = r'C:\\Program Files\\Micro-Manager-nightly',
         mm_config_file: str = r'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg',
@@ -273,7 +287,7 @@ class MantisAcquisition(object):
         verbose: bool = False,
     ) -> None:
 
-        self._root_dir = acquisition_directory
+        self._root_dir = Path(acquisition_directory).resolve()
         self._acq_name = acquisition_name
         self._demo_run = demo_run
         self._verbose = verbose
@@ -281,31 +295,32 @@ class MantisAcquisition(object):
         if not enable_lf_acq or not enable_ls_acq:
             raise Exception('Disabling LF or LS acquisition is not currently supported')
 
-        # Create acquisition directory
+        # Create acquisition directory and log directory
         self._acq_dir = _create_acquisition_directory(self._root_dir, self._acq_name)
+        self._logs_dir = self._acq_dir / 'logs'
+        self._logs_dir.mkdir()
 
         # Setup logger
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-        configure_logger(
-            os.path.join(self._acq_dir, f'mantis_acquisition_log_{timestamp}.txt')
-        )
-
-        # initialize time and position settings
-        self._time_settings = TimeSettings()
-        self._position_settings = PositionSettings()
+        acq_log_path = self._logs_dir / f'mantis_acquisition_log_{timestamp}.txt'
+        configure_logger(acq_log_path)
 
         if self._demo_run:
             logger.info('NOTE: This is a demo run')
-        logger.debug(f'Starting mantis acquisition log at: {self._acq_dir}')
+        logger.debug(f'Starting mantis acquisition log at: {acq_log_path}')
 
         # Log conda environment
         outs, errs = log_conda_environment(
-            os.path.join(self._acq_dir, f'conda_environment_log_{timestamp}.txt')
+            self._logs_dir / f'conda_environment_log_{timestamp}.txt'
         )
         if errs is None:
             logger.debug(outs.decode('ascii').strip())
         else:
             logger.error(errs.decode('ascii'))
+
+        # initialize time and position settings
+        self._time_settings = TimeSettings()
+        self._position_settings = PositionSettings()
 
         # Connect to MM running LF acq
         self.lf_acq = BaseChannelSliceAcquisition(
@@ -319,9 +334,7 @@ class MantisAcquisition(object):
             mm_app_path=mm_app_path,
             mm_config_file=mm_config_file,
             zmq_port=LS_ZMQ_PORT,
-            core_log_path=os.path.join(
-                mm_app_path, 'CoreLogs', f'CoreLog{timestamp}_headless.txt'
-            ),
+            core_log_path=Path(mm_app_path) / 'CoreLogs' / f'CoreLog{timestamp}_headless.txt',
         )
 
     @property
@@ -599,6 +612,165 @@ class MantisAcquisition(object):
                     self.lf_acq.microscope_settings.autofocus_stage,
                 )
 
+    @staticmethod
+    def acquire_ls_defocus_stack(
+        mmc: Core,
+        z_stage,
+        z_range: Iterable,
+        galvo: str,
+        galvo_range: Iterable,
+        config_group: str = None,
+        config_name: str = None,
+    ):
+        """Acquire defocus stacks at different galvo positions and return image data
+
+        Parameters
+        ----------
+        mmc : Core
+        mmStudio : Studio
+        z_stage : str or KinesisPiezoMotor
+        z_range : Iterable
+        galvo : str
+        galvo_range : Iterable
+        config_group : str, optional
+        config_name : str, optional
+
+        Returns
+        -------
+        data : np.array
+
+        """
+        data = []
+
+        # Set config
+        if config_name is not None:
+            mmc.set_config(config_group, config_name)
+            mmc.wait_for_config(config_group, config_name)
+
+        # Open shutter
+        auto_shutter_state, shutter_state = microscope_operations.get_shutter_state(mmc)
+        microscope_operations.open_shutter(mmc)
+
+        # get galvo starting position
+        p0 = mmc.get_position(galvo)
+
+        # set camera to internal trigger
+        # TODO: do this properly, context manager?
+        microscope_operations.set_property(
+            mmc, 'Prime BSI Express', 'TriggerMode', 'Internal Trigger'
+        )
+
+        # acquire stack at different galvo positions
+        for p_idx, p in enumerate(galvo_range):
+            # set galvo position
+            mmc.set_position(galvo, p0 + p)
+
+            # acquire defocus stack
+            z_stack = microscope_operations.acquire_defocus_stack(mmc, z_stage, z_range)
+            data.append(z_stack)
+
+        # Reset camera triggering
+        microscope_operations.set_property(
+            mmc, 'Prime BSI Express', 'TriggerMode', 'Edge Trigger'
+        )
+
+        # Reset galvo
+        mmc.set_position(galvo, p0)
+
+        # Reset shutter
+        microscope_operations.reset_shutter(mmc, auto_shutter_state, shutter_state)
+
+        return np.asarray(data)
+
+    def refocus_ls_path(self):
+        logger.info('Running O3 refocus algorithm on light-sheet arm')
+
+        # Define O3 z range
+        # 1 step is approx 20 nm, 15 steps are 300 nm which is sub-Nyquist sampling
+        # The stack starts away from O2 and moves closer
+        o3_z_start = -105
+        o3_z_end = 105
+        o3_z_step = 15
+        o3_z_range = np.arange(o3_z_start, o3_z_end + o3_z_step, o3_z_step)
+
+        # Define relative travel limits, in steps
+        o3_z_stage = self.ls_acq.o3_stage
+        target_z_position = o3_z_stage.true_position + o3_z_range
+        max_z_position = 500  # O3 is allowed to travel ~10 um towards O2
+        min_z_position = -1000  # O3 is allowed to travel ~20 um away from O2
+        if np.any(target_z_position > max_z_position) or np.any(
+            target_z_position < min_z_position
+        ):
+            logger.error('O3 relative travel limits will be exceeded. Aborting O3 refocus.')
+            return
+
+        # Define galvo range, i.e. galvo positions at which O3 defocus stacks
+        # are acquired, here at 30%, 50%, and 70% of galvo range. Should be odd number
+        galvo_scan_range = self.ls_acq.slice_settings.z_range
+        len_galvo_scan_range = len(galvo_scan_range)
+        galvo_range = [
+            galvo_scan_range[int(0.3 * len_galvo_scan_range)],
+            galvo_scan_range[int(0.5 * len_galvo_scan_range)],
+            galvo_scan_range[int(0.7 * len_galvo_scan_range)],
+        ]
+
+        # Acquire defocus stacks at several galvo positions
+        data = self.acquire_ls_defocus_stack(
+            mmc=self.ls_acq.mmc,
+            z_stage=o3_z_stage,
+            z_range=o3_z_range,
+            galvo=self.ls_acq.slice_settings.z_stage_name,
+            galvo_range=galvo_range,
+            config_group=self.ls_acq.microscope_settings.o3_refocus_config.config_group,
+            config_name=self.ls_acq.microscope_settings.o3_refocus_config.config_name,
+        )
+
+        # Save acquired stacks in logs
+        timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+        tifffile.imwrite(
+            self._logs_dir / f'ls_refocus_data_{timestamp}.ome.tif',
+            np.expand_dims(data, -3).astype('uint16'),
+        )
+
+        # Find in-focus slice
+        wavelength = 0.55  # in um, approx
+        # works well to distinguish between noise and sample when using z_step = 15
+        # the idea is that true features in the sample will come in focus slowly
+        threshold_FWHM = 3.0
+
+        focus_indices = []
+        for stack_idx, stack in enumerate(data):
+            idx = focus_from_transverse_band(
+                stack,
+                NA_det=NA_DETECTION,
+                lambda_ill=wavelength,
+                pixel_size=LS_PIXEL_SIZE,
+                threshold_FWHM=threshold_FWHM,
+                plot_path=self._logs_dir / f'ls_refocus_plot_{timestamp}_Pos{stack_idx}.png',
+            )
+            focus_indices.append(idx)
+        logger.debug(
+            'Stacks at galvo positions %s are in focus at slice %s',
+            np.round(galvo_range, 3),
+            focus_indices,
+        )
+
+        # Refocus O3
+        # Some focus_indices may be None, e.g. if there is no sample
+        valid_focus_indices = [idx for idx in focus_indices if idx is not None]
+        if valid_focus_indices:
+            focus_idx = int(np.median(valid_focus_indices))
+            o3_displacement = int(o3_z_range[focus_idx])
+
+            logger.info(f'Moving O3 by {o3_displacement} steps')
+            microscope_operations.set_relative_kim101_position(
+                self.ls_acq.o3_stage, o3_displacement
+            )
+        else:
+            logger.error(
+                'Could not determine the correct O3 in-focus position. O3 will not move'
+            )
+
     def setup(self):
         """
         Setup the mantis acquisition. This method sets up the label-free
@@ -703,8 +875,9 @@ class MantisAcquisition(object):
         )
 
         logger.info('Starting acquisition')
+        ls_o3_refocus_time = time.time()
         for t_idx in range(self.time_settings.num_timepoints):
-            t_start = time.time()
+            timepoint_start_time = time.time()
             for p_idx in range(self.position_settings.num_positions):
                 p_label = self.position_settings.position_labels[p_idx]
 
@@ -726,6 +899,19 @@ class MantisAcquisition(object):
                         )
                         continue
 
+                # O3 refocus
+                # Failing to refocus O3 will not abort the acquisition at the current PT index
+                if self.ls_acq.microscope_settings.use_o3_refocus:
+                    current_time = time.time()
+                    # Always refocus at the start
+                    if (
+                        (t_idx == 0 and p_idx == 0)
+                        or current_time - ls_o3_refocus_time
+                        > self.ls_acq.microscope_settings.o3_refocus_interval_min * 60
+                    ):
+                        self.refocus_ls_path()
+                        ls_o3_refocus_time = current_time
+
                 # start acquisition
                 lf_events = deepcopy(lf_cz_events)
                 for _event in lf_events:
@@ -746,7 +932,7 @@ class MantisAcquisition(object):
                 self.await_cz_acq_completion()
 
             # wait for time interval between time points
-            t_wait = self.time_settings.time_interval_s - (time.time() - t_start)
+            t_wait = self.time_settings.time_interval_s - (time.time() - timepoint_start_time)
             if t_wait > 0 and t_idx < self.time_settings.num_timepoints - 1:
                 logger.info(f"Waiting {t_wait/60:.2f} minutes until the next time point")
                 time.sleep(t_wait)
@@ -812,10 +998,10 @@ def _generate_channel_slice_acq_events(channel_settings, slice_settings):
     return events
 
 
-def _create_acquisition_directory(root_dir, acq_name, idx=1):
-    acq_dir = os.path.join(root_dir, f'{acq_name}_{idx}')
+def _create_acquisition_directory(root_dir: Path, acq_name: str, idx=1) -> Path:
+    acq_dir = root_dir / f'{acq_name}_{idx}'
     try:
-        os.mkdir(acq_dir)
+        acq_dir.mkdir(parents=False, exist_ok=False)
     except OSError:
         return _create_acquisition_directory(root_dir, acq_name, idx + 1)
     return acq_dir

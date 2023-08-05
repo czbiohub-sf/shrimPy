@@ -1,41 +1,16 @@
+from pathlib import Path
+
 import click
 import yaml
 
-from mantis.acquisition.acq_engine import MantisAcquisition
-
-# isort: off
-from mantis.acquisition.AcquisitionSettings import (
-    TimeSettings,
-    PositionSettings,
-    ChannelSettings,
-    SliceSettings,
-    MicroscopeSettings,
-)
-
-# isort: on
+from mantis.cli.parsing import config_filepath, output_dirpath
 
 
 @click.command()
-@click.help_option("-h", "--help")
+@config_filepath()
+@output_dirpath()
 @click.option(
-    '--data-dirpath',
-    required=True,
-    type=click.Path(exists=True, file_okay=False, dir_okay=True),
-    help='Directory where acquired data will be saved',
-)
-@click.option(
-    '--name',
-    required=True,
-    help='Name of the acquisition',
-)
-@click.option(
-    '--settings',
-    required=True,
-    type=click.Path(exists=True, file_okay=True, dir_okay=False),
-    help='YAML file containing the acquisition settings',
-)
-@click.option(
-    '--mm-app-path',
+    "--mm-app-path",
     default='C:\\Program Files\\Micro-Manager-nightly',
     type=click.Path(exists=True, file_okay=False, dir_okay=True),
     show_default=True,
@@ -43,7 +18,7 @@ from mantis.acquisition.AcquisitionSettings import (
       which will run the light-sheet acquisition''',
 )
 @click.option(
-    '--mm-config-file',
+    "--mm-config-filepath",
     default='C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg',
     type=click.Path(exists=True, file_okay=True, dir_okay=False),
     show_default=True,
@@ -51,17 +26,36 @@ from mantis.acquisition.AcquisitionSettings import (
       which will run the light-sheet acquisition''',
 )
 def run_acquisition(
-    data_dirpath,
-    name,
-    settings,
+    config_filepath,
+    output_dirpath,
     mm_app_path,
-    mm_config_file,
+    mm_config_filepath,
 ):
-    """Acquire data using a settings file."""
+    """Acquire mantis data as specified by a configuration file.
 
-    demo_run = True if 'demo' in mm_config_file else False
+    >> mantis run-acquisition -c path/to/config.yaml -o ./YYYY_MM_DD_experiment_name/acquisition_name
+    """
 
-    with open(settings) as file:
+    # These imports are placed here to accelerate CLI help calls
+    from mantis.acquisition.acq_engine import MantisAcquisition
+
+    # isort: off
+    from mantis.acquisition.AcquisitionSettings import (
+        TimeSettings,
+        PositionSettings,
+        ChannelSettings,
+        SliceSettings,
+        MicroscopeSettings,
+    )
+
+    # isort: on
+
+    demo_run = True if 'demo' in mm_config_filepath else False
+
+    output_dirpath = Path(output_dirpath)
+    acq_directory, acq_name = output_dirpath.parent, output_dirpath.name
+
+    with open(config_filepath) as file:
         raw_settings = yaml.safe_load(file)
 
     # Load and validate YAML settings
@@ -75,10 +69,10 @@ def run_acquisition(
     ls_microscope_settings = MicroscopeSettings(**raw_settings.get('ls_microscope_settings'))
 
     with MantisAcquisition(
-        acquisition_directory=data_dirpath,
-        acquisition_name=name,
+        acquisition_directory=acq_directory,
+        acquisition_name=acq_name,
         mm_app_path=mm_app_path,
-        mm_config_file=mm_config_file,
+        mm_config_file=mm_config_filepath,
         demo_run=demo_run,
         verbose=False,
     ) as acq:

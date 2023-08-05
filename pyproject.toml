@@ -1,59 +1,55 @@
 [build-system]
-requires = [
-  "setuptools >= 61",
-  "wheel",
-  "setuptools_scm[toml]>=3.4"
-]
+requires = ["setuptools >= 61", "setuptools_scm[toml]>=3.4", "wheel"]
 
 [project]
-name =  "mantis"
+name = "mantis"
 description = "Acquisition engine for collecting data on the mantis microscope"
 readme = "README.md"
-license = {file = "LICENSE"}
+license = { file = "LICENSE" }
 requires-python = ">=3.10, <4.0"
 
 # the dynamically determined project metadata attributes
 dynamic = ["version"]
 
 classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Science/Research",
-    "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10"
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
 ]
 
 # list package dependencies here
 dependencies = [
-    "numpy",
-    "pydantic",
-    "pycromanager==0.27.5",
-    "ndtiff>=2.0",
-    "nidaqmx",
-    "iohub==0.1.0.dev3",
-    "scipy",
-    "slurmkit @ git+https://github.com/royerlab/slurmkit",
-    "natsort",
-    "napari[all]; 'arm64' not in platform_machine", # with Qt5 and skimage
-    "napari; 'arm64' in platform_machine", # without Qt5 and skimage
-    "PyQt6; 'arm64' in platform_machine",
-    "matplotlib",
+  "iohub==0.1.0.dev4",
+  "matplotlib",
+  "napari; 'arm64' in platform_machine",                 # without Qt5 and skimage
+  "napari[all]; 'arm64' not in platform_machine",        # with Qt5 and skimage
+  "PyQt6; 'arm64' in platform_machine",
+  "natsort",
+  "ndtiff>=2.0",
+  "nidaqmx",
+  "numpy",
+  "pycromanager==0.27.5",
+  "pydantic",
+  "pylablib==1.4.1",
+  "scipy",
+  "slurmkit @ git+https://github.com/royerlab/slurmkit",
+  "tifffile",
+  "waveorder @ git+https://github.com/mehta-lab/waveorder",
 ]
 
 
 [project.optional-dependencies]
 # note that dev dependencies are only pinned to major versions
 dev = [
-    "black==22.3.0",
-    "flake8~=5.0",
-    "isort~=5.12",
-    "pre-commit~=2.19",
-    "pylint~=2.14",
-    "pytest~=7.1",
+  "black==22.3.0",
+  "flake8~=5.0",
+  "isort~=5.12",
+  "pre-commit~=2.19",
+  "pylint~=2.14",
+  "pytest~=7.1",
 ]
-build = [
-    "twine",
-    "build",
-]
+build = ["build", "twine"]
 
 [project.scripts]
 mantis = "mantis.cli.main:cli"
@@ -67,7 +63,7 @@ packages = ["mantis"]
 zip-safe = false
 
 [tool.setuptools.dynamic]
-version = {attr = "mantis.__version__"}
+version = { attr = "mantis.__version__" }
 
 [tool.black]
 line-length = 95
@@ -98,7 +94,7 @@ profile = "black"
 line_length = 95
 lines_between_types = 1
 default_section = "THIRDPARTY"
-no_lines_before = ["STDLIB",]
+no_lines_before = ["STDLIB"]
 ensure_newline_before_comments = true
 skip_glob = ["examples/*"]
 
@@ -106,6 +102,9 @@ skip_glob = ["examples/*"]
 # disable all conventions, refactors, warnings (C, R, W) and the following:
 # E0401: unable-to-import (since it is possible that no one environment has all required packages)
 # E1136: unsubscriptable-object (anecdotal false positives for numpy objects)
-disable = ["C", "R", "W", "unsubscriptable-object", "import-error"]
+disable = ["C", "R", "W", "import-error", "unsubscriptable-object"]
 msg-template = "{line},{column},{category},{symbol}:{msg}"
 reports = "n"
+
+[tool.pytest.ini_options]
+addopts = "--ignore examples/"

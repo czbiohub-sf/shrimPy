@@ -5,35 +5,26 @@ import napari
 import numpy as np
 import yaml
 
-from iohub import read_micromanager
+from iohub.ngff import open_ome_zarr
 
 from mantis.analysis.AnalysisSettings import DeskewSettings
+from mantis.cli.parsing import input_position_dirpaths, output_filepath
 
 
 @click.command()
-@click.argument(
-    "data_path",
-    type=click.Path(exists=True),
-)
-@click.option(
-    "--output-file",
-    "-o",
-    default="./deskew_params.yml",
-    required=False,
-    help="Path to saved parameters",
-)
-def estimate_deskew(data_path, output_file):
+@input_position_dirpaths()
+@output_filepath()
+def estimate_deskew(input_position_dirpaths, output_filepath):
     """
     Routine for estimating deskewing parameters from calibration data.
 
-    >> python estimate_deskew.py </path/to/data_path>
-
+    >> mantis estimate-deskew -i ./input.zarr/0/0/0 -o ./deskew_params.yml
     """
-    assert str(output_file).endswith(('.yaml', '.yml')), "Output file must be a YAML file."
+    assert str(output_filepath).endswith(('.yaml', '.yml')), "Output file must be a YAML file."
 
     # Read p, t, c = (0, 0, 0) into an array
-    reader = read_micromanager(data_path)
-    data = reader.get_array(0)[0, 0, ...]  # zyx
+    with open_ome_zarr(input_position_dirpaths[0]) as reader:
+        data = reader["0"][0, 0]  # zyx
 
     pixel_size_um = float(input("Enter image pixel size in micrometers: "))
     scan_step_um = float(input("Enter the estimated galvo scan step in micrometers: "))
@@ -86,8 +77,8 @@ def estimate_deskew(data_path, output_file):
     )
 
     # Write result
-    print(f"Writing deskewing parameters to {output_file}")
-    with open(output_file, "w") as f:
+    print(f"Writing deskewing parameters to {output_filepath}")
+    with open(output_filepath, "w") as f:
         yaml.dump(asdict(settings), f)
 
 
