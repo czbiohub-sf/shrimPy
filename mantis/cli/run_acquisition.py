@@ -3,7 +3,13 @@ from pathlib import Path
 import click
 import yaml
 
+from mantis import __mm_version__
 from mantis.cli.parsing import config_filepath, output_dirpath
+
+default_mm_app_path = 'C:\\Program Files\\Micro-Manager-2.0_{}_{}_{}_2'.format(
+    *__mm_version__.split('-')
+)
+default_mm_config_filepath = 'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg'
 
 
 @click.command()
@@ -11,7 +17,7 @@ from mantis.cli.parsing import config_filepath, output_dirpath
 @output_dirpath()
 @click.option(
     "--mm-app-path",
-    default='C:\\Program Files\\Micro-Manager-nightly',
+    default=default_mm_app_path,
     type=click.Path(exists=True, file_okay=False, dir_okay=True),
     show_default=True,
     help='''Path to Micro-manager installation directory
@@ -19,7 +25,7 @@ from mantis.cli.parsing import config_filepath, output_dirpath
 )
 @click.option(
     "--mm-config-filepath",
-    default='C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg',
+    default=default_mm_config_filepath,
     type=click.Path(exists=True, file_okay=True, dir_okay=False),
     show_default=True,
     help='''Path to Micro-manager config file

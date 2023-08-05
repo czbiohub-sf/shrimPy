@@ -244,11 +244,11 @@ class MantisAcquisition(object):
         Directory where acquired data will be saved
     acquisition_name : str
         Name of the acquisition
-    mm_app_path : str, optional
+    mm_app_path : str
         Path to Micro-manager installation directory which runs the light-sheet
-        acquisition, by default 'C:\\Program Files\\Micro-Manager-nightly'
-    config_file : str, optional
-        Path to config file which runs the light-sheet acquisition, by default
+        acquisition, typically 'C:\\Program Files\\Micro-Manager-2.0_YYYY_MM_DD_2'
+    config_file : str
+        Path to config file which runs the light-sheet acquisition, typically
         'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg'
     enable_ls_acq : bool, optional
         Set to False if only acquiring label-free data, by default True
@@ -279,8 +279,8 @@ class MantisAcquisition(object):
         self,
         acquisition_directory: Union[str, os.PathLike],
         acquisition_name: str,
-        mm_app_path: str = r'C:\\Program Files\\Micro-Manager-nightly',
-        mm_config_file: str = r'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg',
+        mm_app_path: str,
+        mm_config_file: str,
         enable_ls_acq: bool = True,
         enable_lf_acq: bool = True,
         demo_run: bool = False,
