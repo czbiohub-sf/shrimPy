@@ -1,18 +1,24 @@
 import os
-from dataclasses import asdict
 
+from dataclasses import asdict
 from pathlib import Path
 
 import click
 import napari
 import numpy as np
 import scipy
+import yaml
 
 from iohub import open_ome_zarr
 from skimage.transform import SimilarityTransform
 from waveorder.focus import focus_from_transverse_band
-import yaml
+
 from mantis.analysis.AnalysisSettings import RegistrationSettings
+from mantis.cli.parsing import (
+    labelfree_position_dirpaths,
+    lightsheet_position_dirpaths,
+    output_filepath,
+)
 
 # TODO: remove this for non mantis datasets
 ROTATE_90deg_CCW = True
@@ -68,41 +74,37 @@ def find_focus_channel_pairs(
 
 
 @click.command()
-@click.argument("phase_channel_data_path", type=click.Path(exists=True))
-@click.argument("fluor_channel_data_path", type=click.Path(exists=True))
-@click.option(
-    "--output-file",
-    "-o",
-    default="./registration_parameters.yml",
-    required=False,
-    help="Path to saved registration",
-)
-def manual_registration(phase_channel_data_path, fluor_channel_data_path, output_file):
+@labelfree_position_dirpaths()
+@lightsheet_position_dirpaths()
+@output_filepath
+def estimate_registration(
+    labelfree_position_dirpaths, lightsheet_position_dirpaths, output_filepath
+):
     """
     Estimate the affine transform between two channels (source channel and target channel) by manual inputs.
 
-    python estimate_registration.py  <path/to/phase_channel.zarr/0/0/0> <path/to/fluor_channel.zarr/0/0/0>
+    mantis estimate-registration -lf ./acq_name_labelfree_reconstructed.zarr/0/0/0 -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 -o ./register.yml
     """
-    assert str(output_file).endswith(('.yaml', '.yml')), "Output file must be a YAML file."
+    assert str(output_filepath).endswith(('.yaml', '.yml')), "Output file must be a YAML file."
 
     # Get a napari viewer()
     viewer = napari.Viewer()
 
     print("Getting dataset info")
     print("\n phase channel INFO:")
-    os.system(f"iohub info {phase_channel_data_path} ")
+    os.system(f"iohub info {labelfree_position_dirpaths} ")
     print("\n fluorescence channel INFO:")
-    os.system(f"iohub info {fluor_channel_data_path} ")
+    os.system(f"iohub info {lightsheet_position_dirpaths} ")
 
     phase_channel_idx = int(input("Enter phase_channel index to process: "))
     fluor_channel_idx = int(input("Enter fluor_channel index to process: "))
 
     # Display volumes rescaled
-    with open_ome_zarr(phase_channel_data_path, mode="r") as phase_channel_position:
+    with open_ome_zarr(labelfree_position_dirpaths, mode="r") as phase_channel_position:
         phase_channel_str = phase_channel_position.channel_names[phase_channel_idx]
         phase_channel_volume = phase_channel_position[0][0, phase_channel_idx]
         phase_channel_Z, phase_channel_Y, phase_channel_X = phase_channel_volume.shape
-    with open_ome_zarr(fluor_channel_data_path, mode="r") as fluor_channel_position:
+    with open_ome_zarr(lightsheet_position_dirpaths, mode="r") as fluor_channel_position:
         fluor_channel_str = fluor_channel_position.channel_names[fluor_channel_idx]
         fluor_channel_volume = fluor_channel_position[0][0, fluor_channel_idx]
         fluor_channel_Z, fluor_channel_Y, fluor_channel_X = fluor_channel_volume.shape
@@ -305,12 +307,12 @@ def manual_registration(phase_channel_data_path, fluor_channel_data_path, output
         output_shape=list(output_shape_volume),
         pts_phase_registration=pts_phase_channel.tolist(),
         pts_fluor_registration=pts_fluor_channel.tolist(),
-        phase_channel_path=str(phase_channel_data_path),
-        fluor_channel_path=str(fluor_channel_data_path),
+        phase_channel_path=str(labelfree_position_dirpaths),
+        fluor_channel_path=str(lightsheet_position_dirpaths),
         fluor_channel_90deg_CCW_rotation=ROTATE_90deg_CCW,
     )
-    print(f"Writing deskewing parameters to {output_file}")
-    with open(output_file, "w") as f:
+    print(f"Writing deskewing parameters to {output_filepath}")
+    with open(output_filepath, "w") as f:
         yaml.dump(asdict(settings), f)
 
     # Apply the transformation to 3D volume
@@ -337,7 +339,3 @@ def manual_registration(phase_channel_data_path, fluor_channel_data_path, output
         viewer.layers[f"middle_plane_{phase_channel_str}"].visible = False
 
     input("\n Displaying registered channels. Press <enter> to close...")
-
-
-if __name__ == "__main__":
-    manual_registration()
