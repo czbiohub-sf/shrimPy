@@ -13,7 +13,6 @@ import numpy as np
 from nidaqmx.constants import Slope
 from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, start_headless
 
-from mantis import __mm_version__
 from mantis.acquisition import microscope_operations
 from mantis.acquisition.logger import configure_logger, log_conda_environment
 
@@ -233,7 +232,7 @@ class MantisAcquisition(object):
         Name of the acquisition
     mm_app_path : str, optional
         Path to Micro-manager installation directory which runs the light-sheet
-        acquisition, by default 'C:\\Program Files\\Micro-Manager-2.0_YYYY_MM_DD_2'
+        acquisition, by default 'C:\\Program Files\\Micro-Manager-nightly'
     config_file : str, optional
         Path to config file which runs the light-sheet acquisition, by default
         'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg'
@@ -266,9 +265,7 @@ class MantisAcquisition(object):
         self,
         acquisition_directory: str,
         acquisition_name: str,
-        mm_app_path: str = 'C:\\Program Files\\Micro-Manager-2.0_{}_{}_{}_2'.format(
-            *__mm_version__.split('-')
-        ),
+        mm_app_path: str = r'C:\\Program Files\\Micro-Manager-nightly',
         mm_config_file: str = r'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg',
         enable_ls_acq: bool = True,
         enable_lf_acq: bool = True,
