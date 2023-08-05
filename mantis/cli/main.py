@@ -7,8 +7,10 @@ from mantis.cli.run_acquisition import run_acquisition
 from mantis.cli.estimate_registration import manual_registration
 from mantis.cli.register import register
 
+CONTEXT = {"help_option_names": ["-h", "--help"]}
 
-@click.group()
+
+@click.group(context_settings=CONTEXT)
 def cli():
     """command-line tools for mantis"""
 

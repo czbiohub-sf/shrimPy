@@ -6,7 +6,8 @@ from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime
 from functools import partial
-from typing import Iterable
+from pathlib import Path
+from typing import Iterable, Union
 
 import nidaqmx
 import numpy as np
@@ -239,7 +240,7 @@ class MantisAcquisition(object):
 
     Parameters
     ----------
-    acquisition_directory : str
+    acquisition_directory : str or PathLike
         Directory where acquired data will be saved
     acquisition_name : str
         Name of the acquisition
@@ -276,7 +277,7 @@ class MantisAcquisition(object):
 
     def __init__(
         self,
-        acquisition_directory: str,
+        acquisition_directory: Union[str, os.PathLike],
         acquisition_name: str,
         mm_app_path: str = r'C:\\Program Files\\Micro-Manager-nightly',
         mm_config_file: str = r'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg',
@@ -285,8 +286,7 @@ class MantisAcquisition(object):
         demo_run: bool = False,
         verbose: bool = False,
     ) -> None:
-
-        self._root_dir = acquisition_directory
+        self._root_dir = Path(acquisition_directory).resolve()
         self._acq_name = acquisition_name
         self._demo_run = demo_run
         self._verbose = verbose
@@ -296,12 +296,12 @@ class MantisAcquisition(object):
 
         # Create acquisition directory and log directory
         self._acq_dir = _create_acquisition_directory(self._root_dir, self._acq_name)
-        self._logs_dir = os.path.join(self._acq_dir, 'logs')
-        os.mkdir(self._logs_dir)
+        self._logs_dir = self._acq_dir / 'logs'
+        self._logs_dir.mkdir()
 
         # Setup logger
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-        acq_log_path = os.path.join(self._logs_dir, f'mantis_acquisition_log_{timestamp}.txt')
+        acq_log_path = self._logs_dir / f'mantis_acquisition_log_{timestamp}.txt'
         configure_logger(acq_log_path)
 
         if self._demo_run:
@@ -310,7 +310,7 @@ class MantisAcquisition(object):
 
         # Log conda environment
         outs, errs = log_conda_environment(
-            os.path.join(self._logs_dir, f'conda_environment_log_{timestamp}.txt')
+            self._logs_dir / f'conda_environment_log_{timestamp}.txt'
         )
         if errs is None:
             logger.debug(outs.decode('ascii').strip())
@@ -333,9 +333,7 @@ class MantisAcquisition(object):
             mm_app_path=mm_app_path,
             mm_config_file=mm_config_file,
             zmq_port=LS_ZMQ_PORT,
-            core_log_path=os.path.join(
-                mm_app_path, 'CoreLogs', f'CoreLog{timestamp}_headless.txt'
-            ),
+            core_log_path=Path(mm_app_path) / 'CoreLogs' / f'CoreLog{timestamp}_headless.txt',
         )
 
     @property
@@ -729,7 +727,7 @@ class MantisAcquisition(object):
         # Save acquired stacks in logs
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         tifffile.imwrite(
-            os.path.join(self._logs_dir, f'ls_refocus_data_{timestamp}.ome.tif'),
+            self._logs_dir / f'ls_refocus_data_{timestamp}.ome.tif',
             np.expand_dims(data, -3).astype('uint16'),
         )
 
@@ -747,9 +745,7 @@ class MantisAcquisition(object):
                 lambda_ill=wavelength,
                 pixel_size=LS_PIXEL_SIZE,
                 threshold_FWHM=threshold_FWHM,
-                plot_path=os.path.join(
-                    self._logs_dir, f'ls_refocus_plot_{timestamp}_Pos{stack_idx}.png'
-                ),
+                plot_path=self._logs_dir / f'ls_refocus_plot_{timestamp}_Pos{stack_idx}.png',
             )
             focus_indices.append(idx)
         logger.debug(
@@ -1001,10 +997,10 @@ def _generate_channel_slice_acq_events(channel_settings, slice_settings):
     return events
 
 
-def _create_acquisition_directory(root_dir, acq_name, idx=1):
-    acq_dir = os.path.join(root_dir, f'{acq_name}_{idx}')
+def _create_acquisition_directory(root_dir: Path, acq_name: str, idx=1) -> Path:
+    acq_dir = root_dir / f'{acq_name}_{idx}'
     try:
-        os.mkdir(acq_dir)
+        acq_dir.mkdir(parents=False, exist_ok=False)
     except OSError:
         return _create_acquisition_directory(root_dir, acq_name, idx + 1)
     return acq_dir

@@ -25,31 +25,77 @@ pip install .
 
 ## Usage
 
-Data are acquired using the `mantis run-acquisition` command. A list of the command line arguments can be obtained with:
+Mantis acquisitions and analyses use a command-line interface.
+
+A list of `mantis` commands can be displayed with:
+```sh
+mantis --help
+```
+
+Data are acquired using `mantis run-acquisition`, and a list of arguments can be displayed with:
 
 ```sh
 mantis run-acquisition --help
 ```
 
-The mantis acquisition is configures using a YAML settings file. An example of a settings file can be found [here](mantis/acquisition/settings/example_acquisition_settings.yaml).
+The mantis acquisition is configured using a YAML settings file. An example of a settings file can be found [here](mantis/acquisition/settings/example_acquisition_settings.yaml).
 
 This is an example of a command which will start an acquisition on the mantis microscope:
 
 ```pwsh
 mantis run-acquisition `
-    --data-dirpath ./test `
-    --name test_acquisition `
-    --settings path/to/settings/file
+    --config-filepath path/to/config.yaml `
+    --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name
 ```
 
 The acquisition may also be run in "demo" mode with the Micro-manager `MMConfig_Demo.cfg` config. This does not require any microscope hardware. A demo run can be started with:
 
 ```pwsh
 mantis run-acquisition `
-    --data-dirpath ./test `
-    --name test_acquisition `
-    --mm-config-file path/to/MMConfig_Demo.cfg `
-    --settings path/to/settings/file
+    --config-filepath path/to/config.yaml `
+    --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name `
+    --mm-config-filepath path/to/MMConfig_Demo.cfg
+```
+
+After data has been acquired, we can run analyses from the command line. All analysis calls take an input `-i` and an output `-o`, and the main analysis calls (`deskew`, `reconstruct`, `register`) use configuration files passed via a `-c` flag.
+
+A typical set of CLI calls to go from raw data to registered volumes looks like:
+
+```sh
+# CONVERT TO ZARR
+iohub convert `
+    -i ./acq_name/acq_name_labelfree_1 `
+    -o ./acq_name_labelfree.zarr `
+iohub convert `
+    -i ./acq_name/acq_name_lightsheet_1
+    -o ./acq_name_lightsheet.zarr
+
+# DESKEW
+mantis estimate-deskew `
+    -i ./acq_name_lightsheet.zarr/0/0/0 `
+    -o ./deskew.yml
+mantis deskew `
+    -i ./acq_name_lightsheet.zarr/*/*/*
+    -c ./deskew_params.yml `
+    -o ./acq_name_lightsheet_deskewed.zarr
+
+# UPCOMING CALLS AHEAD
+# RECONSTRUCT
+recorder reconstruct `
+    -i ./acq_name_labelfree.zarr/*/*/* `
+    -c ./recon.yml `
+    -o ./acq_name_labelfree_reconstructed.zarr
+
+# REGISTER
+mantis estimate-registration `
+    -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 `
+    -lf ./acq_name_labelfree_reconstructed.zarr/0/0/0 `
+    -o register.yml
+mantis register `
+    -ls ./acq_name_lightsheet_deskewed.zarr `
+    -lf ./acq_name_lightsheet_deskewed.zarr `
+    -o ./acq_name_registerred.zarr
+
 ```
 
 ## Contributing

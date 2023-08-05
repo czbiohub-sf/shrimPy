@@ -33,11 +33,11 @@ lf_slice_settings:
   z_start: -10
   z_end: 10
   # When using 0.52 NA transmission light illumination, Nyquist sampling of the
-  # axial dimension will be achieved by using (450*1.4)/(1.35^2 + 0.52^2) = 300 nm 
+  # axial dimension will be achieved by using (450*1.4)/(1.35^2 + 0.52^2) = 300 nm
   # steps in sample space. We can achieve this by using (300 nm)*1.4/2 = 210 nm
-  # steps of the mirror due to the 1.4x magnification of the remote volume and the 
-  # fact that the optical path length is extended by twice the mirror's motion. 
-  # 
+  # steps of the mirror due to the 1.4x magnification of the remote volume and the
+  # fact that the optical path length is extended by twice the mirror's motion.
+  #
   # Here we choose to oversample the data to match the light-sheet axial
   # sampling. After deskewing and 3x binning, the light-sheet samples are
   # spaced by ~205 nm, so we choose (205 nm)*1.4/2 = 143 nm mirror steps.
@@ -126,3 +126,6 @@ ls_microscope_settings:
     - ['TS2_TTL1-8', 'Blanking', 'Off']
   z_sequencing_settings:
     - [*AP_GALVO_DAC, 'Sequence', 'On']
+  use_o3_refocus: True
+  o3_refocus_config: ['Channel - LS', 'GFP EX488 EM525-45']
+  o3_refocus_interval_min: 10

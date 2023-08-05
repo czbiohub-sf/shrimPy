@@ -1,15 +1,21 @@
-from pydantic import validator
-from pydantic.dataclasses import dataclass
+from typing import Optional
+
 import numpy as np
 
+from pydantic import ConfigDict, PositiveFloat, PositiveInt, validator
+from pydantic.dataclasses import dataclass
 
-@dataclass
+config = ConfigDict(extra='forbid')
+
+
+@dataclass(config=config)
 class DeskewSettings:
-    pixel_size_um: float
-    ls_angle_deg: float
-    px_to_scan_ratio: float = None
-    scan_step_um: float = None
+    pixel_size_um: PositiveFloat
+    ls_angle_deg: PositiveFloat
+    px_to_scan_ratio: Optional[PositiveFloat] = None
+    scan_step_um: Optional[PositiveFloat] = None
     keep_overhang: bool = True
+    average_n_slices: PositiveInt = 3
 
     @validator("ls_angle_deg")
     def ls_angle_check(cls, v):
@@ -27,7 +33,7 @@ class DeskewSettings:
             if self.scan_step_um is not None:
                 self.px_to_scan_ratio = round(self.pixel_size_um / self.scan_step_um, 3)
             else:
-                raise Exception("px_to_scan_ratio is not valid")
+                raise TypeError("px_to_scan_ratio is not valid")
 
 
 @dataclass
