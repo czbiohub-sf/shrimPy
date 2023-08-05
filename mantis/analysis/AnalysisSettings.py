@@ -34,9 +34,9 @@ class DeskewSettings:
                 self.px_to_scan_ratio = round(self.pixel_size_um / self.scan_step_um, 3)
             else:
                 raise TypeError("px_to_scan_ratio is not valid")
+config = ConfigDict(extra='forbid')
 
-
-@dataclass
+@dataclass(config=config)
 class RegistrationSettings:
     affine_transform_zyx: list
     voxel_size: list
