@@ -1,10 +1,12 @@
 import logging
 import os
 
+from pathlib import Path
 from subprocess import PIPE, STDOUT, Popen
+from typing import Union
 
 
-def log_conda_environment(log_path: str):
+def log_conda_environment(log_path: Union[str, os.PathLike]):
     """Save a log of the current conda environment as defined in the
     `compmicro-docs/hpc/log_environment.ps1` PowerShell script. A copy of the
     script is kept in a separate location, given in `log_script_path` to avoid
@@ -13,7 +15,7 @@ def log_conda_environment(log_path: str):
 
     Parameters
     ----------
-    log_path : str
+    log_path : str or PathLike
         Path where the environment log file will be written
 
     Returns
@@ -23,12 +25,13 @@ def log_conda_environment(log_path: str):
     """
 
     # Validate log_path input
+    log_path = str(Path(log_path).absolute())
     assert log_path.endswith('.txt'), 'Log path must point to a .txt file'
 
     # get current conda environment
     conda_environment = os.environ['CONDA_DEFAULT_ENV']
     # define absolute path to log_environment.ps1 script
-    log_script_path = 'C:\\Users\\labelfree\\log_environment.ps1'
+    log_script_path = str(Path.home() / "log_environment.ps1")
 
     # `pwsh` command launches PowerShell 7. Do not use `powershell` as it
     # launches PowerShell 6 which is not configured with conda

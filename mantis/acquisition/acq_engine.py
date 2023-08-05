@@ -240,7 +240,7 @@ class MantisAcquisition(object):
 
     Parameters
     ----------
-    acquisition_directory : str
+    acquisition_directory : str or PathLike
         Directory where acquired data will be saved
     acquisition_name : str
         Name of the acquisition
