@@ -45,10 +45,10 @@ def registration_params_from_file(registration_param_path: Path) -> Registration
     type=int,
 )
 def register(
-    labelfree_position_dirpaths,  # TODO copy from here to output?
-    lightsheet_position_dirpaths,
-    config_filepath,
-    output_dirpath,
+    labelfree_position_dirpaths: List[str],  # TODO copy from here to output?
+    lightsheet_position_dirpaths: List[str],
+    config_filepath: str,
+    output_dirpath: str,
     num_processes: int,
 ):
     """

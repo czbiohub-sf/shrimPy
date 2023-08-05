@@ -109,7 +109,7 @@ def estimate_registration(
         fluor_channel_volume = fluor_channel_position[0][0, fluor_channel_idx]
         fluor_channel_Z, fluor_channel_Y, fluor_channel_X = fluor_channel_volume.shape
 
-    ## Find the z-scaling and apply it for display
+    # Find the z-scaling and apply it for display
     # TODO: Get these values from the yaml file
     # Use deskew metadta
     try:
