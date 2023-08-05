@@ -1,22 +1,18 @@
 import multiprocessing as mp
 
+from dataclasses import asdict
+from pathlib import Path
+from typing import List
 
 import click
-
-
-from mantis.cli import utils
-from mantis.cli.parsing import (
-    input_data_paths_argument,
-    output_dataset_options,
-    registration_param_argument,
-)
-from mantis.analysis.AnalysisSettings import RegistrationSettings
+import numpy as np
+import yaml
 
 from scipy.ndimage import affine_transform
-import numpy as np
-from pathlib import Path
-import yaml
-from dataclasses import asdict
+
+from mantis.analysis.AnalysisSettings import RegistrationSettings
+from mantis.cli import utils
+from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
 
 
 def registration_params_from_file(registration_param_path: Path) -> RegistrationSettings:
@@ -30,9 +26,9 @@ def registration_params_from_file(registration_param_path: Path) -> Registration
 
 
 @click.command()
-@input_data_paths_argument()
-@registration_param_argument()
-@output_dataset_options(default="./registered.zarr")
+@input_position_dirpaths()
+@config_filepath()
+@output_dirpath()
 # @click.option("--inverse", "-i", default=False, help="Apply the inverse transform")
 @click.option(
     "--num-processes",
@@ -43,19 +39,23 @@ def registration_params_from_file(registration_param_path: Path) -> Registration
     type=int,
 )
 def register(
-    input_paths: list[Path],
-    registration_param_path: Path,
-    output_path: Path,
+    input_position_dirpaths: List[str],
+    config_filepath: str,
+    output_dirpath: str,
     num_processes: int,
 ):
-    "Registers a single position across T and C axes using the pathfile for affine transform"
+    """
+    Register a single position across T and C axes using the pathfile for affine transform
+
+    >> mantis register -i ./input.zarr/*/*/* -c ./deskew_params.yml -o ./output.zarr
+    """
 
     # Handle single position or wildcard filepath
-    output_paths = utils.get_output_paths(input_paths, output_path)
-    click.echo(f"List of input_pos:{input_paths} output_pos:{output_paths}")
+    output_paths = utils.get_output_paths(input_position_dirpaths, output_dirpath)
+    click.echo(f"List of input_pos:{input_position_dirpaths} output_pos:{output_paths}")
 
     # Parse from the yaml file
-    settings = registration_params_from_file(registration_param_path)
+    settings = registration_params_from_file(config_filepath)
     matrix = np.linalg.inv(np.array(settings.affine_transform_zyx))
     output_shape = tuple(settings.output_shape)
     voxel_size = tuple(settings.voxel_size)
@@ -68,8 +68,8 @@ def register(
     click.echo(f'Chunk size output {chunk_zyx_shape}')
 
     utils.create_empty_zarr(
-        position_paths=input_paths,
-        output_path=output_path,
+        position_paths=input_position_dirpaths,
+        output_path=output_dirpath,
         output_zyx_shape=output_shape,
         chunk_zyx_shape=chunk_zyx_shape,
         voxel_size=voxel_size,
@@ -90,7 +90,9 @@ def register(
     }
 
     # Loop over positions
-    for input_position_path, output_position_path in zip(input_paths, output_paths):
+    for input_position_path, output_position_path in zip(
+        input_position_dirpaths, output_paths
+    ):
         utils.process_single_position(
             affine_transform,
             input_data_path=input_position_path,
