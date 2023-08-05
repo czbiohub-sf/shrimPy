@@ -19,6 +19,9 @@ lf_slice_settings:
   use_sequencing: True
 
 lf_microscope_settings:
+  # patch until https://github.com/micro-manager/mmCoreAndDevices/pull/362 is
+  # merged
+  roi: [0, 0, 1224, 1024]
   config_group_settings:
     - ['LightPath', 'Camera-left']
   device_property_settings:
