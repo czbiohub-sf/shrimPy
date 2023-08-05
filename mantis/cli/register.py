@@ -33,7 +33,7 @@ def registration_params_from_file(registration_param_path: Path) -> Registration
 @click.command()
 @labelfree_position_dirpaths()
 @lightsheet_position_dirpaths()
-@config_filepath
+@config_filepath()
 @output_dirpath()
 # @click.option("--inverse", "-i", default=False, help="Apply the inverse transform")
 @click.option(
