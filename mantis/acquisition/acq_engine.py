@@ -1014,7 +1014,11 @@ class MantisAcquisition(object):
             sequenced_stages = []
             if self.lf_acq.slice_settings.use_sequencing:
                 sequenced_stages.append(self.lf_acq.slice_settings.z_stage_name)
-            if self.lf_acq.channel_settings.use_sequencing and not self._demo_run:
+            if (
+                self.lf_acq.channel_settings.use_sequencing
+                and self.lf_acq.channel_settings.num_channels > 1
+                and not self._demo_run
+            ):
                 sequenced_stages.extend(['TS1_DAC01', 'TS1_DAC02'])
             microscope_operations.abort_acquisition_sequence(
                 self.lf_acq.mmc, camera, sequenced_stages
