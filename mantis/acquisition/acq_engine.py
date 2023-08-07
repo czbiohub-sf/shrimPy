@@ -940,7 +940,15 @@ class MantisAcquisition(object):
 
                 # wait for CZYX acquisition to finish
                 self.await_cz_acq_completion()
-                self.abort_stalled_acquisition(t_idx, p_label)
+                lf_acq_aborted, ls_acq_aborted = self.abort_stalled_acquisition()
+                if lf_acq_aborted:
+                    logger.error(
+                        f'Label-free acquisition for timepoint {t_idx} at position {p_label} did not complete in time. Aborting acquisition'
+                    )
+                if ls_acq_aborted:
+                    logger.error(
+                        f'Light-sheet acquisition for timepoint {t_idx} at position {p_label} did not complete in time. Aborting acquisition'
+                    )
 
             # wait for time interval between time points
             t_wait = self.time_settings.time_interval_s - (time.time() - timepoint_start_time)
@@ -986,8 +994,10 @@ class MantisAcquisition(object):
         wait_time = np.ceil(np.maximum(ls_acq_time, lf_acq_time))
         time.sleep(wait_time)
 
-    def abort_stalled_acquisition(self, t_idx, p_label):
+    def abort_stalled_acquisition(self):
         buffer_time = 5
+        lf_acq_aborted = False
+        ls_acq_aborted = False
 
         t_start = time.time()
         while (
@@ -996,33 +1006,35 @@ class MantisAcquisition(object):
         ):
             time.sleep(0.2)
 
+        # TODO: a lot of hardcoded values here
         if not config.lf_acq_finished:
             # abort LF acq
-            logger.error(
-                f'Label-free acquisition for timepoint {t_idx} at position {p_label} did not complete in time. Aborting acquisition'
-            )
+            lf_acq_aborted = True
+            camera = 'Camera' if self._demo_run else 'Oryx'
             sequenced_stages = []
             if self.lf_acq.slice_settings.use_sequencing:
                 sequenced_stages.append(self.lf_acq.slice_settings.z_stage_name)
-            if self.lf_acq.channel_settings.use_sequencing:
+            if self.lf_acq.channel_settings.use_sequencing and not self._demo_run:
                 sequenced_stages.extend(['TS1_DAC01', 'TS1_DAC02'])
             microscope_operations.abort_acquisition_sequence(
-                self.lf_acq.mmc, 'Oryx', sequenced_stages
+                self.lf_acq.mmc, camera, sequenced_stages
             )
 
         if not config.ls_acq_finished:
             # abort LS acq
-            logger.error(
-                f'Light-sheet acquisition for timepoint {t_idx} at position {p_label} did not complete in time. Aborting acquisition'
-            )
+            ls_acq_aborted = True
+            camera = 'Camera' if self._demo_run else 'Prime BSI Express'
             sequenced_stages = []
             if self.ls_acq.slice_settings.use_sequencing:
                 sequenced_stages.append(self.ls_acq.slice_settings.z_stage_name)
             if self.ls_acq.channel_settings.use_sequencing:
+                # for now, we don't do channel sequencing on the LS acquisition
                 pass
             microscope_operations.abort_acquisition_sequence(
-                self.ls_acq.mmc, 'Oryx', sequenced_stages
+                self.ls_acq.mmc, camera, sequenced_stages
             )
+
+        return lf_acq_aborted, ls_acq_aborted
 
 
 def _generate_channel_slice_acq_events(channel_settings, slice_settings):
