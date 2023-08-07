@@ -521,3 +521,23 @@ def reset_shutter(mmc: Core, auto_shutter_state: bool, shutter_state: bool):
         )
         mmc.set_shutter_open(shutter_state)
         mmc.set_auto_shutter(auto_shutter_state)
+
+
+def abort_acquisition_sequence(
+    mmc: Core, camera: str = None, sequenced_stages: Iterable[str] = []
+):
+    """Abort acquisition sequence and clear circular buffer
+
+    Parameters
+    ----------
+    mmc : Core
+    camera : str, optional
+        Camera name, by default None
+    sequenced_stages : Iterable[str], optional
+        List of sequenced stages by name, by default []
+    """
+
+    for stage in sequenced_stages:
+        mmc.stop_stage_sequence(stage)
+    mmc.stop_sequence_acquisition(camera)
+    mmc.clear_circular_buffer()
