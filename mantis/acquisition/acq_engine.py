@@ -941,14 +941,14 @@ class MantisAcquisition(object):
                 # wait for CZYX acquisition to finish
                 self.await_cz_acq_completion()
                 lf_acq_aborted, ls_acq_aborted = self.abort_stalled_acquisition()
+                error_message = (
+                    '{} acquisition for timepoint {} at position {} did not complete in time. '
+                    'Aborting acquisition'
+                )
                 if lf_acq_aborted:
-                    logger.error(
-                        f'Label-free acquisition for timepoint {t_idx} at position {p_label} did not complete in time. Aborting acquisition'
-                    )
+                    logger.error(error_message.format('Label-free', t_idx, p_label))
                 if ls_acq_aborted:
-                    logger.error(
-                        f'Light-sheet acquisition for timepoint {t_idx} at position {p_label} did not complete in time. Aborting acquisition'
-                    )
+                    logger.error(error_message.format('Light-sheet', t_idx, p_label))
 
             # wait for time interval between time points
             t_wait = self.time_settings.time_interval_s - (time.time() - timepoint_start_time)
