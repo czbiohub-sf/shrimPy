@@ -1005,7 +1005,7 @@ class MantisAcquisition(object):
             if self.lf_acq.slice_settings.use_sequencing:
                 sequenced_stages.append(self.lf_acq.slice_settings.z_stage_name)
             if self.lf_acq.channel_settings.use_sequencing:
-                sequenced_stages.append(['TS1_DAC01', 'TS1_DAC02'])
+                sequenced_stages.extend(['TS1_DAC01', 'TS1_DAC02'])
             microscope_operations.abort_acquisition_sequence(
                 self.lf_acq.mmc, 'Oryx', sequenced_stages
             )
