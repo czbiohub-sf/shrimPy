@@ -55,14 +55,14 @@ ls_channel_settings:
 # Define slice (i.e. z-stack) settings for the light-sheet acquisition.
 ls_slice_settings:
   z_stage_name: 'AP Galvo'
-  # 5.5 V range corresponds to 170 um scan range which matches the label-free
-  # field of view
-  z_start: -2.75  # in Volts
-  z_end: 2.75
-  # Nyquist sampling of this dimensions will be achieved by using 3.75 mV steps
-  # (corresponding to ~116 nm). When imaging live cells we chose to undersample
-  # this dimension to decrease photobleaching and photodamage.
-  z_step: 0.01  # 10 mV is equivalent to 310 nm
+  # 170 um scan range matches the label-free field of view. Corresponds to
+  # ~5.5 V based on 31.3 um/V conversion factor
+  z_start: -85  # in micrometers
+  z_end: 85
+  # Nyquist sampling of this dimensions will be achieved by using ~116 nm steps.
+  # When imaging live cells we chose to undersample this dimension to decrease
+  # photobleaching and photodamage.
+  z_step: 0.313  # equivalent to 10 mV
   use_sequencing: True
 
 # Microscope settings which will be applied when the label-free acquisition is
