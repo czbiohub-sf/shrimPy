@@ -90,6 +90,7 @@ class BaseChannelSliceAcquisition(object):
         self._channel_settings = ChannelSettings()
         self._slice_settings = SliceSettings()
         self._microscope_settings = MicroscopeSettings()
+        self._z0 = None
         self.headless = False if mm_app_path is None else True
         self.type = 'light-sheet' if self.headless else 'label-free'
         self.mmc = None
@@ -192,6 +193,7 @@ class BaseChannelSliceAcquisition(object):
             microscope_operations.set_property(
                 self.mmc, 'Core', 'Focus', self.slice_settings.z_stage_name
             )
+            self._z0 = round(float(self.mmc.get_position(self.slice_settings.z_stage_name)), 3)
 
             # Setup O3 scan stage
             if self.microscope_settings.use_o3_refocus:
@@ -231,6 +233,11 @@ class BaseChannelSliceAcquisition(object):
                     settings.property_name,
                     settings.property_value,
                 )
+
+            # Reset z stage to initial position
+            microscope_operations.set_z_position(
+                self.mmc, self.slice_settings.z_stage_name, self._z0
+            )
 
 
 class MantisAcquisition(object):
@@ -947,11 +954,9 @@ class MantisAcquisition(object):
         lf_acq.await_completion()
         logger.debug('Label-free acquisition finished')
 
-        # TODO: move scan stages to zero
-
         # Close ndtiff dataset - not sure why this is necessary
-        lf_acq._dataset.close()
-        ls_acq._dataset.close()
+        lf_acq.get_dataset().close()
+        ls_acq.get_dataset().close()
 
         logger.info('Acquisition finished')
 
