@@ -298,6 +298,8 @@ class MantisAcquisition(object):
         self._acq_name = acquisition_name
         self._demo_run = demo_run
         self._verbose = verbose
+        self._lf_acq_obj = None
+        self._ls_acq_obj = None
 
         if not enable_lf_acq or not enable_ls_acq:
             raise Exception('Disabling LF or LS acquisition is not currently supported')
@@ -380,6 +382,12 @@ class MantisAcquisition(object):
         # Reset LF and LS acquisitions
         self.lf_acq.reset()
         self.ls_acq.reset()
+
+        # Abort acquisitions if they have not finished, usually after Ctr+C
+        if self._lf_acq_obj:
+            self._lf_acq_obj.abort()
+        if self._ls_acq_obj:
+            self._ls_acq_obj.abort()
 
         # Close PM bridges - call to cleanup blocks exit!
         # cleanup()
@@ -832,7 +840,7 @@ class MantisAcquisition(object):
         lf_image_saved_fn = None
 
         # define LF acquisition
-        lf_acq = Acquisition(
+        self._lf_acq_obj = Acquisition(
             directory=self._acq_dir,
             name=f'{self._acq_name}_labelfree',
             port=LF_ZMQ_PORT,
@@ -860,7 +868,7 @@ class MantisAcquisition(object):
         ls_image_saved_fn = None
 
         # define LS acquisition
-        ls_acq = Acquisition(
+        self._ls_acq_obj = Acquisition(
             directory=self._acq_dir,
             name=f'{self._acq_name}_lightsheet',
             port=LS_ZMQ_PORT,
@@ -932,8 +940,8 @@ class MantisAcquisition(object):
                     _event['axes']['position'] = p_idx
                     _event['min_start_time'] = 0
 
-                ls_acq.acquire(ls_events)
-                lf_acq.acquire(lf_events)
+                self._ls_acq_obj.acquire(ls_events)
+                self._lf_acq_obj.acquire(lf_events)
 
                 # wait for CZYX acquisition to finish
                 self.await_cz_acq_completion()
@@ -944,19 +952,23 @@ class MantisAcquisition(object):
                 logger.info(f"Waiting {t_wait/60:.2f} minutes until the next time point")
                 time.sleep(t_wait)
 
-        ls_acq.mark_finished()
-        lf_acq.mark_finished()
+        self._ls_acq_obj.mark_finished()
+        self._lf_acq_obj.mark_finished()
 
         logger.debug('Waiting for acquisition to finish')
 
-        ls_acq.await_completion()
+        self._ls_acq_obj.await_completion()
         logger.debug('Light-sheet acquisition finished')
-        lf_acq.await_completion()
+        self._lf_acq_obj.await_completion()
         logger.debug('Label-free acquisition finished')
 
         # Close ndtiff dataset - not sure why this is necessary
-        lf_acq.get_dataset().close()
-        ls_acq.get_dataset().close()
+        self._lf_acq_obj.get_dataset().close()
+        self._ls_acq_obj.get_dataset().close()
+
+        # Clean up pycromanager acquisition objects
+        self._lf_acq_obj = None
+        self._ls_acq_obj = None
 
         logger.info('Acquisition finished')
 
