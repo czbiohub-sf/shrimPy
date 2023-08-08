@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools >= 42", "setuptools_scm[toml]>=3.4", "wheel"]
+requires = ["setuptools >= 61", "setuptools_scm[toml]>=3.4", "wheel"]
 
 [project]
 name = "mantis"
@@ -20,15 +20,16 @@ classifiers = [
 
 # list package dependencies here
 dependencies = [
-  "iohub==0.1.0.dev3",
+  "iohub==0.1.0.dev4",
   "matplotlib",
   "napari; 'arm64' in platform_machine",                 # without Qt5 and skimage
   "napari[all]; 'arm64' not in platform_machine",        # with Qt5 and skimage
   "PyQt6; 'arm64' in platform_machine",
   "natsort",
+  "ndtiff>=2.0",
   "nidaqmx",
   "numpy",
-  "pycromanager==0.25.40",
+  "pycromanager==0.28.1",
   "pydantic",
   "pylablib==1.4.1",
   "scipy",

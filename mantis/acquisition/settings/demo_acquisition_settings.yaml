@@ -19,11 +19,14 @@ lf_slice_settings:
   use_sequencing: True
 
 lf_microscope_settings:
+  # patch until https://github.com/micro-manager/mmCoreAndDevices/pull/362 is
+  # merged
+  roi: [0, 0, 1224, 1024]
   config_group_settings:
     - ['LightPath', 'Camera-left']
   device_property_settings:
-    - ['Camera', 'OnCameraCCDXSize', '1024']
-    - ['Camera', 'OnCameraCCDYSize', '1224']
+    - ['Camera', 'OnCameraCCDXSize', '1224']
+    - ['Camera', 'OnCameraCCDYSize', '1024']
     - ['Camera', 'BitDepth', '12']
   z_sequencing_settings:
     - ['Z', 'UseSequences', 'Yes']
