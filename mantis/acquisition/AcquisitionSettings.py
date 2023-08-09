@@ -3,7 +3,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-from pydantic import ConfigDict, NonNegativeFloat, NonNegativeInt
+from pydantic import ConfigDict, NonNegativeFloat, NonNegativeInt, validator
 from pydantic.dataclasses import dataclass
 
 config = ConfigDict(extra='forbid')
@@ -65,6 +65,14 @@ class SliceSettings:
     num_slices: int = field(init=False, default=0)
     acquisition_rate: float = field(init=False, default=None)
     z_range: List[float] = field(init=False, repr=False, default_factory=list)
+
+    @validator("z_step")
+    def check_z_step(cls, v):
+        if v is not None and v < 0.1:
+            raise ValueError(
+                "Provided z_step size is lower than 0.1 um, you may be using wrong units"
+            )
+        return v
 
     def __post_init__(self):
         # If one of z_params is provided, then they all need to be provided

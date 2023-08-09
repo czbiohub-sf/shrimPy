@@ -39,9 +39,9 @@ ls_channel_settings:
 
 ls_slice_settings:
   z_stage_name: 'Z'
-  z_start: -0.2  # in Volts
-  z_end: 0.2
-  z_step: 0.01  # equivalent to 330 nm
+  z_start: -6  # in micrometers
+  z_end: 6
+  z_step: 0.313  # equivalent to 10 mV
   use_sequencing: True
 
 ls_microscope_settings:
