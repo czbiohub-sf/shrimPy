@@ -69,10 +69,6 @@ def set_roi(mmc, roi: tuple):
 
     mmc.set_roi(*roi)
 
-    # patch until https://github.com/micro-manager/mmCoreAndDevices/pull/362 is
-    # merged
-    mmc.initialize_circular_buffer()
-
 
 def get_position_list(mmStudio, z_stage_name):
     mm_pos_list = mmStudio.get_position_list_manager().get_position_list()
