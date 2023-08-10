@@ -31,13 +31,13 @@ FLUOR_PIXEL_SIZE = 6.5 / (40 * 1.4)
 @labelfree_position_dirpaths()
 @lightsheet_position_dirpaths()
 @output_filepath()
-def estimate_registration(
+def estimate_phase_to_fluor_affine(
     labelfree_position_dirpaths, lightsheet_position_dirpaths, output_filepath
 ):
     """
     Estimate the affine transform between two channels (source channel and target channel) by manual inputs.
 
-    mantis estimate-registration -lf ./acq_name_labelfree_reconstructed.zarr/0/0/0 -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 -o ./register.yml
+    mantis estimate-phase-to-fluor-affine -lf ./acq_name_labelfree_reconstructed.zarr/0/0/0 -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 -o ./register.yml
     """
     assert str(output_filepath).endswith(('.yaml', '.yml')), "Output file must be a YAML file."
 

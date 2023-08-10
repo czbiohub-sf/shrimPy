@@ -59,9 +59,9 @@ def apply_affine(
     num_processes: int,
 ):
     """
-    Register a single position across T and C axes using the pathfile for affine transform
+    Apply an affine transformation a single position across T and C axes using the pathfile for affine transform
 
-    >> mantis register -lf ./acq_name_lightsheet_deskewed.zarr/*/*/* -ls ./acq_name_lightsheet_deskewed.zarr/*/*/* -c ./register.yml -o ./acq_name_registerred.zarr
+    >> mantis apply_affine -lf ./acq_name_lightsheet_deskewed.zarr/*/*/* -ls ./acq_name_lightsheet_deskewed.zarr/*/*/* -c ./register.yml -o ./acq_name_registerred.zarr
     """
 
     # Handle single position or wildcard filepath
