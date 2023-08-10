@@ -330,21 +330,3 @@ def estimate_registration(
         viewer.layers[f"middle_plane_{fluor_channel_str}"].visible = False
 
     input("\n Displaying registered channels. Press <enter> to close...")
-
-
-if __name__ == '__main__':
-    import os
-
-    print(os.getcwd())
-    os.chdir("/home/eduardo.hirata/repos/recOrder/recOrder/tests/cli_tests")
-    print(os.getcwd())
-    estimate_registration(
-        [
-            "-lf",
-            "/hpc/projects/comp.micro/mantis/2023_08_03_HEK_RAC1/2-phase3D/reconstruct_all_reg5e-3.zarr/0/0/0",
-            "-ls",
-            "/hpc/projects/comp.micro/mantis/2023_08_03_HEK_RAC1/1-deskew/deskewed.zarr/0/0/0",
-            "-o",
-            "./registration.yml",
-        ]
-    )
