@@ -1,6 +1,5 @@
 import multiprocessing as mp
 
-from dataclasses import asdict
 from pathlib import Path
 from typing import List
 
