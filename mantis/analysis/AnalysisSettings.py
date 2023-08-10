@@ -40,7 +40,7 @@ class DeskewSettings:
 class RegistrationSettings:
     affine_transform_zyx: list
     output_shape_zyx: list
-    k_90deg_rot: int = 0
+    pre_affine_90degree_rotations_about_z: Optional[int] = 1
 
     @validator("affine_transform_zyx")
     def check_affine_transform(cls, v):

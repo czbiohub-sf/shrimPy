@@ -20,19 +20,30 @@ from mantis.cli.parsing import (
 )
 
 # TODO: what should we do with these parameters? Have them as inputs during CLI?
-K_ROTATION = 1
 LF_Z_STEP = 0.143  # this measurement from metadata at the LF RF volume
 LF_RF_MAGNIFICATION = 1.4
 PHASE_PIXEL_SIZE = (3.45 * 2) / (33 * LF_RF_MAGNIFICATION)  # binning by 2
 FLUOR_PIXEL_SIZE = 6.5 / (40 * 1.4)
+FOCUS_SLICE_ROI_SIDE = 150
 
 
 @click.command()
 @labelfree_position_dirpaths()
 @lightsheet_position_dirpaths()
 @output_filepath()
+@click.option(
+    "--pre-affine-90degree-rotations-about-z",
+    "-k",
+    default=1,
+    help="Pre-affine 90degree rotations about z",
+    required=False,
+    type=int,
+)
 def estimate_phase_to_fluor_affine(
-    labelfree_position_dirpaths, lightsheet_position_dirpaths, output_filepath
+    labelfree_position_dirpaths,
+    lightsheet_position_dirpaths,
+    output_filepath,
+    pre_affine_90degree_rotations_about_z,
 ):
     """
     Estimate the affine transform between two channels (source channel and target channel) by manual inputs.
@@ -63,9 +74,19 @@ def estimate_phase_to_fluor_affine(
 
         # Find the infocus slice
         focus_phase_channel_idx = focus_from_transverse_band(
-            phase_channel_position[0][0, phase_channel_idx],
+            phase_channel_position[0][
+                0,
+                phase_channel_idx,
+                :,
+                phase_channel_Y // 2
+                - FOCUS_SLICE_ROI_SIDE : phase_channel_Y // 2
+                + FOCUS_SLICE_ROI_SIDE,
+                phase_channel_X // 2
+                - FOCUS_SLICE_ROI_SIDE : phase_channel_X // 2
+                + FOCUS_SLICE_ROI_SIDE,
+            ],
             NA_det=1.35,
-            lambda_ill=0.55,
+            lambda_ill=0.45,
             pixel_size=PHASE_PIXEL_SIZE,
             plot_path="./best_focus_phase.svg",
         )
@@ -78,9 +99,19 @@ def estimate_phase_to_fluor_affine(
 
         # Finding the infocus plane
         focus_fluor_channel_idx = focus_from_transverse_band(
-            fluor_channel_position[0][0, fluor_channel_idx],
+            fluor_channel_position[0][
+                0,
+                fluor_channel_idx,
+                :,
+                fluor_channel_Y // 2
+                - FOCUS_SLICE_ROI_SIDE : fluor_channel_Y // 2
+                + FOCUS_SLICE_ROI_SIDE,
+                fluor_channel_X // 2
+                - FOCUS_SLICE_ROI_SIDE : fluor_channel_X // 2
+                + FOCUS_SLICE_ROI_SIDE,
+            ],
             NA_det=1.35,
-            lambda_ill=0.60,
+            lambda_ill=0.6,
             pixel_size=FLUOR_PIXEL_SIZE,
             plot_path="./best_focus_fluor.svg",
         )
@@ -109,7 +140,9 @@ def estimate_phase_to_fluor_affine(
 
     # Add layers to napari with and transform
     # Rotate the image if needed here
-    phase_channel_volume_rotated = np.rot90(phase_channel_volume, k=K_ROTATION, axes=(1, 2))
+    phase_channel_volume_rotated = np.rot90(
+        phase_channel_volume, k=pre_affine_90degree_rotations_about_z, axes=(1, 2)
+    )
     layer_phase_channel = viewer.add_image(
         phase_channel_volume_rotated, name=phase_channel_str
     )
@@ -291,7 +324,7 @@ def estimate_phase_to_fluor_affine(
     settings = RegistrationSettings(
         affine_transform_zyx=zyx_affine_transform.tolist(),
         output_shape_zyx=list(output_shape_zyx),
-        k_90deg_rot=K_ROTATION,
+        pre_affine_90degree_rotations_about_z=pre_affine_90degree_rotations_about_z,
     )
     print(f"Writing deskewing parameters to {output_filepath}")
     with open(output_filepath, "w") as f:
@@ -304,7 +337,9 @@ def estimate_phase_to_fluor_affine(
         # Rotate the image first
 
         phase_volume_rotated = np.rot90(
-            phase_channel_position[0][0, phase_channel_idx], k=K_ROTATION, axes=(1, 2)
+            phase_channel_position[0][0, phase_channel_idx],
+            k=pre_affine_90degree_rotations_about_z,
+            axes=(1, 2),
         )
 
         registered_3D_volume = scipy.ndimage.affine_transform(

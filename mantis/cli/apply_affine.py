@@ -29,8 +29,13 @@ def registration_params_from_file(registration_param_path: Path) -> Registration
     return settings
 
 
-def rotate_n_affine_transform(zyx_data, matrix, output_shape_zyx, k_90deg_rot: int = 0):
-    rotate_volume = np.rot90(zyx_data, k=k_90deg_rot, axes=(1, 2))
+def rotate_n_affine_transform(
+    zyx_data, matrix, output_shape_zyx, pre_affine_90degree_rotations_about_z: int = 0
+):
+    if pre_affine_90degree_rotations_about_z != 0:
+        rotate_volume = np.rot90(
+            zyx_data, k=pre_affine_90degree_rotations_about_z, axes=(1, 2)
+        )
     affine_volume = affine_transform(
         rotate_volume, matrix=matrix, output_shape=output_shape_zyx
     )
@@ -74,7 +79,7 @@ def apply_affine(
     settings = registration_params_from_file(config_filepath)
     matrix = np.linalg.inv(np.array(settings.affine_transform_zyx))
     output_shape_zyx = tuple(settings.output_shape_zyx)
-    k_90deg_rot = settings.k_90deg_rot
+    pre_affine_90degree_rotations_about_z = settings.pre_affine_90degree_rotations_about_z
 
     # Get the voxel size from the lightsheet data
     with open_ome_zarr(lightsheet_position_dirpaths[0]) as ls_position:
@@ -120,13 +125,13 @@ def apply_affine(
     extra_metadata = {
         'affine_transformation': {
             'affine_matrix': matrix.tolist(),
-            'k_90deg_rot': k_90deg_rot,
+            'pre_affine_90degree_rotations_about_z': pre_affine_90degree_rotations_about_z,
         }
     }
     affine_transform_args = {
         'matrix': matrix,
         'output_shape_zyx': settings.output_shape_zyx,
-        'k_90deg_rot': k_90deg_rot,
+        'pre_affine_90degree_rotations_about_z': pre_affine_90degree_rotations_about_z,
         'extra_metadata': extra_metadata,
     }
 
