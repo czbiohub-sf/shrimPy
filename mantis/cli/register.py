@@ -8,6 +8,7 @@ import click
 import numpy as np
 import yaml
 
+from iohub import open_ome_zarr
 from scipy.ndimage import affine_transform
 
 from mantis.analysis.AnalysisSettings import RegistrationSettings
@@ -29,7 +30,13 @@ def registration_params_from_file(registration_param_path: Path) -> Registration
     click.echo(f"Registration parameters: {asdict(settings)}")
     return settings
 
-
+def rotate_n_affine_transform(zyx_data, matrix, output_shape, k_90deg_rot:int=0):
+    rotate_volume = np.rot90(
+            zyx_data, k=k_90deg_rot, axes=(1, 2)
+        )
+    affine_volume = affine_transform(rotate_volume,matrix=matrix, output_shape)
+    return affine_volume 
+    
 @click.command()
 @labelfree_position_dirpaths()
 @lightsheet_position_dirpaths()
@@ -44,7 +51,7 @@ def registration_params_from_file(registration_param_path: Path) -> Registration
     required=False,
     type=int,
 )
-def register(
+def apply_affine(
     labelfree_position_dirpaths: List[str],  # TODO copy from here to output?
     lightsheet_position_dirpaths: List[str],
     config_filepath: str,
@@ -65,7 +72,11 @@ def register(
     settings = registration_params_from_file(config_filepath)
     matrix = np.linalg.inv(np.array(settings.affine_transform_zyx))
     output_shape = tuple(settings.output_shape)
-    voxel_size = tuple(settings.voxel_size)
+    k_90deg_rot = settings.k_90deg_rot
+
+    # Get the voxel size from the lightsheet data
+    with open_ome_zarr(lightsheet_position_dirpaths[0]) as ls_position:
+        voxel_size = ls_position.scale
 
     click.echo('\nREGISTRATION PARAMETERS:')
     click.echo(f'Affine transform: {matrix}')
@@ -85,14 +96,15 @@ def register(
     # Get the affine transformation matrix
     # TODO: add the metadta from yaml
     extra_metadata = {
-        'registration': {
+        'affine_transformation': {
             'affine_matrix': matrix.tolist(),
-            'fluor_channel_90deg_CCW_rot': settings.fluor_channel_90deg_CCW_rotation,
+            'k_90deg_rot': k_90deg_rot,
         }
     }
     affine_transform_args = {
         'matrix': matrix,
         'output_shape': settings.output_shape,
+        'k_90deg_rot': k_90deg_rot,
         'extra_metadata': extra_metadata,
     }
 
@@ -101,9 +113,11 @@ def register(
         lightsheet_position_dirpaths, output_paths
     ):
         utils.process_single_position(
-            affine_transform,
+            rotate_n_affine_transform,
             input_data_path=input_position_path,
             output_path=output_position_path,
             num_processes=num_processes,
             **affine_transform_args,
         )
+
+
