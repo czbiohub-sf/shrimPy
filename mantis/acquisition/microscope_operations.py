@@ -117,7 +117,6 @@ def wait_for_device(mmc, device_name: str):
 def setup_daq_counter(
     task: nidaqmx.Task, co_channel, freq, duty_cycle, samples_per_channel, pulse_terminal
 ):
-
     logger.debug(f'Setting up {task.name} on {co_channel}')
     logger.debug(
         f'{co_channel} will output {samples_per_channel} samples with {duty_cycle} duty cycle at {freq:.6f} Hz on terminal {pulse_terminal}'

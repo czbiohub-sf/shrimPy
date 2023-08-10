@@ -30,13 +30,13 @@ def registration_params_from_file(registration_param_path: Path) -> Registration
     click.echo(f"Registration parameters: {asdict(settings)}")
     return settings
 
-def rotate_n_affine_transform(zyx_data, matrix, output_shape, k_90deg_rot:int=0):
-    rotate_volume = np.rot90(
-            zyx_data, k=k_90deg_rot, axes=(1, 2)
-        )
-    affine_volume = affine_transform(rotate_volume,matrix=matrix, output_shape)
-    return affine_volume 
-    
+
+def rotate_n_affine_transform(zyx_data, matrix, output_shape, k_90deg_rot: int = 0):
+    rotate_volume = np.rot90(zyx_data, k=k_90deg_rot, axes=(1, 2))
+    affine_volume = affine_transform(rotate_volume, matrix=matrix, output_shape=output_shape)
+    return affine_volume
+
+
 @click.command()
 @labelfree_position_dirpaths()
 @lightsheet_position_dirpaths()
@@ -119,5 +119,3 @@ def apply_affine(
             num_processes=num_processes,
             **affine_transform_args,
         )
-
-
