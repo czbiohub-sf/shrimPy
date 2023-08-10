@@ -19,4 +19,4 @@ output_shape_zyx:
 - 300
 - 2048
 - 1243
-k_90deg_rot: -1
+pre_affine_90degree_rotations_about_z: -1
