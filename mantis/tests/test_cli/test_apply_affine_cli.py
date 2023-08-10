@@ -6,7 +6,7 @@ from mantis.cli.main import cli
 def test_apply_affine_cli(tmp_path, example_plate, example_apply_affine_settings):
     plate_path, _ = example_plate
     config_path, _ = example_apply_affine_settings
-    output_path = tmp_path / "config.yaml"
+    output_path = tmp_path / "output.zarr"
 
     runner = CliRunner()
     result = runner.invoke(

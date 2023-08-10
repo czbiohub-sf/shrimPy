@@ -63,3 +63,8 @@ class RegistrationSettings:
             raise ValueError("The array must contain valid numerical values.")
 
         return v
+
+    @validator("output_shape_zyx")
+    def check_output_shape_zyx(cls, v):
+        if not isinstance(v, list) or len(v) != 3:
+            raise ValueError("The output shape zyx must be a list of length 3.")
