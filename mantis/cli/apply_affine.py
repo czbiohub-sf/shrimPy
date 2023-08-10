@@ -77,7 +77,7 @@ def apply_affine(
 
     # Parse from the yaml file
     settings = registration_params_from_file(config_filepath)
-    matrix = np.linalg.inv(np.array(settings.affine_transform_zyx))
+    matrix = np.array(settings.affine_transform_zyx)
     output_shape_zyx = tuple(settings.output_shape_zyx)
     pre_affine_90degree_rotations_about_z = settings.pre_affine_90degree_rotations_about_z
 

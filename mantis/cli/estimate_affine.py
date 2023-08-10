@@ -274,7 +274,7 @@ def estimate_phase_to_fluor_affine(
     zyx_affine_transform = np.vstack(
         (z_shift, np.insert(yx_points_transformation_matrix, 0, 0, axis=1))
     )  # Insert 0 in the third entry of each row
-
+    zyx_affine_transform = np.linalg.inv(zyx_affine_transform)
     # Get the transformation matrix
     print(f"Affine Transform Matrix:\n {zyx_affine_transform}\n")
     output_shape_zyx = (fluor_channel_Z, fluor_channel_Y, fluor_channel_X)
@@ -282,7 +282,7 @@ def estimate_phase_to_fluor_affine(
     # Demo: apply the affine transform to the image at the middle of the stack
     aligned_image = scipy.ndimage.affine_transform(
         phase_channel_volume_rotated[phase_channel_Z // 2 : phase_channel_Z // 2 + 1],
-        np.linalg.inv(zyx_affine_transform),
+        zyx_affine_transform,
         output_shape=(1, fluor_channel_Y, fluor_channel_X),
     )
     viewer.add_image(
@@ -320,9 +320,10 @@ def estimate_phase_to_fluor_affine(
     )
     # Composite of all transforms
     zyx_affine_transform = zyx_points_transformation_matrix @ z_scaling_matrix
+    zyx_affine_transform = np.linalg.inv(zyx_affine_transform)  # phase to fluorescence mapping
     print(f"Affine Transform Matrix:\n {zyx_affine_transform}\n")
     settings = RegistrationSettings(
-        affine_transform_zyx=zyx_affine_transform.tolist(),
+        affine_transform_zyx=zyx_affine_transform.tolist(),  # phase to fluorescence mapping
         output_shape_zyx=list(output_shape_zyx),
         pre_affine_90degree_rotations_about_z=pre_affine_90degree_rotations_about_z,
     )
@@ -344,7 +345,7 @@ def estimate_phase_to_fluor_affine(
 
         registered_3D_volume = scipy.ndimage.affine_transform(
             phase_volume_rotated,
-            np.linalg.inv(zyx_affine_transform),
+            zyx_affine_transform,
             output_shape=output_shape_zyx,
         )
         viewer.add_image(
