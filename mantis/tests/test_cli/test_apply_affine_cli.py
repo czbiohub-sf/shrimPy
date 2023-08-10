@@ -22,6 +22,7 @@ def test_apply_affine_cli(tmp_path, example_plate, example_apply_affine_settings
             "-o",
             str(output_path),
         ],
+        catch_exceptions=False,
     )
 
     assert output_path.exists()

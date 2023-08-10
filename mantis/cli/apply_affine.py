@@ -27,7 +27,6 @@ def registration_params_from_file(registration_param_path: Path) -> Registration
     with open(registration_param_path) as file:
         raw_settings = yaml.safe_load(file)
     settings = RegistrationSettings(**raw_settings)
-    click.echo(f"Registration parameters: {asdict(settings)}")
     return settings
 
 
@@ -44,7 +43,6 @@ def rotate_n_affine_transform(zyx_data, matrix, output_shape_zyx, k_90deg_rot: i
 @lightsheet_position_dirpaths()
 @config_filepath()
 @output_dirpath()
-# @click.option("--inverse", "-i", default=False, help="Apply the inverse transform")
 @click.option(
     "--num-processes",
     "-j",
@@ -65,6 +63,9 @@ def apply_affine(
 
     >> mantis apply_affine -lf ./acq_name_lightsheet_deskewed.zarr/*/*/* -ls ./acq_name_lightsheet_deskewed.zarr/*/*/* -c ./register.yml -o ./acq_name_registerred.zarr
     """
+    # Convert string paths to Path objects
+    output_dirpath = Path(output_dirpath)
+    config_filepath = Path(config_filepath)
 
     # Handle single position or wildcard filepath
     output_paths = utils.get_output_paths(lightsheet_position_dirpaths, output_dirpath)
@@ -78,13 +79,34 @@ def apply_affine(
 
     # Get the voxel size from the lightsheet data
     with open_ome_zarr(lightsheet_position_dirpaths[0]) as ls_position:
-        voxel_size = ls_position.scale
+        metadata = ls_position.metadata.dict() if ls_position.metadata else None
+        voxel_size = (1, 1, 1)
+
+        if metadata:
+            multiscales = metadata.get('multiscales')
+            if multiscales and isinstance(multiscales, list) and multiscales[0]:
+                coordinate_transformations = multiscales[0].get('coordinate_transformations')
+                if (
+                    coordinate_transformations
+                    and isinstance(coordinate_transformations, list)
+                    and coordinate_transformations[0]
+                ):
+                    scales = coordinate_transformations[0].get('scale')
+                    if scales and len(scales) > 2:
+                        voxel_size = tuple(scales[2:])
 
     click.echo('\nREGISTRATION PARAMETERS:')
     click.echo(f'Affine transform: {matrix}')
     click.echo(f'Output shape: {output_shape_zyx}')
     click.echo(f'Voxel size: {voxel_size}')
-    chunk_zyx_shape = (output_shape_zyx[0] // 10,) + output_shape_zyx[1:]
+    z_chunk_factor = 10
+    chunk_zyx_shape = (
+        output_shape_zyx[0] // z_chunk_factor
+        if output_shape_zyx[0] > z_chunk_factor
+        else output_shape_zyx[0],
+        output_shape_zyx[1],
+        output_shape_zyx[2],
+    )
     click.echo(f'Chunk size output {chunk_zyx_shape}')
 
     utils.create_empty_zarr(
@@ -96,7 +118,6 @@ def apply_affine(
     )
 
     # Get the affine transformation matrix
-    # TODO: add the metadta from yaml
     extra_metadata = {
         'affine_transformation': {
             'affine_matrix': matrix.tolist(),
@@ -105,7 +126,7 @@ def apply_affine(
     }
     affine_transform_args = {
         'matrix': matrix,
-        'output_shape': settings.output_shape_zyx,
+        'output_shape_zyx': settings.output_shape_zyx,
         'k_90deg_rot': k_90deg_rot,
         'extra_metadata': extra_metadata,
     }

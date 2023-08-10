@@ -30,11 +30,11 @@ def test_apply_affine_settings():
         RegistrationSettings(typo_param="test")
 
     # Test wrong output shape size
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         RegistrationSettings(output_shape_zyx=[1, 2, 3, 4])
 
     # Test wrong matrix shape
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         random_array = np.random.rand(5, 5)
         RegistrationSettings(affine_transform_zyx=random_array.tolist())
 

@@ -36,9 +36,6 @@ class DeskewSettings:
                 raise TypeError("px_to_scan_ratio is not valid")
 
 
-config = ConfigDict(extra="forbid")
-
-
 @dataclass(config=config)
 class RegistrationSettings:
     affine_transform_zyx: list
@@ -68,3 +65,4 @@ class RegistrationSettings:
     def check_output_shape_zyx(cls, v):
         if not isinstance(v, list) or len(v) != 3:
             raise ValueError("The output shape zyx must be a list of length 3.")
+        return v
