@@ -83,7 +83,7 @@ def apply_transform_to_zyx_and_save(
     func, position: Position, output_path: Path, t_idx: int, c_idx: int, **kwargs
 ) -> None:
     """Load a zyx array from a Position object, apply a transformation and save the result to file"""
-    click.echo(f"Registering c={c_idx}, t={t_idx}")
+    click.echo(f"Processing c={c_idx}, t={t_idx}")
     zyx_data = position[0][t_idx, c_idx]
 
     # Apply transformation
