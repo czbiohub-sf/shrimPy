@@ -244,7 +244,7 @@ def estimate_phase_to_fluor_affine(
 
     # Get the transformation matrix
     print(f"Affine Transform Matrix:\n {zyx_affine_transform}\n")
-    output_shape_volume = (fluor_channel_Z, fluor_channel_Y, fluor_channel_X)
+    output_shape_zyx = (fluor_channel_Z, fluor_channel_Y, fluor_channel_X)
 
     # Demo: apply the affine transform to the image at the middle of the stack
     aligned_image = scipy.ndimage.affine_transform(
@@ -290,7 +290,7 @@ def estimate_phase_to_fluor_affine(
     print(f"Affine Transform Matrix:\n {zyx_affine_transform}\n")
     settings = RegistrationSettings(
         affine_transform_zyx=zyx_affine_transform.tolist(),
-        output_shape=list(output_shape_volume),
+        output_shape_zyx=list(output_shape_zyx),
         k_90deg_rot=K_ROTATION,
     )
     print(f"Writing deskewing parameters to {output_filepath}")
@@ -310,7 +310,7 @@ def estimate_phase_to_fluor_affine(
         registered_3D_volume = scipy.ndimage.affine_transform(
             phase_volume_rotated,
             np.linalg.inv(zyx_affine_transform),
-            output_shape=output_shape_volume,
+            output_shape=output_shape_zyx,
         )
         viewer.add_image(
             registered_3D_volume,

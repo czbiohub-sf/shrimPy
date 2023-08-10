@@ -31,9 +31,11 @@ def registration_params_from_file(registration_param_path: Path) -> Registration
     return settings
 
 
-def rotate_n_affine_transform(zyx_data, matrix, output_shape, k_90deg_rot: int = 0):
+def rotate_n_affine_transform(zyx_data, matrix, output_shape_zyx, k_90deg_rot: int = 0):
     rotate_volume = np.rot90(zyx_data, k=k_90deg_rot, axes=(1, 2))
-    affine_volume = affine_transform(rotate_volume, matrix=matrix, output_shape=output_shape)
+    affine_volume = affine_transform(
+        rotate_volume, matrix=matrix, output_shape=output_shape_zyx
+    )
     return affine_volume
 
 
@@ -71,7 +73,7 @@ def apply_affine(
     # Parse from the yaml file
     settings = registration_params_from_file(config_filepath)
     matrix = np.linalg.inv(np.array(settings.affine_transform_zyx))
-    output_shape = tuple(settings.output_shape)
+    output_shape_zyx = tuple(settings.output_shape_zyx)
     k_90deg_rot = settings.k_90deg_rot
 
     # Get the voxel size from the lightsheet data
@@ -80,15 +82,15 @@ def apply_affine(
 
     click.echo('\nREGISTRATION PARAMETERS:')
     click.echo(f'Affine transform: {matrix}')
-    click.echo(f'Output shape: {output_shape}')
+    click.echo(f'Output shape: {output_shape_zyx}')
     click.echo(f'Voxel size: {voxel_size}')
-    chunk_zyx_shape = (output_shape[0] // 10,) + output_shape[1:]
+    chunk_zyx_shape = (output_shape_zyx[0] // 10,) + output_shape_zyx[1:]
     click.echo(f'Chunk size output {chunk_zyx_shape}')
 
     utils.create_empty_zarr(
         position_paths=lightsheet_position_dirpaths,
         output_path=output_dirpath,
-        output_zyx_shape=output_shape,
+        output_zyx_shape=output_shape_zyx,
         chunk_zyx_shape=chunk_zyx_shape,
         voxel_size=voxel_size,
     )
@@ -103,7 +105,7 @@ def apply_affine(
     }
     affine_transform_args = {
         'matrix': matrix,
-        'output_shape': settings.output_shape,
+        'output_shape': settings.output_shape_zyx,
         'k_90deg_rot': k_90deg_rot,
         'extra_metadata': extra_metadata,
     }

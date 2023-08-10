@@ -42,7 +42,7 @@ config = ConfigDict(extra="forbid")
 @dataclass(config=config)
 class RegistrationSettings:
     affine_transform_zyx: list
-    output_shape: list
+    output_shape_zyx: list
     k_90deg_rot: int = 0
 
     @validator("affine_transform_zyx")
