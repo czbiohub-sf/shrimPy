@@ -1,10 +1,10 @@
 import click
 
+from mantis.cli.apply_affine import apply_affine
 from mantis.cli.deskew import deskew
+from mantis.cli.estimate_affine import estimate_phase_to_fluor_affine
 from mantis.cli.estimate_bleaching import estimate_bleaching
 from mantis.cli.estimate_deskew import estimate_deskew
-from mantis.cli.estimate_registration import estimate_phase_to_fluor_affine
-from mantis.cli.register import apply_affine
 from mantis.cli.run_acquisition import run_acquisition
 
 CONTEXT = {"help_option_names": ["-h", "--help"]}
