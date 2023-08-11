@@ -291,7 +291,6 @@ class MantisAcquisition(object):
         demo_run: bool = False,
         verbose: bool = False,
     ) -> None:
-
         self._root_dir = Path(acquisition_directory).resolve()
         self._acq_name = acquisition_name
         self._demo_run = demo_run

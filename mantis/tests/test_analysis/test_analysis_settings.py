@@ -1,6 +1,7 @@
+import numpy as np
 import pytest
 
-from mantis.analysis.AnalysisSettings import DeskewSettings
+from mantis.analysis.AnalysisSettings import DeskewSettings, RegistrationSettings
 
 
 def test_deskew_settings():
@@ -21,3 +22,23 @@ def test_example_deskew_settings(example_deskew_settings):
     _, settings = example_deskew_settings
 
     DeskewSettings(**settings)
+
+
+def test_apply_affine_settings():
+    # Test extra parameter
+    with pytest.raises(TypeError):
+        RegistrationSettings(typo_param="test")
+
+    # Test wrong output shape size
+    with pytest.raises(TypeError):
+        RegistrationSettings(output_shape_zyx=[1, 2, 3, 4])
+
+    # Test wrong matrix shape
+    with pytest.raises(TypeError):
+        random_array = np.random.rand(5, 5)
+        RegistrationSettings(affine_transform_zyx=random_array.tolist())
+
+
+def test_example_apply_affine_settings(example_apply_affine_settings):
+    _, settings = example_apply_affine_settings
+    RegistrationSettings(**settings)
