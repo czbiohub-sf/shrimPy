@@ -92,11 +92,9 @@ mantis estimate-phase-to-fluor-affine `
     -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 `
     -o ./register.yml
 mantis apply-affine `
-    -lf ./acq_name_lightsheet_deskewed.zarr/*/*/* `
-    -ls ./acq_name_lightsheet_deskewed.zarr/*/*/* `
+    -i ./acq_name_labelfree_deskewed.zarr/*/*/* `
     -c ./register.yml
     -o ./acq_name_registerred.zarr
-
 ```
 
 ## Contributing
