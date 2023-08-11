@@ -12,11 +12,7 @@ from scipy.ndimage import affine_transform
 
 from mantis.analysis.AnalysisSettings import RegistrationSettings
 from mantis.cli import utils
-from mantis.cli.parsing import (
-    config_filepath,
-    input_position_dirpaths,
-    output_dirpath,
-)
+from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
 
 
 def registration_params_from_file(registration_param_path: Path) -> RegistrationSettings:
