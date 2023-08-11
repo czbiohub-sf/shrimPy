@@ -325,7 +325,7 @@ def estimate_phase_to_fluor_affine(
         output_shape_zyx=list(output_shape_zyx),
         pre_affine_90degree_rotations_about_z=pre_affine_90degree_rotations_about_z,
     )
-    print(f"Writing deskewing parameters to {output_filepath}")
+    print(f"Writing registration parameters to {output_filepath}")
     with open(output_filepath, "w") as f:
         yaml.dump(asdict(settings), f)
 
