@@ -22,6 +22,10 @@ output_data_path = './deskewed.zarr'
 cpus_per_task = 16
 mem_per_cpu = "16G"
 time = 40  # minutes
+simultaneous_processes_per_node = 4
+
+# Z-chunking factor. Big datasets require z-chunking to avoid blocs issues
+z_chunk_factor = 20
 
 # path handling
 input_paths = natsorted(glob.glob(input_paths))
@@ -38,10 +42,19 @@ with open_ome_zarr(str(input_paths[0]), mode="r") as input_dataset:
     settings = deskew_params_from_file(deskew_param_path)
     deskewed_shape, voxel_size = get_deskewed_data_shape(
         (Z, Y, X),
-        settings.ls_angle_deg,
-        settings.px_to_scan_ratio,
-        settings.keep_overhang,
-        settings.pixel_size_um,
+        ls_angle_deg=settings.ls_angle_deg,
+        px_to_scan_ratio=settings.px_to_scan_ratio,
+        keep_overhang=settings.keep_overhang,
+        average_n_slices=settings.average_n_slices,
+        pixel_size_um=settings.pixel_size_um,
+    )
+
+    chunk_zyx_shape = (
+        deskewed_shape[0] // z_chunk_factor
+        if deskewed_shape[0] > z_chunk_factor
+        else deskewed_shape[0],
+        deskewed_shape[1],
+        deskewed_shape[2],
     )
 
     # Create a zarr store output to mirror the input
@@ -49,15 +62,16 @@ with open_ome_zarr(str(input_paths[0]), mode="r") as input_dataset:
         input_paths,
         output_data_path,
         output_zyx_shape=deskewed_shape,
-        chunk_zyx_shape=deskewed_shape,
+        chunk_zyx_shape=chunk_zyx_shape,
         voxel_size=voxel_size,
     )
 
 deskew_args = {
-    'ls_angle_deg': settings.ls_angle_deg,
-    'px_to_scan_ratio': settings.px_to_scan_ratio,
-    'keep_overhang': settings.keep_overhang,
-    'extra_metadata': {'deskew': asdict(settings)},
+    "ls_angle_deg": settings.ls_angle_deg,
+    "px_to_scan_ratio": settings.px_to_scan_ratio,
+    "keep_overhang": settings.keep_overhang,
+    "average_n_slices": settings.average_n_slices,
+    "extra_metadata": {"deskew": asdict(settings)},
 }
 
 # prepare slurm parameters
@@ -72,7 +86,7 @@ params = SlurmParams(
 # wrap our deskew_single_position() function with slurmkit
 slurm_deskew_single_position = slurm_function(utils.process_single_position)
 deskew_func = slurm_deskew_single_position(
-    func=deskew_data, num_processes=cpus_per_task, **deskew_args
+    func=deskew_data, num_processes=simultaneous_processes_per_node, **deskew_args
 )
 
 # generate an array of jobs by passing the in_path and out_path to slurm wrapped function
