@@ -63,7 +63,7 @@ def apply_affine(
     num_processes: int,
 ):
     """
-    Apply an affine transformation a single position across T and C axes using the pathfile for affine transform
+    Apply an affine transformation to a single position across T and C axes using the pathfile for affine transform to the phase channel
 
     >> mantis apply_affine -lf ./acq_name_lightsheet_deskewed.zarr/*/*/* -ls ./acq_name_lightsheet_deskewed.zarr/*/*/* -c ./register.yml -o ./acq_name_registerred.zarr
     """
@@ -72,20 +72,25 @@ def apply_affine(
     config_filepath = Path(config_filepath)
 
     # Handle single position or wildcard filepath
-    output_paths = utils.get_output_paths(lightsheet_position_dirpaths, output_dirpath)
-    click.echo(f"List of input_pos:{lightsheet_position_dirpaths} output_pos:{output_paths}")
+    output_paths = utils.get_output_paths(labelfree_position_dirpaths, output_dirpath)
+    click.echo(f"List of input_pos:{labelfree_position_dirpaths} output_pos:{output_paths}")
 
     # Parse from the yaml file
     settings = registration_params_from_file(config_filepath)
     matrix = np.array(settings.affine_transform_zyx)
     output_shape_zyx = tuple(settings.output_shape_zyx)
     pre_affine_90degree_rotations_about_z = settings.pre_affine_90degree_rotations_about_z
-    voxel_size = utils.get_voxel_size_from_metadata(lightsheet_position_dirpaths[0])
+
+    # Take the light-sheet scale metadata
+    # TODO: change this to labelfree_position_dirpaths after recorder #399
+    with open_ome_zarr(lightsheet_position_dirpaths[0]) as light_sheet_position:
+        voxel_size = tuple(light_sheet_position.scale[-3:])
 
     click.echo('\nREGISTRATION PARAMETERS:')
     click.echo(f'Affine transform: {matrix}')
     click.echo(f'Output shape: {output_shape_zyx}')
     click.echo(f'Voxel size: {voxel_size}')
+
     z_chunk_factor = 10
     chunk_zyx_shape = (
         output_shape_zyx[0] // z_chunk_factor
@@ -97,7 +102,7 @@ def apply_affine(
     click.echo(f'Chunk size output {chunk_zyx_shape}')
 
     utils.create_empty_zarr(
-        position_paths=lightsheet_position_dirpaths,
+        position_paths=labelfree_position_dirpaths,
         output_path=output_dirpath,
         output_zyx_shape=output_shape_zyx,
         chunk_zyx_shape=chunk_zyx_shape,
@@ -120,7 +125,7 @@ def apply_affine(
 
     # Loop over positions
     for input_position_path, output_position_path in zip(
-        lightsheet_position_dirpaths, output_paths
+        labelfree_position_dirpaths, output_paths
     ):
         utils.process_single_position(
             rotate_n_affine_transform,

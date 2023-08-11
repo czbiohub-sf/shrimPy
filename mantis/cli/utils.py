@@ -117,7 +117,6 @@ def process_single_position(
     click.echo(f" Input data tree: {stdout_buffer.getvalue()}")
 
     T, C, _, _, _ = input_dataset.data.shape
-    click.echo(f"Input dataset shape:\t{input_dataset.data.shape}")
 
     # Check the arguments for the function
     all_func_params = inspect.signature(func).parameters.keys()
@@ -152,23 +151,3 @@ def process_single_position(
             ),
             itertools.product(range(T), range(C)),
         )
-
-
-def get_voxel_size_from_metadata(input_position_path: Path):
-    # Get the voxel size from the metadata
-    with open_ome_zarr(input_position_path) as position:
-        metadata = position.metadata.dict() if position.metadata else None
-        voxel_size = (1, 1, 1)
-        if metadata:
-            multiscales = metadata.get('multiscales')
-            if multiscales and isinstance(multiscales, list) and multiscales[0]:
-                coordinate_transformations = multiscales[0].get('coordinate_transformations')
-                if (
-                    coordinate_transformations
-                    and isinstance(coordinate_transformations, list)
-                    and coordinate_transformations[0]
-                ):
-                    scales = coordinate_transformations[0].get('scale')
-                    if scales and len(scales) > 2:
-                        voxel_size = tuple(scales[2:])
-    return voxel_size
