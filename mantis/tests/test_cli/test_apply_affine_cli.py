@@ -13,10 +13,8 @@ def test_apply_affine_cli(tmp_path, example_plate, example_apply_affine_settings
         cli,
         [
             "apply-affine",
-            "-lf",
+            "-i",
             str(plate_path) + "/A/1/0",
-            "-ls",
-            str(plate_path) + "/B/1/0",  # test could be improved with different stores
             "-c",
             str(config_path),
             "-o",

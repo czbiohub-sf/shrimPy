@@ -78,13 +78,11 @@ def apply_affine(
     output_shape_zyx = tuple(settings.output_shape_zyx)
     pre_affine_90degree_rotations_about_z = settings.pre_affine_90degree_rotations_about_z
 
-    # Take the light-sheet scale metadata
-    # TODO: change this to labelfree_position_dirpaths after recorder #399
+    # Calculate the output voxel size from the input scale and affine transform
     with open_ome_zarr(input_position_dirpaths[0]) as input_dataset:
         input_voxel_size = np.array(input_dataset.scale[-3:])
-
-    # TODO: Double check this...are abs(eig)s correct?
-    output_voxel_size = np.abs(np.linalg.eig(matrix[:3,:3])[0])*input_voxel_size
+    affine_scaling = np.abs(np.linalg.eig(matrix[:3, :3])[0])
+    output_voxel_size = affine_scaling * input_voxel_size
 
     click.echo('\nREGISTRATION PARAMETERS:')
     click.echo(f'Affine transform: {matrix}')
@@ -106,7 +104,7 @@ def apply_affine(
         output_path=output_dirpath,
         output_zyx_shape=output_shape_zyx,
         chunk_zyx_shape=chunk_zyx_shape,
-        voxel_size=output_voxel_size,
+        voxel_size=tuple(output_voxel_size),
     )
 
     # Get the affine transformation matrix
