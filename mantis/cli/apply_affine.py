@@ -14,8 +14,7 @@ from mantis.analysis.AnalysisSettings import RegistrationSettings
 from mantis.cli import utils
 from mantis.cli.parsing import (
     config_filepath,
-    labelfree_position_dirpaths,
-    lightsheet_position_dirpaths,
+    input_position_dirpaths,
     output_dirpath,
 )
 
@@ -43,8 +42,7 @@ def rotate_n_affine_transform(
 
 
 @click.command()
-@labelfree_position_dirpaths()
-@lightsheet_position_dirpaths()
+@input_position_dirpaths()
 @config_filepath()
 @output_dirpath()
 @click.option(
@@ -56,8 +54,7 @@ def rotate_n_affine_transform(
     type=int,
 )
 def apply_affine(
-    labelfree_position_dirpaths: List[str],  # TODO copy from here to output?
-    lightsheet_position_dirpaths: List[str],
+    input_position_dirpaths: List[str],
     config_filepath: str,
     output_dirpath: str,
     num_processes: int,
@@ -65,15 +62,15 @@ def apply_affine(
     """
     Apply an affine transformation to a single position across T and C axes using the pathfile for affine transform to the phase channel
 
-    >> mantis apply_affine -lf ./acq_name_lightsheet_deskewed.zarr/*/*/* -ls ./acq_name_lightsheet_deskewed.zarr/*/*/* -c ./register.yml -o ./acq_name_registerred.zarr
+    >> mantis apply_affine -i ./acq_name_lightsheet_deskewed.zarr/*/*/* -c ./register.yml -o ./acq_name_registerred.zarr
     """
     # Convert string paths to Path objects
     output_dirpath = Path(output_dirpath)
     config_filepath = Path(config_filepath)
 
     # Handle single position or wildcard filepath
-    output_paths = utils.get_output_paths(labelfree_position_dirpaths, output_dirpath)
-    click.echo(f"List of input_pos:{labelfree_position_dirpaths} output_pos:{output_paths}")
+    output_paths = utils.get_output_paths(input_position_dirpaths, output_dirpath)
+    click.echo(f"List of input_pos:{input_position_dirpaths} output_pos:{output_paths}")
 
     # Parse from the yaml file
     settings = registration_params_from_file(config_filepath)
@@ -83,13 +80,16 @@ def apply_affine(
 
     # Take the light-sheet scale metadata
     # TODO: change this to labelfree_position_dirpaths after recorder #399
-    with open_ome_zarr(lightsheet_position_dirpaths[0]) as light_sheet_position:
-        voxel_size = tuple(light_sheet_position.scale[-3:])
+    with open_ome_zarr(input_position_dirpaths[0]) as input_dataset:
+        input_voxel_size = np.array(input_dataset.scale[-3:])
+
+    # TODO: Double check this...are abs(eig)s correct?
+    output_voxel_size = np.abs(np.linalg.eig(matrix[:3,:3])[0])*input_voxel_size
 
     click.echo('\nREGISTRATION PARAMETERS:')
     click.echo(f'Affine transform: {matrix}')
     click.echo(f'Output shape: {output_shape_zyx}')
-    click.echo(f'Voxel size: {voxel_size}')
+    click.echo(f'Voxel size: {output_voxel_size}')
 
     z_chunk_factor = 10
     chunk_zyx_shape = (
@@ -102,11 +102,11 @@ def apply_affine(
     click.echo(f'Chunk size output {chunk_zyx_shape}')
 
     utils.create_empty_zarr(
-        position_paths=labelfree_position_dirpaths,
+        position_paths=input_position_dirpaths,
         output_path=output_dirpath,
         output_zyx_shape=output_shape_zyx,
         chunk_zyx_shape=chunk_zyx_shape,
-        voxel_size=voxel_size,
+        voxel_size=output_voxel_size,
     )
 
     # Get the affine transformation matrix
@@ -125,7 +125,7 @@ def apply_affine(
 
     # Loop over positions
     for input_position_path, output_position_path in zip(
-        labelfree_position_dirpaths, output_paths
+        input_position_dirpaths, output_paths
     ):
         utils.process_single_position(
             rotate_n_affine_transform,
