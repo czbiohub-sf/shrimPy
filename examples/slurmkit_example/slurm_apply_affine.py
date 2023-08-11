@@ -39,7 +39,7 @@ settings = registration_params_from_file(registration_param_path)
 matrix = np.array(settings.affine_transform_zyx)
 output_shape_zyx = tuple(settings.output_shape_zyx)
 
-# TODO: replace this with labelfree_data_paths after recorder. This would also remove the lightsheet_data_paths
+# Get the output voxel_size
 with open_ome_zarr(lightsheet_data_paths[0]) as light_sheet_position:
     voxel_size = tuple(light_sheet_position.scale[-3:])
 
