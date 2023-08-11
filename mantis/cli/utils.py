@@ -114,7 +114,7 @@ def process_single_position(
     stdout_buffer = io.StringIO()
     with contextlib.redirect_stdout(stdout_buffer):
         input_dataset.print_tree()
-    click.echo(f" Zarr Store info: {stdout_buffer.getvalue()}")
+    click.echo(f" Input data tree: {stdout_buffer.getvalue()}")
 
     T, C, _, _, _ = input_dataset.data.shape
     click.echo(f"Input dataset shape:\t{input_dataset.data.shape}")

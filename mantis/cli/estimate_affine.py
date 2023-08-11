@@ -276,7 +276,6 @@ def estimate_phase_to_fluor_affine(
     )  # Insert 0 in the third entry of each row
     zyx_affine_transform = np.linalg.inv(zyx_affine_transform)
     # Get the transformation matrix
-    print(f"Affine Transform Matrix:\n {zyx_affine_transform}\n")
     output_shape_zyx = (fluor_channel_Z, fluor_channel_Y, fluor_channel_X)
 
     # Demo: apply the affine transform to the image at the middle of the stack
@@ -309,7 +308,6 @@ def estimate_phase_to_fluor_affine(
     except LookupError("Could not find coordinateTransformation scale in metadata"):
         z_sampling_fluor_channel = 1
 
-    print(z_sampling_fluor_channel)
     # Estimate the Similarity Transform (rotation,scaling,translation)
     transform = SimilarityTransform()
     transform.estimate(pts_phase_channel, pts_fluor_channel)
