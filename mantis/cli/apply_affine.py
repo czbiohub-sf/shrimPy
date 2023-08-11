@@ -80,24 +80,7 @@ def apply_affine(
     matrix = np.array(settings.affine_transform_zyx)
     output_shape_zyx = tuple(settings.output_shape_zyx)
     pre_affine_90degree_rotations_about_z = settings.pre_affine_90degree_rotations_about_z
-
-    # Get the voxel size from the lightsheet data
-    with open_ome_zarr(lightsheet_position_dirpaths[0]) as ls_position:
-        metadata = ls_position.metadata.dict() if ls_position.metadata else None
-        voxel_size = (1, 1, 1)
-
-        if metadata:
-            multiscales = metadata.get('multiscales')
-            if multiscales and isinstance(multiscales, list) and multiscales[0]:
-                coordinate_transformations = multiscales[0].get('coordinate_transformations')
-                if (
-                    coordinate_transformations
-                    and isinstance(coordinate_transformations, list)
-                    and coordinate_transformations[0]
-                ):
-                    scales = coordinate_transformations[0].get('scale')
-                    if scales and len(scales) > 2:
-                        voxel_size = tuple(scales[2:])
+    voxel_size = utils.get_voxel_size_from_metadata(lightsheet_position_dirpaths[0])
 
     click.echo('\nREGISTRATION PARAMETERS:')
     click.echo(f'Affine transform: {matrix}')
