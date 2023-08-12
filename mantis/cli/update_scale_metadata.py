@@ -1,7 +1,6 @@
 from typing import List
 
 import click
-import numpy as np
 
 from iohub import open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
