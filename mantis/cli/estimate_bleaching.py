@@ -143,7 +143,7 @@ def estimate_bleaching(input_position_dirpaths, output_dirpath):
         times = np.arange(0, T * dt, step=dt)
         output_file = os.path.join(output_dirpath, well_name)
         os.makedirs(output_file, exist_ok=True)
-        title = input_position_dirpath + f" - position = {well_name}"
+        title = str(input_position_dirpath) + f" - position = {well_name}"
         plot_bleaching_curves(
             times,
             tczyx_data,

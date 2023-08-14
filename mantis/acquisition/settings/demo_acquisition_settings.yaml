@@ -19,9 +19,6 @@ lf_slice_settings:
   use_sequencing: True
 
 lf_microscope_settings:
-  # patch until https://github.com/micro-manager/mmCoreAndDevices/pull/362 is
-  # merged
-  roi: [0, 0, 1224, 1024]
   config_group_settings:
     - ['LightPath', 'Camera-left']
   device_property_settings:
@@ -42,9 +39,9 @@ ls_channel_settings:
 
 ls_slice_settings:
   z_stage_name: 'Z'
-  z_start: -0.2  # in Volts
-  z_end: 0.2
-  z_step: 0.01  # equivalent to 330 nm
+  z_start: -6  # in micrometers
+  z_end: 6
+  z_step: 0.313  # equivalent to 10 mV
   use_sequencing: True
 
 ls_microscope_settings:

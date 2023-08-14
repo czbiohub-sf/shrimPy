@@ -18,6 +18,7 @@ from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, 
 from waveorder.focus import focus_from_transverse_band
 
 from mantis.acquisition import microscope_operations
+from mantis.acquisition.hook_functions import config
 from mantis.acquisition.logger import configure_logger, log_conda_environment
 
 # isort: off
@@ -39,6 +40,10 @@ from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
 )
 from mantis.acquisition.hook_functions.post_camera_hook_functions import (
     start_daq_counters,
+)
+from mantis.acquisition.hook_functions.image_saved_hook_functions import (
+    check_lf_acq_finished,
+    check_ls_acq_finished,
 )
 
 # isort: on
@@ -293,7 +298,6 @@ class MantisAcquisition(object):
         demo_run: bool = False,
         verbose: bool = False,
     ) -> None:
-
         self._root_dir = Path(acquisition_directory).resolve()
         self._acq_name = acquisition_name
         self._demo_run = demo_run
@@ -834,7 +838,7 @@ class MantisAcquisition(object):
         lf_post_hardware_hook_fn = partial(
             log_acquisition_start, self.position_settings.position_labels
         )
-        lf_image_saved_fn = None
+        lf_image_saved_fn = check_lf_acq_finished
 
         # define LF acquisition
         self._lf_acq_obj = Acquisition(
@@ -862,7 +866,7 @@ class MantisAcquisition(object):
                 self.ls_acq.slice_settings.acquisition_rate,
             )
             ls_post_camera_hook_fn = partial(start_daq_counters, [self._ls_z_ctr_task])
-        ls_image_saved_fn = None
+        ls_image_saved_fn = check_ls_acq_finished
 
         # define LS acquisition
         self._ls_acq_obj = Acquisition(
@@ -937,11 +941,25 @@ class MantisAcquisition(object):
                     _event['axes']['position'] = p_idx
                     _event['min_start_time'] = 0
 
+                config.lf_last_img_idx = lf_events[-1]['axes']
+                config.ls_last_img_idx = ls_events[-1]['axes']
+                config.lf_acq_finished = False
+                config.ls_acq_finished = False
+
                 self._ls_acq_obj.acquire(ls_events)
                 self._lf_acq_obj.acquire(lf_events)
 
                 # wait for CZYX acquisition to finish
                 self.await_cz_acq_completion()
+                lf_acq_aborted, ls_acq_aborted = self.abort_stalled_acquisition()
+                error_message = (
+                    '{} acquisition for timepoint {} at position {} did not complete in time. '
+                    'Aborting acquisition'
+                )
+                if lf_acq_aborted:
+                    logger.error(error_message.format('Label-free', t_idx, p_label))
+                if ls_acq_aborted:
+                    logger.error(error_message.format('Light-sheet', t_idx, p_label))
 
             # wait for time interval between time points
             t_wait = self.time_settings.time_interval_s - (time.time() - timepoint_start_time)
@@ -970,30 +988,70 @@ class MantisAcquisition(object):
         logger.info('Acquisition finished')
 
     def await_cz_acq_completion(self):
-        buffer_s = 2
-
         # LS acq time
         num_slices = self.ls_acq.slice_settings.num_slices
         slice_acq_rate = self.ls_acq.slice_settings.acquisition_rate  # list
         num_channels = self.ls_acq.channel_settings.num_channels
-        ls_acq_time = (
-            sum([num_slices / rate for rate in slice_acq_rate])
-            + LS_CHANGE_TIME / 1000 * (num_channels - 1)
-            + buffer_s
-        )
+        ls_acq_time = sum(
+            [num_slices / rate for rate in slice_acq_rate]
+        ) + LS_CHANGE_TIME / 1000 * (num_channels - 1)
 
         # LF acq time
         num_slices = self.lf_acq.slice_settings.num_slices
         slice_acq_rate = self.lf_acq.slice_settings.acquisition_rate  # float
         num_channels = self.lf_acq.channel_settings.num_channels
-        lf_acq_time = (
-            num_slices / slice_acq_rate * num_channels
-            + LC_CHANGE_TIME / 1000 * (num_channels - 1)
-            + buffer_s
+        lf_acq_time = num_slices / slice_acq_rate * num_channels + LC_CHANGE_TIME / 1000 * (
+            num_channels - 1
         )
 
         wait_time = np.ceil(np.maximum(ls_acq_time, lf_acq_time))
         time.sleep(wait_time)
+
+    def abort_stalled_acquisition(self):
+        buffer_time = 5
+        lf_acq_aborted = False
+        ls_acq_aborted = False
+
+        t_start = time.time()
+        while (
+            not all((config.lf_acq_finished, config.ls_acq_finished))
+            and (time.time() - t_start) < buffer_time
+        ):
+            time.sleep(0.2)
+
+        # TODO: a lot of hardcoded values here
+        if not config.lf_acq_finished:
+            # abort LF acq
+            lf_acq_aborted = True
+            camera = 'Camera' if self._demo_run else 'Oryx'
+            sequenced_stages = []
+            if self.lf_acq.slice_settings.use_sequencing:
+                sequenced_stages.append(self.lf_acq.slice_settings.z_stage_name)
+            if (
+                self.lf_acq.channel_settings.use_sequencing
+                and self.lf_acq.channel_settings.num_channels > 1
+                and not self._demo_run
+            ):
+                sequenced_stages.extend(['TS1_DAC01', 'TS1_DAC02'])
+            microscope_operations.abort_acquisition_sequence(
+                self.lf_acq.mmc, camera, sequenced_stages
+            )
+
+        if not config.ls_acq_finished:
+            # abort LS acq
+            ls_acq_aborted = True
+            camera = 'Camera' if self._demo_run else 'Prime BSI Express'
+            sequenced_stages = []
+            if self.ls_acq.slice_settings.use_sequencing:
+                sequenced_stages.append(self.ls_acq.slice_settings.z_stage_name)
+            if self.ls_acq.channel_settings.use_sequencing:
+                # for now, we don't do channel sequencing on the LS acquisition
+                pass
+            microscope_operations.abort_acquisition_sequence(
+                self.ls_acq.mmc, camera, sequenced_stages
+            )
+
+        return lf_acq_aborted, ls_acq_aborted
 
 
 def _generate_channel_slice_acq_events(channel_settings, slice_settings):
