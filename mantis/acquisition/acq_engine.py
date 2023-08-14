@@ -389,9 +389,6 @@ class MantisAcquisition(object):
         if self._ls_acq_obj:
             self._ls_acq_obj.abort()
 
-        # Close PM bridges - call to cleanup blocks exit!
-        # cleanup()
-
     def update_position_settings(self):
         """
         Fetch positions defined in the Micro-manager Position List Manager
@@ -434,9 +431,9 @@ class MantisAcquisition(object):
         """
         if self._demo_run:
             # Set approximate demo camera acquisition rate for use in await_cz_acq_completion
-            self.lf_acq.slice_settings.acquisition_rate = 10
+            self.lf_acq.slice_settings.acquisition_rate = 30
             self.ls_acq.slice_settings.acquisition_rate = [
-                10
+                30
             ] * self.ls_acq.channel_settings.num_channels
             logger.debug('DAQ setup is not supported in demo mode')
             return
