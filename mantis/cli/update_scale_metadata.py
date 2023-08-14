@@ -19,7 +19,7 @@ def update_scale_metadata(
         )
 
     print(
-        "Please enter the new z, y, and x scales that you would like to apply to all of the positions in the list."
+        "Please enter the new t, c, z, y, and x scales that you would like to apply to all of the positions in the list."
     )
     print(
         "The old scale will be saved in a metadata field named 'old_scale', and the new scale will adhere to the NGFF spec."
