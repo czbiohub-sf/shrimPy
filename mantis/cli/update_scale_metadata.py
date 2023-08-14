@@ -33,6 +33,5 @@ def update_scale_metadata(
             input_dataset.zattrs['old_scale'] = input_dataset.scale
             transform = [TransformationMeta(type="scale", scale=new_scale)]
             input_dataset.set_transform("0", transform=transform)
-            input_dataset.set_transform("*", transform=transform)
 
     print(f"The dataset now has (t, c, z, y, x) scale {new_scale}.")
