@@ -30,8 +30,8 @@ lf_channel_settings:
 # Define slice (i.e. z-stack) settings for the label-free acquisition.
 lf_slice_settings:
   z_stage_name: 'MCL Piezo'
-  z_start: -10
-  z_end: 10
+  z_start: -10 # in sample-space micrometers
+  z_end: 15
   # When using 0.52 NA transmission light illumination, Nyquist sampling of the
   # axial dimension will be achieved by using (450*1.4)/(1.35^2 + 0.52^2) = 300 nm
   # steps in sample space. We can achieve this by using (300 nm)*1.4/2 = 210 nm
@@ -39,9 +39,11 @@ lf_slice_settings:
   # fact that the optical path length is extended by twice the mirror's motion.
   #
   # Here we choose to oversample the data to match the light-sheet axial
-  # sampling. After deskewing and 3x binning, the light-sheet samples are
-  # spaced by ~205 nm, so we choose (205 nm)*1.4/2 = 143 nm mirror steps.
-  z_step: 0.143
+  # sampling. After deskewing and 3x binning, the light-sheet samples are spaced
+  # by ~205 nm. We chose a matching sample-space sampling, which corresponds to
+  # (205 nm)*1.4/2 = 143 nm motion of the mirror or (0.143 um)*(10 V / 65 um) =
+  # 22 mV DAC steps
+  z_step: 0.205  # equivalent to 22 mV
   use_sequencing: True
 
 # Define channel settings for the light-sheet acquisition. Channels may have
@@ -57,7 +59,7 @@ ls_slice_settings:
   z_stage_name: 'AP Galvo'
   # 170 um scan range matches the label-free field of view. Corresponds to
   # ~5.5 V based on 31.3 um/V conversion factor
-  z_start: -85  # in micrometers
+  z_start: -85  # in sample-space micrometers
   z_end: 85
   # Nyquist sampling of this dimensions will be achieved by using ~116 nm steps.
   # When imaging live cells we chose to undersample this dimension to decrease
