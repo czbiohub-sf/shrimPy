@@ -13,9 +13,9 @@ lf_channel_settings:
 
 lf_slice_settings:
   z_stage_name: 'Z'
-  z_start: 0
-  z_end: 60
-  z_step: 5
+  z_start: -5
+  z_end: 5
+  z_step: 0.205
   use_sequencing: True
 
 lf_microscope_settings:

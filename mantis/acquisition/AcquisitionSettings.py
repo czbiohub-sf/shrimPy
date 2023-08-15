@@ -1,3 +1,5 @@
+import warnings
+
 from dataclasses import field
 from typing import List, Optional, Tuple
 
@@ -72,6 +74,8 @@ class SliceSettings:
             raise ValueError(
                 "Provided z_step size is lower than 0.1 um, you may be using wrong units"
             )
+        if v is not None and v == 0.143:
+            warnings.warn('You may be using an outdated z_step size of 0.143 um')
         return v
 
     def __post_init__(self):
