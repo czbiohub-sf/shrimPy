@@ -77,12 +77,11 @@ def apply_affine(
     # Calculate the output voxel size from the input scale and affine transform
     with open_ome_zarr(input_position_dirpaths[0]) as input_dataset:
         input_voxel_size = np.array(input_dataset.scale[-3:])
-    affine_scaling = np.abs(np.linalg.eig(matrix[:3, :3])[0])
+    affine_scaling = np.abs(np.linalg.eig(matrix[:3, :3])[0])[::-1]
     output_voxel_size = affine_scaling * input_voxel_size
 
     click.echo('\nREGISTRATION PARAMETERS:')
     click.echo(f'Affine transform: {matrix}')
-    click.echo(f'Output shape: {output_shape_zyx}')
     click.echo(f'Voxel size: {output_voxel_size}')
 
     z_chunk_factor = 10
@@ -93,7 +92,6 @@ def apply_affine(
         output_shape_zyx[1],
         output_shape_zyx[2],
     )
-    click.echo(f'Chunk size output {chunk_zyx_shape}')
 
     utils.create_empty_zarr(
         position_paths=input_position_dirpaths,
