@@ -6,6 +6,7 @@ from mantis.cli.estimate_affine import estimate_phase_to_fluor_affine
 from mantis.cli.estimate_bleaching import estimate_bleaching
 from mantis.cli.estimate_deskew import estimate_deskew
 from mantis.cli.run_acquisition import run_acquisition
+from mantis.cli.update_scale_metadata import update_scale_metadata
 
 CONTEXT = {"help_option_names": ["-h", "--help"]}
 
@@ -27,3 +28,4 @@ cli.add_command(estimate_deskew)
 cli.add_command(deskew)
 cli.add_command(estimate_phase_to_fluor_affine)
 cli.add_command(apply_affine)
+cli.add_command(update_scale_metadata)
