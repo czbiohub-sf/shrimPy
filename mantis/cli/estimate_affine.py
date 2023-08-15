@@ -19,12 +19,12 @@ from mantis.cli.parsing import (
     output_filepath,
 )
 
-# TODO: what should we do with these parameters? Have them as inputs during CLI?
-LF_Z_STEP = 0.143  # this measurement from metadata at the LF RF volume
-LF_RF_MAGNIFICATION = 1.4
-PHASE_PIXEL_SIZE = (3.45 * 2) / (33 * LF_RF_MAGNIFICATION)  # binning by 2
-FLUOR_PIXEL_SIZE = 6.5 / (40 * 1.4)
+# TODO: see if at some point these globals should be hidden or exposed.
 FOCUS_SLICE_ROI_SIDE = 150
+NA_DETECTION_PHASE = 1.35
+NA_DETECTION_FLUOR = 1.35
+WAVELENGTH_EMISSION_FLUOR_CHANNEL = 0.6  # [um]
+WAVELENGTH_EMISSION_PHASE_CHANNEL = 0.45  # [um]
 
 
 @click.command()
@@ -71,6 +71,14 @@ def estimate_phase_to_fluor_affine(
         phase_channel_str = phase_channel_position.channel_names[phase_channel_idx]
         phase_channel_volume = phase_channel_position[0][0, phase_channel_idx]
         phase_channel_Z, phase_channel_Y, phase_channel_X = phase_channel_volume.shape
+        # Get the voxel dimensions in sample space
+        (
+            _,
+            _,
+            z_sample_space_phase_channel,
+            y_sample_space_phase_channel,
+            x_sample_space_phase_channel,
+        ) = phase_channel_position.scale
 
         # Find the infocus slice
         focus_phase_channel_idx = focus_from_transverse_band(
@@ -85,9 +93,9 @@ def estimate_phase_to_fluor_affine(
                 - FOCUS_SLICE_ROI_SIDE : phase_channel_X // 2
                 + FOCUS_SLICE_ROI_SIDE,
             ],
-            NA_det=1.35,
-            lambda_ill=0.45,
-            pixel_size=PHASE_PIXEL_SIZE,
+            NA_det=NA_DETECTION_PHASE,
+            lambda_ill=WAVELENGTH_EMISSION_PHASE_CHANNEL,
+            pixel_size=x_sample_space_phase_channel,
             plot_path="./best_focus_phase.svg",
         )
     click.echo(f"Best focus phase z_idx: {focus_phase_channel_idx}")
@@ -96,6 +104,14 @@ def estimate_phase_to_fluor_affine(
         fluor_channel_str = fluor_channel_position.channel_names[fluor_channel_idx]
         fluor_channel_volume = fluor_channel_position[0][0, fluor_channel_idx]
         fluor_channel_Z, fluor_channel_Y, fluor_channel_X = fluor_channel_volume.shape
+        # Get the voxel dimension in sample space
+        (
+            _,
+            _,
+            z_sample_space_fluor_channel,
+            y_sample_space_fluor_channel,
+            x_sample_space_fluor_channel,
+        ) = fluor_channel_position.scale
 
         # Finding the infocus plane
         focus_fluor_channel_idx = focus_from_transverse_band(
@@ -110,33 +126,16 @@ def estimate_phase_to_fluor_affine(
                 - FOCUS_SLICE_ROI_SIDE : fluor_channel_X // 2
                 + FOCUS_SLICE_ROI_SIDE,
             ],
-            NA_det=1.35,
-            lambda_ill=0.6,
-            pixel_size=FLUOR_PIXEL_SIZE,
+            NA_det=NA_DETECTION_FLUOR,
+            lambda_ill=WAVELENGTH_EMISSION_FLUOR_CHANNEL,
+            pixel_size=x_sample_space_fluor_channel,
             plot_path="./best_focus_fluor.svg",
         )
     click.echo(f"Best focus fluor z_idx: {focus_fluor_channel_idx}")
 
-    # Find the z-scaling and apply it for display
-    # TODO: Get these values from the yaml file
-    # Use deskew metadta
-    try:
-        (
-            _,
-            _,
-            z_sampling_fluor_channel,
-            y_sampling_fluor_channel,
-            x_sampling_fluor_channel,
-        ) = fluor_channel_position.zattrs["multiscales"][0]["coordinateTransformations"][0][
-            "scale"
-        ]
-    except LookupError("Couldn't find z_sampling in metadata"):
-        z_sampling_fluor_channel = 1
-
     # Calculate scaling factors for displaying data
-    phase_remote_volume_sample_size = LF_Z_STEP / LF_RF_MAGNIFICATION * 2
-    scaling_factor_z = phase_remote_volume_sample_size / z_sampling_fluor_channel
-    scaling_factor_yx = PHASE_PIXEL_SIZE / y_sampling_fluor_channel
+    scaling_factor_z = z_sample_space_phase_channel / z_sample_space_fluor_channel
+    scaling_factor_yx = x_sample_space_phase_channel / x_sample_space_fluor_channel
 
     # Add layers to napari with and transform
     # Rotate the image if needed here
@@ -299,15 +298,8 @@ def estimate_phase_to_fluor_affine(
     viewer.layers[fluor_channel_str].visible = False
     viewer.layers[phase_channel_str].visible = False
     viewer.dims.current_step = (1, 0, 0)
-    # Compute the 3D registration
-    # Use deskew metadta
-    try:
-        _, _, z_sampling_fluor_channel, _, _ = fluor_channel_position.zattrs["multiscales"][0][
-            "coordinateTransformations"
-        ][0]["scale"]
-    except LookupError("Could not find coordinateTransformation scale in metadata"):
-        z_sampling_fluor_channel = 1
 
+    # Compute the 3D registration
     # Estimate the Similarity Transform (rotation,scaling,translation)
     transform = SimilarityTransform()
     transform.estimate(pts_phase_channel, pts_fluor_channel)
