@@ -37,6 +37,10 @@ def rotate_n_affine_transform(
     return affine_volume
 
 
+def apply_affine_to_scale(affine_matrix, input_scale):
+    return np.linalg.norm(affine_matrix, axis=1) * input_scale
+
+
 @click.command()
 @input_position_dirpaths()
 @config_filepath()
@@ -76,9 +80,7 @@ def apply_affine(
 
     # Calculate the output voxel size from the input scale and affine transform
     with open_ome_zarr(input_position_dirpaths[0]) as input_dataset:
-        input_voxel_size = np.array(input_dataset.scale[-3:])
-    affine_scaling = np.abs(np.linalg.eig(matrix[:3, :3])[0])[::-1]
-    output_voxel_size = affine_scaling * input_voxel_size
+        output_voxel_size = apply_affine_to_scale(matrix[:3,:3], input_dataset.scale[-3:])
 
     click.echo('\nREGISTRATION PARAMETERS:')
     click.echo(f'Affine transform: {matrix}')

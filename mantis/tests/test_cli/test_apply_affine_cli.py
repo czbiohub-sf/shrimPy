@@ -1,5 +1,9 @@
-from click.testing import CliRunner
+import numpy as np
 
+from click.testing import CliRunner
+from numpy import testing
+
+from mantis.cli.apply_affine import apply_affine_to_scale
 from mantis.cli.main import cli
 
 
@@ -25,3 +29,36 @@ def test_apply_affine_cli(tmp_path, example_plate, example_apply_affine_settings
 
     assert output_path.exists()
     assert result.exit_code == 0
+
+
+def test_apply_affine_to_scale():
+    input = np.array([1, 1, 1])
+
+    # Test real positive
+    m1_diag = np.array([2, 3, 4])
+    m1 = np.diag(m1_diag)
+    output1 = apply_affine_to_scale(m1, input)
+    testing.assert_allclose(m1_diag, output1)
+
+    # Test real with negative
+    m2_diag = np.array([2, -3, 4])
+    m2 = np.diag(m2_diag)
+    output2 = apply_affine_to_scale(m2, input)
+    testing.assert_allclose(np.abs(m2_diag), output2)
+
+    # Test transpose
+    m3 = np.array([[0, 2, 0], [1, 0, 0], [0, 0, 3]])
+    output3 = apply_affine_to_scale(m3, input)
+    testing.assert_allclose(np.array([2, 1, 3]), output3)
+
+    # Test rotation
+    theta = np.pi / 3
+    m4 = np.array(
+        [
+            [2, 0, 0],
+            [0, 3 * np.cos(theta), -3 * np.sin(theta)],
+            [0, 3 * np.sin(theta), 3 * np.cos(theta)],
+        ]
+    )
+    output4 = apply_affine_to_scale(m4, input)
+    testing.assert_allclose(np.array([2, 3, 3]), output4)
