@@ -80,7 +80,7 @@ def apply_affine(
 
     # Calculate the output voxel size from the input scale and affine transform
     with open_ome_zarr(input_position_dirpaths[0]) as input_dataset:
-        output_voxel_size = apply_affine_to_scale(matrix[:3,:3], input_dataset.scale[-3:])
+        output_voxel_size = apply_affine_to_scale(matrix[:3, :3], input_dataset.scale[-3:])
 
     click.echo('\nREGISTRATION PARAMETERS:')
     click.echo(f'Affine transform: {matrix}')

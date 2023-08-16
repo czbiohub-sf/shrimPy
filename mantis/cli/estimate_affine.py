@@ -292,6 +292,9 @@ def estimate_phase_to_fluor_affine(
         name=f"middle_plane_{fluor_channel_str}",
         colormap="magenta",
     )
+    print(
+        'Showing registered pair (phase and fluorescence) with pseudo colored fluorescence in magenta'
+    )
     viewer.add_image(aligned_image, name=f"registered_{phase_channel_str}", opacity=0.5)
     viewer.layers.remove(f"pts_{phase_channel_str}")
     viewer.layers.remove(f"pts_{fluor_channel_str}")
