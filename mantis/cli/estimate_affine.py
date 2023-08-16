@@ -19,12 +19,14 @@ from mantis.cli.parsing import (
     output_filepath,
 )
 
-# TODO: what should we do with these parameters? Have them as inputs during CLI?
-LF_Z_STEP = 0.143  # this measurement from metadata at the LF RF volume
-LF_RF_MAGNIFICATION = 1.4
-PHASE_PIXEL_SIZE = (3.45 * 2) / (33 * LF_RF_MAGNIFICATION)  # binning by 2
-FLUOR_PIXEL_SIZE = 6.5 / (40 * 1.4)
+# TODO: see if at some point these globals should be hidden or exposed.
 FOCUS_SLICE_ROI_SIDE = 150
+NA_DETECTION_PHASE = 1.35
+NA_DETECTION_FLUOR = 1.35
+WAVELENGTH_EMISSION_PHASE_CHANNEL = 0.45  # [um]
+WAVELENGTH_EMISSION_FLUOR_CHANNEL = 0.6  # [um]
+
+# TODO:the current pipeline always assumes we register to fluoresence mcherry/mScarlet channel so it will change the colormaps to magenta
 
 
 @click.command()
@@ -57,7 +59,7 @@ def estimate_phase_to_fluor_affine(
 
     print("Getting dataset info")
     print("\n phase channel INFO:")
-    os.system(f"iohub info {labelfree_position_dirpaths[0]} ")
+    os.system(f"iohub info {labelfree_position_dirpaths[0]}")
     print("\n fluorescence channel INFO:")
     os.system(f"iohub info {lightsheet_position_dirpaths[0]} ")
 
@@ -71,6 +73,12 @@ def estimate_phase_to_fluor_affine(
         phase_channel_str = phase_channel_position.channel_names[phase_channel_idx]
         phase_channel_volume = phase_channel_position[0][0, phase_channel_idx]
         phase_channel_Z, phase_channel_Y, phase_channel_X = phase_channel_volume.shape
+        # Get the voxel dimensions in sample space
+        (
+            z_sample_space_phase_channel,
+            y_sample_space_phase_channel,
+            x_sample_space_phase_channel,
+        ) = phase_channel_position.scale[-3:]
 
         # Find the infocus slice
         focus_phase_channel_idx = focus_from_transverse_band(
@@ -85,9 +93,9 @@ def estimate_phase_to_fluor_affine(
                 - FOCUS_SLICE_ROI_SIDE : phase_channel_X // 2
                 + FOCUS_SLICE_ROI_SIDE,
             ],
-            NA_det=1.35,
-            lambda_ill=0.45,
-            pixel_size=PHASE_PIXEL_SIZE,
+            NA_det=NA_DETECTION_PHASE,
+            lambda_ill=WAVELENGTH_EMISSION_PHASE_CHANNEL,
+            pixel_size=x_sample_space_phase_channel,
             plot_path="./best_focus_phase.svg",
         )
     click.echo(f"Best focus phase z_idx: {focus_phase_channel_idx}")
@@ -96,6 +104,12 @@ def estimate_phase_to_fluor_affine(
         fluor_channel_str = fluor_channel_position.channel_names[fluor_channel_idx]
         fluor_channel_volume = fluor_channel_position[0][0, fluor_channel_idx]
         fluor_channel_Z, fluor_channel_Y, fluor_channel_X = fluor_channel_volume.shape
+        # Get the voxel dimension in sample space
+        (
+            z_sample_space_fluor_channel,
+            y_sample_space_fluor_channel,
+            x_sample_space_fluor_channel,
+        ) = fluor_channel_position.scale[-3:]
 
         # Finding the infocus plane
         focus_fluor_channel_idx = focus_from_transverse_band(
@@ -110,33 +124,16 @@ def estimate_phase_to_fluor_affine(
                 - FOCUS_SLICE_ROI_SIDE : fluor_channel_X // 2
                 + FOCUS_SLICE_ROI_SIDE,
             ],
-            NA_det=1.35,
-            lambda_ill=0.6,
-            pixel_size=FLUOR_PIXEL_SIZE,
+            NA_det=NA_DETECTION_FLUOR,
+            lambda_ill=WAVELENGTH_EMISSION_FLUOR_CHANNEL,
+            pixel_size=x_sample_space_fluor_channel,
             plot_path="./best_focus_fluor.svg",
         )
     click.echo(f"Best focus fluor z_idx: {focus_fluor_channel_idx}")
 
-    # Find the z-scaling and apply it for display
-    # TODO: Get these values from the yaml file
-    # Use deskew metadta
-    try:
-        (
-            _,
-            _,
-            z_sampling_fluor_channel,
-            y_sampling_fluor_channel,
-            x_sampling_fluor_channel,
-        ) = fluor_channel_position.zattrs["multiscales"][0]["coordinateTransformations"][0][
-            "scale"
-        ]
-    except LookupError("Couldn't find z_sampling in metadata"):
-        z_sampling_fluor_channel = 1
-
     # Calculate scaling factors for displaying data
-    phase_remote_volume_sample_size = LF_Z_STEP / LF_RF_MAGNIFICATION * 2
-    scaling_factor_z = phase_remote_volume_sample_size / z_sampling_fluor_channel
-    scaling_factor_yx = PHASE_PIXEL_SIZE / y_sampling_fluor_channel
+    scaling_factor_z = z_sample_space_phase_channel / z_sample_space_fluor_channel
+    scaling_factor_yx = x_sample_space_phase_channel / x_sample_space_fluor_channel
 
     # Add layers to napari with and transform
     # Rotate the image if needed here
@@ -154,6 +151,7 @@ def estimate_phase_to_fluor_affine(
         0,
         phase_channel_Y * scaling_factor_yx,
     )
+
     # %%
     # Manual annotation of features
     COLOR_CYCLE = [
@@ -174,7 +172,7 @@ def estimate_phase_to_fluor_affine(
                 # Change slider value
                 if len(next_layer.data) < 1:
                     prev_step_fluor_channel = (
-                        in_focus[0],
+                        in_focus[1],
                         0,
                         0,
                     )
@@ -201,7 +199,7 @@ def estimate_phase_to_fluor_affine(
                 # Change slider value
                 if len(next_layer.data) < 1:
                     prev_step_phase_channel = (
-                        in_focus[1] * scaling_factor_z,
+                        in_focus[0] * scaling_factor_z,
                         0,
                         0,
                     )
@@ -217,7 +215,6 @@ def estimate_phase_to_fluor_affine(
                 next_layer.current_face_color = next_color
 
                 # Switch to the next layer
-
                 next_layer.mode = "add"
                 layer.selected_data = {}
                 viewer.layers.selection.active = next_layer
@@ -278,9 +275,11 @@ def estimate_phase_to_fluor_affine(
     # Get the transformation matrix
     output_shape_zyx = (fluor_channel_Z, fluor_channel_Y, fluor_channel_X)
 
-    # Demo: apply the affine transform to the image at the middle of the stack
+    # Demo: apply the affine transform to the image at the z-slice where all the points are located
     aligned_image = scipy.ndimage.affine_transform(
-        phase_channel_volume_rotated[phase_channel_Z // 2 : phase_channel_Z // 2 + 1],
+        phase_channel_volume_rotated[
+            int(np.ceil(pts_phase_channel[0, 0])) : int(np.ceil(pts_phase_channel[0, 0])) + 1
+        ],
         zyx_affine_transform,
         output_shape=(1, fluor_channel_Y, fluor_channel_X),
     )
@@ -288,36 +287,35 @@ def estimate_phase_to_fluor_affine(
         fluor_channel_position[0][
             0,
             fluor_channel_idx,
-            fluor_channel_Z // 2 : fluor_channel_Z // 2 + 1,
+            int(np.ceil(pts_fluor_channel[0, 0])) : int(np.ceil(pts_fluor_channel[0, 0])) + 1,
         ],
         name=f"middle_plane_{fluor_channel_str}",
         colormap="magenta",
+    )
+    print(
+        'Showing registered pair (phase and fluorescence) with pseudo colored fluorescence in magenta'
     )
     viewer.add_image(aligned_image, name=f"registered_{phase_channel_str}", opacity=0.5)
     viewer.layers.remove(f"pts_{phase_channel_str}")
     viewer.layers.remove(f"pts_{fluor_channel_str}")
     viewer.layers[fluor_channel_str].visible = False
     viewer.layers[phase_channel_str].visible = False
-    viewer.dims.current_step = (1, 0, 0)
-    # Compute the 3D registration
-    # Use deskew metadta
-    try:
-        _, _, z_sampling_fluor_channel, _, _ = fluor_channel_position.zattrs["multiscales"][0][
-            "coordinateTransformations"
-        ][0]["scale"]
-    except LookupError("Could not find coordinateTransformation scale in metadata"):
-        z_sampling_fluor_channel = 1
+    viewer.dims.current_step = (0, 0, 0)  # Return to slice 0
 
+    # NOTE: This assumes within a channel will lie in the same plane
+    # Compute the 3D registration
     # Estimate the Similarity Transform (rotation,scaling,translation)
     transform = SimilarityTransform()
-    transform.estimate(pts_phase_channel, pts_fluor_channel)
-    zyx_points_transformation_matrix = transform.params
+    transform.estimate(pts_phase_channel[:, 1:], pts_fluor_channel[:, 1:])
+    yx_points_transformation_matrix = transform.params
+    z_translation = pts_fluor_channel[0, 0] - pts_phase_channel[0, 0]
 
-    z_scaling_matrix = np.array(
-        [[scaling_factor_z, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+    z_scale_translate_matrix = np.array([[scaling_factor_z, 0, 0, z_translation]])
+    zyx_affine_transform = np.vstack(
+        (z_scale_translate_matrix, np.insert(yx_points_transformation_matrix, 0, 0, axis=1))
     )
+
     # Composite of all transforms
-    zyx_affine_transform = zyx_points_transformation_matrix @ z_scaling_matrix
     zyx_affine_transform = np.linalg.inv(zyx_affine_transform)  # phase to fluorescence mapping
     print(f"Affine Transform Matrix:\n {zyx_affine_transform}\n")
     settings = RegistrationSettings(
@@ -325,6 +323,7 @@ def estimate_phase_to_fluor_affine(
         output_shape_zyx=list(output_shape_zyx),
         pre_affine_90degree_rotations_about_z=pre_affine_90degree_rotations_about_z,
     )
+
     print(f"Writing registration parameters to {output_filepath}")
     with open(output_filepath, "w") as f:
         yaml.dump(asdict(settings), f)
