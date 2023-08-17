@@ -9,10 +9,10 @@ from pathlib import Path
 from typing import Tuple
 
 import click
+import numpy as np
 
 from iohub.ngff import Position, open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
-import numpy as np
 
 
 def create_empty_zarr(
