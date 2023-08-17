@@ -13,6 +13,7 @@ from mantis.analysis.AnalysisSettings import DeskewSettings
 from mantis.analysis.deskew import deskew_data, get_deskewed_data_shape
 from mantis.cli import utils
 from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
+import numpy as np
 
 
 # TODO: consider refactoring to utils
@@ -71,15 +72,12 @@ def deskew(
             settings.average_n_slices,
             settings.pixel_size_um,
         )
+
         # TODO: determine what is the best chunk size. This causes blosc issues
-        z_chunk_factor = 10
-        chunk_zyx_shape = (
-            deskewed_shape[0] // z_chunk_factor
-            if deskewed_shape[0] > z_chunk_factor
-            else deskewed_shape[0],
-            deskewed_shape[1],
-            deskewed_shape[2],
-        )
+        chunk_zyx_shape = [deskewed_shape[0], deskewed_shape[1], deskewed_shape[2]]
+        bytes_per_pixel = np.dtype(np.float32).itemsize
+        while np.prod(chunk_zyx_shape) * bytes_per_pixel > 500e6:
+            chunk_zyx_shape[-3] = chunk_zyx_shape[-3] // 2
 
         # Create a zarr store output to mirror the input
         utils.create_empty_zarr(
