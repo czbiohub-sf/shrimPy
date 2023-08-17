@@ -6,7 +6,8 @@ from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime
 from functools import partial
-from typing import Iterable
+from pathlib import Path
+from typing import Iterable, Union
 
 import nidaqmx
 import numpy as np
@@ -17,6 +18,7 @@ from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, 
 from waveorder.focus import focus_from_transverse_band
 
 from mantis.acquisition import microscope_operations
+from mantis.acquisition.hook_functions import config
 from mantis.acquisition.logger import configure_logger, log_conda_environment
 
 # isort: off
@@ -38,6 +40,10 @@ from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
 )
 from mantis.acquisition.hook_functions.post_camera_hook_functions import (
     start_daq_counters,
+)
+from mantis.acquisition.hook_functions.image_saved_hook_functions import (
+    check_lf_acq_finished,
+    check_ls_acq_finished,
 )
 
 # isort: on
@@ -89,6 +95,7 @@ class BaseChannelSliceAcquisition(object):
         self._channel_settings = ChannelSettings()
         self._slice_settings = SliceSettings()
         self._microscope_settings = MicroscopeSettings()
+        self._z0 = None
         self.headless = False if mm_app_path is None else True
         self.type = 'light-sheet' if self.headless else 'label-free'
         self.mmc = None
@@ -191,6 +198,7 @@ class BaseChannelSliceAcquisition(object):
             microscope_operations.set_property(
                 self.mmc, 'Core', 'Focus', self.slice_settings.z_stage_name
             )
+            self._z0 = round(float(self.mmc.get_position(self.slice_settings.z_stage_name)), 3)
 
             # Setup O3 scan stage
             if self.microscope_settings.use_o3_refocus:
@@ -231,6 +239,11 @@ class BaseChannelSliceAcquisition(object):
                     settings.property_value,
                 )
 
+            # Reset z stage to initial position
+            microscope_operations.set_z_position(
+                self.mmc, self.slice_settings.z_stage_name, self._z0
+            )
+
 
 class MantisAcquisition(object):
     """
@@ -239,15 +252,15 @@ class MantisAcquisition(object):
 
     Parameters
     ----------
-    acquisition_directory : str
+    acquisition_directory : str or PathLike
         Directory where acquired data will be saved
     acquisition_name : str
         Name of the acquisition
-    mm_app_path : str, optional
+    mm_app_path : str
         Path to Micro-manager installation directory which runs the light-sheet
-        acquisition, by default 'C:\\Program Files\\Micro-Manager-nightly'
-    config_file : str, optional
-        Path to config file which runs the light-sheet acquisition, by default
+        acquisition, typically 'C:\\Program Files\\Micro-Manager-2.0_YYYY_MM_DD_2'
+    config_file : str
+        Path to config file which runs the light-sheet acquisition, typically
         'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg'
     enable_ls_acq : bool, optional
         Set to False if only acquiring label-free data, by default True
@@ -276,32 +289,33 @@ class MantisAcquisition(object):
 
     def __init__(
         self,
-        acquisition_directory: str,
+        acquisition_directory: Union[str, os.PathLike],
         acquisition_name: str,
-        mm_app_path: str = r'C:\\Program Files\\Micro-Manager-nightly',
-        mm_config_file: str = r'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg',
+        mm_app_path: str,
+        mm_config_file: str,
         enable_ls_acq: bool = True,
         enable_lf_acq: bool = True,
         demo_run: bool = False,
         verbose: bool = False,
     ) -> None:
-
-        self._root_dir = acquisition_directory
+        self._root_dir = Path(acquisition_directory).resolve()
         self._acq_name = acquisition_name
         self._demo_run = demo_run
         self._verbose = verbose
+        self._lf_acq_obj = None
+        self._ls_acq_obj = None
 
         if not enable_lf_acq or not enable_ls_acq:
             raise Exception('Disabling LF or LS acquisition is not currently supported')
 
         # Create acquisition directory and log directory
         self._acq_dir = _create_acquisition_directory(self._root_dir, self._acq_name)
-        self._logs_dir = os.path.join(self._acq_dir, 'logs')
-        os.mkdir(self._logs_dir)
+        self._logs_dir = self._acq_dir / 'logs'
+        self._logs_dir.mkdir()
 
         # Setup logger
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-        acq_log_path = os.path.join(self._logs_dir, f'mantis_acquisition_log_{timestamp}.txt')
+        acq_log_path = self._logs_dir / f'mantis_acquisition_log_{timestamp}.txt'
         configure_logger(acq_log_path)
 
         if self._demo_run:
@@ -310,7 +324,7 @@ class MantisAcquisition(object):
 
         # Log conda environment
         outs, errs = log_conda_environment(
-            os.path.join(self._logs_dir, f'conda_environment_log_{timestamp}.txt')
+            self._logs_dir / f'conda_environment_log_{timestamp}.txt'
         )
         if errs is None:
             logger.debug(outs.decode('ascii').strip())
@@ -333,9 +347,7 @@ class MantisAcquisition(object):
             mm_app_path=mm_app_path,
             mm_config_file=mm_config_file,
             zmq_port=LS_ZMQ_PORT,
-            core_log_path=os.path.join(
-                mm_app_path, 'CoreLogs', f'CoreLog{timestamp}_headless.txt'
-            ),
+            core_log_path=Path(mm_app_path) / 'CoreLogs' / f'CoreLog{timestamp}_headless.txt',
         )
 
     @property
@@ -375,8 +387,11 @@ class MantisAcquisition(object):
         self.lf_acq.reset()
         self.ls_acq.reset()
 
-        # Close PM bridges - call to cleanup blocks exit!
-        # cleanup()
+        # Abort acquisitions if they have not finished, usually after Ctr+C
+        if self._lf_acq_obj:
+            self._lf_acq_obj.abort()
+        if self._ls_acq_obj:
+            self._ls_acq_obj.abort()
 
     def update_position_settings(self):
         """
@@ -411,9 +426,9 @@ class MantisAcquisition(object):
         """
         if self._demo_run:
             # Set approximate demo camera acquisition rate for use in await_cz_acq_completion
-            self.lf_acq.slice_settings.acquisition_rate = 10
+            self.lf_acq.slice_settings.acquisition_rate = 30
             self.ls_acq.slice_settings.acquisition_rate = [
-                10
+                30
             ] * self.ls_acq.channel_settings.num_channels
             logger.debug('DAQ setup is not supported in demo mode')
             return
@@ -720,7 +735,7 @@ class MantisAcquisition(object):
         # Save acquired stacks in logs
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         tifffile.imwrite(
-            os.path.join(self._logs_dir, f'ls_refocus_data_{timestamp}.ome.tif'),
+            self._logs_dir / f'ls_refocus_data_{timestamp}.ome.tif',
             np.expand_dims(data, -3).astype('uint16'),
         )
 
@@ -738,9 +753,7 @@ class MantisAcquisition(object):
                 lambda_ill=wavelength,
                 pixel_size=LS_PIXEL_SIZE,
                 threshold_FWHM=threshold_FWHM,
-                plot_path=os.path.join(
-                    self._logs_dir, f'ls_refocus_plot_{timestamp}_Pos{stack_idx}.png'
-                ),
+                plot_path=self._logs_dir / f'ls_refocus_plot_{timestamp}_Pos{stack_idx}.png',
             )
             focus_indices.append(idx)
         logger.debug(
@@ -811,10 +824,10 @@ class MantisAcquisition(object):
                 start_daq_counters, [self._lf_z_ctr_task, self._lf_channel_ctr_task]
             )
         lf_post_hardware_hook_fn = log_acquisition_start
-        lf_image_saved_fn = None
+        lf_image_saved_fn = check_lf_acq_finished
 
         # define LF acquisition
-        lf_acq = Acquisition(
+        self._lf_acq_obj = Acquisition(
             directory=self._acq_dir,
             name=f'{self._acq_name}_labelfree',
             port=LF_ZMQ_PORT,
@@ -839,10 +852,10 @@ class MantisAcquisition(object):
                 self.ls_acq.slice_settings.acquisition_rate,
             )
             ls_post_camera_hook_fn = partial(start_daq_counters, [self._ls_z_ctr_task])
-        ls_image_saved_fn = None
+        ls_image_saved_fn = check_ls_acq_finished
 
         # define LS acquisition
-        ls_acq = Acquisition(
+        self._ls_acq_obj = Acquisition(
             directory=self._acq_dir,
             name=f'{self._acq_name}_lightsheet',
             port=LS_ZMQ_PORT,
@@ -914,11 +927,25 @@ class MantisAcquisition(object):
                     _event['axes']['position'] = p_label
                     _event['min_start_time'] = 0
 
-                ls_acq.acquire(ls_events)
-                lf_acq.acquire(lf_events)
+                config.lf_last_img_idx = lf_events[-1]['axes']
+                config.ls_last_img_idx = ls_events[-1]['axes']
+                config.lf_acq_finished = False
+                config.ls_acq_finished = False
+
+                self._ls_acq_obj.acquire(ls_events)
+                self._lf_acq_obj.acquire(lf_events)
 
                 # wait for CZYX acquisition to finish
                 self.await_cz_acq_completion()
+                lf_acq_aborted, ls_acq_aborted = self.abort_stalled_acquisition()
+                error_message = (
+                    '{} acquisition for timepoint {} at position {} did not complete in time. '
+                    'Aborting acquisition'
+                )
+                if lf_acq_aborted:
+                    logger.error(error_message.format('Label-free', t_idx, p_label))
+                if ls_acq_aborted:
+                    logger.error(error_message.format('Light-sheet', t_idx, p_label))
 
             # wait for time interval between time points
             t_wait = self.time_settings.time_interval_s - (time.time() - timepoint_start_time)
@@ -926,49 +953,91 @@ class MantisAcquisition(object):
                 logger.info(f"Waiting {t_wait/60:.2f} minutes until the next time point")
                 time.sleep(t_wait)
 
-        ls_acq.mark_finished()
-        lf_acq.mark_finished()
+        self._ls_acq_obj.mark_finished()
+        self._lf_acq_obj.mark_finished()
 
         logger.debug('Waiting for acquisition to finish')
 
-        ls_acq.await_completion()
+        self._ls_acq_obj.await_completion()
         logger.debug('Light-sheet acquisition finished')
-        lf_acq.await_completion()
+        self._lf_acq_obj.await_completion()
         logger.debug('Label-free acquisition finished')
 
-        # TODO: move scan stages to zero
-
         # Close ndtiff dataset - not sure why this is necessary
-        lf_acq._dataset.close()
-        ls_acq._dataset.close()
+        self._lf_acq_obj.get_dataset().close()
+        self._ls_acq_obj.get_dataset().close()
+
+        # Clean up pycromanager acquisition objects
+        self._lf_acq_obj = None
+        self._ls_acq_obj = None
 
         logger.info('Acquisition finished')
 
     def await_cz_acq_completion(self):
-        buffer_s = 2
-
         # LS acq time
         num_slices = self.ls_acq.slice_settings.num_slices
         slice_acq_rate = self.ls_acq.slice_settings.acquisition_rate  # list
         num_channels = self.ls_acq.channel_settings.num_channels
-        ls_acq_time = (
-            sum([num_slices / rate for rate in slice_acq_rate])
-            + LS_CHANGE_TIME / 1000 * (num_channels - 1)
-            + buffer_s
-        )
+        ls_acq_time = sum(
+            [num_slices / rate for rate in slice_acq_rate]
+        ) + LS_CHANGE_TIME / 1000 * (num_channels - 1)
 
         # LF acq time
         num_slices = self.lf_acq.slice_settings.num_slices
         slice_acq_rate = self.lf_acq.slice_settings.acquisition_rate  # float
         num_channels = self.lf_acq.channel_settings.num_channels
-        lf_acq_time = (
-            num_slices / slice_acq_rate * num_channels
-            + LC_CHANGE_TIME / 1000 * (num_channels - 1)
-            + buffer_s
+        lf_acq_time = num_slices / slice_acq_rate * num_channels + LC_CHANGE_TIME / 1000 * (
+            num_channels - 1
         )
 
         wait_time = np.ceil(np.maximum(ls_acq_time, lf_acq_time))
         time.sleep(wait_time)
+
+    def abort_stalled_acquisition(self):
+        buffer_time = 5
+        lf_acq_aborted = False
+        ls_acq_aborted = False
+
+        t_start = time.time()
+        while (
+            not all((config.lf_acq_finished, config.ls_acq_finished))
+            and (time.time() - t_start) < buffer_time
+        ):
+            time.sleep(0.2)
+
+        # TODO: a lot of hardcoded values here
+        if not config.lf_acq_finished:
+            # abort LF acq
+            lf_acq_aborted = True
+            camera = 'Camera' if self._demo_run else 'Oryx'
+            sequenced_stages = []
+            if self.lf_acq.slice_settings.use_sequencing:
+                sequenced_stages.append(self.lf_acq.slice_settings.z_stage_name)
+            if (
+                self.lf_acq.channel_settings.use_sequencing
+                and self.lf_acq.channel_settings.num_channels > 1
+                and not self._demo_run
+            ):
+                sequenced_stages.extend(['TS1_DAC01', 'TS1_DAC02'])
+            microscope_operations.abort_acquisition_sequence(
+                self.lf_acq.mmc, camera, sequenced_stages
+            )
+
+        if not config.ls_acq_finished:
+            # abort LS acq
+            ls_acq_aborted = True
+            camera = 'Camera' if self._demo_run else 'Prime BSI Express'
+            sequenced_stages = []
+            if self.ls_acq.slice_settings.use_sequencing:
+                sequenced_stages.append(self.ls_acq.slice_settings.z_stage_name)
+            if self.ls_acq.channel_settings.use_sequencing:
+                # for now, we don't do channel sequencing on the LS acquisition
+                pass
+            microscope_operations.abort_acquisition_sequence(
+                self.ls_acq.mmc, camera, sequenced_stages
+            )
+
+        return lf_acq_aborted, ls_acq_aborted
 
 
 def _generate_channel_slice_acq_events(channel_settings, slice_settings):
@@ -987,10 +1056,10 @@ def _generate_channel_slice_acq_events(channel_settings, slice_settings):
     return events
 
 
-def _create_acquisition_directory(root_dir, acq_name, idx=1):
-    acq_dir = os.path.join(root_dir, f'{acq_name}_{idx}')
+def _create_acquisition_directory(root_dir: Path, acq_name: str, idx=1) -> Path:
+    acq_dir = root_dir / f'{acq_name}_{idx}'
     try:
-        os.mkdir(acq_dir)
+        acq_dir.mkdir(parents=False, exist_ok=False)
     except OSError:
         return _create_acquisition_directory(root_dir, acq_name, idx + 1)
     return acq_dir

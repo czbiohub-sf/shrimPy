@@ -13,7 +13,7 @@ from pylablib.devices.Thorlabs import KinesisPiezoMotor
 
 logger = logging.getLogger(__name__)
 
-KIM101_COMPENSATION_FACTOR = 1.03
+KIM101_COMPENSATION_FACTOR = 1.035
 
 
 def _try_mmc_call(mmc, mmc_call_name, *mmc_carr_args):
@@ -130,7 +130,6 @@ def wait_for_device(mmc, device_name: str):
 def setup_daq_counter(
     task: nidaqmx.Task, co_channel, freq, duty_cycle, samples_per_channel, pulse_terminal
 ):
-
     logger.debug(f'Setting up {task.name} on {co_channel}')
     logger.debug(
         f'{co_channel} will output {samples_per_channel} samples with {duty_cycle} duty cycle at {freq:.6f} Hz on terminal {pulse_terminal}'
@@ -220,9 +219,10 @@ def autofocus(mmc, mmStudio, z_stage_name: str, z_position):
         for z_offset in z_offsets:
             mmc.set_position(z_stage_name, z_position + z_offset)
             mmc.wait_for_device(z_stage_name)
-            time.sleep(1)  # wait an extra second
 
             af_method.enable_continuous_focus(True)  # this call engages autofocus
+            time.sleep(1)  # wait an extra second
+
             if af_method.is_continuous_focus_locked():
                 autofocus_success = True
                 break
@@ -529,3 +529,23 @@ def reset_shutter(mmc: Core, auto_shutter_state: bool, shutter_state: bool):
         )
         mmc.set_shutter_open(shutter_state)
         mmc.set_auto_shutter(auto_shutter_state)
+
+
+def abort_acquisition_sequence(
+    mmc: Core, camera: str = None, sequenced_stages: Iterable[str] = []
+):
+    """Abort acquisition sequence and clear circular buffer
+
+    Parameters
+    ----------
+    mmc : Core
+    camera : str, optional
+        Camera name, by default None
+    sequenced_stages : Iterable[str], optional
+        List of sequenced stages by name, by default []
+    """
+
+    for stage in sequenced_stages:
+        mmc.stop_stage_sequence(stage)
+    mmc.stop_sequence_acquisition(camera)
+    mmc.clear_circular_buffer()

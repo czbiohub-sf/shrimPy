@@ -13,17 +13,17 @@ lf_channel_settings:
 
 lf_slice_settings:
   z_stage_name: 'Z'
-  z_start: 0
-  z_end: 60
-  z_step: 5
+  z_start: -5
+  z_end: 5
+  z_step: 0.205
   use_sequencing: True
 
 lf_microscope_settings:
   config_group_settings:
     - ['LightPath', 'Camera-left']
   device_property_settings:
-    - ['Camera', 'OnCameraCCDXSize', '1024']
-    - ['Camera', 'OnCameraCCDYSize', '1224']
+    - ['Camera', 'OnCameraCCDXSize', '1224']
+    - ['Camera', 'OnCameraCCDYSize', '1024']
     - ['Camera', 'BitDepth', '12']
   z_sequencing_settings:
     - ['Z', 'UseSequences', 'Yes']
@@ -39,9 +39,9 @@ ls_channel_settings:
 
 ls_slice_settings:
   z_stage_name: 'Z'
-  z_start: -0.2  # in Volts
-  z_end: 0.2
-  z_step: 0.01  # equivalent to 330 nm
+  z_start: -6  # in micrometers
+  z_end: 6
+  z_step: 0.313  # equivalent to 10 mV
   use_sequencing: True
 
 ls_microscope_settings:

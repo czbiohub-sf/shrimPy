@@ -30,9 +30,20 @@ lf_channel_settings:
 # Define slice (i.e. z-stack) settings for the label-free acquisition.
 lf_slice_settings:
   z_stage_name: 'MCL Piezo'
-  z_start: -10
-  z_end: 10
-  z_step: 0.4
+  z_start: -10 # in sample-space micrometers
+  z_end: 15
+  # When using 0.52 NA transmission light illumination, Nyquist sampling of the
+  # axial dimension will be achieved by using (450*1.4)/(1.35^2 + 0.52^2) = 300 nm
+  # steps in sample space. We can achieve this by using (300 nm)*1.4/2 = 210 nm
+  # steps of the mirror due to the 1.4x magnification of the remote volume and the
+  # fact that the optical path length is extended by twice the mirror's motion.
+  #
+  # Here we choose to oversample the data to match the light-sheet axial
+  # sampling. After deskewing and 3x binning, the light-sheet samples are spaced
+  # by ~205 nm. We chose a matching sample-space sampling, which corresponds to
+  # (205 nm)*1.4/2 = 143 nm motion of the mirror or (0.143 um)*(10 V / 65 um) =
+  # 22 mV DAC steps
+  z_step: 0.205  # equivalent to 22 mV
   use_sequencing: True
 
 # Define channel settings for the light-sheet acquisition. Channels may have
@@ -46,9 +57,14 @@ ls_channel_settings:
 # Define slice (i.e. z-stack) settings for the light-sheet acquisition.
 ls_slice_settings:
   z_stage_name: 'AP Galvo'
-  z_start: -2.5  # in Volts
-  z_end: 2.5  # 5V range corresponds to 155 um scan range
-  z_step: 0.01  # 10 mV is equivalent to 310 nm
+  # 185 um scan range covers the label-free field of view. Corresponds to
+  # ~5.9 V based on 31.3 um/V conversion factor
+  z_start: -100  # in sample-space micrometers
+  z_end: 85
+  # Nyquist sampling of this dimensions will be achieved by using ~116 nm steps.
+  # When imaging live cells we chose to undersample this dimension to decrease
+  # photobleaching and photodamage.
+  z_step: 0.313  # equivalent to 10 mV
   use_sequencing: True
 
 # Microscope settings which will be applied when the label-free acquisition is
@@ -112,3 +128,6 @@ ls_microscope_settings:
     - ['TS2_TTL1-8', 'Blanking', 'Off']
   z_sequencing_settings:
     - [*AP_GALVO_DAC, 'Sequence', 'On']
+  use_o3_refocus: True
+  o3_refocus_config: ['Channel - LS', 'GFP EX488 EM525-45']
+  o3_refocus_interval_min: 10
