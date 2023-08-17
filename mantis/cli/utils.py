@@ -12,6 +12,7 @@ import click
 
 from iohub.ngff import Position, open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
+import numpy as np
 
 
 def create_empty_zarr(
@@ -61,7 +62,7 @@ def create_empty_zarr(
             name="0",
             shape=output_shape,
             chunks=chunk_size,
-            dtype=input_dataset[0].dtype,
+            dtype=np.float32,
             transform=[transform],
         )
 

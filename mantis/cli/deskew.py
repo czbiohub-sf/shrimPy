@@ -71,13 +71,25 @@ def deskew(
             settings.average_n_slices,
             settings.pixel_size_um,
         )
+        # TODO: determine what is the best chunk size. This causes blosc issues
+        # z_chunk_factor = 20
+        # chunk_zyx_shape = (
+        #     output_shape_zyx[0] // z_chunk_factor
+        #     if output_shape_zyx[0] > z_chunk_factor
+        #     else output_shape_zyx[0],
+        #     output_shape_zyx[1],
+        #     output_shape_zyx[2],
+        # )
+        # Setting it to chunk by yx for now
+        chunk_zyx_shape = (1, deskewed_shape[1], deskewed_shape[2])
+        print(f'chunk_size  {chunk_zyx_shape}')
 
         # Create a zarr store output to mirror the input
         utils.create_empty_zarr(
             input_position_dirpaths,
             output_dirpath,
             output_zyx_shape=deskewed_shape,
-            chunk_zyx_shape=deskewed_shape,
+            chunk_zyx_shape=chunk_zyx_shape,
             voxel_size=voxel_size,
         )
 
