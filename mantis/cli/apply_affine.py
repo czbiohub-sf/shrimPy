@@ -86,14 +86,11 @@ def apply_affine(
     click.echo(f'Affine transform: {matrix}')
     click.echo(f'Voxel size: {output_voxel_size}')
 
-    z_chunk_factor = 10
-    chunk_zyx_shape = (
-        output_shape_zyx[0] // z_chunk_factor
-        if output_shape_zyx[0] > z_chunk_factor
-        else output_shape_zyx[0],
-        output_shape_zyx[1],
-        output_shape_zyx[2],
-    )
+    chunk_zyx_shape = [output_shape_zyx[0], output_shape_zyx[1], output_shape_zyx[2]]
+    bytes_per_pixel = np.dtype(np.float32).itemsize
+    while np.prod(chunk_zyx_shape) * bytes_per_pixel > 500e6:
+        chunk_zyx_shape[-3] = chunk_zyx_shape[-3] // 2
+    chunk_zyx_shape = tuple(chunk_zyx_shape)
 
     utils.create_empty_zarr(
         position_paths=input_position_dirpaths,

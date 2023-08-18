@@ -22,9 +22,6 @@ mem_per_cpu = "16G"
 time = 40  # minutes
 simultaneous_processes_per_node = 5
 
-# Z-chunking factor. Big datasets require z-chunking to avoid blocs issues
-z_chunk_factor = 20
-
 # path handling
 labelfree_data_paths = natsorted(glob.glob(labelfree_data_paths))
 lightsheet_data_paths = natsorted(glob.glob(lightsheet_data_paths))
@@ -43,13 +40,11 @@ output_shape_zyx = tuple(settings.output_shape_zyx)
 with open_ome_zarr(lightsheet_data_paths[0]) as light_sheet_position:
     voxel_size = tuple(light_sheet_position.scale[-3:])
 
-chunk_zyx_shape = (
-    output_shape_zyx[0] // z_chunk_factor
-    if output_shape_zyx[0] > z_chunk_factor
-    else output_shape_zyx[0],
-    output_shape_zyx[1],
-    output_shape_zyx[2],
-)
+chunk_zyx_shape = [output_shape_zyx[0], output_shape_zyx[1], output_shape_zyx[2]]
+bytes_per_pixel = np.dtype(np.float32).itemsize
+while np.prod(chunk_zyx_shape) * bytes_per_pixel > 500e6:
+    chunk_zyx_shape[-3] = chunk_zyx_shape[-3] // 2
+chunk_zyx_shape = tuple(chunk_zyx_shape)
 
 extra_metadata = {
     'registration': {
