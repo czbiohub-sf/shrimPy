@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List
 
 import click
+import numpy as np
 import yaml
 
 from iohub.ngff import open_ome_zarr
@@ -13,7 +14,6 @@ from mantis.analysis.AnalysisSettings import DeskewSettings
 from mantis.analysis.deskew import deskew_data, get_deskewed_data_shape
 from mantis.cli import utils
 from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
-import numpy as np
 
 
 # TODO: consider refactoring to utils
@@ -84,7 +84,7 @@ def deskew(
             input_position_dirpaths,
             output_dirpath,
             output_zyx_shape=deskewed_shape,
-            chunk_zyx_shape=chunk_zyx_shape,
+            chunk_zyx_shape=tuple(chunk_zyx_shape),
             voxel_size=voxel_size,
         )
 
