@@ -10,17 +10,16 @@ daq_debug = False
 logger = logging.getLogger(__name__)
 
 
-def log_preparing_acquisition(position_labels, events):
+def log_preparing_acquisition(events):
     if isinstance(events, list):
         _event = events[0]
     else:
         _event = events  # events is a dict
 
     t_idx = _event['axes']['time']
-    p_idx = _event['axes']['position']
-    logger.debug(
-        f'Preparing to acquire timepoint {t_idx} at position {position_labels[p_idx]}'
-    )
+    p_label = _event['axes']['position']
+
+    logger.debug(f'Preparing to acquire timepoint {t_idx} at position {p_label}')
 
     return events
 
@@ -44,8 +43,8 @@ def check_num_counter_samples(ctr_tasks, events):
     return events
 
 
-def log_preparing_acquisition_check_counter(position_labels, ctr_tasks, events):
-    events = log_preparing_acquisition(position_labels, events)
+def log_preparing_acquisition_check_counter(ctr_tasks, events):
+    events = log_preparing_acquisition(events)
     events = check_num_counter_samples(ctr_tasks, events)
 
     return events
