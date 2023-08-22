@@ -9,7 +9,6 @@ from mantis.analysis.deskew import deskew_data, get_deskewed_data_shape
 from mantis.cli.deskew import deskew_params_from_file
 from iohub import open_ome_zarr
 from dataclasses import asdict
-import numpy as np
 
 # deskew parameters
 # TODO: make sure that this settings file sets `keep_overhang` to false
@@ -47,18 +46,12 @@ with open_ome_zarr(str(input_paths[0]), mode="r") as input_dataset:
         pixel_size_um=settings.pixel_size_um,
     )
 
-    chunk_zyx_shape = [deskewed_shape[0], deskewed_shape[1], deskewed_shape[2]]
-    bytes_per_pixel = np.dtype(np.float32).itemsize
-    while np.prod(chunk_zyx_shape) * bytes_per_pixel > 500e6:
-        chunk_zyx_shape[-3] = chunk_zyx_shape[-3] // 2
-    chunk_zyx_shape = tuple(chunk_zyx_shape)
-
     # Create a zarr store output to mirror the input
     utils.create_empty_zarr(
         input_paths,
         output_data_path,
         output_zyx_shape=deskewed_shape,
-        chunk_zyx_shape=chunk_zyx_shape,
+        chunk_zyx_shape=None,
         voxel_size=voxel_size,
     )
 

@@ -22,7 +22,11 @@ def create_empty_zarr(
     chunk_zyx_shape: Tuple[int] = None,
     voxel_size: Tuple[int, float] = (1, 1, 1),
 ) -> None:
-    """Create an empty zarr array for the deskewing"""
+    """Create an empty zarr store mirroring another store"""
+    DTYPE = np.float32
+    MAX_CHUNK_SIZE = 500e6  # in bytes
+    bytes_per_pixel = np.dtype(DTYPE).itemsize
+
     # Load the first position to infer dataset information
     input_dataset = open_ome_zarr(str(position_paths[0]), mode="r")
     T, C, Z, Y, X = input_dataset.data.shape
@@ -42,14 +46,24 @@ def create_empty_zarr(
     output_shape = (T, len(channel_names)) + output_zyx_shape
     click.echo(f"Number of positions: {len(position_paths)}")
     click.echo(f"Output shape: {output_shape}")
+
     # Create output dataset
     output_dataset = open_ome_zarr(
         output_path, layout="hcs", mode="w", channel_names=channel_names
     )
     if chunk_zyx_shape is None:
-        chunk_zyx_shape = output_zyx_shape
+        chunk_zyx_shape = list(output_zyx_shape)
+        # chunk_zyx_shape[-3] > 1 ensures while loop will not stall if single
+        # XY image is larger than MAX_CHUNK_SIZE
+        while (
+            chunk_zyx_shape[-3] > 1
+            and np.prod(chunk_zyx_shape) * bytes_per_pixel > MAX_CHUNK_SIZE
+        ):
+            chunk_zyx_shape[-3] = np.ceil(chunk_zyx_shape[-3] / 2).astype(int)
+        chunk_zyx_shape = tuple(chunk_zyx_shape)
+
     chunk_size = 2 * (1,) + chunk_zyx_shape
-    click.echo(f"Chunk size {chunk_size}")
+    click.echo(f"Chunk size: {chunk_size}")
 
     # This takes care of the logic for single position or multiple position by wildcards
     for path in position_paths:
@@ -62,7 +76,7 @@ def create_empty_zarr(
             name="0",
             shape=output_shape,
             chunks=chunk_size,
-            dtype=np.float32,
+            dtype=DTYPE,
             transform=[transform],
         )
 

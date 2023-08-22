@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import List
 
 import click
-import numpy as np
 import yaml
 
 from iohub.ngff import open_ome_zarr
@@ -73,18 +72,12 @@ def deskew(
             settings.pixel_size_um,
         )
 
-        chunk_zyx_shape = [deskewed_shape[0], deskewed_shape[1], deskewed_shape[2]]
-        bytes_per_pixel = np.dtype(np.float32).itemsize
-        while np.prod(chunk_zyx_shape) * bytes_per_pixel > 500e6:
-            chunk_zyx_shape[-3] = chunk_zyx_shape[-3] // 2
-        chunk_zyx_shape = tuple(chunk_zyx_shape)
-
         # Create a zarr store output to mirror the input
         utils.create_empty_zarr(
             input_position_dirpaths,
             output_dirpath,
             output_zyx_shape=deskewed_shape,
-            chunk_zyx_shape=chunk_zyx_shape,
+            chunk_zyx_shape=None,
             voxel_size=voxel_size,
         )
 

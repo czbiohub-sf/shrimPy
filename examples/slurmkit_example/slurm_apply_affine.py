@@ -40,12 +40,6 @@ output_shape_zyx = tuple(settings.output_shape_zyx)
 with open_ome_zarr(lightsheet_data_paths[0]) as light_sheet_position:
     voxel_size = tuple(light_sheet_position.scale[-3:])
 
-chunk_zyx_shape = [output_shape_zyx[0], output_shape_zyx[1], output_shape_zyx[2]]
-bytes_per_pixel = np.dtype(np.float32).itemsize
-while np.prod(chunk_zyx_shape) * bytes_per_pixel > 500e6:
-    chunk_zyx_shape[-3] = chunk_zyx_shape[-3] // 2
-chunk_zyx_shape = tuple(chunk_zyx_shape)
-
 extra_metadata = {
     'registration': {
         'affine_matrix': matrix.tolist(),
@@ -62,7 +56,7 @@ utils.create_empty_zarr(
     position_paths=labelfree_data_paths,
     output_path=output_data_path,
     output_zyx_shape=output_shape_zyx,
-    chunk_zyx_shape=chunk_zyx_shape,
+    chunk_zyx_shape=None,
     voxel_size=voxel_size,
 )
 
