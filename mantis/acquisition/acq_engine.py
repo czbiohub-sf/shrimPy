@@ -95,6 +95,7 @@ class BaseChannelSliceAcquisition(object):
         self._channel_settings = ChannelSettings()
         self._slice_settings = SliceSettings()
         self._microscope_settings = MicroscopeSettings()
+        self._z0 = None
         self.headless = False if mm_app_path is None else True
         self.type = 'light-sheet' if self.headless else 'label-free'
         self.mmc = None
@@ -197,6 +198,7 @@ class BaseChannelSliceAcquisition(object):
             microscope_operations.set_property(
                 self.mmc, 'Core', 'Focus', self.slice_settings.z_stage_name
             )
+            self._z0 = round(float(self.mmc.get_position(self.slice_settings.z_stage_name)), 3)
 
             # Setup O3 scan stage
             if self.microscope_settings.use_o3_refocus:
@@ -236,6 +238,11 @@ class BaseChannelSliceAcquisition(object):
                     settings.property_name,
                     settings.property_value,
                 )
+
+            # Reset z stage to initial position
+            microscope_operations.set_z_position(
+                self.mmc, self.slice_settings.z_stage_name, self._z0
+            )
 
 
 class MantisAcquisition(object):
@@ -295,6 +302,8 @@ class MantisAcquisition(object):
         self._acq_name = acquisition_name
         self._demo_run = demo_run
         self._verbose = verbose
+        self._lf_acq_obj = None
+        self._ls_acq_obj = None
 
         if not enable_lf_acq or not enable_ls_acq:
             raise Exception('Disabling LF or LS acquisition is not currently supported')
@@ -378,40 +387,34 @@ class MantisAcquisition(object):
         self.lf_acq.reset()
         self.ls_acq.reset()
 
-        # Close PM bridges - call to cleanup blocks exit!
-        # cleanup()
+        # Abort acquisitions if they have not finished, usually after Ctr+C
+        if self._lf_acq_obj:
+            self._lf_acq_obj.abort()
+        if self._ls_acq_obj:
+            self._ls_acq_obj.abort()
 
     def update_position_settings(self):
         """
         Fetch positions defined in the Micro-manager Position List Manager
         """
-        mm_pos_list = self.lf_acq.mmStudio.get_position_list_manager().get_position_list()
-        mm_number_of_positions = mm_pos_list.get_number_of_positions()
         autofocus_stage = self.lf_acq.microscope_settings.autofocus_stage
 
         if self.position_settings.num_positions == 0:
-            if mm_number_of_positions > 0:
-                logger.debug('Fetching position list from Micro-manager')
+            logger.debug('Fetching position list from Micro-manager')
 
-                xyz_position_list, position_labels = microscope_operations.get_position_list(
-                    self.lf_acq.mmStudio, autofocus_stage
+            xyz_positions, position_labels = microscope_operations.get_position_list(
+                self.lf_acq.mmStudio, autofocus_stage
+            )
+
+            if not xyz_positions:
+                logger.debug('Micro-manager position list is empty. Fetching current position')
+
+                xyz_positions, position_labels = microscope_operations.get_current_position(
+                    self.lf_acq.mmc, autofocus_stage
                 )
-            else:
-                logger.debug('Fetching current position from Micro-manager')
-
-                xyz_position_list = [
-                    (
-                        self.lf_acq.mmc.get_x_position(),
-                        self.lf_acq.mmc.get_y_position(),
-                        self.lf_acq.mmc.get_position(autofocus_stage)
-                        if autofocus_stage
-                        else None,
-                    )
-                ]
-                position_labels = ['Current']
 
             self.position_settings = PositionSettings(
-                xyz_positions=xyz_position_list,
+                xyz_positions=xyz_positions,
                 position_labels=position_labels,
             )
 
@@ -810,26 +813,21 @@ class MantisAcquisition(object):
 
         # define LF hook functions
         if self._demo_run:
-            lf_pre_hardware_hook_fn = partial(
-                log_preparing_acquisition, self.position_settings.position_labels
-            )
+            lf_pre_hardware_hook_fn = log_preparing_acquisition
             lf_post_camera_hook_fn = None
         else:
             lf_pre_hardware_hook_fn = partial(
                 log_preparing_acquisition_check_counter,
-                self.position_settings.position_labels,
                 [self._lf_z_ctr_task, self._lf_channel_ctr_task],
             )
             lf_post_camera_hook_fn = partial(
                 start_daq_counters, [self._lf_z_ctr_task, self._lf_channel_ctr_task]
             )
-        lf_post_hardware_hook_fn = partial(
-            log_acquisition_start, self.position_settings.position_labels
-        )
+        lf_post_hardware_hook_fn = log_acquisition_start
         lf_image_saved_fn = check_lf_acq_finished
 
         # define LF acquisition
-        lf_acq = Acquisition(
+        self._lf_acq_obj = Acquisition(
             directory=self._acq_dir,
             name=f'{self._acq_name}_labelfree',
             port=LF_ZMQ_PORT,
@@ -857,7 +855,7 @@ class MantisAcquisition(object):
         ls_image_saved_fn = check_ls_acq_finished
 
         # define LS acquisition
-        ls_acq = Acquisition(
+        self._ls_acq_obj = Acquisition(
             directory=self._acq_dir,
             name=f'{self._acq_name}_lightsheet',
             port=LS_ZMQ_PORT,
@@ -920,13 +918,13 @@ class MantisAcquisition(object):
                 lf_events = deepcopy(lf_cz_events)
                 for _event in lf_events:
                     _event['axes']['time'] = t_idx
-                    _event['axes']['position'] = p_idx
+                    _event['axes']['position'] = p_label
                     _event['min_start_time'] = 0
 
                 ls_events = deepcopy(ls_cz_events)
                 for _event in ls_events:
                     _event['axes']['time'] = t_idx
-                    _event['axes']['position'] = p_idx
+                    _event['axes']['position'] = p_label
                     _event['min_start_time'] = 0
 
                 config.lf_last_img_idx = lf_events[-1]['axes']
@@ -934,8 +932,8 @@ class MantisAcquisition(object):
                 config.lf_acq_finished = False
                 config.ls_acq_finished = False
 
-                ls_acq.acquire(ls_events)
-                lf_acq.acquire(lf_events)
+                self._ls_acq_obj.acquire(ls_events)
+                self._lf_acq_obj.acquire(lf_events)
 
                 # wait for CZYX acquisition to finish
                 self.await_cz_acq_completion()
@@ -955,21 +953,23 @@ class MantisAcquisition(object):
                 logger.info(f"Waiting {t_wait/60:.2f} minutes until the next time point")
                 time.sleep(t_wait)
 
-        ls_acq.mark_finished()
-        lf_acq.mark_finished()
+        self._ls_acq_obj.mark_finished()
+        self._lf_acq_obj.mark_finished()
 
         logger.debug('Waiting for acquisition to finish')
 
-        ls_acq.await_completion()
+        self._ls_acq_obj.await_completion()
         logger.debug('Light-sheet acquisition finished')
-        lf_acq.await_completion()
+        self._lf_acq_obj.await_completion()
         logger.debug('Label-free acquisition finished')
 
-        # TODO: move scan stages to zero
-
         # Close ndtiff dataset - not sure why this is necessary
-        lf_acq._dataset.close()
-        ls_acq._dataset.close()
+        self._lf_acq_obj.get_dataset().close()
+        self._ls_acq_obj.get_dataset().close()
+
+        # Clean up pycromanager acquisition objects
+        self._lf_acq_obj = None
+        self._ls_acq_obj = None
 
         logger.info('Acquisition finished')
 
