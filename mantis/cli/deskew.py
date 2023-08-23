@@ -77,7 +77,7 @@ def deskew(
             input_position_dirpaths,
             output_dirpath,
             output_zyx_shape=deskewed_shape,
-            chunk_zyx_shape=deskewed_shape,
+            chunk_zyx_shape=None,
             voxel_size=voxel_size,
         )
 

@@ -24,9 +24,6 @@ mem_per_cpu = "16G"
 time = 40  # minutes
 simultaneous_processes_per_node = 4
 
-# Z-chunking factor. Big datasets require z-chunking to avoid blocs issues
-z_chunk_factor = 20
-
 # path handling
 input_paths = natsorted(glob.glob(input_paths))
 output_dir = os.path.dirname(output_data_path)
@@ -49,20 +46,12 @@ with open_ome_zarr(str(input_paths[0]), mode="r") as input_dataset:
         pixel_size_um=settings.pixel_size_um,
     )
 
-    chunk_zyx_shape = (
-        deskewed_shape[0] // z_chunk_factor
-        if deskewed_shape[0] > z_chunk_factor
-        else deskewed_shape[0],
-        deskewed_shape[1],
-        deskewed_shape[2],
-    )
-
     # Create a zarr store output to mirror the input
     utils.create_empty_zarr(
         input_paths,
         output_data_path,
         output_zyx_shape=deskewed_shape,
-        chunk_zyx_shape=chunk_zyx_shape,
+        chunk_zyx_shape=None,
         voxel_size=voxel_size,
     )
 
