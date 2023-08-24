@@ -549,3 +549,9 @@ def abort_acquisition_sequence(
         mmc.stop_stage_sequence(stage)
     mmc.stop_sequence_acquisition(camera)
     mmc.clear_circular_buffer()
+
+
+def autoxposure(mmc, autoexposure_settings, channel_settings):
+    autoexposure_succeed = True
+
+    return autoexposure_succeed

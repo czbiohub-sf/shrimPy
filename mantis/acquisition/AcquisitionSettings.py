@@ -1,7 +1,7 @@
 import warnings
 
 from dataclasses import field
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -105,3 +105,59 @@ class MicroscopeSettings:
     use_o3_refocus: bool = False
     o3_refocus_config: Optional[ConfigSettings] = None
     o3_refocus_interval_min: Optional[int] = None
+
+
+@dataclass
+class AutoexposureSettings:
+    # min intensity percent to define under-exposure
+    min_intensity_percent: float
+
+    # max intensity percent to define over-exposure
+    max_intensity_percent: float
+
+    # minimum exposure time used to decide when to lower the laser power
+    min_exposure_time_ms: float
+
+    # max exposure time used during adjustment for under-exposure
+    max_exposure_time_ms: float
+
+    # the initial exposure time used when the laser power is lowered
+    default_exposure_time_ms: float
+
+    # the minimum laser power (used to define autoexposure failure)
+    min_laser_power_mW: float
+
+    max_laser_power_mW: float
+
+    # factor by which to decrease the exposure time or laser power
+    # if a z-slice is found to be over-exposed
+    relative_exposure_step: float
+
+    relative_laser_power_step: float
+
+    def __post_init__(self):
+        for attr in (
+            "default_exposure_time_ms",
+            "min_exposure_time_ms",
+            "max_exposure_time_ms",
+        ):
+            setattr(self, attr, round(getattr(self, attr)))
+        for attr in ("min_laser_power_mW", "max_laser_power_mW"):
+            setattr(self, attr, round(getattr(self, attr)))
+
+
+@dataclass
+class CommonLaserSettings:
+    serial_number: str = None
+    com_port: Optional[str] = None
+    max_power: Optional[float] = None
+    laser_power: Optional[float] = None
+
+
+@dataclass
+class LaserSettings:
+    lasers: Dict[str, CommonLaserSettings]
+
+    def __post_init__(self):
+        # TODO: Update based on the established connection?
+        pass

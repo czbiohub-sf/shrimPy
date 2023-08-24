@@ -28,6 +28,7 @@ from mantis.acquisition.AcquisitionSettings import (
     ChannelSettings,
     SliceSettings,
     MicroscopeSettings,
+    AutoexposureSettings,
 )
 from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
     log_preparing_acquisition,
@@ -95,6 +96,7 @@ class BaseChannelSliceAcquisition(object):
         self._channel_settings = ChannelSettings()
         self._slice_settings = SliceSettings()
         self._microscope_settings = MicroscopeSettings()
+        self._autoexposure_settings = AutoexposureSettings()
         self._z0 = None
         self.headless = False if mm_app_path is None else True
         self.type = 'light-sheet' if self.headless else 'label-free'
@@ -148,6 +150,10 @@ class BaseChannelSliceAcquisition(object):
     def microscope_settings(self):
         return self._microscope_settings
 
+    @property
+    def autoexposure_settings(self):
+        return self._autoexposure_settings
+
     @channel_settings.setter
     def channel_settings(self, settings: ChannelSettings):
         logger.debug(
@@ -170,6 +176,13 @@ class BaseChannelSliceAcquisition(object):
         )
         self._microscope_settings = settings
 
+    @autoexposure_settings.setter
+    def autoexposure_settings(self, settings: AutoexposureSettings):
+        logger.debug(
+            f"{self.type.capitalize()} acquisition will have the following settings:{asdict(settings)}"
+        )
+        self._autoexposure_settings = settings
+
     def setup(self):
         """
         Apply acquisition settings as specified by the class properties
@@ -189,6 +202,9 @@ class BaseChannelSliceAcquisition(object):
                     settings.property_name,
                     settings.property_value,
                 )
+
+            # Apply autoexposure settings
+            # TODO: Add the mmc dependent settings
 
             # Apply ROI
             if self.microscope_settings.roi is not None:
