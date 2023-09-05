@@ -35,10 +35,23 @@ class PositionSettings:
     xyz_positions: list = field(default_factory=list)
     position_labels: List[str] = field(default_factory=list)
     num_positions: int = field(init=False, default=0)
+    well_ids: List[str] = field(init=False, default_factory=list)
 
     def __post_init__(self):
         assert len(self.xyz_positions) == len(self.position_labels)
         self.num_positions = len(self.xyz_positions)
+
+        try:
+            # Look for "'A1-Site_0', 'H12-Site_1', ... " format
+            hcs_labels = [pos.split("-Site_") for pos in self.position_labels]
+            self.well_ids = [well for well, fov in hcs_labels]
+        except ValueError:
+            try:
+                # Look for "'1-Pos000_000', '2-Pos000_001', ... "
+                hcs_labels = [pos.split("-Pos") for pos in self.position_labels]
+                self.well_ids = [well for well, fov in hcs_labels]
+            except ValueError:
+                self.well_ids = [None] * self.num_positions
 
 
 @dataclass(config=config)
