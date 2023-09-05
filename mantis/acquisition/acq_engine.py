@@ -19,7 +19,7 @@ from waveorder.focus import focus_from_transverse_band
 
 from mantis.acquisition import microscope_operations
 from mantis.acquisition.hook_functions import config
-from mantis.acquisition.logger import configure_logger, log_conda_environment
+from mantis.acquisition.logger import configure_debug_logger, log_conda_environment
 
 # isort: off
 from mantis.acquisition.AcquisitionSettings import (
@@ -316,7 +316,7 @@ class MantisAcquisition(object):
         # Setup logger
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         acq_log_path = self._logs_dir / f'mantis_acquisition_log_{timestamp}.txt'
-        configure_logger(acq_log_path)
+        configure_debug_logger(acq_log_path)
 
         if self._demo_run:
             logger.info('NOTE: This is a demo run')
