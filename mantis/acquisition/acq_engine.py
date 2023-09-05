@@ -59,6 +59,9 @@ LC_CHANGE_TIME = 20  # in ms
 LS_CHANGE_TIME = 200  # time needed to change LS filter wheel, in ms
 LS_KIM101_SN = 74000291
 LF_KIM101_SN = 74000565
+VORTRAN_488_COM_PORT = 'COM6'
+VORTRAN_561_COM_PORT = 'COM13'
+VORTRAN_639_COM_PORT = 'COM12'
 
 NA_DETECTION = 1.35
 LS_PIXEL_SIZE = 6.5 / (40 * 1.4)  # in um
@@ -203,9 +206,6 @@ class BaseChannelSliceAcquisition(object):
                     settings.property_value,
                 )
 
-            # Apply autoexposure settings
-            # TODO: Add the mmc dependent settings
-
             # Apply ROI
             if self.microscope_settings.roi is not None:
                 microscope_operations.set_roi(self.mmc, self.microscope_settings.roi)
@@ -215,10 +215,6 @@ class BaseChannelSliceAcquisition(object):
                 self.mmc, 'Core', 'Focus', self.slice_settings.z_stage_name
             )
             self._z0 = round(float(self.mmc.get_position(self.slice_settings.z_stage_name)), 3)
-
-            # Setup O3 scan stage
-            if self.microscope_settings.use_o3_refocus:
-                self.o3_stage = microscope_operations.setup_kim101_stage(LS_KIM101_SN)
 
             # Note: sequencing should be turned off by default
             # Setup z sequencing
@@ -583,6 +579,42 @@ class MantisAcquisition(object):
         else:
             logger.debug('Autofocus is not enabled')
 
+        # Connect to LS O3 scan stage
+        if self.ls_acq.microscope_settings.use_o3_refocus:
+            self.ls_acq.o3_stage = microscope_operations.setup_kim101_stage(LS_KIM101_SN)
+
+    def setup_autoexposure(self):
+        if self._demo_run:
+            logger.debug('Autoexposure is not supported in demo mode')
+            return
+
+        for channel_idx, config_name in enumerate(self.ls_acq.channel_settings.channels):
+            if self.ls_acq.channel_settings.use_autoexposure[channel_idx]:
+                config_group = self.ls_acq.channel_settings.channel_group
+                config = self.ls_acq.mmc.get_config_data(config_group, config_name)
+                ts2_ttl_state = int(config.get_setting('TS2_TTL1-8', 'State'))
+                if ts2_ttl_state == 32:
+                    # State 32 corresponds to illumination with 488 laser
+                    self.ls_acq.channel_settings.light_sources[
+                        channel_idx
+                    ] = microscope_operations.setup_vortran_laser(VORTRAN_488_COM_PORT)
+                elif ts2_ttl_state == 64:
+                    # State 64 corresponds to illumination with 561 laser
+                    self.ls_acq.channel_settings.light_sources[
+                        channel_idx
+                    ] = microscope_operations.setup_vortran_laser(VORTRAN_561_COM_PORT)
+                elif ts2_ttl_state == 128:
+                    # State 128 corresponds to illumination with 639 laser
+                    self.ls_acq.channel_settings.light_sources[
+                        channel_idx
+                    ] = microscope_operations.setup_vortran_laser(VORTRAN_639_COM_PORT)
+                else:
+                    logger.error(
+                        'Unknown TTL state {} for channel {} in config group {}'.format(
+                            ts2_ttl_state, config_name, config_group
+                        )
+                    )
+
     def go_to_position(self, position_index: int):
         # Move slowly for short distances such that autofocus can stay engaged.
         # Autofocus typically fails when moving long distances, so we can move
@@ -818,6 +850,10 @@ class MantisAcquisition(object):
         logger.debug('Setting up autofocus')
         self.setup_autofocus()
         logger.debug('Finished setting up autofocus')
+
+        logger.debug('Setting up autoexposure')
+        self.setup_autoexposure()
+        logger.debug('Finished setting up autoexposure')
 
         self.update_position_settings()
 

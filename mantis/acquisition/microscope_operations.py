@@ -7,6 +7,7 @@ from typing import Iterable, Tuple
 import nidaqmx
 import numpy as np
 
+from copylot.hardware.lasers.vortran.vortran import VortranLaser
 from nidaqmx.constants import AcquisitionType
 from pycromanager import Core, Studio
 from pylablib.devices.Thorlabs import KinesisPiezoMotor
@@ -549,6 +550,24 @@ def abort_acquisition_sequence(
         mmc.stop_stage_sequence(stage)
     mmc.stop_sequence_acquisition(camera)
     mmc.clear_circular_buffer()
+
+
+def setup_vortran_laser(com_port: str):
+    """Setup Vortran laser on a given COM port
+
+    Parameters
+    ----------
+    com_port : str
+        laser COM port
+
+    Returns
+    -------
+    laser : VortranLaser
+    """
+    logger.debug(f'Setting up Vortran Laser on COM port {com_port}')
+    laser = VortranLaser(com_port)
+
+    return laser
 
 
 def autoxposure(mmc, autoexposure_settings, channel_settings):

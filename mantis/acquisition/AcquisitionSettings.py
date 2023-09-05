@@ -1,7 +1,7 @@
 import warnings
 
 from dataclasses import field
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -56,18 +56,25 @@ class PositionSettings:
 
 @dataclass(config=config)
 class ChannelSettings:
-    exposure_time_ms: List[NonNegativeFloat] = field(default_factory=list)  # in ms
-    channel_group: Optional[str] = None
-    channels: List[str] = field(default_factory=list)
+    exposure_time_ms: Union[NonNegativeFloat, List[NonNegativeFloat]]  # in ms
+    channel_group: str
+    channels: List[str]
     use_sequencing: bool = False
+    use_autoexposure: Union[bool, List[bool]] = False
     num_channels: int = field(init=False, default=0)
     acquisition_rate: float = field(init=False, default=None)
+    light_sources: List = field(init=False, default=None)
 
     def __post_init__(self):
-        assert len(self.exposure_time_ms) == len(
-            self.channels
-        ), 'Number of channels must equal number of exposure times'
         self.num_channels = len(self.channels)
+        for attr_name in ('exposure_time_ms', 'use_autoexposure', 'light_sources'):
+            attr_value = getattr(self, attr_name)
+            if isinstance(attr_value, list):
+                assert (
+                    len(attr_value) == self.num_channels
+                ), f'{attr_name} must be a list of length equal to the number of channels'
+            else:
+                setattr(self, attr_name, [attr_value] * self.num_channels)
 
 
 @dataclass(config=config)
@@ -157,20 +164,3 @@ class AutoexposureSettings:
             setattr(self, attr, round(getattr(self, attr)))
         for attr in ("min_laser_power_mW", "max_laser_power_mW"):
             setattr(self, attr, round(getattr(self, attr)))
-
-
-@dataclass
-class CommonLaserSettings:
-    serial_number: str = None
-    com_port: Optional[str] = None
-    max_power: Optional[float] = None
-    laser_power: Optional[float] = None
-
-
-@dataclass
-class LaserSettings:
-    lasers: Dict[str, CommonLaserSettings]
-
-    def __post_init__(self):
-        # TODO: Update based on the established connection?
-        pass

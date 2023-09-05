@@ -66,26 +66,3 @@ autoexposure_settings:
   relative_exposure_step: 0.8
   relative_laser_power_step: 2.2
   rounding_factor: 5
-
-laser_settings:
-  common_settings:
-    serial_number: '000000'
-    com_port: ''
-    max_power: 0
-    laser_power: 0
-  lasers:
-    488:
-      serial_number: '00000'
-      com_port: 'COM3'
-      laser_power: 5.0
-      max_power: 100.0
-    561:
-      serial_number: '11111'
-      com_port: 'COM4'
-      laser_power: 5.0
-      max_power: 100.0
-    632:
-      serial_number: '22222'
-      com_port: 'COM5'
-      laser_power: 5.0
-      max_power: 100.0
