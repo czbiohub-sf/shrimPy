@@ -51,7 +51,8 @@ class PositionSettings:
                 hcs_labels = [pos.split("-Pos") for pos in self.position_labels]
                 self.well_ids = [well for well, fov in hcs_labels]
             except ValueError:
-                self.well_ids = [None] * self.num_positions
+                # Default well is called "0"
+                self.well_ids = ["0"] * self.num_positions
 
 
 @dataclass(config=config)
@@ -144,18 +145,27 @@ class AutoexposureSettings:
     max_exposure_time_ms: float
 
     # the initial exposure time used when the laser power is lowered
+    # TODO: the default exposure time should be the given in Channelsettings.default_exposure_time_ms
     default_exposure_time_ms: float
 
     # the minimum laser power (used to define autoexposure failure)
     min_laser_power_mW: float
 
-    max_laser_power_mW: float
+    # TODO: get the max laser power from the laser if not provided here
+    # TODO: different lasers may have different max power, how do we deal with that?
+    max_laser_power_mW: Optional[float]
 
-    # factor by which to decrease the exposure time or laser power
-    # if a z-slice is found to be over-exposed
+    # factor by which to change the exposure time or laser power
+    # if an image is found to be incorrectly exposed
     relative_exposure_step: float
 
     relative_laser_power_step: float
+
+    # rerun autoexposure for each timepoint at a given well
+    rerun_each_timepoint: bool = False
+
+    # rerun autoexposure for each FOV in a given well
+    rerun_each_fov: bool = False
 
     def __post_init__(self):
         for attr in (
@@ -163,6 +173,6 @@ class AutoexposureSettings:
             "min_exposure_time_ms",
             "max_exposure_time_ms",
         ):
-            setattr(self, attr, round(getattr(self, attr)))
+            setattr(self, attr, round(getattr(self, attr), 1))
         for attr in ("min_laser_power_mW", "max_laser_power_mW"):
-            setattr(self, attr, round(getattr(self, attr)))
+            setattr(self, attr, round(getattr(self, attr), 1))

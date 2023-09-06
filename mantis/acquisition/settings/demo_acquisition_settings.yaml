@@ -66,3 +66,5 @@ autoexposure_settings:
   relative_exposure_step: 0.8
   relative_laser_power_step: 2.2
   rounding_factor: 5
+  rerun_each_timepoint: True
+  rerun_each_fov: False

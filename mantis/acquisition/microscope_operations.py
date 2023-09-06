@@ -99,7 +99,7 @@ def get_current_position(mmc, z_stage_name):
             mmc.get_position(z_stage_name) if z_stage_name else None,
         )
     ]
-    position_label = ['Current']
+    position_label = ['FOV0']
 
     return xyz_position, position_label
 
@@ -566,6 +566,7 @@ def setup_vortran_laser(com_port: str):
     """
     logger.debug(f'Setting up Vortran Laser on COM port {com_port}')
     laser = VortranLaser(port=com_port)
+    laser.set_pulse_mode(1)  # turn on digital modulation
 
     return laser
 
