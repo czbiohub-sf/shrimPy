@@ -9,6 +9,7 @@ from functools import partial
 from pathlib import Path
 from typing import Iterable, Union
 
+import copylot
 import nidaqmx
 import numpy as np
 import tifffile
@@ -99,7 +100,7 @@ class BaseChannelSliceAcquisition(object):
         self._channel_settings = ChannelSettings()
         self._slice_settings = SliceSettings()
         self._microscope_settings = MicroscopeSettings()
-        self._autoexposure_settings = AutoexposureSettings()
+        # self._autoexposure_settings = AutoexposureSettings()
         self._z0 = None
         self.headless = False if mm_app_path is None else True
         self.type = 'light-sheet' if self.headless else 'label-free'
@@ -329,6 +330,7 @@ class MantisAcquisition(object):
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         acq_log_path = self._logs_dir / f'mantis_acquisition_log_{timestamp}.txt'
         configure_logger(acq_log_path)
+        copylot.enable_logging(acq_log_path, logging.INFO)
 
         if self._demo_run:
             logger.info('NOTE: This is a demo run')
@@ -592,7 +594,9 @@ class MantisAcquisition(object):
             if self.ls_acq.channel_settings.use_autoexposure[channel_idx]:
                 config_group = self.ls_acq.channel_settings.channel_group
                 config = self.ls_acq.mmc.get_config_data(config_group, config_name)
-                ts2_ttl_state = int(config.get_setting('TS2_TTL1-8', 'State'))
+                ts2_ttl_state = int(
+                    config.get_setting('TS2_TTL1-8', 'State').get_property_value()
+                )
                 if ts2_ttl_state == 32:
                     # State 32 corresponds to illumination with 488 laser
                     self.ls_acq.channel_settings.light_sources[

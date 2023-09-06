@@ -565,7 +565,7 @@ def setup_vortran_laser(com_port: str):
     laser : VortranLaser
     """
     logger.debug(f'Setting up Vortran Laser on COM port {com_port}')
-    laser = VortranLaser(com_port)
+    laser = VortranLaser(port=com_port)
 
     return laser
 

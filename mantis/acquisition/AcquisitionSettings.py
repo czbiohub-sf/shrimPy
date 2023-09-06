@@ -56,9 +56,11 @@ class PositionSettings:
 
 @dataclass(config=config)
 class ChannelSettings:
-    exposure_time_ms: Union[NonNegativeFloat, List[NonNegativeFloat]]  # in ms
-    channel_group: str
-    channels: List[str]
+    exposure_time_ms: Union[NonNegativeFloat, List[NonNegativeFloat]] = field(
+        default_factory=list
+    )  # in ms
+    channel_group: Optional[str] = None
+    channels: List[str] = field(default_factory=list)
     use_sequencing: bool = False
     use_autoexposure: Union[bool, List[bool]] = False
     num_channels: int = field(init=False, default=0)
