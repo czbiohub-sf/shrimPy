@@ -6,6 +6,25 @@ from subprocess import PIPE, STDOUT, Popen
 from typing import Union
 
 
+def configure_debug_logger(filepath: str, logger_name: str = 'mantis'):
+    """Add a file handler at DEBUG level for a given logger
+
+    Parameters
+    ----------
+    filepath : str
+        Debug log file path
+    logger_name : str, optional
+        Logger name, by default 'mantis'
+    """
+    file_handler = logging.FileHandler(filepath)
+    file_handler.setLevel(logging.DEBUG)
+    file_format = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(module)s.%(funcName)s - %(message)s'
+    )
+    file_handler.setFormatter(file_format)
+    logging.getLogger(logger_name).addHandler(file_handler)
+
+
 def log_conda_environment(log_path: Union[str, os.PathLike]):
     """Save a log of the current conda environment as defined in the
     `compmicro-docs/hpc/log_environment.ps1` PowerShell script. A copy of the
@@ -42,33 +61,3 @@ def log_conda_environment(log_path: Union[str, os.PathLike]):
     output, errors = process.communicate()
 
     return output, errors
-
-
-# Setup console handler
-def get_console_handler():
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_format = logging.Formatter('%(levelname)s - %(module)s.%(funcName)s - %(message)s')
-    console_handler.setFormatter(console_format)
-    return console_handler
-
-
-# Setup file handler
-def get_file_handler(filename):
-    file_handler = logging.FileHandler(filename)
-    file_handler.setLevel(logging.DEBUG)
-    file_format = logging.Formatter(
-        '%(asctime)s - %(levelname)s - %(module)s.%(funcName)s - %(message)s'
-    )
-    file_handler.setFormatter(file_format)
-    return file_handler
-
-
-# Setup root logger
-def configure_logger(filename):
-    logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
-
-    logger.addHandler(get_console_handler())
-    logger.addHandler(get_file_handler(filename))
-    logger.propagate = False
