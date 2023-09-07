@@ -54,11 +54,15 @@ def test_channel_settings():
 
     # Test non-equal
     with pytest.raises(AssertionError):
-        ChannelSettings(exposure_time_ms=[0, 1], channel_group='Channel', channels=['GFP'])
+        ChannelSettings(
+            default_exposure_times_ms=[0, 1], channel_group='Channel', channels=['GFP']
+        )
 
     # Test negative
     with pytest.raises(ValueError):
-        ChannelSettings(exposure_time_ms=[-0.1], channel_group='Channel', channels=['GFP'])
+        ChannelSettings(
+            default_exposure_times_ms=[-0.1], channel_group='Channel', channels=['GFP']
+        )
 
 
 def test_slice_settings():

@@ -59,7 +59,7 @@ def autoxposure(
     # TODO: Find smart way of changing the laser and channel settings for laser power.
     logger.info("Starting autoexposure")
     autoexposure_succeed = True
-    exposure_suggestion = channel_settings.exposure_time_ms[0]
+    exposure_suggestion = channel_settings.default_exposure_times_ms[0]
     laser_power_suggestion = laser_settings.lasers["488"].laser_power
     flag_exposure = 0  # 1 over-exposed , 0 nominal, -1 under-exposed
 
@@ -202,7 +202,7 @@ def suggest_exposure_camera(
     laser_settings: LaserSettings,
 ):
     laser_power_suggestion = laser_settings.lasers["488"].laser_power
-    exposure_suggestion = channel_settings.exposure_time_ms[0]
+    exposure_suggestion = channel_settings.default_exposure_times_ms[0]
     # Logic for suggesting new laser or camera parameters
     # Prioritize the laser power bump
     if (
@@ -215,7 +215,7 @@ def suggest_exposure_camera(
 
     # Change the exposure if the laser settings is maxed out
     elif exposure_suggestion <= autoexposure_settings.max_exposure_time_ms:
-        exposure_suggestion = channel_settings.exposure_time_ms - (
+        exposure_suggestion = channel_settings.default_exposure_times_ms - (
             autoexposure_settings.relative_exposure_step * flag_exposure
         )
     else:

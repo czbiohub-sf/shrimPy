@@ -1,5 +1,6 @@
 import warnings
 
+from copy import deepcopy
 from dataclasses import field
 from typing import List, Optional, Tuple, Union
 
@@ -57,9 +58,12 @@ class PositionSettings:
 
 @dataclass(config=config)
 class ChannelSettings:
-    exposure_time_ms: Union[NonNegativeFloat, List[NonNegativeFloat]] = field(
-        default_factory=list
-    )  # in ms
+    default_exposure_times_ms: Union[
+        NonNegativeFloat, List[NonNegativeFloat], None
+    ] = None  # in ms
+    default_laser_powers: Union[
+        NonNegativeFloat, List[NonNegativeFloat], List[None], None
+    ] = None
     channel_group: Optional[str] = None
     channels: List[str] = field(default_factory=list)
     use_sequencing: bool = False
@@ -67,17 +71,30 @@ class ChannelSettings:
     num_channels: int = field(init=False, default=0)
     acquisition_rate: float = field(init=False, default=None)
     light_sources: List = field(init=False, default=None)
+    exposure_times_per_well: List = field(init=None, default_factory=dict)
+    laser_powers_per_well: List = field(init=None, default_factory=dict)
 
     def __post_init__(self):
         self.num_channels = len(self.channels)
-        for attr_name in ('exposure_time_ms', 'use_autoexposure', 'light_sources'):
+        for attr_name in (
+            'default_exposure_times_ms',
+            'default_laser_powers',
+            'use_autoexposure',
+            'light_sources',
+            'exposure_times_per_well',
+            'laser_powers_per_well',
+        ):
             attr_value = getattr(self, attr_name)
             if isinstance(attr_value, list):
                 assert (
                     len(attr_value) == self.num_channels
                 ), f'{attr_name} must be a list of length equal to the number of channels'
             else:
-                setattr(self, attr_name, [attr_value] * self.num_channels)
+                # Note: [attr_value] * self.num_channels will simply create
+                # references, which is not what we want
+                setattr(
+                    self, attr_name, [deepcopy(attr_value) for _ in range(self.num_channels)]
+                )
 
 
 @dataclass(config=config)
@@ -145,8 +162,8 @@ class AutoexposureSettings:
     max_exposure_time_ms: float
 
     # the initial exposure time used when the laser power is lowered
-    # TODO: the default exposure time should be the given in Channelsettings.default_exposure_time_ms
-    default_exposure_time_ms: float
+    # TODO: the default exposure time should be the given in Channelsettings.default_exposure_times_ms
+    # default_exposure_times_ms: float
 
     # the minimum laser power (used to define autoexposure failure)
     min_laser_power_mW: float
@@ -164,12 +181,9 @@ class AutoexposureSettings:
     # rerun autoexposure for each timepoint at a given well
     rerun_each_timepoint: bool = False
 
-    # rerun autoexposure for each FOV in a given well
-    rerun_each_fov: bool = False
-
     def __post_init__(self):
         for attr in (
-            "default_exposure_time_ms",
+            # "default_exposure_times_ms",
             "min_exposure_time_ms",
             "max_exposure_time_ms",
         ):

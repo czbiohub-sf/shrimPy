@@ -2,7 +2,7 @@ import logging
 import time
 
 from functools import partial
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, Union
 
 import nidaqmx
 import numpy as np
@@ -325,7 +325,7 @@ def create_ram_datastore(
 
 def acquire_defocus_stack(
     mmc: Core,
-    z_stage,
+    z_stage: Union[str, KinesisPiezoMotor],
     z_range: Iterable,
     mmStudio: Studio = None,
     datastore=None,
@@ -402,7 +402,7 @@ def acquire_defocus_stack(
 def acquire_ls_defocus_stack_and_display(
     mmc: Core,
     mmStudio: Studio,
-    z_stage: str or KinesisPiezoMotor,
+    z_stage: Union[str, KinesisPiezoMotor],
     z_range: Iterable,
     galvo: str,
     galvo_range: Iterable,
@@ -571,7 +571,51 @@ def setup_vortran_laser(com_port: str):
     return laser
 
 
-def autoxposure(mmc, autoexposure_settings, channel_settings):
-    autoexposure_succeed = True
+def autoexposure(
+    mmc: Core,
+    light_source: Union[str, VortranLaser],
+    autoexposure_settings,
+    autoexposure_method: str = None,
+):
+    """
+    This method will change the camera exposure time and light source intensity
+    to adjust the image brightness as defined by autoexposure_settings using
+    autoexposure_method. It is assumed that the microscope is configured in the
+    correct channel.
 
-    return autoexposure_succeed
+    Parameters
+    ----------
+    mmc : Core
+        _description_
+    light_source : Union[str, VortranLaser]
+        _description_
+    autoexposure_settings : _type_
+        _description_
+
+    Returns
+    -------
+    exposure_time: float
+        _description_
+    light_intensity: float
+        _description_
+    """
+
+    # dummy code, to be replaced with algorithms in mantis/acquisition/autoexposure.py
+    exposure_time = np.random.randint(
+        autoexposure_settings.min_exposure_time_ms, autoexposure_settings.max_exposure_time_ms
+    ).astype(float)
+
+    light_intensity = None
+    # light_source may be None, in which case light intensity will not be adjusted
+    if light_source:
+        light_intensity = np.random.randint(
+            autoexposure_settings.min_laser_power_mW, autoexposure_settings.max_laser_power_mW
+        ).astype(float)
+
+    logger.debug(
+        'Found optimal exposure time and light intensity to be {} ms and {}'.format(
+            exposure_time, light_intensity
+        )
+    )
+
+    return exposure_time, light_intensity
