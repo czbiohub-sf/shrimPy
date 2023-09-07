@@ -431,6 +431,8 @@ class MantisAcquisition(object):
                 xyz_positions=xyz_positions,
                 position_labels=position_labels,
             )
+        else:
+            logger.debug('Position list is already populated and will not be updated')
 
     def setup_daq(self):
         """
@@ -888,25 +890,21 @@ class MantisAcquisition(object):
 
         logger.debug('Setting up label-free acquisition')
         self.lf_acq.setup()
-        logger.debug('Finished setting up label-free acquisition')
 
         logger.debug('Setting up light-sheet acquisition')
         self.ls_acq.setup()
-        logger.debug('Finished setting up light-sheet acquisition')
 
         logger.debug('Setting up DAQ')
         self.setup_daq()
-        logger.debug('Finished setting up DAQ')
 
         logger.debug('Setting up autofocus')
         self.setup_autofocus()
-        logger.debug('Finished setting up autofocus')
 
+        logger.debug('Updating position settings')
         self.update_position_settings()
 
         logger.debug('Setting up autoexposure')
         self.setup_autoexposure()
-        logger.debug('Finished setting up autoexposure')
 
     def acquire(self):
         """
