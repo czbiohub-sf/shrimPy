@@ -589,21 +589,13 @@ class MantisAcquisition(object):
 
     def setup_autoexposure(self):
         # assign exposure_times_per_well and laser_powers_per_well to default values
-        for (
-            default_exposure_time,
-            exposure_times_per_well,
-            default_laser_power,
-            laser_powers_per_well,
-        ) in zip(
-            self.ls_acq.channel_settings.default_exposure_times_ms,
-            self.ls_acq.channel_settings.exposure_times_per_well,
-            self.ls_acq.channel_settings.default_laser_powers,
-            self.ls_acq.channel_settings.laser_powers_per_well,
-        ):
-            for well_id in self.position_settings.well_ids:
-                if well_id not in exposure_times_per_well.keys():
-                    exposure_times_per_well[well_id] = default_exposure_time
-                    laser_powers_per_well[well_id] = default_laser_power
+        for well_id in set(self.position_settings.well_ids):
+            self.ls_acq.channel_settings.exposure_times_per_well[
+                well_id
+            ] = self.ls_acq.channel_settings.default_exposure_times_ms
+            self.ls_acq.channel_settings.laser_powers_per_well[
+                well_id
+            ] = self.ls_acq.channel_settings.default_laser_powers
 
         if self._demo_run:
             logger.debug(
@@ -864,7 +856,9 @@ class MantisAcquisition(object):
             if channel_settings.use_autoexposure[channel_idx]:
                 logger.info(f'Running autoexposure on channel {channel_name}')
                 microscope_operations.set_config(
-                    self.ls_acq.channel_settings.channel_group, channel_name
+                    self.ls_acq.mmc,
+                    self.ls_acq.channel_settings.channel_group,
+                    channel_name,
                 )
                 exposure_time, laser_power = microscope_operations.autoexposure(
                     mmc,
@@ -1028,19 +1022,12 @@ class MantisAcquisition(object):
                                 self.ls_acq.autoexposure_settings,
                             )
                             # update values in channel_settings for this well_id
-                            for (
-                                well_exp_time,
-                                well_laser_power,
-                                exposure_time,
-                                laser_power,
-                            ) in zip(
-                                self.ls_acq.channel_settings.exposure_times_per_well,
-                                self.ls_acq.channel_settings.laser_powers_per_well,
-                                exposure_times,
-                                laser_powers,
-                            ):
-                                well_exp_time[well_id] = exposure_time
-                                well_laser_power[well_id] = laser_power
+                            self.ls_acq.channel_settings.exposure_times_per_well[
+                                well_id
+                            ] = exposure_times
+                            self.ls_acq.channel_settings.laser_powers_per_well[
+                                well_id
+                            ] = laser_powers
 
                 # TODO: update laser power in pre/post HW hook function
                 # TODO: update DAQ freq
@@ -1063,10 +1050,8 @@ class MantisAcquisition(object):
                         )
                         _event[
                             'exposure'
-                        ] = self.ls_acq.channel_settings.exposure_times_per_well[
+                        ] = self.ls_acq.channel_settings.exposure_times_per_well[well_id][
                             channel_index
-                        ][
-                            well_id
                         ]
 
                 config.lf_last_img_idx = lf_events[-1]['axes']

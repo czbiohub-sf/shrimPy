@@ -1,8 +1,7 @@
 import warnings
 
-from copy import deepcopy
 from dataclasses import field
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -71,8 +70,12 @@ class ChannelSettings:
     num_channels: int = field(init=False, default=0)
     acquisition_rate: float = field(init=False, default=None)
     light_sources: List = field(init=False, default=None)
-    exposure_times_per_well: List = field(init=None, default_factory=dict)
-    laser_powers_per_well: List = field(init=None, default_factory=dict)
+    # dictionaries with following structure:
+    # {
+    #     well_id: [],
+    # }
+    exposure_times_per_well: Dict = field(init=None, default_factory=dict)
+    laser_powers_per_well: Dict = field(init=None, default_factory=dict)
 
     def __post_init__(self):
         self.num_channels = len(self.channels)
@@ -81,8 +84,6 @@ class ChannelSettings:
             'default_laser_powers',
             'use_autoexposure',
             'light_sources',
-            'exposure_times_per_well',
-            'laser_powers_per_well',
         ):
             attr_value = getattr(self, attr_name)
             if isinstance(attr_value, list):
@@ -92,9 +93,7 @@ class ChannelSettings:
             else:
                 # Note: [attr_value] * self.num_channels will simply create
                 # references, which is not what we want
-                setattr(
-                    self, attr_name, [deepcopy(attr_value) for _ in range(self.num_channels)]
-                )
+                setattr(self, attr_name, [attr_value for _ in range(self.num_channels)])
 
 
 @dataclass(config=config)

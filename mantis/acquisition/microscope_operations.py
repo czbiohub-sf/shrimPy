@@ -601,16 +601,22 @@ def autoexposure(
     """
 
     # dummy code, to be replaced with algorithms in mantis/acquisition/autoexposure.py
-    exposure_time = np.random.randint(
-        autoexposure_settings.min_exposure_time_ms, autoexposure_settings.max_exposure_time_ms
-    ).astype(float)
+    exposure_time = float(
+        np.random.randint(
+            autoexposure_settings.min_exposure_time_ms,
+            autoexposure_settings.max_exposure_time_ms,
+        )
+    )
 
     light_intensity = None
     # light_source may be None, in which case light intensity will not be adjusted
     if light_source:
-        light_intensity = np.random.randint(
-            autoexposure_settings.min_laser_power_mW, autoexposure_settings.max_laser_power_mW
-        ).astype(float)
+        light_intensity = float(
+            np.random.randint(
+                autoexposure_settings.min_laser_power_mW,
+                autoexposure_settings.max_laser_power_mW,
+            )
+        )
 
     logger.debug(
         'Found optimal exposure time and light intensity to be {} ms and {}'.format(
