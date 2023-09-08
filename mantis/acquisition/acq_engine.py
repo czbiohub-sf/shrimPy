@@ -434,26 +434,17 @@ class MantisAcquisition(object):
         else:
             logger.debug('Position list is already populated and will not be updated')
 
-    def setup_daq(self):
-        """
-        Setup the NI DAQ to output trigger pulses for the label-free and
-        light-sheet acquisitions. Acquisition can be sequenced across z slices
-        and channels
-        """
+    def update_lf_acquisition_rates(self, lf_exposure_times: list):
         if self._demo_run:
             # Set approximate demo camera acquisition rate for use in await_cz_acq_completion
             self.lf_acq.slice_settings.acquisition_rate = 30
-            self.ls_acq.slice_settings.acquisition_rate = [
-                30
-            ] * self.ls_acq.channel_settings.num_channels
-            logger.debug('DAQ setup is not supported in demo mode')
             return
 
         # Determine label-free acq timing
         oryx_framerate = float(self.lf_acq.mmc.get_property('Oryx', 'Frame Rate'))
         # assumes all channels have the same exposure time
         self.lf_acq.slice_settings.acquisition_rate = np.minimum(
-            1000 / (self.lf_acq.channel_settings.default_exposure_times_ms[0] + MCL_STEP_TIME),
+            1000 / (lf_exposure_times[0] + MCL_STEP_TIME),
             np.floor(oryx_framerate),
         )
         self.lf_acq.channel_settings.acquisition_rate = 1 / (
@@ -462,11 +453,19 @@ class MantisAcquisition(object):
         )
         logger.debug(f'Maximum Oryx acquisition framerate: {oryx_framerate:.6f}')
         logger.debug(
-            f'Current label-free slice acquisition rate: {self.lf_acq.slice_settings.acquisition_rate:.6f}'
+            f'Label-free slice acquisition rate: {self.lf_acq.slice_settings.acquisition_rate:.6f}'
         )
         logger.debug(
-            f'Current label-free channel acquisition rate: {self.lf_acq.channel_settings.acquisition_rate:.6f}'
+            f'Label-free channel acquisition rate: {self.lf_acq.channel_settings.acquisition_rate:.6f}'
         )
+
+    def update_ls_acquisition_rates(self, ls_exposure_times: list):
+        if self._demo_run:
+            # Set approximate demo camera acquisition rate for use in await_cz_acq_completion
+            self.ls_acq.slice_settings.acquisition_rate = [
+                np.minimum(30, 1000 / exp_time) for exp_time in ls_exposure_times
+            ]
+            return
 
         # Determine light-sheet acq timing
         ls_readout_time_ms = np.around(
@@ -475,13 +474,13 @@ class MantisAcquisition(object):
             decimals=3,
         )
         _cam_max_fps = int(np.around(1000 / ls_readout_time_ms))
-        for ls_exp_time in self.ls_acq.channel_settings.default_exposure_times_ms:
+        for ls_exp_time in ls_exposure_times:
             assert (
                 ls_readout_time_ms < ls_exp_time
             ), f'Exposure time needs to be greater than the {ls_readout_time_ms} ms sensor readout time'
         self.ls_acq.slice_settings.acquisition_rate = [
             1000 / (exp + ls_readout_time_ms + LS_POST_READOUT_DELAY)
-            for exp in self.ls_acq.channel_settings.default_exposure_times_ms
+            for exp in ls_exposure_times
         ]
         # self.ls_acq.channel_settings.acquisition_rate = [
         #     1 / (self.ls_acq.slice_settings.num_slices/acq_rate + LS_CHANGE_TIME/1000)
@@ -489,8 +488,25 @@ class MantisAcquisition(object):
         # ]
         acq_rates = list(np.around(self.ls_acq.slice_settings.acquisition_rate, decimals=6))
         logger.debug(f'Maximum Prime BSI Express acquisition framerate: ~{_cam_max_fps}')
-        logger.debug(f'Current light-sheet slice acquisition rate: {acq_rates}')
+        logger.debug(f'Light-sheet slice acquisition rate: {acq_rates}')
         # logger.debug(f'Current light-sheet channel acquisition rate: ~{self.ls_acq.channel_settings.acquisition_rate}')
+
+    def setup_daq(self):
+        """
+        Setup the NI DAQ to output trigger pulses for the label-free and
+        light-sheet acquisitions. Acquisition can be sequenced across z slices
+        and channels
+        """
+        self.update_lf_acquisition_rates(
+            self.lf_acq.channel_settings.default_exposure_times_ms,
+        )
+        self.update_ls_acquisition_rates(
+            self.ls_acq.channel_settings.default_exposure_times_ms,
+        )
+
+        if self._demo_run:
+            logger.debug('DAQ setup is not supported in demo mode')
+            return
 
         # LF channel trigger - accommodates longer LC switching times
         self._lf_channel_ctr_task = nidaqmx.Task('LF Channel Counter')
@@ -844,34 +860,32 @@ class MantisAcquisition(object):
                 'Could not determine the correct O3 in-focus position. O3 will not move'
             )
 
-    def autoexposure(
+    def run_autoexposure(
         self,
-        mmc: Core,
-        channel_settings: ChannelSettings,
-        autoexposure_settings: AutoexposureSettings,
+        acq: BaseChannelSliceAcquisition,
+        well_id: str,
+        method: str = None,
     ):
-        exposure_times = []
-        laser_powers = []
-        for channel_idx, channel_name in enumerate(channel_settings.channels):
-            if channel_settings.use_autoexposure[channel_idx]:
+        if not any(acq.channel_settings.use_autoexposure):
+            return
+
+        for channel_idx, channel_name in enumerate(acq.channel_settings.channels):
+            if acq.channel_settings.use_autoexposure[channel_idx]:
                 logger.info(f'Running autoexposure on channel {channel_name}')
                 microscope_operations.set_config(
-                    self.ls_acq.mmc,
-                    self.ls_acq.channel_settings.channel_group,
+                    acq.mmc,
+                    acq.channel_settings.channel_group,
                     channel_name,
                 )
-                exposure_time, laser_power = microscope_operations.autoexposure(
-                    mmc,
-                    channel_settings.light_sources[channel_idx],
-                    autoexposure_settings,
+                (
+                    acq.channel_settings.exposure_times_per_well[well_id][channel_idx],
+                    acq.channel_settings.laser_powers_per_well[well_id][channel_idx],
+                ) = microscope_operations.autoexposure(
+                    acq.mmc,
+                    acq.channel_settings.light_sources[channel_idx],
+                    acq.autoexposure_settings,
+                    method,
                 )
-            else:
-                exposure_time = channel_settings.default_exposure_times_ms[channel_idx]
-                laser_power = channel_settings.default_laser_powers[channel_idx]
-            exposure_times.append(exposure_time)
-            laser_powers.append(laser_power)
-
-        return exposure_times, laser_powers
 
     def setup(self):
         """
@@ -1012,25 +1026,14 @@ class MantisAcquisition(object):
                         ls_o3_refocus_time = current_time
 
                 # autoexposure
-                if any(self.ls_acq.channel_settings.use_autoexposure):
+                if well_id != previous_well_id:
                     if t_idx == 0 or self.ls_acq.autoexposure_settings.rerun_each_timepoint:
-                        if well_id != previous_well_id:
-                            # determine correct exposure times and laser power for each channel
-                            exposure_times, laser_powers = self.autoexposure(
-                                self.ls_acq.mmc,
-                                self.ls_acq.channel_settings,
-                                self.ls_acq.autoexposure_settings,
-                            )
-                            # update values in channel_settings for this well_id
-                            self.ls_acq.channel_settings.exposure_times_per_well[
-                                well_id
-                            ] = exposure_times
-                            self.ls_acq.channel_settings.laser_powers_per_well[
-                                well_id
-                            ] = laser_powers
+                        self.run_autoexposure(self.ls_acq, well_id)
+                        self.update_ls_acquisition_rates(
+                            self.ls_acq.channel_settings.exposure_times_per_well[well_id]
+                        )
 
-                # TODO: update laser power in pre/post HW hook function
-                # TODO: update DAQ freq
+                # TODO: update laser power in post HW hook function
 
                 # update events dictionaries
                 lf_events = deepcopy(lf_cz_events)

@@ -60,8 +60,8 @@ ls_microscope_settings:
 ls_autoexposure_settings:
   min_intensity_percent: 2.0
   max_intensity_percent: 10.0
-  min_exposure_time_ms: 2.0
-  max_exposure_time_ms: 20.0
+  min_exposure_time_ms: 10.0
+  max_exposure_time_ms: 100.0
   min_laser_power_mW: 1.0
   max_laser_power_mW: 20.0
   relative_exposure_step: 0.8
