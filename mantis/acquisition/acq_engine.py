@@ -18,6 +18,7 @@ from nidaqmx.constants import Slope
 from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, start_headless
 from waveorder.focus import focus_from_transverse_band
 
+from mantis import get_console_formatter
 from mantis.acquisition import microscope_operations
 from mantis.acquisition.hook_functions import globals
 from mantis.acquisition.logger import configure_debug_logger, log_conda_environment
@@ -330,7 +331,11 @@ class MantisAcquisition(object):
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         acq_log_path = self._logs_dir / f'mantis_acquisition_log_{timestamp}.txt'
         configure_debug_logger(acq_log_path)
+        # configure copylot logger with matching stream handler
+        # indexing into handlers[0] is a hack
         copylot.enable_logging(acq_log_path, logging.INFO)
+        console_format = get_console_formatter()
+        logging.getLogger('copylot').handlers[0].setFormatter(console_format)
 
         if self._demo_run:
             logger.info('NOTE: This is a demo run')
