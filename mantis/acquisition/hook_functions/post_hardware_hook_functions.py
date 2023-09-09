@@ -38,8 +38,27 @@ def update_daq_freq(z_ctr_task, channels: list, events):
     return events
 
 
-def update_daq_freq_log_start_acq(z_ctr_task, channels, events):
+def update_laser_power(lasers, channels: list, events):
+    if isinstance(events, list):
+        _event = events[0]
+    else:
+        _event = events  # events is a dict
+
+    c_idx = channels.index(_event['axes']['channel'])
+    laser = lasers[c_idx]  # may be None
+
+    if laser:
+        laser_name = laser.serial_number
+        laser_power = globals.ls_laser_powers[c_idx]
+
+        logger.debug(f'Updating power of laser {laser_name} to {laser_power}')
+        laser.pulse_power = laser_power
+
+    return events
+
+
+def update_ls_hardware(z_ctr_task, lasers, channels, events):
     events = update_daq_freq(z_ctr_task, channels, events)
-    events = log_acquisition_start(events)
+    events = update_laser_power(lasers, channels, events)
 
     return events

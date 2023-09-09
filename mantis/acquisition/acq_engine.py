@@ -39,7 +39,7 @@ from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
 )
 from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
     log_acquisition_start,
-    update_daq_freq,
+    update_ls_hardware,
 )
 from mantis.acquisition.hook_functions.post_camera_hook_functions import (
     start_daq_counters,
@@ -487,7 +487,6 @@ class MantisAcquisition(object):
             1000 / (exp + ls_readout_time_ms + LS_POST_READOUT_DELAY)
             for exp in ls_exposure_times
         ]
-        globals.ls_slice_acquisition_rates = self.ls_acq.slice_settings.acquisition_rate
         # self.ls_acq.channel_settings.acquisition_rate = [
         #     1 / (self.ls_acq.slice_settings.num_slices/acq_rate + LS_CHANGE_TIME/1000)
         #     for acq_rate in self.ls_acq.slice_settings.acquisition_rate
@@ -961,8 +960,9 @@ class MantisAcquisition(object):
         else:
             ls_pre_hardware_hook_fn = partial(check_num_counter_samples, [self._ls_z_ctr_task])
             ls_post_hardware_hook_fn = partial(
-                update_daq_freq,
+                update_ls_hardware,
                 self._ls_z_ctr_task,
+                self.ls_acq.channel_settings.light_sources,
                 self.ls_acq.channel_settings.channels,
             )
             ls_post_camera_hook_fn = partial(start_daq_counters, [self._ls_z_ctr_task])
@@ -1039,8 +1039,12 @@ class MantisAcquisition(object):
                     self.update_ls_acquisition_rates(
                         self.ls_acq.channel_settings.exposure_times_per_well[well_id]
                     )
-
-                # TODO: update laser power in post HW hook function
+                    globals.ls_slice_acquisition_rates = (
+                        self.ls_acq.slice_settings.acquisition_rate
+                    )
+                    globals.ls_laser_powers = (
+                        self.ls_acq.channel_settings.laser_powers_per_well[well_id]
+                    )
 
                 # update events dictionaries
                 lf_events = deepcopy(lf_cz_events)
