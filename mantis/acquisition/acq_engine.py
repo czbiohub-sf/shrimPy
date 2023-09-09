@@ -19,7 +19,7 @@ from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, 
 from waveorder.focus import focus_from_transverse_band
 
 from mantis.acquisition import microscope_operations
-from mantis.acquisition.hook_functions import config
+from mantis.acquisition.hook_functions import globals
 from mantis.acquisition.logger import configure_debug_logger, log_conda_environment
 
 # isort: off
@@ -482,6 +482,7 @@ class MantisAcquisition(object):
             1000 / (exp + ls_readout_time_ms + LS_POST_READOUT_DELAY)
             for exp in ls_exposure_times
         ]
+        globals.ls_slice_acquisition_rates = self.ls_acq.slice_settings.acquisition_rate
         # self.ls_acq.channel_settings.acquisition_rate = [
         #     1 / (self.ls_acq.slice_settings.num_slices/acq_rate + LS_CHANGE_TIME/1000)
         #     for acq_rate in self.ls_acq.slice_settings.acquisition_rate
@@ -958,7 +959,6 @@ class MantisAcquisition(object):
                 update_daq_freq,
                 self._ls_z_ctr_task,
                 self.ls_acq.channel_settings.channels,
-                self.ls_acq.slice_settings.acquisition_rate,
             )
             ls_post_camera_hook_fn = partial(start_daq_counters, [self._ls_z_ctr_task])
         ls_image_saved_fn = check_ls_acq_finished
@@ -1029,9 +1029,11 @@ class MantisAcquisition(object):
                 if well_id != previous_well_id:
                     if t_idx == 0 or self.ls_acq.autoexposure_settings.rerun_each_timepoint:
                         self.run_autoexposure(self.ls_acq, well_id)
-                        self.update_ls_acquisition_rates(
-                            self.ls_acq.channel_settings.exposure_times_per_well[well_id]
-                        )
+                    # Acq rate needs to be updated even if autoexposure was not rerun in this well
+                    # Only do that if we are using autoexposure?
+                    self.update_ls_acquisition_rates(
+                        self.ls_acq.channel_settings.exposure_times_per_well[well_id]
+                    )
 
                 # TODO: update laser power in post HW hook function
 
@@ -1057,10 +1059,10 @@ class MantisAcquisition(object):
                             channel_index
                         ]
 
-                config.lf_last_img_idx = lf_events[-1]['axes']
-                config.ls_last_img_idx = ls_events[-1]['axes']
-                config.lf_acq_finished = False
-                config.ls_acq_finished = False
+                globals.lf_last_img_idx = lf_events[-1]['axes']
+                globals.ls_last_img_idx = ls_events[-1]['axes']
+                globals.lf_acq_finished = False
+                globals.ls_acq_finished = False
 
                 # start acquisition
                 self._ls_acq_obj.acquire(ls_events)
@@ -1132,13 +1134,13 @@ class MantisAcquisition(object):
 
         t_start = time.time()
         while (
-            not all((config.lf_acq_finished, config.ls_acq_finished))
+            not all((globals.lf_acq_finished, globals.ls_acq_finished))
             and (time.time() - t_start) < buffer_time
         ):
             time.sleep(0.2)
 
         # TODO: a lot of hardcoded values here
-        if not config.lf_acq_finished:
+        if not globals.lf_acq_finished:
             # abort LF acq
             lf_acq_aborted = True
             camera = 'Camera' if self._demo_run else 'Oryx'
@@ -1155,7 +1157,7 @@ class MantisAcquisition(object):
                 self.lf_acq.mmc, camera, sequenced_stages
             )
 
-        if not config.ls_acq_finished:
+        if not globals.ls_acq_finished:
             # abort LS acq
             ls_acq_aborted = True
             camera = 'Camera' if self._demo_run else 'Prime BSI Express'

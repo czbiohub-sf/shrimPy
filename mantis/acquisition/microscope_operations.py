@@ -618,7 +618,7 @@ def autoexposure(
             )
         )
 
-    logger.debug(
+    logger.info(
         'Found optimal exposure time and light intensity to be {} ms and {}'.format(
             exposure_time, light_intensity
         )
