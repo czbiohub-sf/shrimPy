@@ -70,10 +70,7 @@ class ChannelSettings:
     num_channels: int = field(init=False, default=0)
     acquisition_rate: float = field(init=False, default=None)
     light_sources: List = field(init=False, default=None)
-    # dictionaries with following structure:
-    # {
-    #     well_id: [],
-    # }
+    # dictionaries with following structure: {well_id: list_of_exposure_times}
     exposure_times_per_well: Dict = field(init=None, default_factory=dict)
     laser_powers_per_well: Dict = field(init=None, default_factory=dict)
 

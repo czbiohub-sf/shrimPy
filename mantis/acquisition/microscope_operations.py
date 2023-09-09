@@ -566,7 +566,7 @@ def setup_vortran_laser(com_port: str):
     """
     logger.debug(f'Setting up Vortran Laser on COM port {com_port}')
     laser = VortranLaser(port=com_port)
-    laser.set_pulse_mode(1)  # turn on digital modulation
+    laser.pulse_mode = 1  # turn on digital modulation
 
     return laser
 
