@@ -576,12 +576,13 @@ def autoexposure(
     light_source: Union[str, VortranLaser],
     autoexposure_settings,
     autoexposure_method: str = None,
+    **kwargs,
 ):
     """
     This method will change the camera exposure time and light source intensity
     to adjust the image brightness as defined by autoexposure_settings using
     autoexposure_method. It is assumed that the microscope is configured in the
-    correct channel.
+    correct channel. Additional keyword arguments will be pass to autoexposure_method
 
     Parameters
     ----------
