@@ -869,7 +869,7 @@ class MantisAcquisition(object):
         self,
         acq: BaseChannelSliceAcquisition,
         well_id: str,
-        method: str = None,
+        method: str = 'manual',
     ):
         """
         If autoexposure on any channel is requested, this method will switch to
@@ -897,15 +897,18 @@ class MantisAcquisition(object):
                     acq.channel_settings.channel_group,
                     channel_name,
                 )
-                (
-                    acq.channel_settings.exposure_times_per_well[well_id][channel_idx],
-                    acq.channel_settings.laser_powers_per_well[well_id][channel_idx],
-                ) = microscope_operations.autoexposure(
-                    acq.mmc,
-                    acq.channel_settings.light_sources[channel_idx],
-                    acq.autoexposure_settings,
-                    method,
-                )
+                if method == 'manual':
+                    (
+                        acq.channel_settings.exposure_times_per_well[well_id][channel_idx],
+                        acq.channel_settings.laser_powers_per_well[well_id][channel_idx],
+                    ) = microscope_operations.autoexposure(
+                        acq.mmc,
+                        acq.channel_settings.light_sources[channel_idx],
+                        acq.autoexposure_settings,
+                        method,
+                        illumination_settings_filepath=self._root_dir / 'illumination.csv',
+                        well_id=well_id,
+                    )
 
     def setup(self):
         """

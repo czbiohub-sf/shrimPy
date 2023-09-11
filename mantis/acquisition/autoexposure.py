@@ -9,14 +9,29 @@
 # adjusting camera exposure and laser power based on these suggestions until
 # convergence.
 
+import csv
+
 import numpy as np
 
 from mantis import logger
 from mantis.acquisition.AcquisitionSettings import AutoexposureSettings
 
 
-def manual_autoexposure():
-    pass
+def manual_autoexposure(
+    illumination_settings_filepath,
+    well_id,
+):
+    with open(illumination_settings_filepath) as csvfile:
+        reader = csv.reader(csvfile)
+
+        for line in reader:
+            if line[0] == well_id:
+                autoexposure_flag = 0
+                suggested_exposure_time = float(line[1])
+                suggested_laser_power = float(line[2])
+                break
+
+    return autoexposure_flag, suggested_exposure_time, suggested_laser_power
 
 
 def mean_intensity_autoexposure(

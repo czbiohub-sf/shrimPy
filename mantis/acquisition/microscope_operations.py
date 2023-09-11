@@ -13,6 +13,7 @@ from pycromanager import Core, Studio
 from pylablib.devices.Thorlabs import KinesisPiezoMotor
 
 from mantis.acquisition.AcquisitionSettings import AutoexposureSettings
+from mantis.acquisition.autoexposure import manual_autoexposure, mean_intensity_autoexposure
 
 logger = logging.getLogger(__name__)
 
@@ -603,28 +604,47 @@ def autoexposure(
     light_intensity: float
     """
 
-    # dummy code, to be replaced with algorithms in mantis/acquisition/autoexposure.py
-    exposure_time = float(
-        np.random.randint(
+    autoexposure_flag = None
+
+    while autoexposure_flag != 0:
+        if autoexposure_method == 'manual':
+            autoexposure_flag, exposure_time, light_intensity = manual_autoexposure(**kwargs)
+        elif autoexposure_method in (
+            'mean_intensity',
+            'masked_mean_intensity',
+            'intensity_percentile',
+        ):
+            # TODO
+            # acquire data
+            # input_stack = []
+            autoexposure_flag, exposure_time, light_intensity = mean_intensity_autoexposure()
+
+        mmc.set_exposure(exposure_time)
+        if isinstance(light_source, VortranLaser):
+            light_source.pulse_power = light_intensity
+
+        min_max_exposure = (
             autoexposure_settings.min_exposure_time_ms,
             autoexposure_settings.max_exposure_time_ms,
         )
-    )
-
-    light_intensity = None
-    # light_source may be None, in which case light intensity will not be adjusted
-    if light_source:
-        light_intensity = float(
-            np.random.randint(
-                autoexposure_settings.min_laser_power_mW,
-                autoexposure_settings.max_laser_power_mW,
+        min_max_laser_power = (
+            autoexposure_settings.min_laser_power_mW,
+            autoexposure_settings.max_laser_power_mW,
+        )
+        if exposure_time in min_max_exposure and light_intensity in min_max_laser_power:
+            # limits of exposure_time and laser_power have been reached
+            logger.error(
+                'Autoexposure failed. Setting exposure time and light intensity to {} ms and {}'.format(
+                    exposure_time, light_intensity
+                )
+            )
+            break
+    else:
+        # autoexposure succeeded
+        logger.info(
+            'Found optimal exposure time and light intensity to be {} ms and {}'.format(
+                exposure_time, light_intensity
             )
         )
-
-    logger.info(
-        'Found optimal exposure time and light intensity to be {} ms and {}'.format(
-            exposure_time, light_intensity
-        )
-    )
 
     return exposure_time, light_intensity
