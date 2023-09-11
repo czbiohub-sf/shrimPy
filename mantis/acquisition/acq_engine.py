@@ -871,6 +871,21 @@ class MantisAcquisition(object):
         well_id: str,
         method: str = None,
     ):
+        """
+        If autoexposure on any channel is requested, this method will switch to
+        that channel and call the specified autoexposure method. The optimal
+        exposure time and laser power are logged per well in the
+        channel_settings object of that acquisition.
+
+        Parameters
+        ----------
+        acq : BaseChannelSliceAcquisition
+            Label-free or light-sheet acquisition object
+        well_id : str
+            ID or name of the current well, e.g. "0" or "A1"
+        method : str, optional
+            Autoexposure method
+        """
         if not any(acq.channel_settings.use_autoexposure):
             return
 

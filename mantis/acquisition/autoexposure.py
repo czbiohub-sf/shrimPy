@@ -1,3 +1,14 @@
+# Methods in this module will take ND image data and return (autoexposure_flag,
+# suggested_exposure_time, suggested_laser_power) as defined by the provided
+# AutoexposureSettings. autoexposure_flag = 0 is returned for optimally exposed
+# images, autoexposure_flag = 1 is returned for over-exposed images, and
+# autoexposure_flag = -1 is returned for under-exposed images.
+
+# An external method (e.g. see
+# mantis.acquisition.microscope_operations.autoexposure) is responsible for
+# adjusting camera exposure and laser power based on these suggestions until
+# convergence.
+
 import numpy as np
 
 from mantis import logger
@@ -15,10 +26,9 @@ def mean_intensity_autoexposure(
     autoexposure_settings: AutoexposureSettings,
 ):
     logger.info("Starting autoexposure")
-    autoexposure_succeed = True
-    exposure_suggestion = current_exposure_time
-    laser_power_suggestion = current_laser_power
-    flag_exposure = 0  # 1 over-exposed , 0 nominal, -1 under-exposed
+    suggested_exposure_time = current_exposure_time
+    suggested_laser_power = current_laser_power
+    autoexposure_flag = 0  # 1 over-exposed , 0 optimally exposed, -1 under-exposed
 
     (
         stack_max_intensity,
@@ -33,37 +43,34 @@ def mean_intensity_autoexposure(
     # Over-exposed
     if (stack_mean + stack_std) > max_intensity or stack_max_intensity >= dtype_max:
         logger.info(f"Stack was over-exposed with mean:{stack_mean:.2f} std:{stack_std:.2f})")
-        flag_exposure = 1
-        autoexposure_succeed = False
-        laser_power_suggestion, exposure_suggestion = _suggest_exposure_camera(
-            flag_exposure, autoexposure_settings
+        autoexposure_flag = 1
+        suggested_laser_power, suggested_exposure_time = _suggest_exposure_camera(
+            autoexposure_flag, autoexposure_settings
         )
 
     # Under-exposed
     elif (stack_mean - stack_std) < min_intensity:
         logger.info(f"Stack was under-exposed with mean {stack_mean:.2f} std:{stack_std:.2f}")
-        flag_exposure = -1
-        autoexposure_succeed = False
+        autoexposure_flag = -1
 
-        laser_power_suggestion, exposure_suggestion = _suggest_exposure_camera(
-            flag_exposure, autoexposure_settings
+        suggested_laser_power, suggested_exposure_time = _suggest_exposure_camera(
+            autoexposure_flag, autoexposure_settings
         )
 
     # Nominally exposed
     else:
         logger.info(
-            f"Stack was nomially exposed with mean {stack_mean:.2f} std:{stack_std:.2f})"
+            f"Stack was optimally exposed with mean {stack_mean:.2f} std:{stack_std:.2f})"
         )
-        flag_exposure = 0
-        autoexposure_succeed = True
+        autoexposure_flag = 0
 
     # log the final results
     logger.info(
         f"The final stack max is {int(stack_max_intensity)}, "
-        f"the suggested laser power is {laser_power_suggestion or 0}, "
-        f"and the suggested exposure time is {exposure_suggestion or 0}ms"
+        f"the suggested laser power is {suggested_laser_power or 0}, "
+        f"and the suggested exposure time is {suggested_exposure_time or 0}ms"
     )
-    return autoexposure_succeed, exposure_suggestion, laser_power_suggestion
+    return autoexposure_flag, suggested_exposure_time, suggested_laser_power
 
 
 def masked_mean_intensity_autoexposure(
@@ -73,10 +80,9 @@ def masked_mean_intensity_autoexposure(
     autoexposure_settings: AutoexposureSettings,
 ):
     logger.info("Starting autoexposure")
-    autoexposure_succeed = True
-    exposure_suggestion = current_exposure_time
-    laser_power_suggestion = current_laser_power
-    flag_exposure = 0  # 1 over-exposed , 0 nominal, -1 under-exposed
+    suggested_exposure_time = current_exposure_time
+    suggested_laser_power = current_laser_power
+    autoexposure_flag = 0  # 1 over-exposed , 0 optimally exposed, -1 under-exposed
 
     (
         stack_max_intensity,
@@ -102,33 +108,30 @@ def masked_mean_intensity_autoexposure(
         logger.info(
             f"Stack is under-exposed mean {stack_mean:.2f} threshold:{underexpose_val:.2f}"
         )
-        flag_exposure = -1
-        autoexposure_succeed = False
-        laser_power_suggestion, exposure_suggestion = _suggest_exposure_camera(
-            flag_exposure, autoexposure_settings
+        autoexposure_flag = -1
+        suggested_laser_power, suggested_exposure_time = _suggest_exposure_camera(
+            autoexposure_flag, autoexposure_settings
         )
     elif stack_mean > overexpose_val or stack_max_intensity >= dtype_max:
         logger.info(
             f"Stack is over-exposed mean {stack_mean:.2f} and threshold: {overexpose_val:.2f}"
         )
-        flag_exposure = 1
-        autoexposure_succeed = False
-        laser_power_suggestion, exposure_suggestion = _suggest_exposure_camera(
-            flag_exposure, autoexposure_settings
+        autoexposure_flag = 1
+        suggested_laser_power, suggested_exposure_time = _suggest_exposure_camera(
+            autoexposure_flag, autoexposure_settings
         )
     # Nominally exposed
     else:
-        logger.info(f"Stack was nomially exposed with mean {stack_mean:.2f})")
-        flag_exposure = 0
-        autoexposure_succeed = True
+        logger.info(f"Stack was optimally exposed with mean {stack_mean:.2f})")
+        autoexposure_flag = 0
 
     # log the final results
     logger.info(
         f"The final stack max is {int(stack_max_intensity)}, "
-        f"the suggested laser power is {laser_power_suggestion or 0}, "
-        f"and the suggested exposure time is {exposure_suggestion or 0}ms"
+        f"the suggested laser power is {suggested_laser_power or 0}, "
+        f"and the suggested exposure time is {suggested_exposure_time or 0}ms"
     )
-    return autoexposure_succeed, exposure_suggestion, laser_power_suggestion
+    return autoexposure_flag, suggested_exposure_time, suggested_laser_power
 
 
 def intensity_percentile_autoexposure(
@@ -138,10 +141,9 @@ def intensity_percentile_autoexposure(
     autoexposure_settings: AutoexposureSettings,
 ):
     logger.info("Starting autoexposure")
-    autoexposure_succeed = True
-    exposure_suggestion = current_exposure_time
-    laser_power_suggestion = current_laser_power
-    flag_exposure = 0  # 1 over-exposed , 0 nominal, -1 under-exposed
+    suggested_exposure_time = current_exposure_time
+    suggested_laser_power = current_laser_power
+    autoexposure_flag = 0  # 1 over-exposed , 0 optimally exposed, -1 under-exposed
 
     (
         stack_max_intensity,
@@ -156,39 +158,36 @@ def intensity_percentile_autoexposure(
     # Check for over-exposure
     if stack_max_intensity > max_intensity or stack_max_intensity >= dtype_max:
         logger.info("Stack was over-exposed)")
-        flag_exposure = 1
-        autoexposure_succeed = False
-        laser_power_suggestion, exposure_suggestion = _suggest_exposure_camera(
-            flag_exposure, autoexposure_settings
+        autoexposure_flag = 1
+        suggested_laser_power, suggested_exposure_time = _suggest_exposure_camera(
+            autoexposure_flag, autoexposure_settings
         )
     else:
-        flag_exposure = 0
+        autoexposure_flag = 0
 
-    if flag_exposure != 1:
+    if autoexposure_flag != 1:
         # Check for under-exposure
         intensity_ratio = min_intensity / stack_max_intensity
         if intensity_ratio > 1:
             logger.info(f"Stack was under-exposed with intensity ratio:{intensity_ratio})")
-            flag_exposure = -1
-            autoexposure_succeed = False
+            autoexposure_flag = -1
 
-            laser_power_suggestion, exposure_suggestion = _suggest_exposure_camera(
-                flag_exposure,
+            suggested_laser_power, suggested_exposure_time = _suggest_exposure_camera(
+                autoexposure_flag,
                 autoexposure_settings,
             )
         # Nominally exposed
         else:
-            logger.info(f"Stack was nomially exposed with intensity ratio:{intensity_ratio})")
-            flag_exposure = 0
-            autoexposure_succeed = True
+            logger.info(f"Stack was optimally exposed with intensity ratio:{intensity_ratio})")
+            autoexposure_flag = 0
 
     # log the final results
     logger.info(
         f"The final stack max is {int(stack_max_intensity)}, "
-        f"the suggested laser power is {laser_power_suggestion or 0}, "
-        f"and the suggested exposure time is {exposure_suggestion or 0}ms"
+        f"the suggested laser power is {suggested_laser_power or 0}, "
+        f"and the suggested exposure time is {suggested_exposure_time or 0}ms"
     )
-    return autoexposure_succeed, exposure_suggestion, laser_power_suggestion
+    return autoexposure_flag, suggested_exposure_time, suggested_laser_power
 
 
 def _calculate_data_statistics(
@@ -211,31 +210,31 @@ def _calculate_data_statistics(
 
 
 def _suggest_exposure_camera(
-    flag_exposure,
+    autoexposure_flag,
     current_exposure_time,
     current_laser_power,
     autoexposure_settings: AutoexposureSettings,
 ):
-    laser_power_suggestion = current_laser_power
-    exposure_suggestion = current_exposure_time
+    suggested_laser_power = current_laser_power
+    suggested_exposure_time = current_exposure_time
     # Logic for suggesting new laser or camera parameters
     # Prioritize the laser power bump
     if (
-        laser_power_suggestion <= autoexposure_settings.max_laser_power_mW
-        or laser_power_suggestion >= autoexposure_settings.min_laser_power_mW
+        suggested_laser_power <= autoexposure_settings.max_laser_power_mW
+        or suggested_laser_power >= autoexposure_settings.min_laser_power_mW
     ):
-        laser_power_suggestion = current_laser_power - (
-            autoexposure_settings.relative_laser_power_step * flag_exposure
+        suggested_laser_power = current_laser_power - (
+            autoexposure_settings.relative_laser_power_step * autoexposure_flag
         )
 
     # Change the exposure if the laser settings is maxed out
-    elif exposure_suggestion <= autoexposure_settings.max_exposure_time_ms:
-        exposure_suggestion = current_exposure_time - (
-            autoexposure_settings.relative_exposure_step * flag_exposure
+    elif suggested_exposure_time <= autoexposure_settings.max_exposure_time_ms:
+        suggested_exposure_time = current_exposure_time - (
+            autoexposure_settings.relative_exposure_step * autoexposure_flag
         )
     else:
         logger.warning(
             f"Autoexposure in channel {1} has reached: " f"laser power{1} and exposure {1}"
         )
 
-    return round(laser_power_suggestion), round(exposure_suggestion)
+    return round(suggested_laser_power), round(suggested_exposure_time)

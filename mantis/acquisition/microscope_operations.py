@@ -12,6 +12,8 @@ from nidaqmx.constants import AcquisitionType
 from pycromanager import Core, Studio
 from pylablib.devices.Thorlabs import KinesisPiezoMotor
 
+from mantis.acquisition.AcquisitionSettings import AutoexposureSettings
+
 logger = logging.getLogger(__name__)
 
 KIM101_COMPENSATION_FACTOR = 1.035
@@ -574,31 +576,31 @@ def setup_vortran_laser(com_port: str):
 def autoexposure(
     mmc: Core,
     light_source: Union[str, VortranLaser],
-    autoexposure_settings,
+    autoexposure_settings: AutoexposureSettings,
     autoexposure_method: str = None,
     **kwargs,
 ):
     """
-    This method will change the camera exposure time and light source intensity
-    to adjust the image brightness as defined by autoexposure_settings using
-    autoexposure_method. It is assumed that the microscope is configured in the
-    correct channel. Additional keyword arguments will be pass to autoexposure_method
+    This function will acquire image data and pass it to the specified
+    autoexposure method. It will then change the camera exposure time and light
+    source intensity to adjust the image brightness until the correct settings
+    are found or the limits set in autoexposure_settings are reached. It is
+    assumed that the microscope is configured in the correct channel. Additional
+    keyword arguments will be pass to autoexposure_method
 
     Parameters
     ----------
     mmc : Core
-        _description_
     light_source : Union[str, VortranLaser]
-        _description_
-    autoexposure_settings : _type_
-        _description_
+        Light source name for sources controlled by Micro-manager or
+        VortranLaser object
+    autoexposure_settings : AutoexposureSettings
+    autoexposure_method : str
 
     Returns
     -------
     exposure_time: float
-        _description_
     light_intensity: float
-        _description_
     """
 
     # dummy code, to be replaced with algorithms in mantis/acquisition/autoexposure.py
