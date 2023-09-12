@@ -45,13 +45,14 @@ def update_laser_power(lasers, channels: list, events):
         _event = events  # events is a dict
 
     c_idx = channels.index(_event['axes']['channel'])
-    laser = lasers[c_idx]  # may be None
+    laser = lasers[c_idx]  # will be None if this channel does not use autoexposure
 
-    if laser:
+    if laser and globals.new_well:
         laser_name = laser.serial_number
         laser_power = globals.ls_laser_powers[c_idx]
 
         logger.debug(f'Updating power of laser {laser_name} to {laser_power}')
+        # Note, setting laser power takes ~1 s which is slow
         laser.pulse_power = laser_power
 
     return events

@@ -611,12 +611,12 @@ class MantisAcquisition(object):
     def setup_autoexposure(self):
         # assign exposure_times_per_well and laser_powers_per_well to default values
         for well_id in set(self.position_settings.well_ids):
-            self.ls_acq.channel_settings.exposure_times_per_well[
-                well_id
-            ] = self.ls_acq.channel_settings.default_exposure_times_ms
-            self.ls_acq.channel_settings.laser_powers_per_well[
-                well_id
-            ] = self.ls_acq.channel_settings.default_laser_powers
+            self.ls_acq.channel_settings.exposure_times_per_well[well_id] = deepcopy(
+                self.ls_acq.channel_settings.default_exposure_times_ms
+            )
+            self.ls_acq.channel_settings.laser_powers_per_well[well_id] = deepcopy(
+                self.ls_acq.channel_settings.default_laser_powers
+            )
 
         if self._demo_run:
             logger.debug(
@@ -1010,9 +1010,9 @@ class MantisAcquisition(object):
 
         logger.info('Starting acquisition')
         ls_o3_refocus_time = time.time()
+        previous_well_id = None
         for t_idx in range(self.time_settings.num_timepoints):
             timepoint_start_time = time.time()
-            previous_well_id = None
             for p_idx in range(self.position_settings.num_positions):
                 p_label = self.position_settings.position_labels[p_idx]
                 well_id = self.position_settings.well_ids[p_idx]
@@ -1050,6 +1050,7 @@ class MantisAcquisition(object):
 
                 # autoexposure
                 if well_id != previous_well_id:
+                    globals.new_well = True
                     if t_idx == 0 or self.ls_acq.autoexposure_settings.rerun_each_timepoint:
                         self.run_autoexposure(self.ls_acq, well_id)
                     # Acq rate needs to be updated even if autoexposure was not rerun in this well
@@ -1107,6 +1108,7 @@ class MantisAcquisition(object):
                 if ls_acq_aborted:
                     logger.error(error_message.format('Light-sheet', t_idx, p_label))
                 previous_well_id = well_id
+                globals.new_well = False
 
             # wait for time interval between time points
             t_wait = self.time_settings.time_interval_s - (time.time() - timepoint_start_time)
