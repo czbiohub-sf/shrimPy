@@ -593,21 +593,20 @@ def autoexposure(
     source intensity to adjust the image brightness until the correct settings
     are found or the limits set in autoexposure_settings are reached. It is
     assumed that the microscope is configured in the correct channel. Additional
-    keyword arguments will be pass to autoexposure_method
+    keyword arguments will be pass to autoexposure_method. The correct exposure
+    time and light intensity will be applied downstream by the acquisition
+    engine.
 
     Parameters
     ----------
-    mmc : Core
-    light_source : Union[str, VortranLaser]
+    mmc : Core light_source : Union[str, VortranLaser]
         Light source name for sources controlled by Micro-manager or
         VortranLaser object
-    autoexposure_settings : AutoexposureSettings
-    autoexposure_method : str
+    autoexposure_settings : AutoexposureSettings autoexposure_method : str
 
     Returns
     -------
-    exposure_time: float
-    light_intensity: float
+    exposure_time: float light_intensity: float
     """
 
     autoexposure_flag = None
@@ -624,10 +623,6 @@ def autoexposure(
             # acquire data
             # input_stack = []
             autoexposure_flag, exposure_time, light_intensity = mean_intensity_autoexposure()
-
-        set_exposure(mmc, exposure_time)
-        if isinstance(light_source, VortranLaser):
-            light_source.pulse_power = light_intensity
 
         min_max_exposure = (
             autoexposure_settings.min_exposure_time_ms,
