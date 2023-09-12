@@ -574,6 +574,12 @@ def setup_vortran_laser(com_port: str):
     return laser
 
 
+def set_exposure(mmc: Core, exposure_time: float):
+    logger.debug(f'Setting exposure time to {exposure_time:.2f} ms')
+
+    mmc.set_exposure(exposure_time)
+
+
 def autoexposure(
     mmc: Core,
     light_source: Union[str, VortranLaser],
@@ -619,7 +625,7 @@ def autoexposure(
             # input_stack = []
             autoexposure_flag, exposure_time, light_intensity = mean_intensity_autoexposure()
 
-        mmc.set_exposure(exposure_time)
+        set_exposure(mmc, exposure_time)
         if isinstance(light_source, VortranLaser):
             light_source.pulse_power = light_intensity
 
