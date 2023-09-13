@@ -610,10 +610,18 @@ def autoexposure(
     """
 
     autoexposure_flag = None
+    current_exposure_time = mmc.get_exposure()
+    current_light_intensity = None
+    if isinstance(light_source, VortranLaser):
+        current_light_intensity = light_source.pulse_power
 
     while autoexposure_flag != 0:
         if autoexposure_method == 'manual':
-            autoexposure_flag, exposure_time, light_intensity = manual_autoexposure(**kwargs)
+            (
+                autoexposure_flag,
+                suggested_exposure_time,
+                suggested_light_intensity,
+            ) = manual_autoexposure(current_exposure_time, current_light_intensity, **kwargs)
         elif autoexposure_method in (
             'mean_intensity',
             'masked_mean_intensity',
@@ -622,7 +630,17 @@ def autoexposure(
             # TODO
             # acquire data
             # input_stack = []
-            autoexposure_flag, exposure_time, light_intensity = mean_intensity_autoexposure()
+            (
+                autoexposure_flag,
+                suggested_exposure_time,
+                suggested_light_intensity,
+            ) = mean_intensity_autoexposure()
+
+        if autoexposure_flag is None:
+            logger.error(
+                'Autoexposure failed. Exposure time and light intensity will not be changed'
+            )
+            break
 
         min_max_exposure = (
             autoexposure_settings.min_exposure_time_ms,
@@ -632,11 +650,14 @@ def autoexposure(
             autoexposure_settings.min_laser_power_mW,
             autoexposure_settings.max_laser_power_mW,
         )
-        if exposure_time in min_max_exposure and light_intensity in min_max_laser_power:
+        if (
+            suggested_exposure_time in min_max_exposure
+            and suggested_light_intensity in min_max_laser_power
+        ):
             # limits of exposure_time and laser_power have been reached
             logger.error(
-                'Autoexposure failed. Setting exposure time and light intensity to {} ms and {}'.format(
-                    exposure_time, light_intensity
+                'Autoexposure failed to correct over- or under-exposed images. Setting exposure time and light intensity to {} ms and {}'.format(
+                    suggested_exposure_time, suggested_light_intensity
                 )
             )
             break
@@ -644,8 +665,8 @@ def autoexposure(
         # autoexposure succeeded
         logger.info(
             'Found optimal exposure time and light intensity to be {} ms and {}'.format(
-                exposure_time, light_intensity
+                suggested_exposure_time, suggested_light_intensity
             )
         )
 
-    return exposure_time, light_intensity
+    return suggested_exposure_time, suggested_light_intensity

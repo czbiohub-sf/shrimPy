@@ -1,8 +1,11 @@
 # Methods in this module will take ND image data and return (autoexposure_flag,
 # suggested_exposure_time, suggested_laser_power) as defined by the provided
 # AutoexposureSettings. autoexposure_flag = 0 is returned for optimally exposed
-# images, autoexposure_flag = 1 is returned for over-exposed images, and
-# autoexposure_flag = -1 is returned for under-exposed images.
+# images, autoexposure_flag = 1 is returned for over-exposed images,
+# autoexposure_flag = -1 is returned for under-exposed images, and
+# autoexposure_flag = None is returned when the autoexposure algorithm has
+# errored, in which case the current exposure time and laser power will be
+# returned
 
 # An external method (e.g. see
 # mantis.acquisition.microscope_operations.autoexposure) is responsible for
@@ -18,9 +21,16 @@ from mantis.acquisition.AcquisitionSettings import AutoexposureSettings
 
 
 def manual_autoexposure(
+    current_exposure_time,
+    current_laser_power,
     illumination_settings_filepath,
     well_id,
 ):
+    autoexposure_flag = (
+        None  # 1: over-exposed , 0: optimally exposed, -1: under-exposed, None: error
+    )
+    suggested_exposure_time = current_exposure_time
+    suggested_laser_power = current_laser_power
     with open(illumination_settings_filepath) as csvfile:
         reader = csv.reader(csvfile)
 
@@ -41,9 +51,9 @@ def mean_intensity_autoexposure(
     autoexposure_settings: AutoexposureSettings,
 ):
     logger.info("Starting autoexposure")
+    autoexposure_flag = None
     suggested_exposure_time = current_exposure_time
     suggested_laser_power = current_laser_power
-    autoexposure_flag = 0  # 1 over-exposed , 0 optimally exposed, -1 under-exposed
 
     (
         stack_max_intensity,
@@ -95,9 +105,9 @@ def masked_mean_intensity_autoexposure(
     autoexposure_settings: AutoexposureSettings,
 ):
     logger.info("Starting autoexposure")
+    autoexposure_flag = None
     suggested_exposure_time = current_exposure_time
     suggested_laser_power = current_laser_power
-    autoexposure_flag = 0  # 1 over-exposed , 0 optimally exposed, -1 under-exposed
 
     (
         stack_max_intensity,
@@ -156,9 +166,9 @@ def intensity_percentile_autoexposure(
     autoexposure_settings: AutoexposureSettings,
 ):
     logger.info("Starting autoexposure")
+    autoexposure_flag = None
     suggested_exposure_time = current_exposure_time
     suggested_laser_power = current_laser_power
-    autoexposure_flag = 0  # 1 over-exposed , 0 optimally exposed, -1 under-exposed
 
     (
         stack_max_intensity,
