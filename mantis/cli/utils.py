@@ -7,12 +7,13 @@ import multiprocessing as mp
 from functools import partial
 from pathlib import Path
 from typing import Tuple
-
 import click
 import numpy as np
 
 from iohub.ngff import Position, open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
+import ants
+import largestinteriorrectangle as lir
 
 
 def create_empty_zarr(
@@ -166,3 +167,160 @@ def process_single_position(
             ),
             itertools.product(range(T), range(C)),
         )
+
+
+def scale_affine(start_shape_zyx, scaling_factor_zyx=(1, 1, 1), end_shape_zyx=None):
+    center_Y_start, center_X_start = np.array(start_shape_zyx)[-2:] / 2
+    if end_shape_zyx is None:
+        center_Y_end, center_X_end = (center_Y_start, center_X_start)
+    else:
+        center_Y_end, center_X_end = np.array(end_shape_zyx)[-2:] / 2
+
+    scaling_matrix = np.array(
+        [
+            [scaling_factor_zyx[-3], 0, 0, 0],
+            [
+                0,
+                scaling_factor_zyx[-2],
+                0,
+                -center_Y_start * scaling_factor_zyx[-2] + center_Y_end,
+            ],
+            [
+                0,
+                0,
+                scaling_factor_zyx[-1],
+                -center_X_start * scaling_factor_zyx[-1] + center_X_end,
+            ],
+            [0, 0, 0, 1],
+        ]
+    )
+    return scaling_matrix
+
+
+def rotate_affine(start_shape_zyx, angle=0.0, end_shape_zyx=None):
+    # TODO: make this 3D?
+    center_Y_start, center_X_start = np.array(start_shape_zyx)[-2:] / 2
+    if end_shape_zyx is None:
+        center_Y_end, center_X_end = (center_Y_start, center_X_start)
+    else:
+        center_Y_end, center_X_end = np.array(end_shape_zyx)[-2:] / 2
+
+    theta = np.radians(angle)
+
+    rotation_matrix = np.array(
+        [
+            [1, 0, 0, 0],
+            [
+                0,
+                np.cos(theta),
+                -np.sin(theta),
+                -center_Y_start * np.cos(theta)
+                + np.sin(theta) * center_X_start
+                + center_Y_end,
+            ],
+            [
+                0,
+                np.sin(theta),
+                np.cos(theta),
+                -center_Y_start * np.sin(theta)
+                - center_X_start * np.cos(theta)
+                + center_X_end,
+            ],
+            [0, 0, 0, 1],
+        ]
+    )
+
+    affine_rot_n_scale_matrix_zyx = rotation_matrix
+
+    return affine_rot_n_scale_matrix_zyx
+
+
+def ants_affine_transform(
+    zyx_data,
+    ants_transform_file_list,
+    output_shape_zyx,
+):
+    # The output has to be a ANTImage Object
+    empty_target_array = np.zeros((output_shape_zyx), dtype=np.float32)
+    target_zyx_ants = ants.from_numpy(empty_target_array)
+
+    # NOTE:Matrices the order matters!
+    matrices = []
+    for mat in ants_transform_file_list:
+        matrices.append(ants.read_transform(mat))
+    ants_composed_matrix = ants.compose_ants_transforms(matrices)
+
+    zyx_data_ants = ants.from_numpy(zyx_data.astype(np.float32))
+    registered_zyx = ants_composed_matrix.apply_to_image(
+        zyx_data_ants, reference=target_zyx_ants
+    )
+    return registered_zyx.numpy()
+
+
+def copy_n_paste(zyx_data, zyx_slicing_params: list):
+    """Load a zyx array and slice"""
+    zyx_data_sliced = zyx_data[
+        zyx_slicing_params[0],
+        zyx_slicing_params[1],
+        zyx_slicing_params[2],
+    ]
+    return zyx_data_sliced
+
+
+def find_lir_slicing_params(
+    input_zyx_shape, target_zyx_shape, registration_mat_optimized, registration_mat_manual
+):
+    print(f'Starting Largest interior rectangle (LIR) search')
+
+    # Make dummy volumes
+    img1 = np.ones(tuple(input_zyx_shape), dtype=np.float32)
+    img2 = np.ones(tuple(target_zyx_shape), dtype=np.float32)
+
+    # Load the matrices
+    ants_transform_file_list = [registration_mat_optimized, registration_mat_manual]
+    matrices = []
+    for mat in ants_transform_file_list:
+        matrices.append(ants.read_transform(mat))
+    ants_composed_matrix = ants.compose_ants_transforms(matrices)
+
+    # Conver to ants objects
+    target_zyx_ants = ants.from_numpy(img2)
+    zyx_data_ants = ants.from_numpy(img1.astype(np.float32))
+
+    # Apply affine
+    registered_zyx = ants_composed_matrix.apply_to_image(
+        zyx_data_ants, reference=target_zyx_ants
+    )
+    registered_zyx_bool = registered_zyx.numpy().copy()
+    registered_zyx_bool = registered_zyx_bool > 0
+    # NOTE: we use the center of the volume as reference
+    rectangle_coords_yx = lir.lir(registered_zyx_bool[registered_zyx.shape[0] // 2])
+
+    x = rectangle_coords_yx[0]
+    y = rectangle_coords_yx[1]
+    width = rectangle_coords_yx[2]
+    height = rectangle_coords_yx[3]
+    corner1_xy = (x, y)  # Bottom-left corner
+    corner2_xy = (x + width, y)  # Bottom-right corner
+    corner3_xy = (x + width, y + height)  # Top-right corner
+    corner4_xy = (x, y + height)  # Top-left corner
+    rectangle_xy = np.array((corner1_xy, corner2_xy, corner3_xy, corner4_xy))
+    X_slice = slice(rectangle_xy.min(axis=0)[0], rectangle_xy.max(axis=0)[0])
+    Y_slice = slice(rectangle_xy.min(axis=0)[1], rectangle_xy.max(axis=0)[1])
+
+    # Find the overlap in Z
+    registered_zx = registered_zyx.numpy()
+    registered_zx = registered_zx.transpose((2, 0, 1)) > 0
+    rectangle_coords_zx = lir.lir(registered_zx[registered_zyx.shape[0] // 2].copy())
+    x = rectangle_coords_zx[0]
+    y = rectangle_coords_zx[1]
+    width = rectangle_coords_zx[2]
+    height = rectangle_coords_zx[3]
+    corner1_zx = (x, y)  # Bottom-left corner
+    corner2_zx = (x + width, y)  # Bottom-right corner
+    corner3_zx = (x + width, y + height)  # Top-right corner
+    corner4_zx = (x, y + height)  # Top-left corner
+    rectangle_zx = np.array((corner1_zx, corner2_zx, corner3_zx, corner4_zx))
+    Z_slice = slice(rectangle_zx.min(axis=0)[1], rectangle_zx.max(axis=0)[1])
+    print(f'Slicing parameters Z:{Z_slice}, Y:{Y_slice}, X:{X_slice}')
+    return (Z_slice, Y_slice, X_slice)
