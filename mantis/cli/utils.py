@@ -14,6 +14,7 @@ from iohub.ngff import Position, open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
 import ants
 import largestinteriorrectangle as lir
+from tqdm import tqdm
 
 
 def create_empty_zarr(
@@ -324,3 +325,21 @@ def find_lir_slicing_params(
     Z_slice = slice(rectangle_zx.min(axis=0)[1], rectangle_zx.max(axis=0)[1])
     print(f'Slicing parameters Z:{Z_slice}, Y:{Y_slice}, X:{X_slice}')
     return (Z_slice, Y_slice, X_slice)
+
+
+def append_channels(input_data_path: Path, target_data_path: Path):
+    appending_dataset = open_ome_zarr(input_data_path, mode="r")
+    appending_channel_names = appending_dataset.channel_names
+    with open_ome_zarr(target_data_path, mode="r+") as dataset:
+        target_data_channel_names = dataset.channel_names
+        num_channels = len(target_data_channel_names) - 1
+        print(f"channels in target {target_data_channel_names}")
+        print(f"adding channels {appending_channel_names}")
+        for name, position in tqdm(dataset.positions(), desc='Positions'):
+            for i, appending_channel_idx in enumerate(
+                tqdm(appending_channel_names, desc='Channel', leave=False)
+            ):
+                position.append_channel(appending_channel_idx)
+                position["0"][:, num_channels + i + 1] = appending_dataset[str(name)][0][:, i]
+        dataset.print_tree()
+    appending_dataset.close()

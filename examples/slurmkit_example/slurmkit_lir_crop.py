@@ -52,9 +52,7 @@ simultaneous_processes_per_node = 3
 # path handling
 input_paths = [Path(path) for path in natsorted(glob.glob(input_position_dirpaths))]
 target_paths = [Path(path) for path in natsorted(glob.glob(target_position_dirpaths))]
-raw_input_paths = [
-    Path(path) for path in natsorted(glob.glob(raw_input_position_dirpaths))
-]
+raw_input_paths = [Path(path) for path in natsorted(glob.glob(raw_input_position_dirpaths))]
 
 output_data_path = Path(output_data_path)
 output_dir = output_data_path.parent
@@ -63,14 +61,10 @@ slurm_out_path = str(os.path.join(output_dir, "slurm_output/deskew-%j.out"))
 
 # Remove desired rois
 input_paths = [
-    element
-    for index, element in enumerate(input_paths)
-    if index not in indices_to_remove
+    element for index, element in enumerate(input_paths) if index not in indices_to_remove
 ]
 output_paths = [
-    element
-    for index, element in enumerate(output_paths)
-    if index not in indices_to_remove
+    element for index, element in enumerate(output_paths) if index not in indices_to_remove
 ]
 print(f"Removing positions idx: {indices_to_remove}")
 click.echo(f"in: {input_paths}, out: {output_paths}")
@@ -103,12 +97,8 @@ if cropping_mode in cropping_methods:
     elif method == 1:
         assert HALF_CROP_LENGTH is not None
         Z_slice = slice(None)
-        Y_slice = slice(
-            Y_input // 2 - HALF_CROP_LENGTH, Y_input // 2 + HALF_CROP_LENGTH
-        )
-        X_slice = slice(
-            X_input // 2 - HALF_CROP_LENGTH, X_input // 2 + HALF_CROP_LENGTH
-        )
+        Y_slice = slice(Y_input // 2 - HALF_CROP_LENGTH, Y_input // 2 + HALF_CROP_LENGTH)
+        X_slice = slice(X_input // 2 - HALF_CROP_LENGTH, X_input // 2 + HALF_CROP_LENGTH)
         chunk_zyx_shape = (Z_CHUNK, output_shape_zyx[-2], output_shape_zyx[-1])
         output_shape_zyx = (
             Z_input,
