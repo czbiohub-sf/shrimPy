@@ -186,6 +186,10 @@ class AutoexposureSettings:
             "min_exposure_time_ms",
             "max_exposure_time_ms",
         ):
-            setattr(self, attr, round(getattr(self, attr), 1))
+            attr_val = getattr(self, attr)
+            if attr_val is not None:
+                setattr(self, attr, round(attr_val, 1))
         for attr in ("min_laser_power_mW", "max_laser_power_mW"):
-            setattr(self, attr, round(getattr(self, attr), 1))
+            attr_val = getattr(self, attr)
+            if attr_val is not None:
+                setattr(self, attr, round(attr_val, 1))
