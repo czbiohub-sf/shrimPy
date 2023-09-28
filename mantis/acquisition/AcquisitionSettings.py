@@ -1,7 +1,7 @@
 import warnings
 
 from dataclasses import field
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 
@@ -145,37 +145,40 @@ class MicroscopeSettings:
 
 @dataclass
 class AutoexposureSettings:
-    # min intensity percent to define under-exposure
-    min_intensity_percent: float
+    # autoexposure method; currently only "manual" is implemented
+    autoexposure_method: Literal['manual']
 
-    # max intensity percent to define over-exposure
-    max_intensity_percent: float
+    # rerun autoexposure for each timepoint at a given well
+    rerun_each_timepoint: bool = False
 
-    # minimum exposure time used to decide when to lower the laser power
-    min_exposure_time_ms: float
+    # min image intensity given as percent of dtype that defines under-exposure
+    min_intensity_percent: Optional[float] = None
 
-    # max exposure time used during adjustment for under-exposure
-    max_exposure_time_ms: float
+    # max image intensity given as percent of dtype that defines over-exposure
+    max_intensity_percent: Optional[float] = None
+
+    # minimum exposure time
+    min_exposure_time_ms: Optional[float] = None
+
+    # maximum exposure time
+    max_exposure_time_ms: Optional[float] = None
 
     # the initial exposure time used when the laser power is lowered
     # TODO: the default exposure time should be the given in Channelsettings.default_exposure_times_ms
     # default_exposure_times_ms: float
 
-    # the minimum laser power (used to define autoexposure failure)
-    min_laser_power_mW: float
+    # the minimum laser power
+    min_laser_power_mW: Optional[float] = None
 
     # TODO: get the max laser power from the laser if not provided here
     # TODO: different lasers may have different max power, how do we deal with that?
-    max_laser_power_mW: Optional[float]
+    max_laser_power_mW: Optional[float] = None
 
-    # factor by which to change the exposure time or laser power
+    # factors by which to change the exposure time or laser power
     # if an image is found to be incorrectly exposed
-    relative_exposure_step: float
+    relative_exposure_step: Optional[float] = None
 
-    relative_laser_power_step: float
-
-    # rerun autoexposure for each timepoint at a given well
-    rerun_each_timepoint: bool = False
+    relative_laser_power_step: Optional[float] = None
 
     def __post_init__(self):
         for attr in (

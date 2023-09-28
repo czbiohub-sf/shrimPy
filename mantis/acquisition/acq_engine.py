@@ -898,6 +898,13 @@ class MantisAcquisition(object):
                     channel_name,
                 )
                 if method == 'manual':
+                    illumination_settings_filepath = self._root_dir / 'illumination.csv'
+                    if not illumination_settings_filepath.is_file():
+                        raise ValueError(
+                            'Illumination settings for manual autoexposure cannot be found in '
+                            f'{illumination_settings_filepath}'
+                        )
+
                     (
                         acq.channel_settings.exposure_times_per_well[well_id][channel_idx],
                         acq.channel_settings.laser_powers_per_well[well_id][channel_idx],
@@ -906,8 +913,12 @@ class MantisAcquisition(object):
                         acq.channel_settings.light_sources[channel_idx],
                         acq.autoexposure_settings,
                         method,
-                        illumination_settings_filepath=self._root_dir / 'illumination.csv',
+                        illumination_settings_filepath=illumination_settings_filepath,
                         well_id=well_id,
+                    )
+                else:
+                    raise NotImplementedError(
+                        f'Autoexposure method {method} is not yet implemented.'
                     )
 
     def setup(self):
@@ -1052,7 +1063,11 @@ class MantisAcquisition(object):
                 if well_id != previous_well_id:
                     globals.new_well = True
                     if t_idx == 0 or self.ls_acq.autoexposure_settings.rerun_each_timepoint:
-                        self.run_autoexposure(self.ls_acq, well_id)
+                        self.run_autoexposure(
+                            acq=self.ls_acq,
+                            well_id=well_id,
+                            method=self.ls_acq.autoexposure_settings.autoexposure_method,
+                        )
                     # Acq rate needs to be updated even if autoexposure was not rerun in this well
                     # Only do that if we are using autoexposure?
                     self.update_ls_acquisition_rates(

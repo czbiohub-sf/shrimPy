@@ -138,3 +138,7 @@ ls_microscope_settings:
   use_o3_refocus: True
   o3_refocus_config: ['Channel - LS', 'GFP EX488 EM525-45']
   o3_refocus_interval_min: 10
+
+ls_autoexposure_settings:
+  autoexposure_method: 'manual'
+  rerun_each_timepoint: True
