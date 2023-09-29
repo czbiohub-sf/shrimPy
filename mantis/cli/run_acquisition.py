@@ -52,6 +52,7 @@ def run_acquisition(
         ChannelSettings,
         SliceSettings,
         MicroscopeSettings,
+        AutoexposureSettings,
     )
 
     # isort: on
@@ -73,6 +74,9 @@ def run_acquisition(
     ls_channel_settings = ChannelSettings(**raw_settings.get('ls_channel_settings'))
     ls_slice_settings = SliceSettings(**raw_settings.get('ls_slice_settings'))
     ls_microscope_settings = MicroscopeSettings(**raw_settings.get('ls_microscope_settings'))
+    ls_autoexposure_settings = AutoexposureSettings(
+        **raw_settings.get('ls_autoexposure_settings')
+    )
 
     with MantisAcquisition(
         acquisition_directory=acq_directory,
@@ -90,6 +94,7 @@ def run_acquisition(
         acq.ls_acq.channel_settings = ls_channel_settings
         acq.ls_acq.slice_settings = ls_slice_settings
         acq.ls_acq.microscope_settings = ls_microscope_settings
+        acq.ls_acq.autoexposure_settings = ls_autoexposure_settings
 
         acq.setup()
         acq.acquire()
