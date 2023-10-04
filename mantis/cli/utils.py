@@ -343,3 +343,73 @@ def append_channels(input_data_path: Path, target_data_path: Path):
                 position["0"][:, num_channels + i + 1] = appending_dataset[str(name)][0][:, i]
         dataset.print_tree()
     appending_dataset.close()
+
+
+def apply_stabilization_over_time_ants(
+    list_of_shifts_ants_style: list,
+    input_data_path: Path,
+    output_path: Path,
+    num_processes: int = mp.cpu_count(),
+    **kwargs,
+) -> None:
+    """Apply stabilization over time"""
+    # Function to be applied
+    # Get the reader and writer
+    click.echo(f"Input data path:\t{input_data_path}")
+    click.echo(f"Output data path:\t{str(output_path)}")
+    input_dataset = open_ome_zarr(str(input_data_path))
+    stdout_buffer = io.StringIO()
+    with contextlib.redirect_stdout(stdout_buffer):
+        input_dataset.print_tree()
+    click.echo(f" Input data tree: {stdout_buffer.getvalue()}")
+
+    T, C, _, _, _ = input_dataset.data.shape
+
+    # Write the settings into the metadata if existing
+    # TODO: alternatively we can throw all extra arguments as metadata.
+    if 'extra_metadata' in kwargs:
+        # For each dictionary in the nest
+        with open_ome_zarr(output_path, mode='r+') as output_dataset:
+            for params_metadata_keys in kwargs['extra_metadata'].keys():
+                output_dataset.zattrs['extra_metadata'] = kwargs['extra_metadata']
+
+    # Loop through (T, C), deskewing and writing as we go
+    click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
+    with mp.Pool(num_processes) as p:
+        p.starmap(
+            partial(
+                stabilization_over_time_ants,
+                input_dataset,
+                str(output_path),
+                list_of_shifts_ants_style,
+            ),
+            itertools.product(range(T), range(C)),
+        )
+    input_dataset.close()
+
+
+def stabilization_over_time_ants(
+    position: Position,
+    output_path: Path,
+    list_of_shifts,
+    t_idx: int,
+    c_idx: int,
+    **kwargs,
+) -> None:
+    """Load a zyx array from a Position object, apply a transformation and save the result to file"""
+    click.echo(f"Processing c={c_idx}, t={t_idx}")
+
+    zyx_data = position[0][t_idx, c_idx].astype(np.float32)
+    zyx_data_ants = ants.from_numpy(zyx_data)
+
+    tx_composition = ants.new_ants_transform()
+    tx_composition.set_parameters(list_of_shifts[t_idx])
+
+    # Apply transformation
+    registered_zyx = tx_composition.apply_to_image(zyx_data_ants, reference=zyx_data_ants)
+
+    # Write to file
+    with open_ome_zarr(output_path, mode="r+") as output_dataset:
+        output_dataset[0][t_idx, c_idx] = registered_zyx.numpy()
+
+    click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
