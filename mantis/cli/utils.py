@@ -241,6 +241,9 @@ def ants_affine_transform(
     ants_transform_file_list,
     output_shape_zyx,
 ):
+    # Convert the NaN to 0
+    zyx_data = np.nan_to_num(zyx_data, nan=0)
+
     # The output has to be a ANTImage Object
     empty_target_array = np.zeros((output_shape_zyx), dtype=np.float32)
     target_zyx_ants = ants.from_numpy(empty_target_array)
@@ -400,6 +403,8 @@ def stabilization_over_time_ants(
     click.echo(f"Processing c={c_idx}, t={t_idx}")
 
     zyx_data = position[0][t_idx, c_idx].astype(np.float32)
+    # Convert nans to 0
+    zyx_data = np.nan_to_num(zyx_data, nan=0)
     zyx_data_ants = ants.from_numpy(zyx_data)
 
     tx_composition = ants.new_ants_transform()
