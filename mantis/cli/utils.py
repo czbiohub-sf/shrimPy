@@ -7,13 +7,18 @@ import multiprocessing as mp
 from functools import partial
 from pathlib import Path
 from typing import Tuple
+
+import ants
 import click
+import largestinteriorrectangle as lir
 import numpy as np
+import scipy.ndimage as ndi
+import torch
+import yaml
 
 from iohub.ngff import Position, open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
-import ants
-import largestinteriorrectangle as lir
+from numpy.typing import DTypeLike
 from tqdm import tqdm
 
 
@@ -263,6 +268,7 @@ def ants_affine_transform(
 
 def copy_n_paste(zyx_data, zyx_slicing_params: list):
     """Load a zyx array and slice"""
+    zyx_data = np.nan_to_num(zyx_data, nan=0)
     zyx_data_sliced = zyx_data[
         zyx_slicing_params[0],
         zyx_slicing_params[1],
@@ -418,3 +424,94 @@ def stabilization_over_time_ants(
         output_dataset[0][t_idx, c_idx] = registered_zyx.numpy()
 
     click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
+
+
+def model_to_yaml(model, yaml_path: Path) -> None:
+    """
+    Save a model's dictionary representation to a YAML file.
+
+    Parameters
+    ----------
+    model : object
+        The model object to convert to YAML.
+    yaml_path : Path
+        The path to the output YAML file.
+
+    Raises
+    ------
+    TypeError
+        If the `model` object does not have a `dict()` method.
+
+    Notes
+    -----
+    This function converts a model object into a dictionary representation
+    using the `dict()` method. It removes any fields with None values before
+    writing the dictionary to a YAML file.
+
+    Examples
+    --------
+    >>> from my_model import MyModel
+    >>> model = MyModel()
+    >>> model_to_yaml(model, 'model.yaml')
+
+    """
+    yaml_path = Path(yaml_path)
+
+    if not hasattr(model, "dict"):
+        raise TypeError("The 'model' object does not have a 'dict()' method.")
+
+    model_dict = model.dict()
+
+    # Remove None-valued fields
+    clean_model_dict = {key: value for key, value in model_dict.items() if value is not None}
+
+    with open(yaml_path, "w+") as f:
+        yaml.dump(clean_model_dict, f, default_flow_style=False, sort_keys=False)
+
+
+def yaml_to_model(yaml_path: Path, model):
+    """
+    Load model settings from a YAML file and create a model instance.
+
+    Parameters
+    ----------
+    yaml_path : Path
+        The path to the YAML file containing the model settings.
+    model : class
+        The model class used to create an instance with the loaded settings.
+
+    Returns
+    -------
+    object
+        An instance of the model class with the loaded settings.
+
+    Raises
+    ------
+    TypeError
+        If the provided model is not a class or does not have a callable constructor.
+    FileNotFoundError
+        If the YAML file specified by `yaml_path` does not exist.
+
+    Notes
+    -----
+    This function loads model settings from a YAML file using `yaml.safe_load()`.
+    It then creates an instance of the provided `model` class using the loaded settings.
+
+    Examples
+    --------
+    >>> from my_model import MyModel
+    >>> model = yaml_to_model('model.yaml', MyModel)
+
+    """
+    yaml_path = Path(yaml_path)
+
+    if not callable(getattr(model, "__init__", None)):
+        raise TypeError("The provided model must be a class with a callable constructor.")
+
+    try:
+        with open(yaml_path, "r") as file:
+            raw_settings = yaml.safe_load(file)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"The YAML file '{yaml_path}' does not exist.")
+
+    return model(**raw_settings)
