@@ -1,15 +1,27 @@
 from typing import Optional
 
 import numpy as np
-
-from pydantic import ConfigDict, PositiveFloat, PositiveInt, validator
+from pathlib import Path
 from pydantic.dataclasses import dataclass
+from pydantic import (
+    ConfigDict,
+    PositiveFloat,
+    PositiveInt,
+    BaseModel,
+    Extra,
+    NonNegativeFloat,
+    NonNegativeInt,
+    PositiveFloat,
+    root_validator,
+    validator,
+)
 
-config = ConfigDict(extra="forbid")
+# All settings classes inherit from MyBaseModel, which forbids extra parameters to guard against typos
+class MyBaseModel(BaseModel, extra=Extra.forbid):
+    pass
 
 
-@dataclass(config=config)
-class DeskewSettings:
+class DeskewSettings(MyBaseModel):
     pixel_size_um: PositiveFloat
     ls_angle_deg: PositiveFloat
     px_to_scan_ratio: Optional[PositiveFloat] = None
@@ -36,8 +48,7 @@ class DeskewSettings:
                 raise TypeError("px_to_scan_ratio is not valid")
 
 
-@dataclass(config=config)
-class RegistrationSettings:
+class RegistrationSettings(MyBaseModel):
     affine_transform_zyx: list
     output_shape_zyx: list
     pre_affine_90degree_rotations_about_z: Optional[int] = 1
@@ -66,3 +77,20 @@ class RegistrationSettings:
         if not isinstance(v, list) or len(v) != 3:
             raise ValueError("The output shape zyx must be a list of length 3.")
         return v
+
+
+class EstimateTransformSettings(MyBaseModel):
+    label_free_channel_idx: int
+    light_sheet_channel_idx: int
+    virtual_staining_path: Optional[Path] = None
+    virtual_staining_channel: Optional[list[int]] = None
+    optimizer_verbose: Optional[bool] = None
+    pre_affine_90degree_rotations_about_z: Optional[int] = 1
+
+    @validator("virtual_staining_path", pre=True)
+    def validate_virtual_staining_path(cls, value):
+        if value is not None:
+            path = Path(value)
+            if not path.exists():
+                raise ValueError("The path does not exist.")
+            return path

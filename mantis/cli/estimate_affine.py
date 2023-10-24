@@ -5,15 +5,14 @@ import ants
 import click
 import napari
 import numpy as np
-import scipy
-import yaml
 from iohub import open_ome_zarr
 from skimage.transform import EuclideanTransform
 from skimage.transform import SimilarityTransform
 from mantis.cli import utils
 from waveorder.focus import focus_from_transverse_band
-from mantis.analysis.AnalysisSettings import RegistrationSettings
+from mantis.analysis.AnalysisSettings import EstimateTransformSettings
 from mantis.cli.parsing import (
+    config_filepath,
     labelfree_position_dirpaths,
     lightsheet_position_dirpaths,
     output_dirpath,
@@ -34,20 +33,10 @@ FOCUS_SLICE_ROI_SIDE = 150
 @click.command()
 @labelfree_position_dirpaths()
 @lightsheet_position_dirpaths()
+@config_filepath()
 @output_dirpath()
-@click.option(
-    "--pre-affine-90degree-rotations-about-z",
-    "-k",
-    default=1,
-    help="Pre-affine 90degree rotations about z",
-    required=False,
-    type=int,
-)
 def estimate_phase_to_fluor_affine(
-    labelfree_position_dirpaths,
-    lightsheet_position_dirpaths,
-    output_dirpath,
-    pre_affine_90degree_rotations_about_z,
+    labelfree_position_dirpaths, lightsheet_position_dirpaths, config_filepath, output_dirpath
 ):
 
     #%%
@@ -60,26 +49,21 @@ def estimate_phase_to_fluor_affine(
     # labelfree_position_dirpaths = natsorted(glob.glob(labelfree_position_dirpaths))
     # lightsheet_position_dirpaths = natsorted(glob.glob(lightsheet_position_dirpaths))
     # virtualstaining_position_dirpaths = natsorted(glob.glob(virtualstaining_dirpath))
-
-    #%%
     """
     Estimate the affine transform between two channels (source channel and target channel) by manual inputs.
 
-    mantis estimate-phase-to-fluor-affine -lf ./acq_name_labelfree_reconstructed.zarr/0/0/0 -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 -o ./register.yml
+    mantis estimate-phase-to-fluor-affine -lf ./acq_name_labelfree_reconstructed.zarr/0/0/0 -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 -c ./config.yml -o ./output_folder
     """
-    # assert str(output_filepath).endswith((".yaml", ".yml")), "Output file must be a YAML file."
 
     # # Get a napari viewer()
     viewer = napari.Viewer()
 
-    print("Getting dataset info")
-    print("\n phase channel INFO:")
-    os.system(f"iohub info {labelfree_position_dirpaths[0]}")
-    print("\n fluorescence channel INFO:")
-    os.system(f"iohub info {lightsheet_position_dirpaths[0]} ")
+    settings = yaml_to_model(config_filepath, EstimateTransformSettings)
+    phase_channel_idx = settings.label_free_channel_idx
+    fluor_channel_idx = settings.light_sheet_channel_idx
+    pre_affine_90degree_rotations_about_z = settings.light_sheet_channel_idx
 
-    phase_channel_idx = int(input("Enter phase_channel index to process: "))
-    fluor_channel_idx = int(input("Enter fluor_channel index to process: "))
+    click.echo(f"Estimating registration with labelfree_channel idx {phase_channel_idx}")
 
     click.echo("Loading data and estimating best focus plane...")
 
@@ -351,11 +335,10 @@ def estimate_phase_to_fluor_affine(
     viewer.layers[phase_channel_str].visible = False
 
     #%%
-    flag_optimize_w_ANTs = input("\n Optimize transformation with ANTs (Y/N) :")
-    if flag_optimize_w_ANTs == "Y" or flag_optimize_w_ANTs == "y":
+    if settings.virtual_staining_path is not None:
         # Load the virtual stained volume
 
-        VS_position = open_ome_zarr(virtualstaining_position_dirpaths[0])
+        VS_position = open_ome_zarr(settings.virtual_staining_path)
 
         # TODO: add option to choose VS
         VS_data_zyx = VS_position[0][0, fluor_channel_idx].astype(np.float32)
