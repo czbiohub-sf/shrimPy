@@ -85,7 +85,7 @@ class EstimateTransformSettings(MyBaseModel):
     light_sheet_channel_idx: int
     virtual_staining_path: Optional[Path] = None
     virtual_staining_channel: Optional[list[int]] = None
-    optimizer_verbose: Optional[bool] = None
+    optimizer_verbose: Optional[bool] = False
     pre_affine_90degree_rotations_about_z: Optional[int] = 1
 
     @validator("virtual_staining_path", pre=True)

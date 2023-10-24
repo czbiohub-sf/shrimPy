@@ -140,7 +140,7 @@ def estimate_phase_to_fluor_affine(
 
     # Convert to ants objects
     phase_zyx_ants = ants.from_numpy(phase_channel_volume.astype(np.float32))
-    fluor_zyx_ants = ants.from_numpy(fluor_channel_volume)
+    fluor_zyx_ants = ants.from_numpy(fluor_channel_volume.astype(np.float32))
 
     scaling_affine = utils.scale_affine(
         (fluor_channel_Z, fluor_channel_Y, fluor_channel_X),
@@ -325,12 +325,12 @@ def estimate_phase_to_fluor_affine(
     viewer.layers[phase_channel_str].visible = False
 
     if settings.virtual_staining_path is not None:
+        click.echo("Running optimizer between virtual staining and fluorescence")
         # Load the virtual stained volume
-
         VS_position = open_ome_zarr(settings.virtual_staining_path)
 
-        # TODO: add option to choose VS
-        VS_data_zyx = VS_position[0][0, fluor_channel_idx].astype(np.float32)
+        click.echo(f"Using virtual staining channel_idx {settings.virtual_staining_channel}")
+        VS_data_zyx = VS_position[0][0, settings.virtual_staining_channel].astype(np.float32)
         VS_zyx_ants = ants.from_numpy(VS_data_zyx)
 
         # Affine Transforms
@@ -345,7 +345,7 @@ def estimate_phase_to_fluor_affine(
             fixed=fluor_zyx_ants,
             moving=VS_zyx_prep,
             type_of_transform="Similarity",
-            verbose=True,
+            verbose=settings.optimizer_verbose,
         )
         print(f"optimized {tx_opt}")
 
