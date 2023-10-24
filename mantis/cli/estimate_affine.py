@@ -16,32 +16,25 @@ from mantis.analysis.AnalysisSettings import RegistrationSettings
 from mantis.cli.parsing import (
     labelfree_position_dirpaths,
     lightsheet_position_dirpaths,
-    output_filepath,
+    output_dirpath,
 )
 from pathlib import Path
+import glob
+from natsort import natsorted
+from mantis.cli.utils import yaml_to_model
 
 # TODO: see if at some point these globals should be hidden or exposed.
 NA_DETECTION_PHASE = 1.35
 NA_DETECTION_FLUOR = 1.35
 WAVELENGTH_EMISSION_PHASE_CHANNEL = 0.45  # [um]
 WAVELENGTH_EMISSION_FLUOR_CHANNEL = 0.6  # [um]
-
 FOCUS_SLICE_ROI_SIDE = 150
-CROP_X_phase = 1224
-CROP_Y_phase = 1024
-CROP_X_fluor = 1235
-CROP_Y_fluor = 2048
-
-#%%
-# TODO:the current pipeline always assumes we register to fluoresence mcherry/mScarlet channel so it will change the colormaps to magenta
-import glob
-from natsort import natsorted
 
 
 @click.command()
 @labelfree_position_dirpaths()
 @lightsheet_position_dirpaths()
-@output_filepath()
+@output_dirpath()
 @click.option(
     "--pre-affine-90degree-rotations-about-z",
     "-k",
@@ -53,7 +46,7 @@ from natsort import natsorted
 def estimate_phase_to_fluor_affine(
     labelfree_position_dirpaths,
     lightsheet_position_dirpaths,
-    output_filepath,
+    output_dirpath,
     pre_affine_90degree_rotations_about_z,
 ):
 
@@ -61,21 +54,20 @@ def estimate_phase_to_fluor_affine(
     # labelfree_position_dirpaths = "/hpc/projects/comp.micro/mantis/2023_08_09_HEK_PCNA_H2B/2-phase3D/pcna_rac1_virtual_staining_b1_redo_1/H2B_phase_3D_NA0p52.zarr/0/0/0"
     # lightsheet_position_dirpaths = "/hpc/projects/comp.micro/mantis/2023_08_09_HEK_PCNA_H2B/1-deskew/pcna_rac1_virtual_staining_b1_redo_1/deskewed_2.zarr/0/0/0"
     # virtualstaining_dirpath = "/hpc/projects/comp.micro/mantis/2023_08_09_HEK_PCNA_H2B/xx-mbl_course_H2B/pred_raw_phase_to_nuc_mem_3DLUNeXt_mixedLoss.zarr/0/0/0"
-    # output_folder = "./registration_params"
-    # output_folder = Path(output_folder)
+    # output_filepath = "./registration_params"
+    # output_filepath = Path(output_filepath)
     # pre_affine_90degree_rotations_about_z = 1
     # labelfree_position_dirpaths = natsorted(glob.glob(labelfree_position_dirpaths))
     # lightsheet_position_dirpaths = natsorted(glob.glob(lightsheet_position_dirpaths))
     # virtualstaining_position_dirpaths = natsorted(glob.glob(virtualstaining_dirpath))
 
     #%%
-
     """
     Estimate the affine transform between two channels (source channel and target channel) by manual inputs.
 
     mantis estimate-phase-to-fluor-affine -lf ./acq_name_labelfree_reconstructed.zarr/0/0/0 -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 -o ./register.yml
     """
-    assert str(output_filepath).endswith((".yaml", ".yml")), "Output file must be a YAML file."
+    # assert str(output_filepath).endswith((".yaml", ".yml")), "Output file must be a YAML file."
 
     # # Get a napari viewer()
     viewer = napari.Viewer()
@@ -98,16 +90,8 @@ def estimate_phase_to_fluor_affine(
         phase_channel_Z, phase_channel_Y, phase_channel_X = phase_channel_position[0].shape[
             -3:
         ]
-        phase_channel_volume = phase_channel_position[0][
-            0,
-            phase_channel_idx,
-            phase_channel_Y // 2
-            - CROP_Y_phase // 2 : phase_channel_Y // 2
-            + CROP_Y_phase // 2,
-            phase_channel_X // 2
-            - CROP_X_phase // 2 : phase_channel_X // 2
-            + CROP_X_phase // 2,
-        ]
+        phase_channel_volume = phase_channel_position[0][0, phase_channel_idx]
+
         phase_channel_Z, phase_channel_Y, phase_channel_X = phase_channel_volume.shape[-3:]
 
         # Get the voxel dimensions in sample space
@@ -142,17 +126,7 @@ def estimate_phase_to_fluor_affine(
         fluor_channel_Z, fluor_channel_Y, fluor_channel_X = fluor_channel_position[0].shape[
             -3:
         ]
-        fluor_channel_volume = fluor_channel_position[0][
-            0,
-            fluor_channel_idx,
-            :,
-            fluor_channel_Y // 2
-            - CROP_Y_fluor // 2 : fluor_channel_Y // 2
-            + CROP_Y_fluor // 2,
-            fluor_channel_X // 2
-            - CROP_X_fluor // 2 : fluor_channel_X // 2
-            + CROP_X_fluor // 2,
-        ]
+        fluor_channel_volume = fluor_channel_position[0][0, fluor_channel_idx]
         fluor_channel_Z, fluor_channel_Y, fluor_channel_X = fluor_channel_volume.shape[-3:]
 
         # Get the voxel dimension in sample space
@@ -318,9 +292,9 @@ def estimate_phase_to_fluor_affine(
     points_phase_channel.mouse_drag_callbacks.append(lambda_callback)
     points_fluor_channel.mouse_drag_callbacks.append(lambda_callback)
 
-    # input(
-    #     "\n Add at least three points in the two channels by sequentially clicking a feature on phase channel and its corresponding feature in fluorescence channel.  Press <enter> when done..."
-    # )
+    input(
+        "\n Add at least three points in the two channels by sequentially clicking a feature on phase channel and its corresponding feature in fluorescence channel.  Press <enter> when done..."
+    )
     #%%
     # Get the data from the layers
     pts_phase_channel = points_phase_channel.data
@@ -377,10 +351,10 @@ def estimate_phase_to_fluor_affine(
     viewer.layers[phase_channel_str].visible = False
 
     #%%
-    # TODO: re add this
     flag_optimize_w_ANTs = input("\n Optimize transformation with ANTs (Y/N) :")
     if flag_optimize_w_ANTs == "Y" or flag_optimize_w_ANTs == "y":
         # Load the virtual stained volume
+
         VS_position = open_ome_zarr(virtualstaining_position_dirpaths[0])
 
         # TODO: add option to choose VS
@@ -429,6 +403,19 @@ def estimate_phase_to_fluor_affine(
 
         #%%
         # Save the transformation
-        ants.write_transform(tx_opt_mat, output_folder / "tx_opt.mat")
-        ants.write_transform(tx_manual, output_folder / "tx_manual.mat")
+        output_dirpath.mkdir(parents=True, exist_ok=True)
+        ants.write_transform(tx_opt_mat, output_dirpath / "tx_opt.mat")
+        ants.write_transform(tx_manual, output_dirpath / "tx_manual.mat")
+    else:
+        click.echo("Saving affine transforms")
+        identity_T = np.eye(4)
+        identity_T_ants_style = identity_T[:, :-1].ravel()
+
+        # Ants affine transforms
+        tx_opt = ants.new_ants_transform()
+        tx_opt.set_parameters(identity_T_ants_style)
+        output_dirpath.mkdir(parents=True, exist_ok=True)
+        ants.write_transform(tx_opt, output_dirpath / "tx_opt.mat")
+        ants.write_transform(tx_manual, output_dirpath / "tx_manual.mat")
+
     input("\n Displaying registered channels. Press <enter> to close...")
