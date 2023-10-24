@@ -335,9 +335,7 @@ def estimate_phase_to_fluor_affine(
 
         # Affine Transforms
         VS_zyx_prep = tx_manual.apply_to_image(VS_zyx_ants, reference=fluor_zyx_ants)
-        viewer.add_image(
-            VS_zyx_prep.numpy(), name="VS_pre_opt", colormap="cyan", opacity="0.5"
-        )
+        viewer.add_image(VS_zyx_prep.numpy(), name="VS_pre_opt", colormap="cyan", opacity=0.5)
 
         print("RUNNING THE OPTIMIZER")
         # Optimization
