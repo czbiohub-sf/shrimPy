@@ -1,20 +1,21 @@
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
-from pathlib import Path
-from pydantic.dataclasses import dataclass
+
 from pydantic import (
-    ConfigDict,
-    PositiveFloat,
-    PositiveInt,
     BaseModel,
+    ConfigDict,
     Extra,
     NonNegativeFloat,
     NonNegativeInt,
     PositiveFloat,
+    PositiveInt,
     root_validator,
     validator,
 )
+from pydantic.dataclasses import dataclass
+
 
 # All settings classes inherit from MyBaseModel, which forbids extra parameters to guard against typos
 class MyBaseModel(BaseModel, extra=Extra.forbid):

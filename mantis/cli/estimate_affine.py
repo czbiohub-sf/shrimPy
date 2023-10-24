@@ -1,25 +1,27 @@
+import glob
 import os
+
 from dataclasses import asdict
+from pathlib import Path
 
 import ants
 import click
 import napari
 import numpy as np
+
 from iohub import open_ome_zarr
-from skimage.transform import EuclideanTransform
-from skimage.transform import SimilarityTransform
-from mantis.cli import utils
+from natsort import natsorted
+from skimage.transform import EuclideanTransform, SimilarityTransform
 from waveorder.focus import focus_from_transverse_band
+
 from mantis.analysis.AnalysisSettings import EstimateTransformSettings
+from mantis.cli import utils
 from mantis.cli.parsing import (
     config_filepath,
     labelfree_position_dirpaths,
     lightsheet_position_dirpaths,
     output_dirpath,
 )
-from pathlib import Path
-import glob
-from natsort import natsorted
 from mantis.cli.utils import yaml_to_model
 
 # TODO: see if at some point these globals should be hidden or exposed.
@@ -38,17 +40,6 @@ FOCUS_SLICE_ROI_SIDE = 150
 def estimate_phase_to_fluor_affine(
     labelfree_position_dirpaths, lightsheet_position_dirpaths, config_filepath, output_dirpath
 ):
-
-    #%%
-    # labelfree_position_dirpaths = "/hpc/projects/comp.micro/mantis/2023_08_09_HEK_PCNA_H2B/2-phase3D/pcna_rac1_virtual_staining_b1_redo_1/H2B_phase_3D_NA0p52.zarr/0/0/0"
-    # lightsheet_position_dirpaths = "/hpc/projects/comp.micro/mantis/2023_08_09_HEK_PCNA_H2B/1-deskew/pcna_rac1_virtual_staining_b1_redo_1/deskewed_2.zarr/0/0/0"
-    # virtualstaining_dirpath = "/hpc/projects/comp.micro/mantis/2023_08_09_HEK_PCNA_H2B/xx-mbl_course_H2B/pred_raw_phase_to_nuc_mem_3DLUNeXt_mixedLoss.zarr/0/0/0"
-    # output_filepath = "./registration_params"
-    # output_filepath = Path(output_filepath)
-    # pre_affine_90degree_rotations_about_z = 1
-    # labelfree_position_dirpaths = natsorted(glob.glob(labelfree_position_dirpaths))
-    # lightsheet_position_dirpaths = natsorted(glob.glob(lightsheet_position_dirpaths))
-    # virtualstaining_position_dirpaths = natsorted(glob.glob(virtualstaining_dirpath))
     """
     Estimate the affine transform between two channels (source channel and target channel) by manual inputs.
 
@@ -139,7 +130,7 @@ def estimate_phase_to_fluor_affine(
             plot_path="./best_focus_fluor.svg",
         )
     click.echo(f"Best focus fluor z_idx: {focus_fluor_channel_idx}")
-    #%%
+
     # Calculate scaling factors for displaying data
     scaling_factor_z = z_sample_space_phase_channel / z_sample_space_fluor_channel
     scaling_factor_yx = x_sample_space_phase_channel / x_sample_space_fluor_channel
@@ -182,7 +173,6 @@ def estimate_phase_to_fluor_affine(
         0,
         X_phase_pre_reg,
     )
-    #%%
     # Manual annotation of features
     COLOR_CYCLE = [
         "white",
@@ -279,7 +269,7 @@ def estimate_phase_to_fluor_affine(
     input(
         "\n Add at least three points in the two channels by sequentially clicking a feature on phase channel and its corresponding feature in fluorescence channel.  Press <enter> when done..."
     )
-    #%%
+
     # Get the data from the layers
     pts_phase_channel = points_phase_channel.data
     pts_fluor_channel = points_fluor_channel.data
@@ -334,7 +324,6 @@ def estimate_phase_to_fluor_affine(
     viewer.layers[fluor_channel_str].visible = False
     viewer.layers[phase_channel_str].visible = False
 
-    #%%
     if settings.virtual_staining_path is not None:
         # Load the virtual stained volume
 
@@ -349,7 +338,7 @@ def estimate_phase_to_fluor_affine(
         viewer.add_image(
             VS_zyx_prep.numpy(), name="VS_pre_opt", colormap="cyan", opacity="0.5"
         )
-        #%%
+
         print("RUNNING THE OPTIMIZER")
         # Optimization
         tx_opt = ants.registration(
@@ -360,7 +349,6 @@ def estimate_phase_to_fluor_affine(
         )
         print(f"optimized {tx_opt}")
 
-        #%%
         VS_registered = ants.apply_transforms(
             fixed=fluor_zyx_ants, moving=VS_zyx_prep, transformlist=tx_opt["fwdtransforms"]
         )
@@ -376,7 +364,6 @@ def estimate_phase_to_fluor_affine(
             colormap="magenta",
             blending="additive",
         )
-        #%%
         tx_opt_mat = ants.read_transform(tx_opt["fwdtransforms"][0])
         tx_composed = ants.compose_ants_transforms(
             [tx_opt_mat, tx_manual]
@@ -384,7 +371,6 @@ def estimate_phase_to_fluor_affine(
         VS_test = tx_composed.apply_to_image(VS_zyx_ants, reference=fluor_zyx_ants)
         viewer.add_image(VS_test.numpy(), name="vs test")
 
-        #%%
         # Save the transformation
         output_dirpath.mkdir(parents=True, exist_ok=True)
         ants.write_transform(tx_opt_mat, output_dirpath / "tx_opt.mat")
