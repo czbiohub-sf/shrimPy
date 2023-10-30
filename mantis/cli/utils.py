@@ -354,6 +354,51 @@ def append_channels(input_data_path: Path, target_data_path: Path):
     appending_dataset.close()
 
 
+def numpy_to_ants_transform_zyx(T_numpy):
+    """Homogeneous 3D transformation matrix from numpy to ants
+
+    Parameters
+    ----------
+    numpy_transform :4x4 homogenous matrix
+
+    Returns
+    -------
+    Ants transformation matrix object
+    """
+    assert T_numpy.shape == (4, 4)
+
+    T_ants_style = T_numpy[:, :-1].ravel()
+    T_ants_style[-3:] = T_numpy[:3, -1]
+    T_ants = ants.new_ants_transform()
+    T_ants.set_parameters(T_ants_style)
+
+    return T_ants
+
+
+def ants_to_numpy_transform_zyx(T_ants):
+    """
+    Homogeneous 3D transformation matrix from ants to numpy
+
+    Parameters
+    ----------
+    T_ants : Ants transfromation matrix object
+
+    Returns
+    -------
+    Converted Ants to numpy array
+
+    """
+    T_ants_array = np.reshape(T_ants.parameters, (4, 3))
+    T_numpy = np.zeros((4, 4))
+    # Extract the first 3x3 part
+    T_numpy[:3, :3] = T_ants_array[:3, :3]
+    # Add the last column from the original matrix as a new column
+    T_numpy[:3, -1] = T_ants_array[3, :]
+    # Set the last row to [0, 0, 0, 1]
+    T_numpy[-1, -1] = 1
+    return T_numpy
+
+
 def apply_stabilization_over_time_ants(
     list_of_shifts_ants_style: list,
     input_data_path: Path,
