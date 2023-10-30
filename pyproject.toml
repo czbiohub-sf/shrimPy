@@ -38,6 +38,7 @@ dependencies = [
   "waveorder @ git+https://github.com/mehta-lab/waveorder",
   "largestinteriorrectangle",
   "antspyx",
+  "recOrder==0.4.0",
 ]
 
 

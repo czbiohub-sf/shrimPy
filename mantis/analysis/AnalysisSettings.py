@@ -51,7 +51,7 @@ class DeskewSettings(MyBaseModel):
 
 class RegistrationSettings(MyBaseModel):
     affine_transform_zyx: list
-    output_shape_zyx: list
+    output_shape_zyx: Optional[list] = None
     pre_affine_90degree_rotations_about_z: Optional[int] = 1
 
     @validator("affine_transform_zyx")
@@ -75,23 +75,15 @@ class RegistrationSettings(MyBaseModel):
 
     @validator("output_shape_zyx")
     def check_output_shape_zyx(cls, v):
-        if not isinstance(v, list) or len(v) != 3:
-            raise ValueError("The output shape zyx must be a list of length 3.")
+        if not None:
+            if not isinstance(v, list) or len(v) != 3:
+                raise ValueError("The output shape zyx must be a list of length 3.")
         return v
 
 
 class EstimateTransformSettings(MyBaseModel):
-    label_free_channel_idx: int
-    light_sheet_channel_idx: int
-    virtual_staining_path: Optional[Path] = None
-    virtual_staining_channel: Optional[int] = None
-    optimizer_verbose: Optional[bool] = False
+    source_channel_idx: int
+    target_channel_idx: int
+    affine_transform_zyx: list
+    display_viewer: Optional[bool] = False
     pre_affine_90degree_rotations_about_z: Optional[int] = 1
-
-    @validator("virtual_staining_path", pre=True)
-    def validate_virtual_staining_path(cls, value):
-        if value is not None:
-            path = Path(value)
-            if not path.exists():
-                raise ValueError("The path does not exist.")
-            return path
