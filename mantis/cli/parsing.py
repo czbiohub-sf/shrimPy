@@ -65,6 +65,19 @@ def lightsheet_position_dirpaths() -> Callable:
     return decorator
 
 
+def virtual_staining_position_dirpaths() -> Callable:
+    def decorator(f: Callable) -> Callable:
+        return click.option(
+            "--virtual-staining-position-dirpaths",
+            "-vs",
+            cls=OptionEatAll,
+            type=tuple,
+            callback=_validate_and_process_paths,
+        )(f)
+
+    return decorator
+
+
 def config_filepath() -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.option(

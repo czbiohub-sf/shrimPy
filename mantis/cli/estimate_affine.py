@@ -331,3 +331,5 @@ def estimate_source_to_target_affine(
     model = RegistrationSettings(affine_transform_zyx=T_manual_numpy.tolist())
     click.echo(f"Writing registration parameters to {output_filepath}")
     model_to_yaml(model, output_filepath)
+
+    input("\n Displaying registered channels. Press <enter> to close...")
