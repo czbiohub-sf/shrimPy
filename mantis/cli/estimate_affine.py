@@ -328,7 +328,10 @@ def estimate_source_to_target_affine(
     print(T_manual_numpy)
 
     # TODO: should this be model_to_yaml() from recOrder? Should it override the previous config?
-    model = RegistrationSettings(affine_transform_zyx=T_manual_numpy.tolist())
+    model = RegistrationSettings(
+        affine_transform_zyx=T_manual_numpy.tolist(),
+        output_shape_zyx=list(target_zyx_ants.numpy().shape),
+    )
     click.echo(f"Writing registration parameters to {output_filepath}")
     model_to_yaml(model, output_filepath)
 

@@ -243,7 +243,7 @@ def rotate_affine(start_shape_zyx, angle=0.0, end_shape_zyx=None):
 
 def ants_affine_transform(
     zyx_data,
-    ants_transform_file_list,
+    matrix,
     output_shape_zyx,
 ):
     # Convert the NaN to 0
@@ -254,15 +254,14 @@ def ants_affine_transform(
     target_zyx_ants = ants.from_numpy(empty_target_array)
 
     # NOTE:Matrices the order matters!
-    matrices = []
-    for mat in ants_transform_file_list:
-        matrices.append(ants.read_transform(mat))
-    ants_composed_matrix = ants.compose_ants_transforms(matrices)
+    # matrices = []
+    # for mat in ants_transform_file_list:
+    #     matrices.append(ants.read_transform(mat))
+    # ants_composed_matrix = ants.compose_ants_transforms(matrices)
+    T_ants = numpy_to_ants_transform_zyx(matrix)
 
     zyx_data_ants = ants.from_numpy(zyx_data.astype(np.float32))
-    registered_zyx = ants_composed_matrix.apply_to_image(
-        zyx_data_ants, reference=target_zyx_ants
-    )
+    registered_zyx = T_ants.apply_to_image(zyx_data_ants, reference=target_zyx_ants)
     return registered_zyx.numpy()
 
 
@@ -369,7 +368,9 @@ def numpy_to_ants_transform_zyx(T_numpy):
 
     T_ants_style = T_numpy[:, :-1].ravel()
     T_ants_style[-3:] = T_numpy[:3, -1]
-    T_ants = ants.new_ants_transform()
+    T_ants = ants.new_ants_transform(
+        transform_type='AffineTransform',
+    )
     T_ants.set_parameters(T_ants_style)
 
     return T_ants

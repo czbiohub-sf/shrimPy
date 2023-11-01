@@ -51,8 +51,7 @@ class DeskewSettings(MyBaseModel):
 
 class RegistrationSettings(MyBaseModel):
     affine_transform_zyx: list
-    output_shape_zyx: Optional[list] = None
-    pre_affine_90degree_rotations_about_z: Optional[int] = 1
+    output_shape_zyx: list
 
     @validator("affine_transform_zyx")
     def check_affine_transform(cls, v):
@@ -75,9 +74,8 @@ class RegistrationSettings(MyBaseModel):
 
     @validator("output_shape_zyx")
     def check_output_shape_zyx(cls, v):
-        if not None:
-            if not isinstance(v, list) or len(v) != 3:
-                raise ValueError("The output shape zyx must be a list of length 3.")
+        if not isinstance(v, list) or len(v) != 3:
+            raise ValueError("The output shape zyx must be a list of length 3.")
         return v
 
 
