@@ -38,11 +38,11 @@ def input_position_dirpaths() -> Callable:
     return decorator
 
 
-def labelfree_position_dirpaths() -> Callable:
+def source_position_dirpaths() -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.option(
-            "--labelfree-position-dirpaths",
-            "-lf",
+            "--source-position-dirpaths",
+            "-s",
             cls=OptionEatAll,
             type=tuple,
             callback=_validate_and_process_paths,
@@ -51,11 +51,11 @@ def labelfree_position_dirpaths() -> Callable:
     return decorator
 
 
-def lightsheet_position_dirpaths() -> Callable:
+def target_position_dirpaths() -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.option(
-            "--lightsheet-position-dirpaths",
-            "-ls",
+            "--target-position-dirpaths",
+            "-t",
             cls=OptionEatAll,
             type=tuple,
             callback=_validate_and_process_paths,

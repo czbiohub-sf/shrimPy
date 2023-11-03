@@ -13,7 +13,7 @@ from mantis.analysis.AnalysisSettings import RegistrationSettings
 from mantis.cli import utils
 from mantis.cli.parsing import (
     config_filepath,
-    lightsheet_position_dirpaths,
+    target_position_dirpaths,
     output_filepath,
     virtual_staining_position_dirpaths,
 )
@@ -25,7 +25,7 @@ T_IDX = 0
 
 @click.command()
 @virtual_staining_position_dirpaths()
-@lightsheet_position_dirpaths()
+@target_position_dirpaths()
 @config_filepath()
 @output_filepath()
 @click.option(

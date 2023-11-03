@@ -87,9 +87,9 @@ recorder reconstruct `
     -o ./acq_name_labelfree_reconstructed.zarr
 
 # REGISTER
-mantis estimate_source_to_target_affine `
-    -lf ./acq_name_labelfree_reconstructed.zarr/0/0/0 `
-    -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 `
+mantis estimate-source-to-target-affine `
+    -s ./acq_name_labelfree_reconstructed.zarr/0/0/0 `
+    -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 `
     -o ./register.yml
 mantis optimize_affine `
     -vs ./acq_name_virtual_staining_reconstructed.zarr/0/0/0 `
