@@ -1,20 +1,22 @@
+from dataclasses import asdict
+
 import ants
-import numpy as np
-from iohub import open_ome_zarr
-import napari
 import click
-from mantis.cli.utils import yaml_to_model, model_to_yaml
-from mantis.analysis.AnalysisSettings import EstimateTransformSettings, RegistrationSettings
+import napari
+import numpy as np
 import yaml
+
+from iohub import open_ome_zarr
+
+from mantis.analysis.AnalysisSettings import EstimateTransformSettings, RegistrationSettings
+from mantis.cli import utils
 from mantis.cli.parsing import (
     config_filepath,
     lightsheet_position_dirpaths,
-    virtual_staining_position_dirpaths,
     output_filepath,
+    virtual_staining_position_dirpaths,
 )
-from dataclasses import asdict
-
-from mantis.cli import utils
+from mantis.cli.utils import model_to_yaml, yaml_to_model
 
 # TODO: maybe in config?
 T_IDX = 0

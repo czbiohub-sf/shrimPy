@@ -4,6 +4,7 @@ import ants
 import click
 import napari
 import numpy as np
+import yaml
 
 from iohub import open_ome_zarr
 from skimage.transform import EuclideanTransform
@@ -17,8 +18,7 @@ from mantis.cli.parsing import (
     lightsheet_position_dirpaths,
     output_filepath,
 )
-import yaml
-from mantis.cli.utils import yaml_to_model, model_to_yaml
+from mantis.cli.utils import model_to_yaml, yaml_to_model
 
 # TODO: see if at some point these globals should be hidden or exposed.
 NA_DETECTION_SOURCE = 1.35
