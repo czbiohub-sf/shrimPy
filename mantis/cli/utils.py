@@ -22,6 +22,7 @@ from numpy.typing import DTypeLike
 from tqdm import tqdm
 
 
+# TODO: replace this with recOrder recOrder.cli.utils.create_empty_hcs()
 def create_empty_zarr(
     position_paths: list[Path],
     output_path: Path,
@@ -203,7 +204,26 @@ def scale_affine(start_shape_zyx, scaling_factor_zyx=(1, 1, 1), end_shape_zyx=No
     return scaling_matrix
 
 
-def rotate_affine(start_shape_zyx, angle=0.0, end_shape_zyx=None):
+def rotate_affine(
+    start_shape_zyx: Tuple, angle: float = 0.0, end_shape_zyx: Tuple = None
+) -> np.ndarray:
+    """
+    Rotate Transformation Matrix
+
+    Parameters
+    ----------
+    start_shape_zyx : Tuple
+        Shape of the input
+    angle : float, optional
+        Angles of rotation in degrees
+    end_shape_zyx : Tuple, optional
+       Shape of output space
+
+    Returns
+    -------
+    np.ndarray
+        Rotation matrix
+    """
     # TODO: make this 3D?
     center_Y_start, center_X_start = np.array(start_shape_zyx)[-2:] / 2
     if end_shape_zyx is None:
@@ -242,14 +262,26 @@ def rotate_affine(start_shape_zyx, angle=0.0, end_shape_zyx=None):
 
 
 def ants_affine_transform(
-    zyx_data,
-    matrix,
-    output_shape_zyx,
-):
-    # Convert the NaN to 0
-    # TODO: probably dont need this
-    zyx_data = np.nan_to_num(zyx_data, nan=0)
+    zyx_data: np.ndarray,
+    matrix: np.ndarray,
+    output_shape_zyx: Tuple,
+) -> np.ndarray:
+    """_summary_
 
+    Parameters
+    ----------
+    zyx_data : np.ndarray
+        3D input array to be transformed
+    matrix : np.ndarray
+        3D Homogenous transformation matrix
+    output_shape_zyx : Tuple
+        output target zyx shape
+
+    Returns
+    -------
+    np.ndarray
+        registered zyx data
+    """
     # The output has to be a ANTImage Object
     empty_target_array = np.zeros((output_shape_zyx), dtype=np.float32)
     target_zyx_ants = ants.from_numpy(empty_target_array)
@@ -261,8 +293,22 @@ def ants_affine_transform(
     return registered_zyx.numpy()
 
 
-def copy_n_paste(zyx_data, zyx_slicing_params: list):
-    """Load a zyx array and slice"""
+def copy_n_paste(zyx_data: np.ndarray, zyx_slicing_params: list) -> np.ndarray:
+    """
+    Load a zyx array and crop given a list of ZYX slices()
+
+    Parameters
+    ----------
+    zyx_data : np.ndarray
+        data to copy
+    zyx_slicing_params : list
+        list of slicing parameters for z,y,x
+
+    Returns
+    -------
+    np.ndarray
+        crop of the input zyx_data given the slicing parameters
+    """
     zyx_data = np.nan_to_num(zyx_data, nan=0)
     zyx_data_sliced = zyx_data[
         zyx_slicing_params[0],
@@ -273,24 +319,38 @@ def copy_n_paste(zyx_data, zyx_slicing_params: list):
 
 
 def find_lir_slicing_params(
-    input_zyx_shape, target_zyx_shape, registration_mat_optimized, registration_mat_manual
-):
+    input_zyx_shape: Tuple, target_zyx_shape: Tuple, transformation_matrix: np.ndarray
+) -> Tuple:
+    """
+    Find the largest internal rectangle between the transformed input and the target
+    and return the cropping parameters
+
+    Parameters
+    ----------
+    input_zyx_shape : Tuple
+        shape of input array
+    target_zyx_shape : Tuple
+        shape of target array
+    transformation_matrix : np.ndarray
+        transformation matrix between input and target
+
+    Returns
+    -------
+    Tuple
+        Slicing parameters to crop LIR
+
+    """
     print(f'Starting Largest interior rectangle (LIR) search')
 
     # Make dummy volumes
     img1 = np.ones(tuple(input_zyx_shape), dtype=np.float32)
     img2 = np.ones(tuple(target_zyx_shape), dtype=np.float32)
 
-    # Load the matrices
-    ants_transform_file_list = [registration_mat_optimized, registration_mat_manual]
-    matrices = []
-    for mat in ants_transform_file_list:
-        matrices.append(ants.read_transform(mat))
-    ants_composed_matrix = ants.compose_ants_transforms(matrices)
-
     # Conver to ants objects
     target_zyx_ants = ants.from_numpy(img2)
     zyx_data_ants = ants.from_numpy(img1.astype(np.float32))
+
+    ants_composed_matrix = numpy_to_ants_transform_zyx(transformation_matrix)
 
     # Apply affine
     registered_zyx = ants_composed_matrix.apply_to_image(
@@ -301,6 +361,7 @@ def find_lir_slicing_params(
     # NOTE: we use the center of the volume as reference
     rectangle_coords_yx = lir.lir(registered_zyx_bool[registered_zyx.shape[0] // 2])
 
+    # Find the overlap in XY
     x = rectangle_coords_yx[0]
     y = rectangle_coords_yx[1]
     width = rectangle_coords_yx[2]
@@ -327,11 +388,22 @@ def find_lir_slicing_params(
     corner4_zx = (x, y + height)  # Top-left corner
     rectangle_zx = np.array((corner1_zx, corner2_zx, corner3_zx, corner4_zx))
     Z_slice = slice(rectangle_zx.min(axis=0)[1], rectangle_zx.max(axis=0)[1])
+
     print(f'Slicing parameters Z:{Z_slice}, Y:{Y_slice}, X:{X_slice}')
     return (Z_slice, Y_slice, X_slice)
 
 
-def append_channels(input_data_path: Path, target_data_path: Path):
+def append_channels(input_data_path: Path, target_data_path: Path) -> None:
+    """
+    Append channels to a target zarr store
+
+    Parameters
+    ----------
+    input_data_path : Path
+        input zarr path = /input.zarr
+    target_data_path : Path
+        target zarr path  = /target.zarr
+    """
     appending_dataset = open_ome_zarr(input_data_path, mode="r")
     appending_channel_names = appending_dataset.channel_names
     with open_ome_zarr(target_data_path, mode="r+") as dataset:
