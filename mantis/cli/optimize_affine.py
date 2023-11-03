@@ -15,7 +15,7 @@ from mantis.cli.parsing import (
     config_filepath,
     target_position_dirpaths,
     output_filepath,
-    virtual_staining_position_dirpaths,
+    source_position_dirpaths,
 )
 from mantis.cli.utils import model_to_yaml, yaml_to_model
 
@@ -24,7 +24,7 @@ T_IDX = 0
 
 
 @click.command()
-@virtual_staining_position_dirpaths()
+@source_position_dirpaths()
 @target_position_dirpaths()
 @config_filepath()
 @output_filepath()
@@ -41,8 +41,8 @@ T_IDX = 0
     help="Optimizer verbose",
 )
 def optimize_affine(
-    virtual_staining_position_dirpaths,
-    lightsheet_position_dirpaths,
+    source_position_dirpaths,
+    target_position_dirpaths,
     config_filepath,
     output_filepath,
     display_viewer,
@@ -51,14 +51,14 @@ def optimize_affine(
     """
     Optimize the affine transform between two channels (source channel and target channel) by manual inputs.
 
-    mantis optimize_affine -vs ./acq_name_virtual_staining_reconstructed.zarr/0/0/0 -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 -c ./transform.yml -o ./optimized_transform.yml -d -v
+    mantis optimize-affine -s ./acq_name_virtual_staining_reconstructed.zarr/0/0/0 -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 -c ./transform.yml -o ./optimized_transform.yml -d -v
     """
 
     print("Getting dataset info")
-    print("\n phase channel INFO:")
-    os.system(f"iohub info {virtual_staining_position_dirpaths[0]}")
-    print("\n fluorescence channel INFO:")
-    os.system(f"iohub info {lightsheet_position_dirpaths[0]} ")
+    print("\n source channel INFO:")
+    os.system(f"iohub info {source_position_dirpaths[0]}")
+    print("\n target channel INFO:")
+    os.system(f"iohub info {target_position_dirpaths[0]} ")
 
     source_channel_idx = int(input("Enter source_channel index to process: "))
     target_channel_idx = int(input("Enter target_channel index to process: "))
@@ -68,12 +68,12 @@ def optimize_affine(
     click.echo("Running optimizer between virtual staining and target")
 
     # Load the virtual stained volume [SOURCE]
-    source_position = open_ome_zarr(virtual_staining_position_dirpaths[0])
+    source_position = open_ome_zarr(source_position_dirpaths[0])
     source_data_zyx = source_position[0][T_IDX, source_channel_idx].astype(np.float32)
     source_zyx_ants = ants.from_numpy(source_data_zyx)
 
     # Load the target volume [TARGET]
-    target_channel_position = open_ome_zarr(lightsheet_position_dirpaths[0])
+    target_channel_position = open_ome_zarr(target_position_dirpaths[0])
     target_channel_zyx = target_channel_position[0][T_IDX, target_channel_idx]
     target_zyx_ants = ants.from_numpy(target_channel_zyx.astype(np.float32))
 

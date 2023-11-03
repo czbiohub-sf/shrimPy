@@ -92,8 +92,8 @@ mantis estimate-affine `
     -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 `
     -o ./register.yml
 mantis optimize-affine `
-    -vs ./acq_name_virtual_staining_reconstructed.zarr/0/0/0 `
-    -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 `
+    -s ./acq_name_virtual_staining_reconstructed.zarr/0/0/0 `
+    -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 `
     -c ./config.yml `
     -o ./output.yml
 mantis apply-affine `

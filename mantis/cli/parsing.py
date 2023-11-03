@@ -64,7 +64,7 @@ def target_position_dirpaths() -> Callable:
     return decorator
 
 
-def virtual_staining_position_dirpaths() -> Callable:
+def source_position_dirpaths() -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.option(
             "--virtual-staining-position-dirpaths",

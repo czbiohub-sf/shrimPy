@@ -50,6 +50,7 @@ class DeskewSettings(MyBaseModel):
 
 
 class RegistrationSettings(MyBaseModel):
+    
     affine_transform_zyx: list
     output_shape_zyx: list
 
