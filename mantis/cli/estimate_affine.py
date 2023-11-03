@@ -22,7 +22,7 @@ NA_DETECTION_SOURCE = 1.35
 NA_DETECTION_TARGET = 1.35
 WAVELENGTH_EMISSION_SOURCE_CHANNEL = 0.45  # [um]
 WAVELENGTH_EMISSION_TARGET_CHANNEL = 0.6  # [um]
-FOCUS_SLICE_ROI_SIDE = 150
+FOCUS_SLICE_ROI_WIDTH = 150  # size of central ROI used to find focal slice
 
 
 @click.command()
@@ -81,11 +81,11 @@ def estimate_source_to_target_affine(
                 source_channel_idx,
                 :,
                 source_channel_position[0].shape[-2] // 2
-                - FOCUS_SLICE_ROI_SIDE : source_channel_position[0].shape[-2] // 2
-                + FOCUS_SLICE_ROI_SIDE,
+                - FOCUS_SLICE_ROI_WIDTH : source_channel_position[0].shape[-2] // 2
+                + FOCUS_SLICE_ROI_WIDTH,
                 source_channel_position[0].shape[-1] // 2
-                - FOCUS_SLICE_ROI_SIDE : source_channel_position[0].shape[-1] // 2
-                + FOCUS_SLICE_ROI_SIDE,
+                - FOCUS_SLICE_ROI_WIDTH : source_channel_position[0].shape[-1] // 2
+                + FOCUS_SLICE_ROI_WIDTH,
             ],
             NA_det=NA_DETECTION_SOURCE,
             lambda_ill=WAVELENGTH_EMISSION_SOURCE_CHANNEL,
@@ -115,11 +115,11 @@ def estimate_source_to_target_affine(
                 target_channel_idx,
                 :,
                 target_channel_position[0].shape[-2] // 2
-                - FOCUS_SLICE_ROI_SIDE : target_channel_position[0].shape[-2] // 2
-                + FOCUS_SLICE_ROI_SIDE,
+                - FOCUS_SLICE_ROI_WIDTH : target_channel_position[0].shape[-2] // 2
+                + FOCUS_SLICE_ROI_WIDTH,
                 target_channel_position[0].shape[-1] // 2
-                - FOCUS_SLICE_ROI_SIDE : target_channel_position[0].shape[-1] // 2
-                + FOCUS_SLICE_ROI_SIDE,
+                - FOCUS_SLICE_ROI_WIDTH : target_channel_position[0].shape[-1] // 2
+                + FOCUS_SLICE_ROI_WIDTH,
             ],
             NA_det=NA_DETECTION_TARGET,
             lambda_ill=WAVELENGTH_EMISSION_TARGET_CHANNEL,
