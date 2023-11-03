@@ -13,28 +13,7 @@ from scipy.ndimage import affine_transform
 from mantis.analysis.AnalysisSettings import RegistrationSettings
 from mantis.cli import utils
 from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
-
-
-def registration_params_from_file(registration_param_path: Path) -> RegistrationSettings:
-    """Parse the deskewing parameters from the yaml file"""
-    # Load params
-    with open(registration_param_path) as file:
-        raw_settings = yaml.safe_load(file)
-    settings = RegistrationSettings(**raw_settings)
-    return settings
-
-
-def rotate_n_affine_transform(
-    zyx_data, matrix, output_shape_zyx, pre_affine_90degree_rotations_about_z: int = 0
-):
-    if pre_affine_90degree_rotations_about_z != 0:
-        rotate_volume = np.rot90(
-            zyx_data, k=pre_affine_90degree_rotations_about_z, axes=(1, 2)
-        )
-    affine_volume = affine_transform(
-        rotate_volume, matrix=matrix, output_shape=output_shape_zyx
-    )
-    return affine_volume
+from mantis.cli.utils import yaml_to_model
 
 
 def apply_affine_to_scale(affine_matrix, input_scale):
@@ -48,8 +27,8 @@ def apply_affine_to_scale(affine_matrix, input_scale):
 @click.option(
     "--num-processes",
     "-j",
-    default=mp.cpu_count(),
-    help="Number of cores",
+    default=1,
+    help="Number of parallel processes",
     required=False,
     type=int,
 )
@@ -73,10 +52,9 @@ def apply_affine(
     click.echo(f"List of input_pos:{input_position_dirpaths} output_pos:{output_paths}")
 
     # Parse from the yaml file
-    settings = registration_params_from_file(config_filepath)
+    settings = yaml_to_model(config_filepath, RegistrationSettings)
     matrix = np.array(settings.affine_transform_zyx)
     output_shape_zyx = tuple(settings.output_shape_zyx)
-    pre_affine_90degree_rotations_about_z = settings.pre_affine_90degree_rotations_about_z
 
     # Calculate the output voxel size from the input scale and affine transform
     with open_ome_zarr(input_position_dirpaths[0]) as input_dataset:
@@ -97,14 +75,12 @@ def apply_affine(
     # Get the affine transformation matrix
     extra_metadata = {
         'affine_transformation': {
-            'affine_matrix': matrix.tolist(),
-            'pre_affine_90degree_rotations_about_z': pre_affine_90degree_rotations_about_z,
+            'transform_matrix': matrix.tolist(),
         }
     }
     affine_transform_args = {
         'matrix': matrix,
         'output_shape_zyx': settings.output_shape_zyx,
-        'pre_affine_90degree_rotations_about_z': pre_affine_90degree_rotations_about_z,
         'extra_metadata': extra_metadata,
     }
 
@@ -113,7 +89,7 @@ def apply_affine(
         input_position_dirpaths, output_paths
     ):
         utils.process_single_position(
-            rotate_n_affine_transform,
+            utils.ants_affine_transform,
             input_data_path=input_position_path,
             output_path=output_position_path,
             num_processes=num_processes,

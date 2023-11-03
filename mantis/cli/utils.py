@@ -247,17 +247,13 @@ def ants_affine_transform(
     output_shape_zyx,
 ):
     # Convert the NaN to 0
+    # TODO: probably dont need this
     zyx_data = np.nan_to_num(zyx_data, nan=0)
 
     # The output has to be a ANTImage Object
     empty_target_array = np.zeros((output_shape_zyx), dtype=np.float32)
     target_zyx_ants = ants.from_numpy(empty_target_array)
 
-    # NOTE:Matrices the order matters!
-    # matrices = []
-    # for mat in ants_transform_file_list:
-    #     matrices.append(ants.read_transform(mat))
-    # ants_composed_matrix = ants.compose_ants_transforms(matrices)
     T_ants = numpy_to_ants_transform_zyx(matrix)
 
     zyx_data_ants = ants.from_numpy(zyx_data.astype(np.float32))
@@ -378,7 +374,9 @@ def numpy_to_ants_transform_zyx(T_numpy):
 
 def ants_to_numpy_transform_zyx(T_ants):
     """
-    Homogeneous 3D transformation matrix from ants to numpy
+    Convert the ants transformation matrix to numpy 3D homogenous transform
+
+    Modified from Jordao's dexp code
 
     Parameters
     ----------
@@ -386,17 +384,23 @@ def ants_to_numpy_transform_zyx(T_ants):
 
     Returns
     -------
-    Converted Ants to numpy array
+    np.array
+        Converted Ants to numpy array
 
     """
-    T_ants_array = np.reshape(T_ants.parameters, (4, 3))
-    T_numpy = np.zeros((4, 4))
-    # Extract the first 3x3 part
-    T_numpy[:3, :3] = T_ants_array[:3, :3]
-    # Add the last column from the original matrix as a new column
-    T_numpy[:3, -1] = T_ants_array[3, :]
-    # Set the last row to [0, 0, 0, 1]
-    T_numpy[-1, -1] = 1
+
+    T_numpy = T_ants.parameters.reshape((3, 4), order="F")
+    T_numpy[:, :3] = T_numpy[:, :3].transpose()
+    T_numpy = np.vstack((T_numpy, np.array([0, 0, 0, 1])))
+
+    # Reference:
+    # https://sourceforge.net/p/advants/discussion/840261/thread/9fbbaab7/
+    # https://github.com/netstim/leaddbs/blob/a2bb3e663cf7fceb2067ac887866124be54aca7d/helpers/ea_antsmat2mat.m
+    # T = original translation offset from A
+    # T = T + (I - A) @ centering
+
+    T_numpy[:3, -1] += (np.eye(3) - T_numpy[:3, :3]) @ T_ants.fixed_parameters
+
     return T_numpy
 
 

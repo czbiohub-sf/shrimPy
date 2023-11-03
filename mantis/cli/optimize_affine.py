@@ -74,22 +74,12 @@ def optimize_affine(
         type_of_transform="Similarity",
         verbose=OPTIMIZER_VERBOSE,
     )
-    import pdb
 
     tx_opt_mat = ants.read_transform(tx_opt["fwdtransforms"][0])
     tx_opt_numpy = utils.ants_to_numpy_transform_zyx(tx_opt_mat)
 
     composed_matrix = tx_opt_numpy @ T_pre_optimize_numpy
     composed_matrix_ants = utils.numpy_to_ants_transform_zyx(composed_matrix)
-
-    # test_fixed = ants.new_ants_transform(
-    #     transform_type='AffineTransform',
-    #     fixed_parameters=[48.40864182, 1028.53564453, 628.48492432],
-    #     translation=tx_opt_numpy[:3, -1],
-    #     matrix=tx_opt_numpy[:3, :3],
-    # )
-    # test_fixed_img = test_fixed.apply_to_image(source_zyx_pre_optim, reference=target_zyx_ants)
-    # viewer.add_image(test_fixed_img.numpy)
 
     source_registered = composed_matrix_ants.apply_to_image(
         source_zyx_ants, reference=target_zyx_ants
@@ -132,6 +122,5 @@ def optimize_affine(
             colormap="magenta",
             blending="additive",
         )
-        pdb.set_trace()
 
         input("\n Displaying registered channels. Press <enter> to close...")
