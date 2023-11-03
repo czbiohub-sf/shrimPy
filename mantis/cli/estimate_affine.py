@@ -1,25 +1,21 @@
-from dataclasses import asdict
-
 import ants
 import click
 import napari
 import numpy as np
-import yaml
 import os
 
 from iohub import open_ome_zarr
 from skimage.transform import EuclideanTransform
 from waveorder.focus import focus_from_transverse_band
 
-from mantis.analysis.AnalysisSettings import EstimateTransformSettings, RegistrationSettings
+from mantis.analysis.AnalysisSettings import RegistrationSettings
 from mantis.cli import utils
 from mantis.cli.parsing import (
-    config_filepath,
     labelfree_position_dirpaths,
     lightsheet_position_dirpaths,
     output_filepath,
 )
-from mantis.cli.utils import model_to_yaml, yaml_to_model
+from mantis.cli.utils import model_to_yaml
 
 # TODO: see if at some point these globals should be hidden or exposed.
 NA_DETECTION_SOURCE = 1.35
@@ -94,7 +90,6 @@ def estimate_source_to_target_affine(
             NA_det=NA_DETECTION_SOURCE,
             lambda_ill=WAVELENGTH_EMISSION_SOURCE_CHANNEL,
             pixel_size=x_sample_space_source_channel,
-            plot_path="./best_focus_source.svg",
         )
     click.echo(f"Best focus source z_idx: {focus_source_channel_idx}")
 
@@ -129,7 +124,6 @@ def estimate_source_to_target_affine(
             NA_det=NA_DETECTION_TARGET,
             lambda_ill=WAVELENGTH_EMISSION_TARGET_CHANNEL,
             pixel_size=x_sample_space_target_channel,
-            plot_path="./best_focus_target.svg",
         )
     click.echo(f"Best focus target z_idx: {focus_target_channel_idx}")
 
