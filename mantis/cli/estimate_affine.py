@@ -45,23 +45,23 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     print("\n Target channel INFO:")
     os.system(f"iohub info {target_position_dirpaths[0]} ")
 
-    source_channel_idx = int(input("Enter source channel index to process: "))
-    target_channel_idx = int(input("Enter target channel index to process: "))
+    source_channel_index = int(input("Enter source channel index to process: "))
+    target_channel_index = int(input("Enter target channel index to process: "))
     pre_affine_90degree_rotations_about_z = int(
         input("Rotate the source channel by 90 degrees? (0, 1, or -1): ")
     )
 
-    click.echo(f"Estimating registration with labelfree channel index {source_channel_idx}")
+    click.echo(f"Estimating registration with labelfree channel index {source_channel_index}")
     click.echo("Loading data and estimating best focus plane...")
 
     # Display volumes rescaled
     with open_ome_zarr(source_position_dirpaths[0], mode="r") as source_channel_position:
-        source_channel_str = source_channel_position.channel_names[source_channel_idx]
+        source_channel_str = source_channel_position.channel_names[source_channel_index]
 
         source_channel_Z, source_channel_Y, source_channel_X = source_channel_position[
             0
         ].shape[-3:]
-        source_channel_volume = source_channel_position[0][0, source_channel_idx]
+        source_channel_volume = source_channel_position[0][0, source_channel_index]
 
         source_channel_Z, source_channel_Y, source_channel_X = source_channel_volume.shape[-3:]
 
@@ -76,7 +76,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         focus_source_channel_idx = focus_from_transverse_band(
             source_channel_position[0][
                 0,
-                source_channel_idx,
+                source_channel_index,
                 :,
                 source_channel_position[0].shape[-2] // 2
                 - FOCUS_SLICE_ROI_WIDTH : source_channel_position[0].shape[-2] // 2
@@ -92,11 +92,11 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     click.echo(f"Best focus source z_idx: {focus_source_channel_idx}")
 
     with open_ome_zarr(target_position_dirpaths[0], mode="r") as target_channel_position:
-        target_channel_str = target_channel_position.channel_names[target_channel_idx]
+        target_channel_str = target_channel_position.channel_names[target_channel_index]
         target_channel_Z, target_channel_Y, target_channel_X = target_channel_position[
             0
         ].shape[-3:]
-        target_channel_volume = target_channel_position[0][0, target_channel_idx]
+        target_channel_volume = target_channel_position[0][0, target_channel_index]
         target_channel_Z, target_channel_Y, target_channel_X = target_channel_volume.shape[-3:]
 
         # Get the voxel dimension in sample space
@@ -110,7 +110,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         focus_target_channel_idx = focus_from_transverse_band(
             target_channel_position[0][
                 0,
-                target_channel_idx,
+                target_channel_index,
                 :,
                 target_channel_position[0].shape[-2] // 2
                 - FOCUS_SLICE_ROI_WIDTH : target_channel_position[0].shape[-2] // 2
@@ -324,10 +324,11 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     # Ants affine transforms
     T_manual_numpy = utils.ants_to_numpy_transform_zyx(tx_manual)
     print(T_manual_numpy)
-    print(T_manual_numpy)
 
     # TODO: should this be model_to_yaml() from recOrder? Should it override the previous config?
     model = RegistrationSettings(
+        source_channel_index=source_channel_index,
+        target_channel_index=target_channel_index,
         affine_transform_zyx=T_manual_numpy.tolist(),
         output_shape_zyx=list(target_zyx_ants.numpy().shape),
     )
