@@ -60,21 +60,21 @@ def optimize_affine(
     print("\n target channel INFO:")
     os.system(f"iohub info {target_position_dirpaths[0]} ")
 
-    source_channel_idx = int(input("Enter source_channel index to process: "))
-    target_channel_idx = int(input("Enter target_channel index to process: "))
-
     settings = yaml_to_model(config_filepath, RegistrationSettings)
 
-    click.echo("Running optimizer between virtual staining and target")
+    source_channel_index = settings.source_channel_index
+    target_channel_index = settings.target_channel_index
+
+    click.echo("Loading source and target")
 
     # Load the virtual stained volume [SOURCE]
     source_position = open_ome_zarr(source_position_dirpaths[0])
-    source_data_zyx = source_position[0][T_IDX, source_channel_idx].astype(np.float32)
+    source_data_zyx = source_position[0][T_IDX, source_channel_index].astype(np.float32)
     source_zyx_ants = ants.from_numpy(source_data_zyx)
 
     # Load the target volume [TARGET]
     target_channel_position = open_ome_zarr(target_position_dirpaths[0])
-    target_channel_zyx = target_channel_position[0][T_IDX, target_channel_idx]
+    target_channel_zyx = target_channel_position[0][T_IDX, target_channel_index]
     target_zyx_ants = ants.from_numpy(target_channel_zyx.astype(np.float32))
 
     # Affine Transforms
@@ -87,7 +87,7 @@ def optimize_affine(
         source_zyx_ants, reference=target_zyx_ants
     )
 
-    click.echo("RUNNING THE OPTIMIZER")
+    click.echo("Running the optimizer...")
     # Optimization
     tx_opt = ants.registration(
         fixed=target_zyx_ants,
@@ -116,6 +116,8 @@ def optimize_affine(
 
     # TODO: should this be model_to_yaml() from recOrder? Should it override the previous config?
     model = RegistrationSettings(
+        source_channel_index=source_channel_index,
+        target_channel_index=target_channel_index,
         affine_transform_zyx=composed_matrix.tolist(),
         output_shape_zyx=list(target_zyx_ants.numpy().shape),
     )
@@ -138,7 +140,7 @@ def optimize_affine(
             blending="additive",
         )
         viewer.add_image(
-            target_channel_position[0][0, target_channel_idx],
+            target_channel_position[0][0, target_channel_index],
             name="target",
             colormap="magenta",
             blending="additive",
