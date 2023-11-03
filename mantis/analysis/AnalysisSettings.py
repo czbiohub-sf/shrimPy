@@ -50,8 +50,8 @@ class DeskewSettings(MyBaseModel):
 
 
 class RegistrationSettings(MyBaseModel):
-    source_channel_index: PositiveInt
-    target_channel_index: PositiveInt
+    source_channel_index: NonNegativeInt
+    target_channel_index: NonNegativeInt
     affine_transform_zyx: list
     output_shape_zyx: list
 
