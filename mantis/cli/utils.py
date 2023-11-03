@@ -102,19 +102,19 @@ def get_output_paths(input_paths: list[Path], output_zarr_path: Path) -> list[Pa
     return list_output_path
 
 
-def apply_transform_to_zyx_and_save(
+def apply_function_to_zyx_and_save(
     func, position: Position, output_path: Path, t_idx: int, c_idx: int, **kwargs
 ) -> None:
     """Load a zyx array from a Position object, apply a transformation and save the result to file"""
     click.echo(f"Processing c={c_idx}, t={t_idx}")
     zyx_data = position[0][t_idx, c_idx]
 
-    # Apply transformation
-    registered_zyx = func(zyx_data, **kwargs)
+    # Apply function
+    processed_zyx = func(zyx_data, **kwargs)
 
     # Write to file
     with open_ome_zarr(output_path, mode="r+") as output_dataset:
-        output_dataset[0][t_idx, c_idx] = registered_zyx
+        output_dataset[0][t_idx, c_idx] = processed_zyx
 
     click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
 
@@ -166,7 +166,7 @@ def process_single_position(
     with mp.Pool(num_processes) as p:
         p.starmap(
             partial(
-                apply_transform_to_zyx_and_save,
+                apply_function_to_zyx_and_save,
                 func,
                 input_dataset,
                 str(output_path),
@@ -261,10 +261,11 @@ def rotate_affine(
     return affine_rot_n_scale_matrix_zyx
 
 
-def ants_affine_transform(
+def affine_transform(
     zyx_data: np.ndarray,
     matrix: np.ndarray,
     output_shape_zyx: Tuple,
+    method='ants',
 ) -> np.ndarray:
     """_summary_
 
@@ -282,15 +283,28 @@ def ants_affine_transform(
     np.ndarray
         registered zyx data
     """
-    # The output has to be a ANTImage Object
-    empty_target_array = np.zeros((output_shape_zyx), dtype=np.float32)
-    target_zyx_ants = ants.from_numpy(empty_target_array)
+    # NOTE: default set to ANTS apply_affine method until we decide we get a benefit from using cupy
+    # The ants method on CPU is 10x faster than scipy on CPU. Cupy method has not been bencharked vs ANTs
 
-    T_ants = numpy_to_ants_transform_zyx(matrix)
+    if method == 'ants':
+        # The output has to be a ANTImage Object
+        empty_target_array = np.zeros((output_shape_zyx), dtype=np.float32)
+        target_zyx_ants = ants.from_numpy(empty_target_array)
 
-    zyx_data_ants = ants.from_numpy(zyx_data.astype(np.float32))
-    registered_zyx = T_ants.apply_to_image(zyx_data_ants, reference=target_zyx_ants)
-    return registered_zyx.numpy()
+        T_ants = numpy_to_ants_transform_zyx(matrix)
+
+        zyx_data_ants = ants.from_numpy(zyx_data.astype(np.float32))
+        registered_zyx = T_ants.apply_to_image(
+            zyx_data_ants, reference=target_zyx_ants
+        ).numpy()
+
+    elif method == 'scipy':
+        registered_zyx = ndi.affine_transform(zyx_data, matrix, output_shape_zyx)
+
+    else:
+        raise ValueError(f'Unknown method {method}')
+
+    return registered_zyx
 
 
 def copy_n_paste(zyx_data: np.ndarray, zyx_slicing_params: list) -> np.ndarray:

@@ -89,7 +89,7 @@ def apply_affine(
         input_position_dirpaths, output_paths
     ):
         utils.process_single_position(
-            utils.ants_affine_transform,
+            utils.affine_transform,
             input_data_path=input_position_path,
             output_path=output_position_path,
             num_processes=num_processes,
