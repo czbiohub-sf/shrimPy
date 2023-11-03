@@ -5,10 +5,11 @@ import click
 import napari
 import numpy as np
 import yaml
+import os
 
 from iohub import open_ome_zarr
 
-from mantis.analysis.AnalysisSettings import EstimateTransformSettings, RegistrationSettings
+from mantis.analysis.AnalysisSettings import RegistrationSettings
 from mantis.cli import utils
 from mantis.cli.parsing import (
     config_filepath,
@@ -18,10 +19,8 @@ from mantis.cli.parsing import (
 )
 from mantis.cli.utils import model_to_yaml, yaml_to_model
 
-# TODO: maybe in config?
+# TODO: maybe a CLI call?
 T_IDX = 0
-OPTIMIZER_VERBOSE = False
-# TODO: should the cli calls be source/target?
 
 
 @click.command()
@@ -29,23 +28,43 @@ OPTIMIZER_VERBOSE = False
 @lightsheet_position_dirpaths()
 @config_filepath()
 @output_filepath()
+@click.option(
+    "--display-viewer",
+    "-d",
+    is_flag=True,
+    help="Display the registered channels in a napari viewer",
+)
+@click.option(
+    "--optimizer-verbose",
+    "-v",
+    is_flag=True,
+    help="Optimizer verbose",
+)
 def optimize_affine(
     virtual_staining_position_dirpaths,
     lightsheet_position_dirpaths,
     config_filepath,
     output_filepath,
+    display_viewer,
+    optimizer_verbose,
 ):
     """
     Optimize the affine transform between two channels (source channel and target channel) by manual inputs.
 
-    mantis optimize_affine -vs ./acq_name_virtual_staining_reconstructed.zarr/0/0/0 -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 -c ./config.yml -o ./output.yml
+    mantis optimize_affine -vs ./acq_name_virtual_staining_reconstructed.zarr/0/0/0 -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 -c ./transform.yml -o ./optimized_transform.yml -d -v
     """
-    settings = yaml_to_model(config_filepath, EstimateTransformSettings)
-    target_channel_idx = settings.target_channel_idx
-    source_channel_idx = settings.source_channel_idx
 
-    # manual_registered_lf_layer.visible = False
-    # target_target_layer.visible = False
+    print("Getting dataset info")
+    print("\n phase channel INFO:")
+    os.system(f"iohub info {virtual_staining_position_dirpaths[0]}")
+    print("\n fluorescence channel INFO:")
+    os.system(f"iohub info {lightsheet_position_dirpaths[0]} ")
+
+    source_channel_idx = int(input("Enter source_channel index to process: "))
+    target_channel_idx = int(input("Enter target_channel index to process: "))
+
+    settings = yaml_to_model(config_filepath, RegistrationSettings)
+
     click.echo("Running optimizer between virtual staining and target")
 
     # Load the virtual stained volume [SOURCE]
@@ -74,7 +93,7 @@ def optimize_affine(
         fixed=target_zyx_ants,
         moving=source_zyx_pre_optim,
         type_of_transform="Similarity",
-        verbose=OPTIMIZER_VERBOSE,
+        verbose=optimizer_verbose,
     )
 
     tx_opt_mat = ants.read_transform(tx_opt["fwdtransforms"][0])
@@ -102,7 +121,7 @@ def optimize_affine(
     )
     model_to_yaml(model, output_filepath)
 
-    if settings.display_viewer is True:
+    if display_viewer:
         viewer = napari.Viewer()
         source_pre_opt_layer = viewer.add_image(
             source_zyx_pre_optim.numpy(),

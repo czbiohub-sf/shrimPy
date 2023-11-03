@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Callable
 
 import click
-import yaml
 
 from iohub.ngff import Plate, open_ome_zarr
 from natsort import natsorted

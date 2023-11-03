@@ -43,13 +43,11 @@ with open_ome_zarr(lightsheet_data_paths[0]) as light_sheet_position:
 extra_metadata = {
     'registration': {
         'affine_matrix': matrix.tolist(),
-        'pre_affine_90degree_rotations_about_z': settings.pre_affine_90degree_rotations_about_z,
     }
 }
 affine_transform_args = {
     'matrix': matrix,
     'output_shape_zyx': settings.output_shape_zyx,
-    'pre_affine_90degree_rotations_about_z': settings.pre_affine_90degree_rotations_about_z,
     'extra_metadata': extra_metadata,
 }
 utils.create_empty_zarr(

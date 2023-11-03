@@ -77,11 +77,3 @@ class RegistrationSettings(MyBaseModel):
         if not isinstance(v, list) or len(v) != 3:
             raise ValueError("The output shape zyx must be a list of length 3.")
         return v
-
-
-class EstimateTransformSettings(MyBaseModel):
-    source_channel_idx: int
-    target_channel_idx: int
-    affine_transform_zyx: list
-    display_viewer: Optional[bool] = False
-    pre_affine_90degree_rotations_about_z: Optional[int] = 1

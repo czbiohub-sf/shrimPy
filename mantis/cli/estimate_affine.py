@@ -42,13 +42,13 @@ def estimate_source_to_target_affine(
     viewer = napari.Viewer()
 
     print("Getting dataset info")
-    print("\n phase channel INFO:")
+    print("\n Source channel INFO:")
     os.system(f"iohub info {labelfree_position_dirpaths[0]}")
-    print("\n fluorescence channel INFO:")
+    print("\n Target channel INFO:")
     os.system(f"iohub info {lightsheet_position_dirpaths[0]} ")
 
-    source_channel_idx = int(input("Enter phase_channel index to process: "))
-    target_channel_idx = int(input("Enter fluor_channel index to process: "))
+    source_channel_idx = int(input("Enter source_channel index to process: "))
+    target_channel_idx = int(input("Enter target_channel index to process: "))
     pre_affine_90degree_rotations_about_z = int(
         input("Rotate the source channel by 90 degrees? (0, 1, or -1): ")
     )
