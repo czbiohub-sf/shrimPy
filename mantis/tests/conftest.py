@@ -42,6 +42,14 @@ def example_apply_affine_settings():
 
 
 @pytest.fixture(scope="function")
+def example_estimate_affine_settings():
+    settings_path = "./mantis/analysis/settings/example_estimate_affine_settings.yml"
+    with open(settings_path) as file:
+        settings = yaml.safe_load(file)
+    yield settings_path, settings
+
+
+@pytest.fixture(scope="function")
 def example_plate(tmp_path):
     plate_path = tmp_path / "plate.zarr"
 

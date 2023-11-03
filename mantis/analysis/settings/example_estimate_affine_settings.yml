@@ -1,0 +1,9 @@
+source_channel_idx: 0
+target_channel_idx: 0
+affine_transform_zyx: 
+- [1.0, 0.0, 0.0, 0.0]
+- [0.0, 1.0, 0.0, 0.0]
+- [0.0, 0.0, 1.0, 0.0]
+- [0.0, 0.0, 0.0, 1.0]
+display_viewer: False
+pre_affine_90degree_rotations_about_z: 1
