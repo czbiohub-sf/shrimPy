@@ -87,11 +87,11 @@ recorder reconstruct `
     -o ./acq_name_labelfree_reconstructed.zarr
 
 # REGISTER
-mantis estimate-source-to-target-affine `
+mantis estimate-affine `
     -s ./acq_name_labelfree_reconstructed.zarr/0/0/0 `
     -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 `
     -o ./register.yml
-mantis optimize_affine `
+mantis optimize-affine `
     -vs ./acq_name_virtual_staining_reconstructed.zarr/0/0/0 `
     -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 `
     -c ./config.yml `

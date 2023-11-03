@@ -29,13 +29,11 @@ FOCUS_SLICE_ROI_WIDTH = 150  # size of central ROI used to find focal slice
 @source_position_dirpaths()
 @target_position_dirpaths()
 @output_filepath()
-def estimate_source_to_target_affine(
-    source_position_dirpaths, target_position_dirpaths, output_filepath
-):
+def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_filepath):
     """
-    Estimate the affine transform between two channels (source channel and target channel) by manual inputs.
+    Estimate the affine transform between a source channel and a target with manual inputs.
 
-    mantis estimate-source-to-target-affine -s ./acq_name_labelfree_reconstructed.zarr/0/0/0 -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 -o ./output.yml
+    mantis estimate-affine -s ./acq_name_labelfree_reconstructed.zarr/0/0/0 -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 -o ./output.yml
     """
 
     # # Get a napari viewer()
