@@ -3,7 +3,7 @@ import numpy as np
 from iohub import open_ome_zarr
 import napari
 import click
-from recOrder.io.utils import yaml_to_model, model_to_yaml
+from mantis.cli.utils import yaml_to_model, model_to_yaml
 from mantis.analysis.AnalysisSettings import EstimateTransformSettings, RegistrationSettings
 import yaml
 from mantis.cli.parsing import (

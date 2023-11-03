@@ -18,7 +18,7 @@ from mantis.cli.parsing import (
     output_filepath,
 )
 import yaml
-from recOrder.io.utils import yaml_to_model, model_to_yaml
+from mantis.cli.utils import yaml_to_model, model_to_yaml
 
 # TODO: see if at some point these globals should be hidden or exposed.
 NA_DETECTION_SOURCE = 1.35

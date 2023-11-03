@@ -13,17 +13,7 @@ from mantis.analysis.AnalysisSettings import DeskewSettings
 from mantis.analysis.deskew import deskew_data, get_deskewed_data_shape
 from mantis.cli import utils
 from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
-
-
-# TODO: consider refactoring to utils
-def deskew_params_from_file(deskew_param_path: Path) -> DeskewSettings:
-    """Parse the deskewing parameters from the yaml file"""
-    # Load params
-    with open(deskew_param_path) as file:
-        raw_settings = yaml.safe_load(file)
-    settings = DeskewSettings(**raw_settings)
-    click.echo(f"Deskewing parameters: {asdict(settings)}")
-    return settings
+from mantis.cli.utils import yaml_to_model
 
 
 @click.command()
@@ -62,7 +52,7 @@ def deskew(
     # Load the first position to infer dataset information
     with open_ome_zarr(str(input_position_dirpaths[0]), mode="r") as input_dataset:
         T, C, Z, Y, X = input_dataset.data.shape
-        settings = deskew_params_from_file(config_filepath)
+        settings = yaml_to_model(config_filepath, DeskewSettings)
         deskewed_shape, voxel_size = get_deskewed_data_shape(
             (Z, Y, X),
             settings.ls_angle_deg,

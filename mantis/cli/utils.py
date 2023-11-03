@@ -480,6 +480,8 @@ def model_to_yaml(model, yaml_path: Path) -> None:
     """
     Save a model's dictionary representation to a YAML file.
 
+    Borrowing from recOrder==0.4.0
+
     Parameters
     ----------
     model : object
@@ -522,6 +524,8 @@ def model_to_yaml(model, yaml_path: Path) -> None:
 def yaml_to_model(yaml_path: Path, model):
     """
     Load model settings from a YAML file and create a model instance.
+
+    Borrowing from recOrder==0.4.0
 
     Parameters
     ----------
