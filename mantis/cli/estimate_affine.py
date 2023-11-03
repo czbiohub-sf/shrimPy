@@ -5,6 +5,7 @@ import click
 import napari
 import numpy as np
 import yaml
+import os
 
 from iohub import open_ome_zarr
 from skimage.transform import EuclideanTransform
@@ -31,24 +32,30 @@ FOCUS_SLICE_ROI_SIDE = 150
 @click.command()
 @labelfree_position_dirpaths()
 @lightsheet_position_dirpaths()
-@config_filepath()
 @output_filepath()
 def estimate_source_to_target_affine(
-    labelfree_position_dirpaths, lightsheet_position_dirpaths, config_filepath, output_filepath
+    labelfree_position_dirpaths, lightsheet_position_dirpaths, output_filepath
 ):
     """
     Estimate the affine transform between two channels (source channel and target channel) by manual inputs.
 
-    mantis estimate-source-to-target-affine -lf ./acq_name_labelfree_reconstructed.zarr/0/0/0 -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 -c ./config.yml -o ./output.yml
+    mantis estimate-source-to-target-affine -lf ./acq_name_labelfree_reconstructed.zarr/0/0/0 -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 -o ./output.yml
     """
 
     # # Get a napari viewer()
     viewer = napari.Viewer()
 
-    settings = yaml_to_model(config_filepath, EstimateTransformSettings)
-    source_channel_idx = settings.source_channel_idx
-    target_channel_idx = settings.target_channel_idx
-    pre_affine_90degree_rotations_about_z = settings.pre_affine_90degree_rotations_about_z
+    print("Getting dataset info")
+    print("\n phase channel INFO:")
+    os.system(f"iohub info {labelfree_position_dirpaths[0]}")
+    print("\n fluorescence channel INFO:")
+    os.system(f"iohub info {lightsheet_position_dirpaths[0]} ")
+
+    source_channel_idx = int(input("Enter phase_channel index to process: "))
+    target_channel_idx = int(input("Enter fluor_channel index to process: "))
+    pre_affine_90degree_rotations_about_z = int(
+        input("Rotate the source channel by 90 degrees? (0, 1, or -1): ")
+    )
 
     click.echo(f"Estimating registration with labelfree_channel idx {source_channel_idx}")
     click.echo("Loading data and estimating best focus plane...")
