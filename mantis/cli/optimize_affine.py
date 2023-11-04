@@ -67,15 +67,17 @@ def optimize_affine(
 
     click.echo("Loading source and target")
 
-    # Load the virtual stained volume [SOURCE]
+    # Load the source volume
     source_position = open_ome_zarr(source_position_dirpaths[0])
     source_data_zyx = source_position[0][T_IDX, source_channel_index].astype(np.float32)
     source_zyx_ants = ants.from_numpy(source_data_zyx)
+    click.echo(f"Using source channel {source_position.channel_names[source_channel_index]}")
 
-    # Load the target volume [TARGET]
-    target_channel_position = open_ome_zarr(target_position_dirpaths[0])
-    target_channel_zyx = target_channel_position[0][T_IDX, target_channel_index]
+    # Load the target volume
+    target_position = open_ome_zarr(target_position_dirpaths[0])
+    target_channel_zyx = target_position[0][T_IDX, target_channel_index]
     target_zyx_ants = ants.from_numpy(target_channel_zyx.astype(np.float32))
+    click.echo(f"Using target channel {target_position.channel_names[target_channel_index]}")
 
     # Affine Transforms
     # numpy to ants
@@ -140,7 +142,7 @@ def optimize_affine(
             blending="additive",
         )
         viewer.add_image(
-            target_channel_position[0][0, target_channel_index],
+            target_position[0][0, target_channel_index],
             name="target",
             colormap="magenta",
             blending="additive",
