@@ -491,7 +491,7 @@ def ants_to_numpy_transform_zyx(T_ants):
 
 
 def apply_stabilization_over_time_ants(
-    list_of_shifts_ants_style: list,
+    list_of_shifts: list,
     input_data_path: Path,
     output_path: Path,
     num_processes: int = mp.cpu_count(),
@@ -526,7 +526,7 @@ def apply_stabilization_over_time_ants(
                 stabilization_over_time_ants,
                 input_dataset,
                 str(output_path),
-                list_of_shifts_ants_style,
+                list_of_shifts,
             ),
             itertools.product(range(T), range(C)),
         )
@@ -536,7 +536,7 @@ def apply_stabilization_over_time_ants(
 def stabilization_over_time_ants(
     position: Position,
     output_path: Path,
-    list_of_shifts,
+    list_of_shifts: np.array,
     t_idx: int,
     c_idx: int,
     **kwargs,
@@ -545,15 +545,12 @@ def stabilization_over_time_ants(
     click.echo(f"Processing c={c_idx}, t={t_idx}")
 
     zyx_data = position[0][t_idx, c_idx].astype(np.float32)
-    # Convert nans to 0
-    zyx_data = np.nan_to_num(zyx_data, nan=0)
     zyx_data_ants = ants.from_numpy(zyx_data)
 
-    tx_composition = ants.new_ants_transform()
-    tx_composition.set_parameters(list_of_shifts[t_idx])
+    tx_shifts = numpy_to_ants_transform_zyx(list_of_shifts[t_idx])
 
     # Apply transformation
-    registered_zyx = tx_composition.apply_to_image(zyx_data_ants, reference=zyx_data_ants)
+    registered_zyx = tx_shifts.apply_to_image(zyx_data_ants, reference=zyx_data_ants)
 
     # Write to file
     with open_ome_zarr(output_path, mode="r+") as output_dataset:
