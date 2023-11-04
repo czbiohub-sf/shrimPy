@@ -3,11 +3,12 @@ from pathlib import Path
 from natsort import natsorted
 import multiprocessing as mp
 from tqdm import tqdm
-from iohub import open_ome_zarr
+from iohub.ngff import open_ome_zarr, Position
 from waveorder.focus import focus_from_transverse_band
 import glob
 import os
 import nupy as np
+from pystackreg import StackReg
 
 NA_DET = 1.35
 LAMBDA_ILL = 0.500
@@ -166,6 +167,50 @@ def calculate_z_drift(
         )
     z_focus_shift = np.array(z_focus_shift)
     np.save(output_file, z_focus_shift)
+
+
+def estimate_YX_stabilization(input_position: Position, output_dir_path: Path, c_idx, crop_xy):
+    focus_params = {
+        "NA_det": NA_DET,
+        "lambda_ill": LAMBDA_ILL,
+        "pixel_size": input_position.scale[-1],
+    }
+
+    T, C, Z, Y, X = input_position.data.shape
+    X_slice = slice(X // 2 - crop_xy // 2, X // 2 + crop_xy // 2)
+    Y_slice = slice(Y // 2 - crop_xy // 2, Y // 2 + crop_xy // 2)
+
+    z_idx = focus_from_transverse_band(
+        input_position[0][
+            0,
+            c_idx,
+            :,
+            Y // 2 - crop_size_y // 2 : Y // 2 + crop_size_y // 2,
+            X // 2 - crop_size_x // 2 : X // 2 + crop_size_x // 2,
+        ],
+        **focus_params,
+    )
+    # Load timelapse
+    xy_timelapse = input_position[0][:T, c_idx, z_idx, Y_slice, X_slice]
+    minimum = xy_timelapse.min()
+
+    xy_timelapse = xy_timelapse + minimum  # Ensure negative values are not present
+
+    # register each frame to the previous (already registered) one
+    # this is what the original StackReg ImageJ plugin uses
+    sr = StackReg(StackReg.TRANSLATION)
+
+    print("Finding registration matrices")
+    T_stackreg = sr.register_stack(xy_timelapse, reference="previous", axis=0)
+    T_zyx_shift = np.zeros((T_stackreg.shape[0], 4, 4))
+    T_zyx_shift[:, 1:4, 1:4] = T_stackreg
+    T_zyx_shift[:, 0, 0] = 1
+
+    # Save the translation matrices
+    yx_shake_translation_tx_filepath = output_dir_path / "yx_shake_translation_tx_ants.npy"
+    np.save(yx_shake_translation_tx_filepath, T_zyx_shift)
+
+    return T_zyx_shift
 
 
 if __name__ == '__main__':
