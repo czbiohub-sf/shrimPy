@@ -63,6 +63,7 @@ def target_position_dirpaths() -> Callable:
 
     return decorator
 
+
 def config_filepath() -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.option(
