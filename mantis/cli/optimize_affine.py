@@ -13,9 +13,9 @@ from mantis.analysis.AnalysisSettings import RegistrationSettings
 from mantis.cli import utils
 from mantis.cli.parsing import (
     config_filepath,
-    lightsheet_position_dirpaths,
+    target_position_dirpaths,
     output_filepath,
-    virtual_staining_position_dirpaths,
+    source_position_dirpaths,
 )
 from mantis.cli.utils import model_to_yaml, yaml_to_model
 
@@ -24,8 +24,8 @@ T_IDX = 0
 
 
 @click.command()
-@virtual_staining_position_dirpaths()
-@lightsheet_position_dirpaths()
+@source_position_dirpaths()
+@target_position_dirpaths()
 @config_filepath()
 @output_filepath()
 @click.option(
@@ -41,8 +41,8 @@ T_IDX = 0
     help="Optimizer verbose",
 )
 def optimize_affine(
-    virtual_staining_position_dirpaths,
-    lightsheet_position_dirpaths,
+    source_position_dirpaths,
+    target_position_dirpaths,
     config_filepath,
     output_filepath,
     display_viewer,
@@ -51,31 +51,33 @@ def optimize_affine(
     """
     Optimize the affine transform between two channels (source channel and target channel) by manual inputs.
 
-    mantis optimize_affine -vs ./acq_name_virtual_staining_reconstructed.zarr/0/0/0 -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 -c ./transform.yml -o ./optimized_transform.yml -d -v
+    mantis optimize-affine -s ./acq_name_virtual_staining_reconstructed.zarr/0/0/0 -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 -c ./transform.yml -o ./optimized_transform.yml -d -v
     """
 
     print("Getting dataset info")
-    print("\n phase channel INFO:")
-    os.system(f"iohub info {virtual_staining_position_dirpaths[0]}")
-    print("\n fluorescence channel INFO:")
-    os.system(f"iohub info {lightsheet_position_dirpaths[0]} ")
-
-    source_channel_idx = int(input("Enter source_channel index to process: "))
-    target_channel_idx = int(input("Enter target_channel index to process: "))
+    print("\n source channel INFO:")
+    os.system(f"iohub info {source_position_dirpaths[0]}")
+    print("\n target channel INFO:")
+    os.system(f"iohub info {target_position_dirpaths[0]} ")
 
     settings = yaml_to_model(config_filepath, RegistrationSettings)
 
-    click.echo("Running optimizer between virtual staining and target")
+    source_channel_index = settings.source_channel_index
+    target_channel_index = settings.target_channel_index
 
-    # Load the virtual stained volume [SOURCE]
-    source_position = open_ome_zarr(virtual_staining_position_dirpaths[0])
-    source_data_zyx = source_position[0][T_IDX, source_channel_idx].astype(np.float32)
+    click.echo("Loading source and target")
+
+    # Load the source volume
+    source_position = open_ome_zarr(source_position_dirpaths[0])
+    source_data_zyx = source_position[0][T_IDX, source_channel_index].astype(np.float32)
     source_zyx_ants = ants.from_numpy(source_data_zyx)
+    click.echo(f"Using source channel {source_position.channel_names[source_channel_index]}")
 
-    # Load the target volume [TARGET]
-    target_channel_position = open_ome_zarr(lightsheet_position_dirpaths[0])
-    target_channel_zyx = target_channel_position[0][T_IDX, target_channel_idx]
+    # Load the target volume
+    target_position = open_ome_zarr(target_position_dirpaths[0])
+    target_channel_zyx = target_position[0][T_IDX, target_channel_index]
     target_zyx_ants = ants.from_numpy(target_channel_zyx.astype(np.float32))
+    click.echo(f"Using target channel {target_position.channel_names[target_channel_index]}")
 
     # Affine Transforms
     # numpy to ants
@@ -87,7 +89,7 @@ def optimize_affine(
         source_zyx_ants, reference=target_zyx_ants
     )
 
-    click.echo("RUNNING THE OPTIMIZER")
+    click.echo("Running the optimizer...")
     # Optimization
     tx_opt = ants.registration(
         fixed=target_zyx_ants,
@@ -116,6 +118,8 @@ def optimize_affine(
 
     # TODO: should this be model_to_yaml() from recOrder? Should it override the previous config?
     model = RegistrationSettings(
+        source_channel_index=source_channel_index,
+        target_channel_index=target_channel_index,
         affine_transform_zyx=composed_matrix.tolist(),
         output_shape_zyx=list(target_zyx_ants.numpy().shape),
     )
@@ -138,7 +142,7 @@ def optimize_affine(
             blending="additive",
         )
         viewer.add_image(
-            target_channel_position[0][0, target_channel_idx],
+            target_position[0][0, target_channel_index],
             name="target",
             colormap="magenta",
             blending="additive",

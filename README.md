@@ -87,19 +87,19 @@ recorder reconstruct `
     -o ./acq_name_labelfree_reconstructed.zarr
 
 # REGISTER
-mantis estimate_source_to_target_affine `
-    -lf ./acq_name_labelfree_reconstructed.zarr/0/0/0 `
-    -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 `
+mantis estimate-affine `
+    -s ./acq_name_labelfree_reconstructed.zarr/0/0/0 `
+    -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 `
     -o ./register.yml
-mantis optimize_affine `
-    -vs ./acq_name_virtual_staining_reconstructed.zarr/0/0/0 `
-    -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 `
-    -c ./config.yml `
-    -o ./output.yml
+mantis optimize-affine `
+    -s ./acq_name_virtual_staining_reconstructed.zarr/0/0/0 `
+    -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 `
+    -c ./register.yml `
+    -o ./optimized.yml
 mantis apply-affine `
     -i ./acq_name_labelfree_deskewed.zarr/*/*/* `
-    -c ./register.yml `
-    -o ./acq_name_registerred.zarr
+    -c ./optimized.yml `
+    -o ./acq_name_registered.zarr
 
 ```
 

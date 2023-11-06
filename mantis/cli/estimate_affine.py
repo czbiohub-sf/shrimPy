@@ -11,8 +11,8 @@ from waveorder.focus import focus_from_transverse_band
 from mantis.analysis.AnalysisSettings import RegistrationSettings
 from mantis.cli import utils
 from mantis.cli.parsing import (
-    labelfree_position_dirpaths,
-    lightsheet_position_dirpaths,
+    source_position_dirpaths,
+    target_position_dirpaths,
     output_filepath,
 )
 from mantis.cli.utils import model_to_yaml
@@ -22,20 +22,18 @@ NA_DETECTION_SOURCE = 1.35
 NA_DETECTION_TARGET = 1.35
 WAVELENGTH_EMISSION_SOURCE_CHANNEL = 0.45  # [um]
 WAVELENGTH_EMISSION_TARGET_CHANNEL = 0.6  # [um]
-FOCUS_SLICE_ROI_SIDE = 150
+FOCUS_SLICE_ROI_WIDTH = 150  # size of central ROI used to find focal slice
 
 
 @click.command()
-@labelfree_position_dirpaths()
-@lightsheet_position_dirpaths()
+@source_position_dirpaths()
+@target_position_dirpaths()
 @output_filepath()
-def estimate_source_to_target_affine(
-    labelfree_position_dirpaths, lightsheet_position_dirpaths, output_filepath
-):
+def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_filepath):
     """
-    Estimate the affine transform between two channels (source channel and target channel) by manual inputs.
+    Estimate the affine transform between a source channel and a target with manual inputs.
 
-    mantis estimate-source-to-target-affine -lf ./acq_name_labelfree_reconstructed.zarr/0/0/0 -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 -o ./output.yml
+    mantis estimate-affine -s ./acq_name_labelfree_reconstructed.zarr/0/0/0 -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 -o ./output.yml
     """
 
     # # Get a napari viewer()
@@ -43,27 +41,27 @@ def estimate_source_to_target_affine(
 
     print("Getting dataset info")
     print("\n Source channel INFO:")
-    os.system(f"iohub info {labelfree_position_dirpaths[0]}")
+    os.system(f"iohub info {source_position_dirpaths[0]}")
     print("\n Target channel INFO:")
-    os.system(f"iohub info {lightsheet_position_dirpaths[0]} ")
+    os.system(f"iohub info {target_position_dirpaths[0]} ")
 
-    source_channel_idx = int(input("Enter source_channel index to process: "))
-    target_channel_idx = int(input("Enter target_channel index to process: "))
+    source_channel_index = int(input("Enter source channel index to process: "))
+    target_channel_index = int(input("Enter target channel index to process: "))
     pre_affine_90degree_rotations_about_z = int(
         input("Rotate the source channel by 90 degrees? (0, 1, or -1): ")
     )
 
-    click.echo(f"Estimating registration with labelfree_channel idx {source_channel_idx}")
+    click.echo(f"Estimating registration with labelfree channel index {source_channel_index}")
     click.echo("Loading data and estimating best focus plane...")
 
     # Display volumes rescaled
-    with open_ome_zarr(labelfree_position_dirpaths[0], mode="r") as source_channel_position:
-        source_channel_str = source_channel_position.channel_names[source_channel_idx]
+    with open_ome_zarr(source_position_dirpaths[0], mode="r") as source_channel_position:
+        source_channel_str = source_channel_position.channel_names[source_channel_index]
 
         source_channel_Z, source_channel_Y, source_channel_X = source_channel_position[
             0
         ].shape[-3:]
-        source_channel_volume = source_channel_position[0][0, source_channel_idx]
+        source_channel_volume = source_channel_position[0][0, source_channel_index]
 
         source_channel_Z, source_channel_Y, source_channel_X = source_channel_volume.shape[-3:]
 
@@ -78,14 +76,14 @@ def estimate_source_to_target_affine(
         focus_source_channel_idx = focus_from_transverse_band(
             source_channel_position[0][
                 0,
-                source_channel_idx,
+                source_channel_index,
                 :,
                 source_channel_position[0].shape[-2] // 2
-                - FOCUS_SLICE_ROI_SIDE : source_channel_position[0].shape[-2] // 2
-                + FOCUS_SLICE_ROI_SIDE,
+                - FOCUS_SLICE_ROI_WIDTH : source_channel_position[0].shape[-2] // 2
+                + FOCUS_SLICE_ROI_WIDTH,
                 source_channel_position[0].shape[-1] // 2
-                - FOCUS_SLICE_ROI_SIDE : source_channel_position[0].shape[-1] // 2
-                + FOCUS_SLICE_ROI_SIDE,
+                - FOCUS_SLICE_ROI_WIDTH : source_channel_position[0].shape[-1] // 2
+                + FOCUS_SLICE_ROI_WIDTH,
             ],
             NA_det=NA_DETECTION_SOURCE,
             lambda_ill=WAVELENGTH_EMISSION_SOURCE_CHANNEL,
@@ -93,12 +91,12 @@ def estimate_source_to_target_affine(
         )
     click.echo(f"Best focus source z_idx: {focus_source_channel_idx}")
 
-    with open_ome_zarr(lightsheet_position_dirpaths[0], mode="r") as target_channel_position:
-        target_channel_str = target_channel_position.channel_names[target_channel_idx]
+    with open_ome_zarr(target_position_dirpaths[0], mode="r") as target_channel_position:
+        target_channel_str = target_channel_position.channel_names[target_channel_index]
         target_channel_Z, target_channel_Y, target_channel_X = target_channel_position[
             0
         ].shape[-3:]
-        target_channel_volume = target_channel_position[0][0, target_channel_idx]
+        target_channel_volume = target_channel_position[0][0, target_channel_index]
         target_channel_Z, target_channel_Y, target_channel_X = target_channel_volume.shape[-3:]
 
         # Get the voxel dimension in sample space
@@ -112,14 +110,14 @@ def estimate_source_to_target_affine(
         focus_target_channel_idx = focus_from_transverse_band(
             target_channel_position[0][
                 0,
-                target_channel_idx,
+                target_channel_index,
                 :,
                 target_channel_position[0].shape[-2] // 2
-                - FOCUS_SLICE_ROI_SIDE : target_channel_position[0].shape[-2] // 2
-                + FOCUS_SLICE_ROI_SIDE,
+                - FOCUS_SLICE_ROI_WIDTH : target_channel_position[0].shape[-2] // 2
+                + FOCUS_SLICE_ROI_WIDTH,
                 target_channel_position[0].shape[-1] // 2
-                - FOCUS_SLICE_ROI_SIDE : target_channel_position[0].shape[-1] // 2
-                + FOCUS_SLICE_ROI_SIDE,
+                - FOCUS_SLICE_ROI_WIDTH : target_channel_position[0].shape[-1] // 2
+                + FOCUS_SLICE_ROI_WIDTH,
             ],
             NA_det=NA_DETECTION_TARGET,
             lambda_ill=WAVELENGTH_EMISSION_TARGET_CHANNEL,
@@ -326,10 +324,11 @@ def estimate_source_to_target_affine(
     # Ants affine transforms
     T_manual_numpy = utils.ants_to_numpy_transform_zyx(tx_manual)
     print(T_manual_numpy)
-    print(T_manual_numpy)
 
     # TODO: should this be model_to_yaml() from recOrder? Should it override the previous config?
     model = RegistrationSettings(
+        source_channel_index=source_channel_index,
+        target_channel_index=target_channel_index,
         affine_transform_zyx=T_manual_numpy.tolist(),
         output_shape_zyx=list(target_zyx_ants.numpy().shape),
     )
