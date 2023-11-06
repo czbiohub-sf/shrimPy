@@ -1,3 +1,4 @@
+#%%
 import pandas as pd
 from pathlib import Path
 from natsort import natsorted
@@ -7,7 +8,7 @@ from iohub.ngff import open_ome_zarr, Position
 from waveorder.focus import focus_from_transverse_band
 import glob
 import os
-import nupy as np
+import numpy as np
 from pystackreg import StackReg
 
 NA_DET = 1.35
@@ -93,10 +94,7 @@ def get_mean_z_positions(input_dataframe, verbose=False) -> None:
 
     z_drift_df = pd.read_csv(input_dataframe)
     # Filter the DataFrame for 'channel A'
-    phase_3D_df = (
-        z_drift_df
-        / 'positions_focus.csv'[z_drift_df / 'positions_focus.csv'["channel"] == "Phase3D"]
-    )
+    phase_3D_df = z_drift_df[z_drift_df["channel"] == "Phase3D"]
     # Get the mean of positions for each time point
     average_focal_idx = phase_3D_df.groupby("time_min")["focal_idx"].mean().reset_index()
     if verbose:
@@ -148,7 +146,7 @@ def calculate_z_drift(
     # Calculate and save the output file
     output_file = output_folder_path / "z_shifts_matrices.npy"
     z_drift_offsets = get_mean_z_positions(
-        output_folder_path / 'positions_focus.csv', verbose=False
+        output_folder_path / 'positions_focus.csv', verbose=verbose
     )
     # Calculate the z focus shift matrices
     z_focus_shift = [np.eye(4)]
@@ -166,10 +164,17 @@ def calculate_z_drift(
             )
         )
     z_focus_shift = np.array(z_focus_shift)
+
+    print(f'Saving z_focus_shifts to {output_file}')
     np.save(output_file, z_focus_shift)
 
 
-def estimate_YX_stabilization(input_position: Position, output_dir_path: Path, c_idx, crop_xy):
+def estimate_YX_stabilization(
+    input_position: Position, output_dir_path: Path, c_idx: int = 0, crop_xy: int = 300
+):
+    output_dir_path = Path(output_dir_path)
+    output_dir_path.mkdir(parents=True, exist_ok=True)
+
     focus_params = {
         "NA_det": NA_DET,
         "lambda_ill": LAMBDA_ILL,
@@ -180,6 +185,7 @@ def estimate_YX_stabilization(input_position: Position, output_dir_path: Path, c
     X_slice = slice(X // 2 - crop_xy // 2, X // 2 + crop_xy // 2)
     Y_slice = slice(Y // 2 - crop_xy // 2, Y // 2 + crop_xy // 2)
 
+    print('Estimating in-focus slice')
     z_idx = focus_from_transverse_band(
         input_position[0][
             0,
@@ -213,6 +219,7 @@ def estimate_YX_stabilization(input_position: Position, output_dir_path: Path, c
     return T_zyx_shift
 
 
+#%%
 if __name__ == '__main__':
     input_data_path = "/hpc/projects/comp.micro/mantis/2023_09_21_OpenCell_targets/1-recon/opencell_timelapse_2_phase.zarr/0/1/000001"
     output_folder_path = (
@@ -221,10 +228,24 @@ if __name__ == '__main__':
     num_processes = 4
     crop_size_x = 300  # Size of center crop from FOV
     crop_size_y = 300  # Size of center crop from FOV
+    c_idx = 0
+    #%%
     calculate_z_drift(
         input_data_path,
         output_folder_path,
         num_processes,
         crop_size_x,
         crop_size_y,
+        verbose=True,
     )
+    #%%
+    input_position = open_ome_zarr(input_data_path)
+    estimate_YX_stabilization(
+        input_position,
+        './translation_matrices',
+        c_idx=c_idx,
+        crop_xy=crop_size_x,
+    )
+
+
+# %%
