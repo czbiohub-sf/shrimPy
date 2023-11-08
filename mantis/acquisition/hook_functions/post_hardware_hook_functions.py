@@ -5,11 +5,17 @@ from . import globals
 logger = logging.getLogger(__name__)
 
 
-def log_acquisition_start(events):
+def get_first_acquisition_event(events):
     if isinstance(events, list):
-        _event = events[0]
+        event = events[0]
     else:
-        _event = events  # events is a dict
+        event = events  # events is a dict
+
+    return event
+
+
+def log_acquisition_start(events):
+    _event = get_first_acquisition_event(events)
 
     t_idx = _event['axes']['time']
     p_label = _event['axes']['position']
@@ -20,10 +26,7 @@ def log_acquisition_start(events):
 
 
 def update_daq_freq(z_ctr_task, channels: list, events):
-    if isinstance(events, list):
-        _event = events[0]
-    else:
-        _event = events  # events is a dict
+    _event = get_first_acquisition_event(events)
 
     c_idx = channels.index(_event['axes']['channel'])
     if z_ctr_task.is_task_done():
@@ -39,10 +42,7 @@ def update_daq_freq(z_ctr_task, channels: list, events):
 
 
 def update_laser_power(lasers, channels: list, events):
-    if isinstance(events, list):
-        _event = events[0]
-    else:
-        _event = events  # events is a dict
+    _event = get_first_acquisition_event(events)
 
     c_idx = channels.index(_event['axes']['channel'])
     laser = lasers[c_idx]  # will be None if this channel does not use autoexposure
@@ -59,6 +59,10 @@ def update_laser_power(lasers, channels: list, events):
 
 
 def update_ls_hardware(z_ctr_task, lasers, channels, events):
+    if not events:
+        logger.debug('Acquisition events are not valid.')
+        return
+
     events = update_daq_freq(z_ctr_task, channels, events)
     events = update_laser_power(lasers, channels, events)
 

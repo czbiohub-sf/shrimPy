@@ -6,6 +6,10 @@ logger = logging.getLogger(__name__)
 
 
 def start_daq_counters(ctr_tasks, events):
+    if not events:
+        logger.debug('Acquisition events are not valid.')
+        return
+
     ctr_names = get_daq_counter_names(ctr_tasks)
     logger.debug(f'Starting DAQ counter tasks: {ctr_names}')
     start_daq_counter(ctr_tasks)

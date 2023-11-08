@@ -34,8 +34,8 @@ from mantis.acquisition.AcquisitionSettings import (
 )
 from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
     log_preparing_acquisition,
-    log_preparing_acquisition_check_counter,
-    check_num_counter_samples,
+    lf_pre_hardware_hook_function,
+    ls_pre_hardware_hook_function,
 )
 from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
     log_acquisition_start,
@@ -960,7 +960,7 @@ class MantisAcquisition(object):
             lf_post_camera_hook_fn = None
         else:
             lf_pre_hardware_hook_fn = partial(
-                log_preparing_acquisition_check_counter,
+                lf_pre_hardware_hook_function,
                 [self._lf_z_ctr_task, self._lf_channel_ctr_task],
             )
             lf_post_camera_hook_fn = partial(
@@ -987,7 +987,9 @@ class MantisAcquisition(object):
             ls_post_hardware_hook_fn = None
             ls_post_camera_hook_fn = None
         else:
-            ls_pre_hardware_hook_fn = partial(check_num_counter_samples, [self._ls_z_ctr_task])
+            ls_pre_hardware_hook_fn = partial(
+                ls_pre_hardware_hook_function, [self._ls_z_ctr_task]
+            )
             ls_post_hardware_hook_fn = partial(
                 update_ls_hardware,
                 self._ls_z_ctr_task,
@@ -1105,7 +1107,9 @@ class MantisAcquisition(object):
                 globals.lf_last_img_idx = lf_events[-1]['axes']
                 globals.ls_last_img_idx = ls_events[-1]['axes']
                 globals.lf_acq_finished = False
+                globals.lf_acq_aborted = False
                 globals.ls_acq_finished = False
+                globals.ls_acq_aborted = False
 
                 # start acquisition
                 self._ls_acq_obj.acquire(ls_events)
@@ -1200,6 +1204,8 @@ class MantisAcquisition(object):
             microscope_operations.abort_acquisition_sequence(
                 self.lf_acq.mmc, camera, sequenced_stages
             )
+            # set a flag to clear any remaining events
+            globals.lf_acq_aborted = True
 
         if not globals.ls_acq_finished:
             # abort LS acq
@@ -1214,6 +1220,8 @@ class MantisAcquisition(object):
             microscope_operations.abort_acquisition_sequence(
                 self.ls_acq.mmc, camera, sequenced_stages
             )
+            # set a flag to clear any remaining events
+            globals.ls_acq_aborted = True
 
         return lf_acq_aborted, ls_acq_aborted
 
