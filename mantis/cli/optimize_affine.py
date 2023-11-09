@@ -1,11 +1,9 @@
-from dataclasses import asdict
+import os
 
 import ants
 import click
 import napari
 import numpy as np
-import yaml
-import os
 
 from iohub import open_ome_zarr
 
@@ -13,9 +11,9 @@ from mantis.analysis.AnalysisSettings import RegistrationSettings
 from mantis.cli import utils
 from mantis.cli.parsing import (
     config_filepath,
-    target_position_dirpaths,
     output_filepath,
     source_position_dirpaths,
+    target_position_dirpaths,
 )
 from mantis.cli.utils import model_to_yaml, yaml_to_model
 

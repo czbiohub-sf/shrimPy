@@ -1,20 +1,8 @@
-from pathlib import Path
 from typing import Optional
 
 import numpy as np
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Extra,
-    NonNegativeFloat,
-    NonNegativeInt,
-    PositiveFloat,
-    PositiveInt,
-    root_validator,
-    validator,
-)
-from pydantic.dataclasses import dataclass
+from pydantic import BaseModel, Extra, NonNegativeInt, PositiveFloat, PositiveInt, validator
 
 
 # All settings classes inherit from MyBaseModel, which forbids extra parameters to guard against typos

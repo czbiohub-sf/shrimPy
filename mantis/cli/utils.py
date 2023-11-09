@@ -13,12 +13,10 @@ import click
 import largestinteriorrectangle as lir
 import numpy as np
 import scipy.ndimage as ndi
-import torch
 import yaml
 
 from iohub.ngff import Position, open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
-from numpy.typing import DTypeLike
 from tqdm import tqdm
 
 
@@ -354,7 +352,7 @@ def find_lir_slicing_params(
         Slicing parameters to crop LIR
 
     """
-    print(f'Starting Largest interior rectangle (LIR) search')
+    print('Starting Largest interior rectangle (LIR) search')
 
     # Make dummy volumes
     img1 = np.ones(tuple(input_zyx_shape), dtype=np.float32)

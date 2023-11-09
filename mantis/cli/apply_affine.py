@@ -1,14 +1,10 @@
-import multiprocessing as mp
-
 from pathlib import Path
 from typing import List
 
 import click
 import numpy as np
-import yaml
 
 from iohub import open_ome_zarr
-from scipy.ndimage import affine_transform
 
 from mantis.analysis.AnalysisSettings import RegistrationSettings
 from mantis.cli import utils

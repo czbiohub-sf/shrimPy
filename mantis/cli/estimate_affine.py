@@ -1,8 +1,9 @@
+import os
+
 import ants
 import click
 import napari
 import numpy as np
-import os
 
 from iohub import open_ome_zarr
 from skimage.transform import EuclideanTransform
@@ -11,9 +12,9 @@ from waveorder.focus import focus_from_transverse_band
 from mantis.analysis.AnalysisSettings import RegistrationSettings
 from mantis.cli import utils
 from mantis.cli.parsing import (
+    output_filepath,
     source_position_dirpaths,
     target_position_dirpaths,
-    output_filepath,
 )
 from mantis.cli.utils import model_to_yaml
 
@@ -307,12 +308,12 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     )
 
     print("Showing registered pair (source and target) with pseudo colored target in magenta")
-    target_target_layer = viewer.add_image(
+    viewer.add_image(
         target_zyx_ants.numpy(),
         name=f"target_target_{target_channel_str}",
         colormap="magenta",
     )
-    manual_registered_lf_layer = viewer.add_image(
+    viewer.add_image(
         source_zxy_manual_reg.numpy(), name=f"registered_{source_channel_str}", opacity=0.5
     )
     viewer.layers.remove(f"pts_{source_channel_str}")
