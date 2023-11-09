@@ -1024,6 +1024,7 @@ class MantisAcquisition(object):
         logger.info('Starting acquisition')
         ls_o3_refocus_time = time.time()
         previous_well_id = None
+        previous_position_label = None
         for t_idx in range(self.time_settings.num_timepoints):
             timepoint_start_time = time.time()
             for p_idx in range(self.position_settings.num_positions):
@@ -1031,7 +1032,8 @@ class MantisAcquisition(object):
                 well_id = self.position_settings.well_ids[p_idx]
 
                 # move to the given position
-                self.go_to_position(p_idx)
+                if p_label != previous_position_label:
+                    self.go_to_position(p_idx)
 
                 # autofocus
                 if self.lf_acq.microscope_settings.use_autofocus:
@@ -1127,6 +1129,7 @@ class MantisAcquisition(object):
                 if ls_acq_aborted:
                     logger.error(error_message.format('Light-sheet', t_idx, p_label))
                 previous_well_id = well_id
+                previous_position_label = p_label
                 globals.new_well = False
 
             # wait for time interval between time points
