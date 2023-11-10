@@ -1,7 +1,7 @@
 import warnings
 
 from dataclasses import field
-from typing import List, Optional, Tuple
+from typing import Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 
@@ -35,26 +35,62 @@ class PositionSettings:
     xyz_positions: list = field(default_factory=list)
     position_labels: List[str] = field(default_factory=list)
     num_positions: int = field(init=False, default=0)
+    well_ids: List[str] = field(init=False, default_factory=list)
 
     def __post_init__(self):
         assert len(self.xyz_positions) == len(self.position_labels)
         self.num_positions = len(self.xyz_positions)
 
+        try:
+            # Look for "'A1-Site_0', 'H12-Site_1', ... " format
+            hcs_labels = [pos.split("-Site_") for pos in self.position_labels]
+            self.well_ids = [well for well, fov in hcs_labels]
+        except ValueError:
+            try:
+                # Look for "'1-Pos000_000', '2-Pos000_001', ... "
+                hcs_labels = [pos.split("-Pos") for pos in self.position_labels]
+                self.well_ids = [well for well, fov in hcs_labels]
+            except ValueError:
+                # Default well is called "0"
+                self.well_ids = ["0"] * self.num_positions
+
 
 @dataclass(config=config)
 class ChannelSettings:
-    exposure_time_ms: List[NonNegativeFloat] = field(default_factory=list)  # in ms
+    default_exposure_times_ms: Union[
+        NonNegativeFloat, List[NonNegativeFloat], None
+    ] = None  # in ms
+    default_laser_powers: Union[
+        NonNegativeFloat, List[NonNegativeFloat], List[None], None
+    ] = None
     channel_group: Optional[str] = None
     channels: List[str] = field(default_factory=list)
     use_sequencing: bool = False
+    use_autoexposure: Union[bool, List[bool]] = False
     num_channels: int = field(init=False, default=0)
     acquisition_rate: float = field(init=False, default=None)
+    light_sources: List = field(init=False, default=None)
+    # dictionaries with following structure: {well_id: list_of_exposure_times}
+    exposure_times_per_well: Dict = field(init=None, default_factory=dict)
+    laser_powers_per_well: Dict = field(init=None, default_factory=dict)
 
     def __post_init__(self):
-        assert len(self.exposure_time_ms) == len(
-            self.channels
-        ), 'Number of channels must equal number of exposure times'
         self.num_channels = len(self.channels)
+        for attr_name in (
+            'default_exposure_times_ms',
+            'default_laser_powers',
+            'use_autoexposure',
+            'light_sources',
+        ):
+            attr_value = getattr(self, attr_name)
+            if isinstance(attr_value, list):
+                assert (
+                    len(attr_value) == self.num_channels
+                ), f'{attr_name} must be a list of length equal to the number of channels'
+            else:
+                # Note: [attr_value] * self.num_channels will simply create
+                # references, which is not what we want
+                setattr(self, attr_name, [attr_value for _ in range(self.num_channels)])
 
 
 @dataclass(config=config)
@@ -105,3 +141,55 @@ class MicroscopeSettings:
     use_o3_refocus: bool = False
     o3_refocus_config: Optional[ConfigSettings] = None
     o3_refocus_interval_min: Optional[int] = None
+
+
+@dataclass
+class AutoexposureSettings:
+    # autoexposure method; currently only "manual" is implemented
+    autoexposure_method: Literal['manual']
+
+    # rerun autoexposure for each timepoint at a given well
+    rerun_each_timepoint: bool = False
+
+    # min image intensity given as percent of dtype that defines under-exposure
+    min_intensity_percent: Optional[float] = None
+
+    # max image intensity given as percent of dtype that defines over-exposure
+    max_intensity_percent: Optional[float] = None
+
+    # minimum exposure time
+    min_exposure_time_ms: Optional[float] = None
+
+    # maximum exposure time
+    max_exposure_time_ms: Optional[float] = None
+
+    # the initial exposure time used when the laser power is lowered
+    # TODO: the default exposure time should be the given in Channelsettings.default_exposure_times_ms
+    # default_exposure_times_ms: float
+
+    # the minimum laser power
+    min_laser_power_mW: Optional[float] = None
+
+    # TODO: get the max laser power from the laser if not provided here
+    # TODO: different lasers may have different max power, how do we deal with that?
+    max_laser_power_mW: Optional[float] = None
+
+    # factors by which to change the exposure time or laser power
+    # if an image is found to be incorrectly exposed
+    relative_exposure_step: Optional[float] = None
+
+    relative_laser_power_step: Optional[float] = None
+
+    def __post_init__(self):
+        for attr in (
+            # "default_exposure_times_ms",
+            "min_exposure_time_ms",
+            "max_exposure_time_ms",
+        ):
+            attr_val = getattr(self, attr)
+            if attr_val is not None:
+                setattr(self, attr, round(attr_val, 1))
+        for attr in ("min_laser_power_mW", "max_laser_power_mW"):
+            attr_val = getattr(self, attr)
+            if attr_val is not None:
+                setattr(self, attr, round(attr_val, 1))

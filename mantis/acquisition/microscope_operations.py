@@ -2,14 +2,18 @@ import logging
 import time
 
 from functools import partial
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, Union
 
 import nidaqmx
 import numpy as np
 
+from copylot.hardware.lasers.vortran.vortran import VortranLaser
 from nidaqmx.constants import AcquisitionType
 from pycromanager import Core, Studio
 from pylablib.devices.Thorlabs import KinesisPiezoMotor
+
+from mantis.acquisition.AcquisitionSettings import AutoexposureSettings
+from mantis.acquisition.autoexposure import manual_autoexposure, mean_intensity_autoexposure
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +102,7 @@ def get_current_position(mmc, z_stage_name):
             mmc.get_position(z_stage_name) if z_stage_name else None,
         )
     ]
-    position_label = ['Current']
+    position_label = ['FOV0']
 
     return xyz_position, position_label
 
@@ -324,7 +328,7 @@ def create_ram_datastore(
 
 def acquire_defocus_stack(
     mmc: Core,
-    z_stage,
+    z_stage: Union[str, KinesisPiezoMotor],
     z_range: Iterable,
     mmStudio: Studio = None,
     datastore=None,
@@ -401,7 +405,7 @@ def acquire_defocus_stack(
 def acquire_ls_defocus_stack_and_display(
     mmc: Core,
     mmStudio: Studio,
-    z_stage: str or KinesisPiezoMotor,
+    z_stage: Union[str, KinesisPiezoMotor],
     z_range: Iterable,
     galvo: str,
     galvo_range: Iterable,
@@ -549,3 +553,120 @@ def abort_acquisition_sequence(
         mmc.stop_stage_sequence(stage)
     mmc.stop_sequence_acquisition(camera)
     mmc.clear_circular_buffer()
+
+
+def setup_vortran_laser(com_port: str):
+    """Setup Vortran laser on a given COM port
+
+    Parameters
+    ----------
+    com_port : str
+        laser COM port
+
+    Returns
+    -------
+    laser : VortranLaser
+    """
+    logger.debug(f'Setting up Vortran Laser on COM port {com_port}')
+    laser = VortranLaser(port=com_port)
+    laser.pulse_mode = 1  # turn on digital modulation
+
+    return laser
+
+
+def set_exposure(mmc: Core, exposure_time: float):
+    logger.debug(f'Setting exposure time to {exposure_time:.2f} ms')
+
+    mmc.set_exposure(exposure_time)
+
+
+def autoexposure(
+    mmc: Core,
+    light_source: Union[str, VortranLaser],
+    autoexposure_settings: AutoexposureSettings,
+    autoexposure_method: str = None,
+    **kwargs,
+):
+    """
+    This function will acquire image data and pass it to the specified
+    autoexposure method. It will then change the camera exposure time and light
+    source intensity to adjust the image brightness until the correct settings
+    are found or the limits set in autoexposure_settings are reached. It is
+    assumed that the microscope is configured in the correct channel. Additional
+    keyword arguments will be pass to autoexposure_method. The correct exposure
+    time and light intensity will be applied downstream by the acquisition
+    engine.
+
+    Parameters
+    ----------
+    mmc : Core light_source : Union[str, VortranLaser]
+        Light source name for sources controlled by Micro-manager or
+        VortranLaser object
+    autoexposure_settings : AutoexposureSettings autoexposure_method : str
+
+    Returns
+    -------
+    exposure_time: float light_intensity: float
+    """
+
+    autoexposure_flag = None
+    current_exposure_time = mmc.get_exposure()
+    current_light_intensity = None
+    if isinstance(light_source, VortranLaser):
+        current_light_intensity = light_source.pulse_power
+
+    while autoexposure_flag != 0:
+        if autoexposure_method == 'manual':
+            (
+                autoexposure_flag,
+                suggested_exposure_time,
+                suggested_light_intensity,
+            ) = manual_autoexposure(current_exposure_time, current_light_intensity, **kwargs)
+        elif autoexposure_method in (
+            'mean_intensity',
+            'masked_mean_intensity',
+            'intensity_percentile',
+        ):
+            # TODO
+            # acquire data
+            # input_stack = []
+            (
+                autoexposure_flag,
+                suggested_exposure_time,
+                suggested_light_intensity,
+            ) = mean_intensity_autoexposure()
+
+        if autoexposure_flag is None:
+            logger.error(
+                'Autoexposure failed. Exposure time and light intensity will not be changed'
+            )
+            break
+
+        min_max_exposure = (
+            autoexposure_settings.min_exposure_time_ms,
+            autoexposure_settings.max_exposure_time_ms,
+        )
+        min_max_laser_power = (
+            autoexposure_settings.min_laser_power_mW,
+            autoexposure_settings.max_laser_power_mW,
+        )
+        if (
+            suggested_exposure_time in min_max_exposure
+            and suggested_light_intensity in min_max_laser_power
+        ):
+            # limits of exposure_time and laser_power have been reached
+            logger.error(
+                'Autoexposure failed to correct over- or under-exposed images. Setting exposure time and light intensity to {} ms and {}'.format(
+                    suggested_exposure_time, suggested_light_intensity
+                )
+            )
+            break
+    else:
+        # autoexposure succeeded
+        logger.info(
+            'Found optimal exposure time and light intensity to be {} ms and {}'.format(
+                suggested_exposure_time, suggested_light_intensity
+            )
+        )
+
+    return suggested_exposure_time, suggested_light_intensity

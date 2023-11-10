@@ -6,7 +6,7 @@ time_settings:
   time_interval_s: 5
 
 lf_channel_settings:
-  exposure_time_ms: [10, 10]
+  default_exposure_times_ms: [10, 10]
   channel_group: 'Channel-Multiband'
   channels: ['DAPI', 'FITC']
   use_sequencing: True
@@ -32,10 +32,12 @@ lf_microscope_settings:
   use_autofocus: False
 
 ls_channel_settings:
-  exposure_time_ms: [20, 30]
+  default_exposure_times_ms: [20, 30]
+  default_laser_powers: [2, 5]
   channel_group: 'Channel'
   channels: ['Rhodamine', 'Cy5']
   use_sequencing: False
+  use_autoexposure: [True, False]
 
 ls_slice_settings:
   z_stage_name: 'Z'
@@ -54,3 +56,7 @@ ls_microscope_settings:
     - ['Camera', 'BitDepth', '11']
   z_sequencing_settings:
     - ['Z', 'UseSequences', 'Yes']
+
+ls_autoexposure_settings:
+  autoexposure_method: 'manual'
+  rerun_each_timepoint: True
