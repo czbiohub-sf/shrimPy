@@ -34,20 +34,20 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     """
     Estimate the affine transform between a source channel and a target with manual inputs.
 
-    mantis estimate-affine -s ./acq_name_labelfree_reconstructed.zarr/0/0/0 -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 -o ./output.yml
+    mantis estimate-affine
+    -s ./acq_name_labelfree_reconstructed.zarr/0/0/0
+    -t ./acq_name_lightsheet_deskewed.zarr/0/0/0
+    -o ./output.yml
     """
 
-    # # Get a napari viewer()
-    viewer = napari.Viewer()
-
     print("Getting dataset info")
-    print("\n Source channel INFO:")
-    os.system(f"iohub info {source_position_dirpaths[0]}")
     print("\n Target channel INFO:")
     os.system(f"iohub info {target_position_dirpaths[0]} ")
+    print("\n Source channel INFO:")
+    os.system(f"iohub info {source_position_dirpaths[0]}")
 
-    source_channel_index = int(input("Enter source channel index to process: "))
     target_channel_index = int(input("Enter target channel index to process: "))
+    source_channel_index = int(input("Enter source channel index to process: "))
     pre_affine_90degree_rotations_about_z = int(
         input("Rotate the source channel by 90 degrees? (0, 1, or -1): ")
     )
@@ -159,18 +159,9 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     tx_manual = tx_manual.invert()
     source_zxy_pre_reg = tx_manual.apply_to_image(source_zyx_ants, reference=target_zyx_ants)
 
-    layer_source_channel = viewer.add_image(
-        source_zxy_pre_reg.numpy(), name=source_channel_str
-    )
-    layer_target_channel = viewer.add_image(target_channel_volume, name=target_channel_str)
-    Z_source_pre_reg, Y_source_pre_reg, X_source_pre_reg = layer_source_channel.data.shape[-3:]
+    # Get a napari viewer
+    viewer = napari.Viewer()
 
-    layer_target_channel.translate = (
-        0,
-        0,
-        X_source_pre_reg,
-    )
-    # Manual annotation of features
     COLOR_CYCLE = [
         "white",
         "cyan",
@@ -182,6 +173,30 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         "magenta",
     ]
 
+    viewer.add_image(target_channel_volume, name=target_channel_str)
+    points_target_channel = viewer.add_points(
+        ndim=3, name=f"pts_{target_channel_str}", size=50, face_color=COLOR_CYCLE[0]
+    )
+
+    viewer.add_image(
+        source_zxy_pre_reg.numpy(),
+        name=source_channel_str,
+        blending='additive',
+        colormap='bop blue',
+    )
+    points_source_channel = viewer.add_points(
+        ndim=3, name=f"pts_{source_channel_str}", size=50, face_color=COLOR_CYCLE[0]
+    )
+
+    # setup viewer
+    viewer.layers.selection.active = points_source_channel
+    viewer.grid.enabled = False
+    viewer.grid.stride = 2
+    viewer.grid.shape = (-1, 2)
+    points_source_channel.mode = "add"
+    points_target_channel.mode = "add"
+
+    # Manual annotation of features
     def next_on_click(layer, event, in_focus):
         if layer.mode == "add":
             if layer is points_source_channel:
@@ -237,18 +252,6 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
                 viewer.layers.selection.active = next_layer
                 viewer.dims.current_step = prev_step_source_channel
 
-    # Create the first points layer
-    points_source_channel = viewer.add_points(
-        ndim=3, name=f"pts_{source_channel_str}", size=50, face_color=COLOR_CYCLE[0]
-    )
-    points_target_channel = viewer.add_points(
-        ndim=3, name=f"pts_{target_channel_str}", size=50, face_color=COLOR_CYCLE[0]
-    )
-
-    # Create the second points layer
-    viewer.layers.selection.active = points_source_channel
-    points_source_channel.mode = "add"
-    points_target_channel.mode = "add"
     # Bind the mouse click callback to both point layers
     in_focus = (focus_source_channel_idx, focus_target_channel_idx)
 
@@ -264,15 +267,15 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     points_target_channel.mouse_drag_callbacks.append(lambda_callback)
 
     input(
-        "\n Add at least three points in the two channels by sequentially clicking a feature on source channel and its corresponding feature in target channel.  Press <enter> when done..."
+        "\nAdd at least three points in the two channels by sequentially clicking "
+        + "on a feature in the source channel and its corresponding feature in target channel. "
+        + "Select grid mode if you prefer side-by-side view. "
+        + "Press <enter> when done..."
     )
 
     # Get the data from the layers
     pts_source_channel = points_source_channel.data
     pts_target_channel = points_target_channel.data
-    # De-apply the scaling and translation that was applied in the viewer
-    # subtract the translation offset for display
-    pts_target_channel[:, 2] -= X_source_pre_reg
 
     # Estimate the affine transform between the points xy to make sure registration is good
     transform = EuclideanTransform()
@@ -307,18 +310,15 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         source_zyx_ants, reference=target_zyx_ants
     )
 
-    print("Showing registered pair (source and target) with pseudo colored target in magenta")
+    print("Showing registered source image in magenta")
     viewer.add_image(
-        target_zyx_ants.numpy(),
-        name=f"target_target_{target_channel_str}",
+        source_zxy_manual_reg.numpy(),
+        name=f"registered_{source_channel_str}",
         colormap="magenta",
-    )
-    viewer.add_image(
-        source_zxy_manual_reg.numpy(), name=f"registered_{source_channel_str}", opacity=0.5
+        blending='additive',
     )
     viewer.layers.remove(f"pts_{source_channel_str}")
     viewer.layers.remove(f"pts_{target_channel_str}")
-    viewer.layers[target_channel_str].visible = False
     viewer.layers[source_channel_str].visible = False
 
     click.echo("Saving affine transforms")
