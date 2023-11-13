@@ -4,21 +4,30 @@ from pathlib import Path
 from natsort import natsorted
 import multiprocessing as mp
 from tqdm import tqdm
-from iohub.ngff import open_ome_zarr, Position
+from iohub.ngff import open_ome_zarr
 from waveorder.focus import focus_from_transverse_band
 import glob
 import os
 import numpy as np
 from pystackreg import StackReg
+from mantis.analysis.AnalysisSettings import StabilizationSettings
+from mantis.cli import utils
+from mantis.cli.parsing import (
+    config_filepath,
+    output_filepath,
+    output_dirpath,
+    source_position_dirpaths,
+)
+import click
+from typing import Tuple
 
 NA_DET = 1.35
 LAMBDA_ILL = 0.500
-
+Z_CHUNK = 5
 
 def estimate_position_focus(
     input_data_path,
-    crop_size_x,
-    crop_size_y,
+    crop_size_xy,
     output_dir: Path,
 ):
     with open_ome_zarr(input_data_path) as dataset:
@@ -46,8 +55,8 @@ def estimate_position_focus(
                         t_idx,
                         c_idx,
                         :,
-                        Y // 2 - crop_size_y // 2 : Y // 2 + crop_size_y // 2,
-                        X // 2 - crop_size_x // 2 : X // 2 + crop_size_x // 2,
+                        Y // 2 - crop_size_xy[1] // 2 : Y // 2 + crop_size_xy[1]  // 2,
+                        X // 2 - crop_size_xy[0]  // 2 : X // 2 + crop_size_xy[0]  // 2,
                     ],
                     **focus_params,
                 )
@@ -109,8 +118,7 @@ def calculate_z_drift(
     input_data_paths: str,
     output_folder_path: str,
     num_processes: int = 1,
-    crop_size_x: int = 300,
-    crop_size_y: int = 300,
+    crop_size_xy: list[int, int] = 300,
     verbose: bool = False,
 ) -> None:
     input_data_paths = [Path(path) for path in natsorted(glob.glob(input_data_paths))]
@@ -127,7 +135,7 @@ def calculate_z_drift(
                 pool.starmap(
                     estimate_position_focus,
                     [
-                        (input_data_path, crop_size_x, crop_size_y, position_focus_folder)
+                        (input_data_path, crop_size_xy, position_focus_folder)
                         for input_data_path in input_data_paths
                     ],
                 ),
@@ -167,13 +175,19 @@ def calculate_z_drift(
 
     print(f'Saving z_focus_shifts to {output_file}')
     np.save(output_file, z_focus_shift)
+    return z_focus_shift
 
 
-def estimate_YX_stabilization(
-    input_position: Position, output_dir_path: Path, c_idx: int = 0, crop_xy: int = 300
+def calculate_yx_stabilization(
+    input_data_path: Path,
+    output_folder_path: Path,
+    c_idx: int = 0,
+    crop_size_xy: list[int, int] = (200, 200),
+    verbose: bool = False,
 ):
-    output_dir_path = Path(output_dir_path)
-    output_dir_path.mkdir(parents=True, exist_ok=True)
+    input_position = open_ome_zarr(input_data_path[0])
+    output_folder_path = Path(output_folder_path)
+    output_folder_path.mkdir(parents=True, exist_ok=True)
 
     focus_params = {
         "NA_det": NA_DET,
@@ -181,9 +195,10 @@ def estimate_YX_stabilization(
         "pixel_size": input_position.scale[-1],
     }
 
+    # Get metadata
     T, C, Z, Y, X = input_position.data.shape
-    X_slice = slice(X // 2 - crop_xy // 2, X // 2 + crop_xy // 2)
-    Y_slice = slice(Y // 2 - crop_xy // 2, Y // 2 + crop_xy // 2)
+    X_slice = slice(X // 2 - crop_size_xy[0] // 2, X // 2 + crop_size_xy[0] // 2)
+    Y_slice = slice(Y // 2 - crop_size_xy[1] // 2, Y // 2 + crop_size_xy[1] // 2)
 
     print('Estimating in-focus slice')
     z_idx = focus_from_transverse_band(
@@ -191,8 +206,8 @@ def estimate_YX_stabilization(
             0,
             c_idx,
             :,
-            Y // 2 - crop_size_y // 2 : Y // 2 + crop_size_y // 2,
-            X // 2 - crop_size_x // 2 : X // 2 + crop_size_x // 2,
+            Y_slice,
+            X_slice,
         ],
         **focus_params,
     )
@@ -213,11 +228,134 @@ def estimate_YX_stabilization(
     T_zyx_shift[:, 0, 0] = 1
 
     # Save the translation matrices
-    yx_shake_translation_tx_filepath = output_dir_path / "yx_shake_translation_tx_ants.npy"
+    yx_shake_translation_tx_filepath = output_folder_path / "yx_shake_translation_tx_ants.npy"
     np.save(yx_shake_translation_tx_filepath, T_zyx_shift)
 
     return T_zyx_shift
 
+
+@click.command()
+@source_position_dirpaths()
+@output_dirpath()
+@click.option(
+    "--num-processes",
+    "-j",
+    default=1,
+    help="Number of parallel processes",
+    required=False,
+    type=int,
+)
+@click.option(
+    "--channel-index",
+    "-c",
+    default=0,
+    help="Channel index used for estimating stabilization parameters",
+    required=True,
+    type=int,
+)
+@click.option(
+    "--estimate-yx-drift",
+    "-y",
+    is_flag=True,
+    help="Estimate yx drift",
+)
+@click.option(
+    "--estimate-z-drift",
+    "-z",
+    is_flag=True,
+    help="Estimate z drift",
+)
+@click.option(
+    "--stabilization-verbose",
+    "-v",
+    is_flag=True,
+    help="Stabilization verbose",
+)
+@click.option(
+    "--crop-size-xy",
+    "-s",
+    type=(int, int),
+    default=(300, 300),
+    help="Crop size in xy",
+)
+def stabilization_cli(
+    input_position_dirpaths, output_dirpath, num_processes, channel_index, estimate_yx_drift, estimate_z_drift, stabilization_verbose, crop_size_xy
+):
+    """
+    Stabilize the timelapse input based on single position and channel.
+
+    This function applies stabilization to the input data. It can estimate both yx and z drifts. 
+    The level of verbosity can be controlled with the stabilization_verbose flag. 
+    The size of the crop in xy can be specified with the crop-size-xy option.
+
+    Example usage:
+    mantis stabilization -s ./timelapse.zarr/0/0/0 -o ./stabilization_folder -d -v --crop-size-xy 300 300
+    """
+
+    settings = utils.yaml_to_model(config_filepath, StabilizationSettings)
+    channel_index = settings.channel_index
+    crop_size_xy = settings.crop_size_xy
+
+    output_dirpath_parent = output_dirpath.parent
+    output_dirpath_parent.mkdir(parents=True, exist_ok=True)
+
+    # Estimate z drift
+    if estimate_z_drift:
+        T_z_drift_mats = calculate_z_drift(
+            input_data_paths=input_position_dirpaths,
+            output_folder_path=output_dirpath_parent,
+            num_processes=num_processes,
+            crop_size_xy=[crop_size_xy, crop_size_xy],
+            verbose=stabilization_verbose,
+        )
+        if not estimate_yx_drift:
+            combined_mats = T_z_drift_mats
+
+    # Estimate yx drift
+    if estimate_yx_drift:
+        T_translation_mats = calculate_yx_stabilization(
+            inoput_data_path=input_position_dirpaths,
+            output_folder_path=output_dirpath_parent,
+            c_idx=channel_index,
+            crop_size_xy=[crop_size_xy, crop_size_xy],
+            verbose=stabilization_verbose
+        )
+        if estimate_z_drift:
+            if T_translation_mats.shape[0] != T_z_drift_mats.shape[0]:
+                raise ValueError("The number of translation matrices and z drift matrices must be the same")
+            else:
+                combined_mats = [np.dot(T_translation_mat, T_z_drift_mat) for T_translation_mat, T_z_drift_mat in zip(T_translation_mats, T_z_drift_mats)]
+
+        else:
+            combined_mats = T_translation_mats
+    
+    # Save the combined matrices
+    combined_mats_filepath = output_dirpath_parent / "combined_mats.npy"
+    np.save(combined_mats_filepath, combined_mats)
+    
+    # Open test dataset to get the output shape and voxel size
+    with open_ome_zarr(input_position_dirpaths[0]) as dataset:
+        output_zyx_shape = dataset.data.shape[-3:]
+        voxel_size = dataset.scale[-3:]
+
+    # Create empty zarr
+    utils.create_empty_zarr(
+        input_position_dirpaths,
+        output_dirpath,
+        output_zyx_shape=output_zyx_shape,
+        chunk_zyx_shape=(Z_CHUNK, output_zyx_shape[-2], output_zyx_shape[-1]),
+        voxel_size=voxel_size,
+    )
+    output_zarr_path = utils.get_output_paths(input_position_dirpaths, output_dirpath + '.zarr')
+
+    # Apply the affine transformation to the input data
+    for input_path, output_path in zip(input_position_dirpaths, output_zarr_path):
+        utils.apply_stabilization_over_time_ants(
+            list_of_shifts=combined_mats,
+            input_data_path=input_path,
+            output_path=output_path,
+            num_processes=num_processes,
+        )
 
 #%%
 if __name__ == '__main__':
@@ -226,11 +364,11 @@ if __name__ == '__main__':
         "/home/eduardo.hirata/repos/mantis/mantis/tests/test_estimate/test_position_stats"
     )
     num_processes = 4
-    crop_size_x = 300  # Size of center crop from FOV
-    crop_size_y = 300  # Size of center crop from FOV
+    crop_size_x = 200  # Size of center crop from FOV
+    crop_size_y = 200  # Size of center crop from FOV
     c_idx = 0
     #%%
-    calculate_z_drift(
+    T_z_drift_mats = calculate_z_drift(
         input_data_path,
         output_folder_path,
         num_processes,
@@ -239,13 +377,10 @@ if __name__ == '__main__':
         verbose=True,
     )
     #%%
-    input_position = open_ome_zarr(input_data_path)
-    estimate_YX_stabilization(
-        input_position,
+    T_translation_mats = calculate_yx_stabilization(
+        [input_data_path],
         './translation_matrices',
         c_idx=c_idx,
-        crop_xy=crop_size_x,
+        crop_size_xy=[crop_size_x, crop_size_y],
+        verbose=True
     )
-
-
-# %%
