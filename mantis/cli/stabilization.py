@@ -240,7 +240,7 @@ def calculate_yx_stabilization(
     "--num-processes",
     "-j",
     default=1,
-    help="Number of parallel processes",
+    help="Number of parallel processes. Default is 1.",
     required=False,
     type=int,
 )
@@ -248,7 +248,7 @@ def calculate_yx_stabilization(
     "--channel-index",
     "-c",
     default=0,
-    help="Channel index used for estimating stabilization parameters",
+    help="Channel index used for estimating stabilization parameters. Default is 0.",
     required=False,
     type=int,
 )
@@ -256,20 +256,20 @@ def calculate_yx_stabilization(
     "--estimate-yx-drift",
     "-y",
     is_flag=True,
-    help="Estimate yx drift and apply to the input data",
+    help="Estimate yx drift and apply to the input data. Default is False.",
 )
 @click.option(
     "--estimate-z-drift",
     "-z",
     is_flag=True,
-    help="Estimate z drift and apply to the input data",
+    help="Estimate z drift and apply to the input data. Default is False.",
 )
 @click.option(
     "--stabilization-verbose",
     "-v",
     is_flag=True,
     type=bool,
-    help="Stabilization verbose",
+    help="Stabilization verbose. Default is False.",
 )
 @click.option(
     "--crop-size-xy",
@@ -277,7 +277,7 @@ def calculate_yx_stabilization(
     nargs=2,
     type=int,
     default=[300, 300],
-    help="Crop size in xy",
+    help="Crop size in xy. Enter two integers. Default is 300 300.",
 )
 def stabilize_timelapse(
     input_position_dirpaths, output_dirpath, num_processes, channel_index, estimate_yx_drift, estimate_z_drift, stabilization_verbose, crop_size_xy
