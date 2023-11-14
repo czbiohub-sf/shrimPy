@@ -288,16 +288,6 @@ def stabilize_timelapse(
     The level of verbosity can be controlled with the stabilization_verbose flag. 
     The size of the crop in xy can be specified with the crop-size-xy option.
 
-    Args:
-        input_position_dirpaths (str): Path to the input position directories.
-        output_dirpath (str): Path to the output directory.
-        num_processes (int): Number of processes to use.
-        channel_index (int): Index of the channel to use.
-        estimate_yx_drift (bool): Whether to estimate yx drift.
-        estimate_z_drift (bool): Whether to estimate z drift.
-        stabilization_verbose (bool): Whether to output verbose messages.
-        crop_size_xy (list[int]): Size of the crop in xy as a list of two integers.
-
     Example usage:
     mantis stabilization -i ./timelapse.zarr/0/0/0 -o ./stabilization_folder -d -v -z -s 300 300
     """
