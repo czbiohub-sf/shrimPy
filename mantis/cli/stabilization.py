@@ -290,7 +290,7 @@ def stabilize_timelapse(
     The size of the crop in xy can be specified with the crop-size-xy option.
 
     Example usage:
-    mantis stabilization -s ./timelapse.zarr/0/0/0 -o ./stabilization_folder -d -v --crop-size-xy 300 300
+    mantis stabilization -i ./timelapse.zarr/0/0/0 -o ./stabilization_folder -d -v -s 300 300
     """
     assert estimate_yx_drift or estimate_z_drift, "At least one of estimate_yx_drift or estimate_z_drift must be selected"
 
