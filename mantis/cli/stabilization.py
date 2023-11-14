@@ -1,4 +1,3 @@
-#%%
 import pandas as pd
 from pathlib import Path
 from natsort import natsorted
@@ -300,7 +299,7 @@ def stabilize_timelapse(
         crop_size_xy (list[int]): Size of the crop in xy as a list of two integers.
 
     Example usage:
-    mantis stabilization -i ./timelapse.zarr/0/0/0 -o ./stabilization_folder -d -v -z  -s 300 300
+    mantis stabilization -i ./timelapse.zarr/0/0/0 -o ./stabilization_folder -d -v -z -s 300 300
     """
     assert estimate_yx_drift or estimate_z_drift, "At least one of estimate_yx_drift or estimate_z_drift must be selected"
 
