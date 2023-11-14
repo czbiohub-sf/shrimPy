@@ -8,6 +8,7 @@ from mantis.cli.estimate_deskew import estimate_deskew
 from mantis.cli.optimize_affine import optimize_affine
 from mantis.cli.run_acquisition import run_acquisition
 from mantis.cli.update_scale_metadata import update_scale_metadata
+from mantis.cli.stabilization import stabilize_timelapse
 
 CONTEXT = {"help_option_names": ["-h", "--help"]}
 
@@ -32,3 +33,4 @@ cli.add_command(optimize_affine)
 cli.add_command(apply_affine)
 cli.add_command(update_scale_metadata)
 cli.add_command(update_scale_metadata)
+cli.add_command(stabilize_timelapse)
