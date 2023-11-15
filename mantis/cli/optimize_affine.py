@@ -99,16 +99,11 @@ def optimize_affine(
     tx_opt_mat = ants.read_transform(tx_opt["fwdtransforms"][0])
     tx_opt_numpy = utils.ants_to_numpy_transform_zyx(tx_opt_mat)
 
-    composed_matrix = tx_opt_numpy @ T_pre_optimize_numpy
+    composed_matrix = T_pre_optimize_numpy @ tx_opt_numpy
     composed_matrix_ants = utils.numpy_to_ants_transform_zyx(composed_matrix)
 
     source_registered = composed_matrix_ants.apply_to_image(
         source_zyx_ants, reference=target_zyx_ants
-    )
-    source_registered = ants.apply_transforms(
-        fixed=target_zyx_ants,
-        moving=source_zyx_pre_optim,
-        transformlist=tx_opt["fwdtransforms"],
     )
 
     # Saving the parameters
