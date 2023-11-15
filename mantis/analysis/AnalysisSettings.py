@@ -67,3 +67,18 @@ class RegistrationSettings(MyBaseModel):
         if not isinstance(v, list) or len(v) != 3:
             raise ValueError("The output shape zyx must be a list of length 3.")
         return v
+
+
+class Segmentation(MyBaseModel):
+    diameter: int = None
+    flow_threshold: float = None
+    channels: list[int]
+    do_3D: bool = None
+
+
+class CellposeSegmentationSettings(MyBaseModel):
+    z_idx: int
+    mem_model_path: str
+    membrane_segmentation: Segmentation
+    nuc_model_path: str
+    nucleus_segmentation: Segmentation
