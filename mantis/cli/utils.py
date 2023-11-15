@@ -359,7 +359,7 @@ def find_lir_slicing_params(
     img2 = np.ones(tuple(target_zyx_shape), dtype=np.float32)
 
     # Conver to ants objects
-    target_zyx_ants = ants.from_numpy(img2)
+    target_zyx_ants = ants.from_numpy(img2.astype(np.float32))
     zyx_data_ants = ants.from_numpy(img1.astype(np.float32))
 
     ants_composed_matrix = numpy_to_ants_transform_zyx(transformation_matrix)
