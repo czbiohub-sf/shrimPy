@@ -10,25 +10,24 @@ from iohub import open_ome_zarr
 from mantis.analysis.AnalysisSettings import RegistrationSettings
 from pathlib import Path
 from typing import List
-from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
 from mantis.cli.utils import yaml_to_model
 from mantis.cli.apply_affine import apply_affine_to_scale
 
 # io parameters
-source_data_paths = '/hpc/projects/comp.micro/mantis/2023_08_09_HEK_PCNA_H2B/2-phase3D/pcna_rac1_virtual_staining_b1_redo_1/phase3D.zarr/0/0/0'
-target_data_paths = '/hpc/projects/comp.micro/mantis/2023_08_09_HEK_PCNA_H2B/1-deskew/pcna_rac1_virtual_staining_b1_redo_1/deskewed.zarr/0/0/0'
-output_data_path = './registered_output.zarr'
-registration_param_path = './register.yml'
+dataset = 'HSP90AB1_registration_v2_1_phase.zarr'
+
+source_data_paths = os.path.join('../1-recon', dataset, '*/*/*')
+output_data_path = os.path.join('.', '_'.join(dataset.split('_')[:-1])+'_registered.zarr')
+registration_param_path = './optimized_registration_nuc.yml'
 
 # sbatch and resource parameters
-cpus_per_task = 16
+cpus_per_task = 1
 mem_per_cpu = "16G"
-time = 40  # minutes
-simultaneous_processes_per_node = 5
+time = 60  # minutes
+simultaneous_processes_per_node = 1
 
 # path handling
-source_data_paths = natsorted(glob.glob(source_data_paths))
-target_data_paths = natsorted(glob.glob(target_data_paths))
+source_data_paths = natsorted(glob.glob(str(source_data_paths)))
 output_dir = os.path.dirname(output_data_path)
 output_paths = utils.get_output_paths(source_data_paths, output_data_path)
 click.echo(f"in: {source_data_paths}, out: {output_paths}")
@@ -36,12 +35,12 @@ slurm_out_path = str(os.path.join(output_dir, "slurm_output/register-%j.out"))
 
 # Additional registraion arguments
 # Parse from the yaml file
-settings = yaml_to_model(config_filepath, RegistrationSettings)
+settings = yaml_to_model(registration_param_path, RegistrationSettings)
 matrix = np.array(settings.affine_transform_zyx)
 output_shape_zyx = tuple(settings.output_shape_zyx)
 
 # Calculate the output voxel size from the input scale and affine transform
-with open_ome_zarr(input_position_dirpaths[0]) as input_dataset:
+with open_ome_zarr(source_data_paths[0]) as input_dataset:
     output_voxel_size = apply_affine_to_scale(matrix[:3, :3], input_dataset.scale[-3:])
 
 # Get the affine transformation matrix
@@ -60,12 +59,12 @@ utils.create_empty_zarr(
     output_path=output_data_path,
     output_zyx_shape=output_shape_zyx,
     chunk_zyx_shape=None,
-    voxel_size=voxel_size,
+    voxel_size=tuple(output_voxel_size),
 )
 
 # prepare slurm parameters
 params = SlurmParams(
-    partition="cpu",
+    partition="preempted",
     cpus_per_task=cpus_per_task,
     mem_per_cpu=mem_per_cpu,
     time=datetime.timedelta(minutes=time),
