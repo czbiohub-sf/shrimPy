@@ -287,6 +287,9 @@ def affine_transform(
     np.ndarray
         registered zyx data
     """
+    # Convert nans to 0
+    zyx_data = np.nan_to_num(zyx_data, nan=0)
+
     # NOTE: default set to ANTS apply_affine method until we decide we get a benefit from using cupy
     # The ants method on CPU is 10x faster than scipy on CPU. Cupy method has not been bencharked vs ANTs
 
