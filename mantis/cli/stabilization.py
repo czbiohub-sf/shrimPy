@@ -23,9 +23,10 @@ NA_DET = 1.35
 LAMBDA_ILL = 0.500
 Z_CHUNK = 5
 
+
 def estimate_position_focus(
-    input_data_path:Path,
-    crop_size_xy:list[int, int],
+    input_data_path: Path,
+    crop_size_xy: list[int, int],
     output_dir: Path,
 ):
     with open_ome_zarr(input_data_path) as dataset:
@@ -53,8 +54,8 @@ def estimate_position_focus(
                         t_idx,
                         c_idx,
                         :,
-                        Y // 2 - crop_size_xy[1] // 2 : Y // 2 + crop_size_xy[1]  // 2,
-                        X // 2 - crop_size_xy[0]  // 2 : X // 2 + crop_size_xy[0]  // 2,
+                        Y // 2 - crop_size_xy[1] // 2 : Y // 2 + crop_size_xy[1] // 2,
+                        X // 2 - crop_size_xy[0] // 2 : X // 2 + crop_size_xy[0] // 2,
                     ],
                     **focus_params,
                 )
@@ -119,7 +120,6 @@ def calculate_z_drift(
     crop_size_xy: list[int, int] = 300,
     verbose: bool = False,
 ) -> None:
-    
     output_folder_path.mkdir(parents=True, exist_ok=True)
 
     position_focus_folder = output_folder_path / 'positions_focus'
@@ -226,7 +226,7 @@ def calculate_yx_stabilization(
     # Save the translation matrices
     yx_shake_translation_tx_filepath = output_folder_path / "yx_shake_translation_tx_ants.npy"
     np.save(yx_shake_translation_tx_filepath, T_zyx_shift)
-    
+
     input_position.close()
 
     return T_zyx_shift
@@ -279,19 +279,30 @@ def calculate_yx_stabilization(
     help="Crop size in xy. Enter two integers. Default is 300 300.",
 )
 def stabilize_timelapse(
-    input_position_dirpaths, output_dirpath, num_processes, channel_index, estimate_yx_drift, estimate_z_drift, stabilization_verbose, crop_size_xy
+    input_position_dirpaths,
+    output_dirpath,
+    num_processes,
+    channel_index,
+    estimate_yx_drift,
+    estimate_z_drift,
+    stabilization_verbose,
+    crop_size_xy,
 ):
     """
     Stabilize the timelapse input based on single position and channel.
 
-    This function applies stabilization to the input data. It can estimate both yx and z drifts. 
-    The level of verbosity can be controlled with the stabilization_verbose flag. 
+    This function applies stabilization to the input data. It can estimate both yx and z drifts.
+    The level of verbosity can be controlled with the stabilization_verbose flag.
     The size of the crop in xy can be specified with the crop-size-xy option.
 
     Example usage:
-    mantis stabilization -i ./timelapse.zarr/0/0/0 -o ./stabilization_folder -d -v -z -s 300 300
+    mantis stabilization -i ./timelapse.zarr/0/0/0 -o ./stabilization.zarr -d -v -z -s 300 300
+
+    Note: the verbose output will be saved at the same level as the output zarr.
     """
-    assert estimate_yx_drift or estimate_z_drift, "At least one of estimate_yx_drift or estimate_z_drift must be selected"
+    assert (
+        estimate_yx_drift or estimate_z_drift
+    ), "At least one of estimate_yx_drift or estimate_z_drift must be selected"
 
     output_dirpath_parent = output_dirpath.parent
     output_dirpath_parent.mkdir(parents=True, exist_ok=True)
@@ -300,7 +311,7 @@ def stabilize_timelapse(
     if estimate_z_drift:
         T_z_drift_mats = calculate_z_drift(
             input_data_paths=input_position_dirpaths,
-            output_folder_path=output_dirpath,
+            output_folder_path=output_dirpath_parent,
             num_processes=num_processes,
             crop_size_xy=crop_size_xy,
             verbose=stabilization_verbose,
@@ -312,24 +323,31 @@ def stabilize_timelapse(
     if estimate_yx_drift:
         T_translation_mats = calculate_yx_stabilization(
             input_data_path=input_position_dirpaths,
-            output_folder_path=output_dirpath,
+            output_folder_path=output_dirpath_parent,
             c_idx=channel_index,
             crop_size_xy=crop_size_xy,
-            verbose=stabilization_verbose
+            verbose=stabilization_verbose,
         )
         if estimate_z_drift:
             if T_translation_mats.shape[0] != T_z_drift_mats.shape[0]:
-                raise ValueError("The number of translation matrices and z drift matrices must be the same")
+                raise ValueError(
+                    "The number of translation matrices and z drift matrices must be the same"
+                )
             else:
-                combined_mats = [np.dot(T_translation_mat, T_z_drift_mat) for T_translation_mat, T_z_drift_mat in zip(T_translation_mats, T_z_drift_mats)]
+                combined_mats = [
+                    np.dot(T_translation_mat, T_z_drift_mat)
+                    for T_translation_mat, T_z_drift_mat in zip(
+                        T_translation_mats, T_z_drift_mats
+                    )
+                ]
 
         else:
             combined_mats = T_translation_mats
-    
+
     # Save the combined matrices
-    combined_mats_filepath = output_dirpath / "combined_mats.npy"
+    combined_mats_filepath = output_dirpath_parent / "combined_mats.npy"
     np.save(combined_mats_filepath, combined_mats)
-    
+
     # Open test dataset to get the output shape and voxel size
     with open_ome_zarr(input_position_dirpaths[0]) as dataset:
         output_zyx_shape = dataset.data.shape[-3:]
@@ -338,12 +356,12 @@ def stabilize_timelapse(
     # Create empty zarr
     utils.create_empty_zarr(
         input_position_dirpaths,
-        output_dirpath.with_suffix('.zarr'),
+        output_dirpath,
         output_zyx_shape=output_zyx_shape,
         chunk_zyx_shape=(Z_CHUNK, output_zyx_shape[-2], output_zyx_shape[-1]),
         voxel_size=tuple(voxel_size),
     )
-    output_zarr_path = utils.get_output_paths(input_position_dirpaths, output_dirpath.with_suffix('.zarr'))
+    output_zarr_path = utils.get_output_paths(input_position_dirpaths, output_dirpath)
 
     # Apply the affine transformation to the input data
     for input_path, output_path in zip(input_position_dirpaths, output_zarr_path):
