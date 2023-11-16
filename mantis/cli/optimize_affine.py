@@ -114,7 +114,8 @@ def optimize_affine(
         source_channel_index=source_channel_index,
         target_channel_index=target_channel_index,
         affine_transform_zyx=composed_matrix.tolist(),
-        output_shape_zyx=list(target_zyx_ants.numpy().shape),
+        source_shape_zyx=list(source_zyx_ants.numpy().shape),
+        target_shape_zyx=list(target_zyx_ants.numpy().shape),
     )
     model_to_yaml(model, output_filepath)
 
