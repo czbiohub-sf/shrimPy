@@ -20,6 +20,7 @@ from iohub.ngff_meta import TransformationMeta
 from tqdm import tqdm
 from numpy.typing import DTypeLike
 import torch
+import matplotlib.pyplot as plt
 
 
 # TODO: replace this with recOrder recOrder.cli.utils.create_empty_hcs()
@@ -266,6 +267,7 @@ def affine_transform(
     matrix: np.ndarray,
     output_shape_zyx: Tuple,
     method='ants',
+    crop_output_slicing: bool = None,
 ) -> np.ndarray:
     """_summary_
 
@@ -277,12 +279,19 @@ def affine_transform(
         3D Homogenous transformation matrix
     output_shape_zyx : Tuple
         output target zyx shape
+    method : str, optional
+        method to use for transformation, by default 'ants'
+    crop_output : bool, optional
+        crop the output to the largest interior rectangle, by default False
 
     Returns
     -------
     np.ndarray
         registered zyx data
     """
+    # Convert nans to 0
+    zyx_data = np.nan_to_num(zyx_data, nan=0)
+
     # NOTE: default set to ANTS apply_affine method until we decide we get a benefit from using cupy
     # The ants method on CPU is 10x faster than scipy on CPU. Cupy method has not been bencharked vs ANTs
 
@@ -304,7 +313,71 @@ def affine_transform(
     else:
         raise ValueError(f'Unknown method {method}')
 
+    # Crop the output to the largest interior rectangle
+    if crop_output_slicing is not None:
+        Z_slice, Y_slice, X_slice = crop_output_slicing
+        registered_zyx = registered_zyx[Z_slice, Y_slice, X_slice]
+
     return registered_zyx
+
+
+def find_lir(registered_zyx: np.ndarray, plot: bool = False) -> Tuple:
+    # Find the lir YX
+    registered_yx_bool = registered_zyx[registered_zyx.shape[0] // 2].copy()
+    registered_yx_bool = registered_yx_bool > 0 * 1.0
+    rectangle_coords_yx = lir.lir(registered_yx_bool)
+
+    x = rectangle_coords_yx[0]
+    y = rectangle_coords_yx[1]
+    width = rectangle_coords_yx[2]
+    height = rectangle_coords_yx[3]
+    corner1_xy = (x, y)  # Bottom-left corner
+    corner2_xy = (x + width, y)  # Bottom-right corner
+    corner3_xy = (x + width, y + height)  # Top-right corner
+    corner4_xy = (x, y + height)  # Top-left corner
+    rectangle_xy = np.array((corner1_xy, corner2_xy, corner3_xy, corner4_xy))
+    X_slice = slice(rectangle_xy.min(axis=0)[0], rectangle_xy.max(axis=0)[0])
+    Y_slice = slice(rectangle_xy.min(axis=0)[1], rectangle_xy.max(axis=0)[1])
+
+    # Find the lir Z
+    zyx_shape = registered_zyx.shape
+    registered_zx_bool = registered_zyx.transpose((2, 0, 1)) > 0
+    registered_zx_bool = registered_zx_bool[zyx_shape[0] // 2].copy()
+    rectangle_coords_zx = lir.lir(registered_zx_bool)
+    x = rectangle_coords_zx[0]
+    z = rectangle_coords_zx[1]
+    width = rectangle_coords_zx[2]
+    height = rectangle_coords_zx[3]
+    corner1_zx = (x, z)  # Bottom-left corner
+    corner2_zx = (x + width, z)  # Bottom-right corner
+    corner3_zx = (x + width, z + height)  # Top-right corner
+    corner4_zx = (x, z + height)  # Top-left corner
+    rectangle_zx = np.array((corner1_zx, corner2_zx, corner3_zx, corner4_zx))
+    Z_slice = slice(rectangle_zx.min(axis=0)[1], rectangle_zx.max(axis=0)[1])
+
+    if plot:
+        rectangle_yx = plt.Polygon(
+            (corner1_xy, corner2_xy, corner3_xy, corner4_xy),
+            closed=True,
+            fill=None,
+            edgecolor="r",
+        )
+        # Add the rectangle to the plot
+        fig, ax = plt.subplots(nrows=1, ncols=2)
+        ax[0].imshow(registered_yx_bool)
+        ax[0].add_patch(rectangle_yx)
+
+        rectangle_zx = plt.Polygon(
+            (corner1_zx, corner2_zx, corner3_zx, corner4_zx),
+            closed=True,
+            fill=None,
+            edgecolor="r",
+        )
+        ax[1].imshow(registered_zx_bool)
+        ax[1].add_patch(rectangle_zx)
+        plt.savefig("./lir.png")
+
+    return (Z_slice, Y_slice, X_slice)
 
 
 def copy_n_paste(zyx_data: np.ndarray, zyx_slicing_params: list) -> np.ndarray:
@@ -333,7 +406,10 @@ def copy_n_paste(zyx_data: np.ndarray, zyx_slicing_params: list) -> np.ndarray:
 
 
 def find_lir_slicing_params(
-    input_zyx_shape: Tuple, target_zyx_shape: Tuple, transformation_matrix: np.ndarray
+    input_zyx_shape: Tuple,
+    target_zyx_shape: Tuple,
+    transformation_matrix: np.ndarray,
+    plot: bool = False,
 ) -> Tuple:
     """
     Find the largest internal rectangle between the transformed input and the target
@@ -370,38 +446,41 @@ def find_lir_slicing_params(
     registered_zyx = ants_composed_matrix.apply_to_image(
         zyx_data_ants, reference=target_zyx_ants
     )
-    registered_zyx_bool = registered_zyx.numpy().copy()
-    registered_zyx_bool = registered_zyx_bool > 0
-    # NOTE: we use the center of the volume as reference
-    rectangle_coords_yx = lir.lir(registered_zyx_bool[registered_zyx.shape[0] // 2])
 
-    # Find the overlap in XY
-    x = rectangle_coords_yx[0]
-    y = rectangle_coords_yx[1]
-    width = rectangle_coords_yx[2]
-    height = rectangle_coords_yx[3]
-    corner1_xy = (x, y)  # Bottom-left corner
-    corner2_xy = (x + width, y)  # Bottom-right corner
-    corner3_xy = (x + width, y + height)  # Top-right corner
-    corner4_xy = (x, y + height)  # Top-left corner
-    rectangle_xy = np.array((corner1_xy, corner2_xy, corner3_xy, corner4_xy))
-    X_slice = slice(rectangle_xy.min(axis=0)[0], rectangle_xy.max(axis=0)[0])
-    Y_slice = slice(rectangle_xy.min(axis=0)[1], rectangle_xy.max(axis=0)[1])
+    Z_slice, Y_slice, X_slice = find_lir(registered_zyx.numpy(), plot=plot)
 
-    # Find the overlap in Z
-    registered_zx = registered_zyx.numpy()
-    registered_zx = registered_zx.transpose((2, 0, 1)) > 0
-    rectangle_coords_zx = lir.lir(registered_zx[registered_zyx.shape[0] // 2].copy())
-    x = rectangle_coords_zx[0]
-    y = rectangle_coords_zx[1]
-    width = rectangle_coords_zx[2]
-    height = rectangle_coords_zx[3]
-    corner1_zx = (x, y)  # Bottom-left corner
-    corner2_zx = (x + width, y)  # Bottom-right corner
-    corner3_zx = (x + width, y + height)  # Top-right corner
-    corner4_zx = (x, y + height)  # Top-left corner
-    rectangle_zx = np.array((corner1_zx, corner2_zx, corner3_zx, corner4_zx))
-    Z_slice = slice(rectangle_zx.min(axis=0)[1], rectangle_zx.max(axis=0)[1])
+    # registered_zyx_bool = registered_zyx.numpy().copy()
+    # registered_zyx_bool = registered_zyx_bool > 0
+    # # NOTE: we use the center of the volume as reference
+    # rectangle_coords_yx = lir.lir(registered_zyx_bool[registered_zyx.shape[0] // 2])
+
+    # # Find the overlap in XY
+    # x = rectangle_coords_yx[0]
+    # y = rectangle_coords_yx[1]
+    # width = rectangle_coords_yx[2]
+    # height = rectangle_coords_yx[3]
+    # corner1_xy = (x, y)  # Bottom-left corner
+    # corner2_xy = (x + width, y)  # Bottom-right corner
+    # corner3_xy = (x + width, y + height)  # Top-right corner
+    # corner4_xy = (x, y + height)  # Top-left corner
+    # rectangle_xy = np.array((corner1_xy, corner2_xy, corner3_xy, corner4_xy))
+    # X_slice = slice(rectangle_xy.min(axis=0)[0], rectangle_xy.max(axis=0)[0])
+    # Y_slice = slice(rectangle_xy.min(axis=0)[1], rectangle_xy.max(axis=0)[1])
+
+    # # Find the overlap in Z
+    # registered_zx = registered_zyx.numpy()
+    # registered_zx = registered_zx.transpose((2, 0, 1)) > 0
+    # rectangle_coords_zx = lir.lir(registered_zx[registered_zyx.shape[0] // 2].copy())
+    # x = rectangle_coords_zx[0]
+    # y = rectangle_coords_zx[1]
+    # width = rectangle_coords_zx[2]
+    # height = rectangle_coords_zx[3]
+    # corner1_zx = (x, y)  # Bottom-left corner
+    # corner2_zx = (x + width, y)  # Bottom-right corner
+    # corner3_zx = (x + width, y + height)  # Top-right corner
+    # corner4_zx = (x, y + height)  # Top-left corner
+    # rectangle_zx = np.array((corner1_zx, corner2_zx, corner3_zx, corner4_zx))
+    # Z_slice = slice(rectangle_zx.min(axis=0)[1], rectangle_zx.max(axis=0)[1])
 
     print(f'Slicing parameters Z:{Z_slice}, Y:{Y_slice}, X:{X_slice}')
     return (Z_slice, Y_slice, X_slice)

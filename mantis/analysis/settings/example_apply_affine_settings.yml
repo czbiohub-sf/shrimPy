@@ -5,4 +5,5 @@ affine_transform_zyx:
 - [0.0, 1.0, 0.0, 0.0]
 - [0.0, 0.0, 1.0, 0.0]
 - [0.0, 0.0, 0.0, 1.0]
-output_shape_zyx: [8, 512, 128]
+source_shape_zyx: [8, 100, 100]
+target_shape_zyx: [8, 512, 512]

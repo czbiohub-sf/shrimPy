@@ -18,14 +18,14 @@ cropping_methods = {
 
 # Get two sample FOVs from the target and source respectively
 input_position_dirpaths = "/hpc/projects/comp.micro/mantis/2023_11_08_Opencell_infection/4-registration/HSP90AB1_registration_v2_1_registered.zarr/0/9/000000"
-raw_input_input_dirpaths = "/hpc/projects/comp.micro/mantis/2023_11_08_Opencell_infection/1-recon/HSP90AB1_registration_v2_1_phase.zarr/0/9/000000"
 output_data_path = "./cropped_v2.zarr"
 config_filepath = "./optimized_registration_nuc_3.yml"
 
 # Parse from the yaml file
 settings = yaml_to_model(config_filepath, RegistrationSettings)
 matrix = np.array(settings.affine_transform_zyx)
-target_shape_zyx = tuple(settings.output_shape_zyx)
+source_shape_zyx = tuple(settings.source_shape_zyx)
+target_shape_zyx = tuple(settings.target_shape_zyx)
 
 # Z-chunking factor. Big datasets require z-chunking to avoid blocs issues
 Z_CHUNK = 5  # CHUNK XY ZYX or non will be 500MB
@@ -47,14 +47,11 @@ slurm_out_path = str(os.path.join(output_dir, "slurm_output/deskew-%j.out"))
 with open_ome_zarr(input_paths[0], mode="r") as input_dataset:
     voxel_size = tuple(input_dataset.scale[-3:])
 
-with open_ome_zarr(raw_input_input_dirpaths, mode="r") as raw_input_dataset:
-    raw_input_shape_zyx = raw_input_dataset.data.shape[-3:]
-
 
 print(f'matrix: {matrix}')
 # Find the largest interior rectangle
 Z_slice, Y_slice, X_slice = utils.find_lir_slicing_params(
-    input_zyx_shape=raw_input_shape_zyx,
+    input_zyx_shape=source_shape_zyx,
     target_zyx_shape=target_shape_zyx,
     transformation_matrix=matrix,
 )
