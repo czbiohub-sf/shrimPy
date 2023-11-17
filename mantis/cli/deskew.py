@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import List
 
 import click
-import yaml
 
 from iohub.ngff import open_ome_zarr
 
@@ -76,7 +75,7 @@ def deskew(
         'px_to_scan_ratio': settings.px_to_scan_ratio,
         'keep_overhang': settings.keep_overhang,
         'average_n_slices': settings.average_n_slices,
-        'extra_metadata': {'deskew': asdict(settings)},
+        'extra_metadata': {'deskew': settings.dict()},
     }
 
     # Loop over positions

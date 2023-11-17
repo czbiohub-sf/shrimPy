@@ -1,11 +1,9 @@
-from dataclasses import asdict
+import os
 
 import ants
 import click
 import napari
 import numpy as np
-import yaml
-import os
 
 from iohub import open_ome_zarr
 
@@ -13,9 +11,9 @@ from mantis.analysis.AnalysisSettings import RegistrationSettings
 from mantis.cli import utils
 from mantis.cli.parsing import (
     config_filepath,
-    target_position_dirpaths,
     output_filepath,
     source_position_dirpaths,
+    target_position_dirpaths,
 )
 from mantis.cli.utils import model_to_yaml, yaml_to_model
 
@@ -101,16 +99,11 @@ def optimize_affine(
     tx_opt_mat = ants.read_transform(tx_opt["fwdtransforms"][0])
     tx_opt_numpy = utils.ants_to_numpy_transform_zyx(tx_opt_mat)
 
-    composed_matrix = tx_opt_numpy @ T_pre_optimize_numpy
+    composed_matrix = T_pre_optimize_numpy @ tx_opt_numpy
     composed_matrix_ants = utils.numpy_to_ants_transform_zyx(composed_matrix)
 
     source_registered = composed_matrix_ants.apply_to_image(
         source_zyx_ants, reference=target_zyx_ants
-    )
-    source_registered = ants.apply_transforms(
-        fixed=target_zyx_ants,
-        moving=source_zyx_pre_optim,
-        transformlist=tx_opt["fwdtransforms"],
     )
 
     # Saving the parameters
@@ -121,7 +114,8 @@ def optimize_affine(
         source_channel_index=source_channel_index,
         target_channel_index=target_channel_index,
         affine_transform_zyx=composed_matrix.tolist(),
-        output_shape_zyx=list(target_zyx_ants.numpy().shape),
+        source_shape_zyx=list(source_zyx_ants.numpy().shape),
+        target_shape_zyx=list(target_zyx_ants.numpy().shape),
     )
     model_to_yaml(model, output_filepath)
 

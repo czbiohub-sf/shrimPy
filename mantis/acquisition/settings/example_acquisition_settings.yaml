@@ -18,11 +18,12 @@ time_settings:
   time_interval_s: 60
 
 # Define channel settings for the label-free acquisition. All channels must be
-# within the same config group. `exposure_time_ms` must be a list of length
-# equal to the number of channels. Currently, however, the acquisition software
-# does not support different exposure times for the label-free channels.
+# within the same config group. `default_exposure_times_ms` must be a float
+# which will be used for all channels or a list of length equal to the number of
+# channels. Currently, however, the acquisition software does not support
+# different exposure times for the label-free channels.
 lf_channel_settings:
-  exposure_time_ms: [10, 10, 10, 10, 10]
+  default_exposure_times_ms: 10
   channel_group: 'Channel - LF'
   channels: ['State0', 'State1', 'State2', 'State3', 'State4']
   use_sequencing: True
@@ -47,12 +48,18 @@ lf_slice_settings:
   use_sequencing: True
 
 # Define channel settings for the light-sheet acquisition. Channels may have
-# different exposure time
+# different exposure times. Exposure times may be updated by the autoexposure
+# algorithm. `default_laser_powers` may be a float, a list of length equal to
+# the number of channels, or null / blank in which case the laser power will not
+# be changed unless updated by the autoexposure algorithm. `use_autoexposure`
+# may be bool or a list
 ls_channel_settings:
-  exposure_time_ms: [10, 10]
+  default_exposure_times_ms: [10, 10]
+  default_laser_powers:
   channel_group: 'Channel - LS'
   channels: ['GFP EX488 EM525-45', 'mCherry EX561 EM600-37']
   use_sequencing: False
+  use_autoexposure: [True, False]
 
 # Define slice (i.e. z-stack) settings for the light-sheet acquisition.
 ls_slice_settings:
@@ -131,3 +138,7 @@ ls_microscope_settings:
   use_o3_refocus: True
   o3_refocus_config: ['Channel - LS', 'GFP EX488 EM525-45']
   o3_refocus_interval_min: 10
+
+ls_autoexposure_settings:
+  autoexposure_method: 'manual'
+  rerun_each_timepoint: True
