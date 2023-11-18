@@ -2,7 +2,14 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-from pydantic import BaseModel, Extra, NonNegativeInt, PositiveFloat, PositiveInt, validator
+from pydantic import (
+    BaseModel,
+    Extra,
+    NonNegativeInt,
+    PositiveFloat,
+    PositiveInt,
+    validator,
+)
 
 
 # All settings classes inherit from MyBaseModel, which forbids extra parameters to guard against typos
