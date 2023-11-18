@@ -63,7 +63,7 @@ with open_ome_zarr(all_data_paths[0]) as dataset:
 # Using the first path as a template for the input data path
 utils.create_empty_hcs_zarr(
     store_path=output_data_path,
-    position_keys=[p.parts[-3:] for p in all_data_paths[0:1]],
+    position_keys=[p.parts[-3:] for p in all_data_paths],
     **output_metadata,
 )
 
