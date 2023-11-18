@@ -23,6 +23,9 @@ import matplotlib.pyplot as plt
 from numpy.typing import DTypeLike
 import torch
 import matplotlib.pyplot as plt
+from natsort import natsorted
+import glob
+from typing import List
 
 
 # TODO: replace this with recOrder recOrder.cli.utils.create_empty_hcs()
@@ -837,8 +840,12 @@ def apply_transform_to_zyx_and_save_v2(
     """Load a zyx array from a Position object, apply a transformation to CZYX or ZYX and save the result to file"""
     click.echo(f"Processing c={c_idx}, t={t_idx}")
 
+    input_channel_indices = [int(x) for x in input_channel_indices if x.isdigit()]
+    output_channel_indices = [int(x) for x in output_channel_indices if x.isdigit()]
+
     # Process CZYX vs ZYX
     if input_channel_indices is not None:
+        click.echo(f'input_channel_indices: {input_channel_indices}')
         czyx_data = position.data.oindex[t_idx, input_channel_indices]
         transformed_czyx = func(czyx_data, **kwargs)
         # Write to file
@@ -973,13 +980,21 @@ def process_single_position_v2(
 def merge_datasets(
     input_data_path: Path,
     output_path: Path,
+    input_channel_idx: list[int],
+    output_channel_idx: list[int],
     time_indices: list = [0],
-    input_channel_idx: list = [],
-    output_channel_idx: list = [],
     num_processes: int = 1,
     **kwargs,
 ) -> None:
     input_position = open_ome_zarr(input_data_path)
+    # Get the reader and writer
+    click.echo(f"Input data path:\t{input_data_path}")
+    click.echo(f"Output data path:\t{str(output_path)}")
+
+    stdout_buffer = io.StringIO()
+    with contextlib.redirect_stdout(stdout_buffer):
+        input_position.print_tree()
+    click.echo(f" Input data tree: {stdout_buffer.getvalue()}")
 
     if time_indices == "all":
         time_indices = range(input_position.data.shape[0])
@@ -992,6 +1007,7 @@ def merge_datasets(
         raise ValueError(
             f"time_indices = {time_indices} includes a time index beyond the maximum index of the dataset = {time_ubound}"
         )
+    click.echo(f'input_channel_idx {input_channel_idx}')
 
     with mp.Pool(num_processes) as p:
         partial_copy_n_paste = partial(
@@ -1005,3 +1021,34 @@ def merge_datasets(
         )
         p.starmap(partial_copy_n_paste, itertools.product(time_indices))
     input_position.close()
+
+
+def get_channel_combiner_metadata(data_paths: list[str]):
+    all_channel_names = []
+    all_data_paths = []
+    input_channel_indeces = []
+    output_channel_indeces = []
+    for idx, paths in enumerate(data_paths):
+        # Parse the data paths
+        parsed_paths = [Path(path) for path in natsorted(glob.glob(paths))]
+        all_data_paths.extend(parsed_paths)
+
+        # Open the dataset and get the channel names
+        with open_ome_zarr(parsed_paths[0]) as dataset:
+            T, C, Z, Y, X = dataset.data.shape
+            channel_names = dataset.channel_names
+
+            # Add the current length of all_channel_names to each channel index to ensure uniqueness
+            output_indices = [len(all_channel_names) + i for i in range(len(channel_names))]
+            # Add the channel names to the list
+            all_channel_names.extend(channel_names)
+            # Generate a matching list of input_channel_indices for each file in parsed_paths
+            input_channel_indices = [
+                [index for index, name in enumerate(channel_names)] for _ in parsed_paths
+            ]
+            input_channel_indeces.extend(input_channel_indices)
+
+            # Add the output indices for each file in parsed_paths
+            output_channel_indeces.extend([output_indices for _ in parsed_paths])
+
+    return all_data_paths, all_channel_names, input_channel_indeces, output_channel_indeces
