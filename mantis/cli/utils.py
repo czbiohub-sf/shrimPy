@@ -656,6 +656,7 @@ def stabilization_over_time_ants(
     zyx_data = position[0][t_idx, c_idx].astype(np.float32)
     zyx_data_ants = ants.from_numpy(zyx_data)
 
+    click.echo(f'c={c_idx}, t={t_idx}: Applying shift {list_of_shifts[t_idx]}')
     tx_shifts = numpy_to_ants_transform_zyx(list_of_shifts[t_idx])
 
     # Apply transformation
