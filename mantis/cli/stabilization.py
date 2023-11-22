@@ -18,14 +18,19 @@ from mantis.cli.parsing import (
 )
 import click
 from typing import Tuple
+from mantis.analysis.AnalysisSettings import StabilizationSettings
+from pandas import DataFrame
 
 NA_DET = 1.35
 LAMBDA_ILL = 0.500
 Z_CHUNK = 5
 
+# TODO: Do we need to compute focus fiding on n_number of channels?
+
 
 def estimate_position_focus(
     input_data_path: Path,
+    input_channel_indices: Tuple[int, ...],
     crop_size_xy: list[int, int],
     output_dir: Path,
 ):
@@ -44,11 +49,12 @@ def estimate_position_focus(
             "position_idx": [],
             "time_min": [],
             "channel": [],
+            "channel_idx": [],
             "focal_idx": [],
         }
         print(f"Processing {input_data_path}")
         for t_idx in tqdm(range(T)):
-            for c_idx in range(C):
+            for c_idx in input_channel_indices:
                 focal_plane = focus_from_transverse_band(
                     dataset[0][
                         t_idx,
@@ -63,6 +69,7 @@ def estimate_position_focus(
                 position_stats_stablized["position_idx"].append(pos_idx)
                 position_stats_stablized["time_min"].append(t_idx * T_scale)
                 position_stats_stablized["channel"].append(channel_names[c_idx])
+                position_stats_stablized["channel_idx"].append(c_idx)
                 position_stats_stablized["focal_idx"].append(focal_plane)
 
         position_focus_stats_df = pd.DataFrame(position_stats_stablized)
@@ -97,14 +104,16 @@ def combine_dataframes(
     pd.concat(dataframes, ignore_index=True).to_csv(output_csv_file_path, index=False)
 
 
-def get_mean_z_positions(input_dataframe, verbose=False) -> None:
+def get_mean_z_positions(
+    input_dataframe: DataFrame, z_drift_channel_idx: int = 0, verbose: bool = False
+) -> None:
     import matplotlib.pyplot as plt
 
     z_drift_df = pd.read_csv(input_dataframe)
     # Filter the 0 in focal_idx
     z_drift_df = z_drift_df[z_drift_df["focal_idx"] != 0]
     # Filter the DataFrame for 'channel A'
-    phase_3D_df = z_drift_df[z_drift_df["channel"] == "Phase3D"]
+    phase_3D_df = z_drift_df[z_drift_df["channel_idx"] == z_drift_channel_idx]
     # Sort the DataFrame based on 'time_min'
     phase_3D_df = phase_3D_df.sort_values("time_min")
     # Get the mean of positions for each time point
@@ -120,8 +129,9 @@ def get_mean_z_positions(input_dataframe, verbose=False) -> None:
 def calculate_z_drift(
     input_data_paths: Path,
     output_folder_path: Path,
+    z_drift_channel_idx: int = 0,
     num_processes: int = 1,
-    crop_size_xy: list[int, int] = 300,
+    crop_size_xy: list[int, int] = [600, 600],
     verbose: bool = False,
 ) -> None:
     output_folder_path.mkdir(parents=True, exist_ok=True)
@@ -135,7 +145,12 @@ def calculate_z_drift(
                 pool.starmap(
                     estimate_position_focus,
                     [
-                        (input_data_path, crop_size_xy, position_focus_folder)
+                        (
+                            input_data_path,
+                            [z_drift_channel_idx],
+                            crop_size_xy,
+                            position_focus_folder,
+                        )
                         for input_data_path in input_data_paths
                     ],
                 ),
@@ -153,7 +168,9 @@ def calculate_z_drift(
 
     # Calculate and save the output file
     z_drift_offsets = get_mean_z_positions(
-        output_folder_path / 'positions_focus.csv', verbose=verbose
+        output_folder_path / 'positions_focus.csv',
+        z_drift_channel_idx=z_drift_channel_idx,
+        verbose=verbose,
     )
     # Calculate the z focus shift matrices
     z_focus_shift = [np.eye(4)]
@@ -179,7 +196,7 @@ def calculate_yx_stabilization(
     input_data_path: Path,
     output_folder_path: Path,
     c_idx: int = 0,
-    crop_size_xy: list[int, int] = (200, 200),
+    crop_size_xy: list[int, int] = (400, 400),
     verbose: bool = False,
 ):
     input_position = open_ome_zarr(input_data_path[0])
@@ -313,6 +330,7 @@ def stabilize_timelapse(
         T_z_drift_mats = calculate_z_drift(
             input_data_paths=input_position_dirpaths,
             output_folder_path=output_dirpath_parent,
+            z_drift_channel_idx=channel_index,
             num_processes=num_processes,
             crop_size_xy=crop_size_xy,
             verbose=stabilization_verbose,
@@ -346,8 +364,12 @@ def stabilize_timelapse(
             combined_mats = T_translation_mats
 
     # Save the combined matrices
-    combined_mats_filepath = output_dirpath_parent / "combined_mats.npy"
-    np.save(combined_mats_filepath, combined_mats)
+    combined_mats_filepath = output_dirpath_parent / "combined_mats.yml"
+    model = StabilizationSettings(
+        focus_finding_channel_index=channel_index,
+        affine_transform_zyx=combined_mats.tolist(),
+    )
+    utils.model_to_yaml(model, combined_mats_filepath)
 
     # Open test dataset to get the output shape and voxel size
     with open_ome_zarr(input_position_dirpaths[0]) as dataset:

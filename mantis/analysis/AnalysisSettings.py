@@ -81,3 +81,20 @@ class RegistrationSettings(MyBaseModel):
         if not isinstance(v, list) or len(v) != 3:
             raise ValueError("The output shape zyx must be a list of length 3.")
         return v
+
+
+class StabilizationSettings(MyBaseModel):
+    focus_finding_channel_index: NonNegativeInt
+    affine_transform_list: list[np.ndarray]
+
+    @validator("affine_transform_list")
+    def check_affine_transform_list(cls, v):
+        if not isinstance(v, list):
+            raise ValueError("affine_transform_list must be a list")
+
+        for arr in v:
+            arr = np.array(arr)
+            if arr.shape != (4, 4):
+                raise ValueError("Each element in affine_transform_list must be a 4x4 ndarray")
+
+        return v
