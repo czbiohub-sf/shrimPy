@@ -826,6 +826,10 @@ def create_empty_hcs_zarr(
             position.append_channel(channel_name, resize_arrays=True)
 
 
+def _is_nested(lst):
+    return any(isinstance(i, list) for i in lst)
+
+
 ## NOTE WIP
 def apply_transform_to_zyx_and_save_v2(
     func,
@@ -840,12 +844,14 @@ def apply_transform_to_zyx_and_save_v2(
     """Load a zyx array from a Position object, apply a transformation to CZYX or ZYX and save the result to file"""
     click.echo(f"Processing c={c_idx}, t={t_idx}")
 
-    input_channel_indices = [int(x) for x in input_channel_indices if x.isdigit()]
-    output_channel_indices = [int(x) for x in output_channel_indices if x.isdigit()]
+    # TODO: temporary fix to slumkit issue
+    if _is_nested(input_channel_indices):
+        input_channel_indices = [int(x) for x in input_channel_indices if x.isdigit()]
+    if _is_nested(output_channel_indices):
+        output_channel_indices = [int(x) for x in output_channel_indices if x.isdigit()]
 
     # Process CZYX vs ZYX
     if input_channel_indices is not None:
-        click.echo(f'input_channel_indices: {input_channel_indices}')
         czyx_data = position.data.oindex[t_idx, input_channel_indices]
         transformed_czyx = func(czyx_data, **kwargs)
         # Write to file
@@ -1052,3 +1058,202 @@ def get_channel_combiner_metadata(data_paths: list[str]):
             output_channel_indeces.extend([output_indices for _ in parsed_paths])
 
     return all_data_paths, all_channel_names, input_channel_indeces, output_channel_indeces
+
+
+def denoise_nuc_mem(
+    czyx_data: np.ndarray,
+    model_nuc_path: Path,
+    model_mem_path: Path,
+) -> np.ndarray:
+    import os
+
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    from n2v.models import N2V
+
+    # NOTE: this assumes channel_order = ['nuc', 'mem']
+    C, Z, _, _ = czyx_data.shape
+    basedir_mem = model_mem_path.parent
+    model_mem = N2V(config=None, name=model_mem_path.parts[-1], basedir=basedir_mem)
+    basedir_nuc = model_nuc_path.parent
+    model_nuc = N2V(config=None, name=model_nuc_path.parts[-1], basedir=basedir_nuc)
+
+    z_stack = []
+    for z_idx in range(Z):
+        yx_data_nuc = model_nuc.predict(czyx_data[0, z_idx], axes="YX")
+        yx_data_mem = model_mem.predict(czyx_data[1, z_idx], axes="YX")
+        yx_data_nuc_mem = np.stack((yx_data_nuc, yx_data_mem), axis=0)
+        z_stack.append(yx_data_nuc_mem)
+    z_stack = np.stack(z_stack, axis=0)
+    z_stack = np.moveaxis(z_stack, 0, 1)
+    print(z_stack.shape)
+    return z_stack
+
+
+def denoise_single_position(
+    input_data_path: Path,
+    output_path: Path,
+    input_channel_idx: list[int],
+    output_channel_idx: list[int],
+    time_indices: list = [0],
+    num_processes: int = 1,
+    **kwargs,
+) -> None:
+    input_position = open_ome_zarr(input_data_path)
+    # Get the reader and writer
+    click.echo(f"Input data path:\t{input_data_path}")
+    click.echo(f"Output data path:\t{str(output_path)}")
+
+    stdout_buffer = io.StringIO()
+    with contextlib.redirect_stdout(stdout_buffer):
+        input_position.print_tree()
+    click.echo(f" Input data tree: {stdout_buffer.getvalue()}")
+
+    if time_indices == "all":
+        time_indices = range(input_position.data.shape[0])
+    elif isinstance(time_indices, list):
+        time_indices = time_indices
+
+    # Check for invalid times
+    time_ubound = input_position.data.shape[0] - 1
+    if np.max(time_indices) > time_ubound:
+        raise ValueError(
+            f"time_indices = {time_indices} includes a time index beyond the maximum index of the dataset = {time_ubound}"
+        )
+    click.echo(f'input_channel_idx {input_channel_idx}')
+
+    with mp.Pool(num_processes) as p:
+        partial_denoise = partial(
+            apply_transform_to_zyx_and_save_v2,
+            denoise_nuc_mem,
+            input_position,
+            output_path / Path(*input_data_path.parts[-3:]),
+            input_channel_idx,
+            output_channel_idx,
+            **kwargs,
+        )
+        p.starmap(partial_denoise, itertools.product(time_indices))
+    input_position.close()
+
+
+def correct_illumination_single_position(
+    input_data_path: Path,
+    pattern_data_path: Path,
+    output_path: Path,
+    input_channel_idx: list[int],
+    output_channel_idx: list[int],
+    time_indices: list = [0],
+    num_processes: int = 1,
+    **kwargs,
+) -> None:
+    input_position = open_ome_zarr(input_data_path)
+    pattern_position = open_ome_zarr(pattern_data_path)
+
+    # Get the reader and writer
+    click.echo(f"Input data path:\t{input_data_path}")
+    click.echo(f"Pattern data path:\t{pattern_data_path}")
+    click.echo(f"Output data path:\t{str(output_path)}")
+
+    stdout_buffer = io.StringIO()
+    with contextlib.redirect_stdout(stdout_buffer):
+        input_position.print_tree()
+    click.echo(f" Input data tree: {stdout_buffer.getvalue()}")
+
+    if time_indices == "all":
+        time_indices = range(input_position.data.shape[0])
+    elif isinstance(time_indices, list):
+        time_indices = time_indices
+
+    # Check for invalid times
+    time_ubound = input_position.data.shape[0] - 1
+    if np.max(time_indices) > time_ubound:
+        raise ValueError(
+            f"time_indices = {time_indices} includes a time index beyond the maximum index of the dataset = {time_ubound}"
+        )
+    click.echo(f'input_channel_idx {input_channel_idx}')
+
+    with mp.Pool(num_processes) as p:
+        partial_denoise = partial(
+            custom_func_to_zyx_and_save_v2,
+            correct_illumination_zyx,
+            input_position,
+            pattern_position,
+            output_path / Path(*input_data_path.parts[-3:]),
+            input_channel_idx,
+            output_channel_idx,
+            **kwargs,
+        )
+        p.starmap(partial_denoise, itertools.product(time_indices))
+    input_position.close()
+
+
+def custom_func_to_zyx_and_save_v2(
+    func,
+    position: Position,
+    pattern_position: Position,
+    output_path: Path,
+    input_channel_indices: list[int],
+    output_channel_indices: list[int],
+    t_idx: int,
+    c_idx: int = None,
+    **kwargs,
+) -> None:
+    """Load a zyx array from a Position object, apply a transformation to CZYX or ZYX and save the result to file"""
+    click.echo(f"Processing c={c_idx}, t={t_idx}")
+
+    # TODO: temporary fix to slumkit issue
+    if _is_nested(input_channel_indices):
+        input_channel_indices = [int(x) for x in input_channel_indices if x.isdigit()]
+    if _is_nested(output_channel_indices):
+        output_channel_indices = [int(x) for x in output_channel_indices if x.isdigit()]
+
+    # Process CZYX vs ZYX
+    if input_channel_indices is not None:
+        czyx_data = position.data.oindex[t_idx, input_channel_indices]
+        pattern_czyx_data = pattern_position.data[0, 0]
+        for idx in range(len(input_channel_indices) - 1):
+            pattern_czyx_data = np.stack((pattern_czyx_data, pattern_czyx_data), axis=0)
+        transformed_czyx = func(czyx_data, pattern_czyx_data, **kwargs)
+        # Write to file
+        with open_ome_zarr(output_path, mode="r+") as output_dataset:
+            output_dataset[0].oindex[t_idx, output_channel_indices] = transformed_czyx
+        click.echo(f"Finished Writing.. t={t_idx}")
+    else:
+        zyx_data = position.data.oindex[t_idx, c_idx]
+        zyx_pattern = pattern_position.data[0, 0]
+        # Apply transformation
+        transformed_zyx = func(zyx_data, zyx_pattern, **kwargs)
+
+        # Write to file
+        with open_ome_zarr(output_path, mode="r+") as output_dataset:
+            output_dataset[0][t_idx, c_idx] = transformed_zyx
+
+        click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
+
+
+def correct_illumination_zyx(
+    czyx_data: np.ndarray,
+    czyx_pattern: np.ndarray,
+    black_level_input: int = 90,
+    black_level_pattern: int = 100,
+):
+    """Correct illumination of an FOV in place.
+
+    Parameters
+    ----------
+    czyx_data : np.ndarray
+        Input data to correct
+    czyx_pattern : np.ndarrayoar
+        Illumination pattern to correct with
+    black_level : int, optional
+        Black level of the camera, by default 100.
+    """
+    corrected_zyx = czyx_data.astype(np.float32)
+    bg = czyx_pattern.astype(np.float32)
+    bg = np.where(bg < black_level_pattern, 1e10, bg)
+    # bg = bg - black_level_pattern
+    corrected_zyx = corrected_zyx - black_level_input
+    corrected_zyx = corrected_zyx.clip(0, None)
+    corrected_zyx = corrected_zyx / (bg + 1e-10)
+    corrected_zyx = corrected_zyx + black_level_input
+
+    return corrected_zyx
