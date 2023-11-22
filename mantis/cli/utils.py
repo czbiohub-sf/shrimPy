@@ -18,6 +18,8 @@ import yaml
 from iohub.ngff import Position, open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
 from tqdm import tqdm
+from numpy.typing import DTypeLike
+import torch
 import matplotlib.pyplot as plt
 
 from numpy.typing import DTypeLike
@@ -1258,3 +1260,37 @@ def correct_illumination_zyx(
     corrected_zyx = corrected_zyx + black_level_input
 
     return corrected_zyx
+
+
+def nuc_mem_segmentation(czyx_data, **cellpose_kwargs) -> np.ndarray:
+    """Segment nuclei and membranes using cellpose"""
+
+    from cellpose import models
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Get the key/values under this dictionary
+    # cellpose_params = cellpose_params.get('cellpose_params', {})
+    cellpose_params = cellpose_kwargs['cellpose_kwargs']
+    Z_slice = slice(int(cellpose_params['z_idx']), int(cellpose_params['z_idx']) + 1)
+    cyx_data = czyx_data[:, Z_slice]
+
+    if "nucleus_segmentation" in cellpose_params:
+        nuc_seg_kwargs = cellpose_params["nucleus_segmentation"]
+    if "membrane_segmentation" in cellpose_params:
+        mem_seg_kwargs = cellpose_params["membrane_segmentation"]
+
+    # Initialize Cellpose models
+    cyto_model = models.Cellpose(gpu=True, model_type=cellpose_params["mem_model_path"])
+    nuc_model = models.CellposeModel(
+        model_type=cellpose_params["nuc_model_path"], device=torch.device(device)
+    )
+
+    nuc_masks = nuc_model.eval(cyx_data[0], **nuc_seg_kwargs)[0]
+    mem_masks, _, _, _ = cyto_model.eval(cyx_data[1], **mem_seg_kwargs)
+
+    # Save
+    segmentation_stack = np.stack((nuc_masks, mem_masks))
+
+    segmentation_stack = segmentation_stack[:, np.newaxis, ...]
+    return segmentation_stack
