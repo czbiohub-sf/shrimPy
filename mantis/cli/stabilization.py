@@ -152,7 +152,6 @@ def calculate_z_drift(
     )
 
     # Calculate and save the output file
-    output_file = output_folder_path / "z_shifts_matrices.npy"
     z_drift_offsets = get_mean_z_positions(
         output_folder_path / 'positions_focus.csv', verbose=verbose
     )
@@ -173,9 +172,6 @@ def calculate_z_drift(
             )
         )
     z_focus_shift = np.array(z_focus_shift)
-
-    print(f'Saving z_focus_shifts to {output_file}')
-    np.save(output_file, z_focus_shift)
     return z_focus_shift
 
 
