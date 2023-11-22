@@ -101,8 +101,12 @@ def get_mean_z_positions(input_dataframe, verbose=False) -> None:
     import matplotlib.pyplot as plt
 
     z_drift_df = pd.read_csv(input_dataframe)
+    # Filter the 0 in focal_idx
+    z_drift_df = z_drift_df[z_drift_df["focal_idx"] != 0]
     # Filter the DataFrame for 'channel A'
     phase_3D_df = z_drift_df[z_drift_df["channel"] == "Phase3D"]
+    # Sort the DataFrame based on 'time_min'
+    phase_3D_df = phase_3D_df.sort_values("time_min")
     # Get the mean of positions for each time point
     average_focal_idx = phase_3D_df.groupby("time_min")["focal_idx"].mean().reset_index()
     if verbose:
@@ -154,13 +158,14 @@ def calculate_z_drift(
     )
     # Calculate the z focus shift matrices
     z_focus_shift = [np.eye(4)]
+    # Find the z focus shift matrices for each time point based on the z_drift_offsets relative to the first timepoint.
     for i in range(len(z_drift_offsets) - 1):
         z_val = z_drift_offsets[0]
         z_val_next = z_drift_offsets[i + 1]
         z_focus_shift.append(
             np.array(
                 [
-                    [1, 0, 0, (z_val - z_val_next)],
+                    [1, 0, 0, (z_val_next - z_val)],
                     [0, 1, 0, 0],
                     [0, 0, 1, 0],
                     [0, 0, 0, 1],

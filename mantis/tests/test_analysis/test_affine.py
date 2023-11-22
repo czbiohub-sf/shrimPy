@@ -50,7 +50,9 @@ def test_3d_translation():
     # Check the result
     assert isinstance(result, np.ndarray)
     assert result.shape == output_shape_zyx
-    assert np.all(result[3:10, 0:9, 0:6] == 1)  # Example assertion
+    assert np.all(
+        result[3:10, 0:9, 0:6] == 1
+    )  # Test if the shifts where going to the right direction
 
 
 if __name__ == "__main__":
