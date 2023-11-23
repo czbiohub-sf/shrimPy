@@ -12,16 +12,19 @@ import datetime
 
 
 # %%
-input_dataset_paths = "/hpc/projects/comp.micro/mantis/2023_09_21_OpenCell_targets/4-virtual_staining/H2B_CAAX_timelapse_2/prediction.zarr/0/23/000001"
-config_file = "/home/eduardo.hirata/repos/mantis/mantis/cli/test_edhirata/example_cellpose_segmentation_settings.yml"
-output_data_path = "./mask_nuc_mem_all_pos_v2.zarr"
+input_dataset_paths = "/hpc/projects/comp.micro/mantis/2023_11_08_Opencell_infection/6-VS_stabilized_crop/OC43_infection_timelapse_3_registered_stabilized_VS_cropped_v2.zarr/0/2/000000"
+config_file = (
+    "/hpc/projects/comp.micro/mantis/2023_11_08_Opencell_infection/7-segmentation/config.yml"
+)
+output_data_path = "./OC43_infection_timelapse_3_nuc_mem_segmentations_v2.zarr"
 
 # sbatch and resource parameters
 partition = 'gpu'
-cpus_per_task = 8
-mem_per_cpu = "16G"
+cpus_per_task = 32
+mem_per_cpu = "8G"
 time = 60  # minutes
-simultaneous_processes_per_node = 5
+simultaneous_processes_per_node = 15
+Z_CHUNK = 5
 
 input_paths = [Path(path) for path in natsorted(glob.glob(input_dataset_paths))]
 output_data_path = Path(output_data_path)
@@ -29,17 +32,25 @@ click.echo(f"in: {input_paths}, out: {output_data_path}")
 slurm_out_path = str(output_data_path.parent / f"slurm_output/register-%j.out")
 
 settings = utils.yaml_to_model(config_file, CellposeSegmentationSettings)
-kwargs = {"cellpose_kwargs": settings.dict()}
+settings = settings.dict()
+settings['z_idx'] = 36
+kwargs = {"cellpose_kwargs": settings}
+
 print(f'Using settings: {kwargs}')
 # %%
 with open_ome_zarr(input_paths[0]) as dataset:
     T, C, Z, Y, X = dataset.data.shape
     channel_names = dataset.channel_names
-chunk_zyx_shape = (1, Y, X)
+chunk_zyx_shape = (Z_CHUNK, Y, X)
 channel_names = ["label_nuc", "label_mem"]
+input_c_idx = [0, 1]
+output_c_idx = [i for i in range(len(input_c_idx))]
+
+
+T = 2
 
 output_metadata = {
-    "shape": (T, len(channel_names), 1, Y, X),
+    "shape": (T, len(channel_names), Z, Y, X),
     "chunks": (1,) * 2 + chunk_zyx_shape,
     "scale": dataset.scale,
     "channel_names": channel_names,
@@ -62,12 +73,14 @@ params = SlurmParams(
     output=slurm_out_path,
 )
 
+
 # wrap our utils.process_single_position() function with slurmkit
 slurm_process_single_position = slurm_function(utils.process_single_position_v2)
 segmentation_func = slurm_process_single_position(
     func=utils.nuc_mem_segmentation,
     time_indices=list(range(T)),
-    channel_indices=[0, 1],
+    input_channel_idx=input_c_idx,
+    output_channel_idx=output_c_idx,
     num_processes=simultaneous_processes_per_node,
     **kwargs,
 )
@@ -82,3 +95,5 @@ register_jobs = [
     )
     for in_path in input_paths
 ]
+
+# %%
