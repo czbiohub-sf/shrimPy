@@ -1100,7 +1100,15 @@ def denoise_single_position(
         raise ValueError(
             f"time_indices = {time_indices} includes a time index beyond the maximum index of the dataset = {time_ubound}"
         )
-    click.echo(f'input_channel_idx {input_channel_idx}')
+
+    if input_channel_idx is None or len(input_channel_idx) == 0:
+        click.echo(f'Input_channel_idx is None. Processing all channels in the input dataset')
+        # If C is not empty, use itertools.product with both ranges
+        _, C, _, _, _ = input_position.data.shape
+        input_channel_idx = [i for i in range(C)]
+        output_channel_idx = input_channel_idx
+    else:
+        click.echo(f'Input_channel_idx {input_channel_idx}')
 
     with mp.Pool(num_processes) as p:
         partial_denoise = partial(
@@ -1150,7 +1158,14 @@ def correct_illumination_single_position(
         raise ValueError(
             f"time_indices = {time_indices} includes a time index beyond the maximum index of the dataset = {time_ubound}"
         )
-    click.echo(f'input_channel_idx {input_channel_idx}')
+
+    if input_channel_idx is None or len(input_channel_idx) == 0:
+        click.echo(f'Input_channel_idx is None. Processing all channels in the input dataset')
+        # If C is not empty, use itertools.product with both ranges
+        _, C, _, _, _ = input_position.data.shape
+        input_channel_idx = [i for i in range(C)]
+    else:
+        click.echo(f'Input_channel_idx {input_channel_idx}')
 
     with mp.Pool(num_processes) as p:
         partial_denoise = partial(
