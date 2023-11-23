@@ -879,7 +879,8 @@ def process_single_position_v2(
     input_data_path: Path,
     output_path: Path,
     time_indices: list = [0],
-    channel_indices: list = [],
+    input_channel_idx: list = [],
+    output_channel_idx: list = [],
     num_processes: int = mp.cpu_count(),
     **kwargs,
 ) -> None:
@@ -896,36 +897,11 @@ def process_single_position_v2(
         input_dataset.print_tree()
     click.echo(f" Input data tree: {stdout_buffer.getvalue()}")
 
-    # TODO: logic for parsing time and channel indices like recorder here
-    # settings = utils.yaml_to_model(config_filepath, ReconstructionSettings)
-    # Check input channel names
-    # if not set(settings.input_channel_names).issubset(
-    #     input_dataset.channel_names
-    # ):
-    #     raise ValueError(
-    #         f"Each of the input_channel_names = {settings.input_channel_names} in {config_filepath} must appear in the dataset {input_position_dirpath} which currently contains channel_names = {input_dataset.channel_names}."
-    #     )
-
-    # # Find input channel indices
-    # input_channel_indices = []
-    # for input_channel_name in settings.input_channel_names:
-    #     input_channel_indices.append(
-    #         input_dataset.channel_names.index(input_channel_name)
-    #     )
-
-    # # Find output channel indices
-    # output_channel_indices = []
-    # for output_channel_name in output_channel_names:
-    #     output_channel_indices.append(
-    #         output_dataset.channel_names.index(output_channel_name)
-    #     )
     # Find time indices
-    # if settings.time_indices == "all":
-    #     time_indices = range(input_dataset.data.shape[0])
-    # elif isinstance(settings.time_indices, list):
-    #     time_indices = settings.time_indices
-    # elif isinstance(settings.time_indices, int):
-    #     time_indices = [settings.time_indices]
+    if time_indices == "all":
+        time_indices = range(input_dataset.data.shape[0])
+    elif isinstance(time_indices, list):
+        time_indices = time_indices
 
     # Check for invalid times
     time_ubound = input_dataset.data.shape[0] - 1
@@ -956,9 +932,9 @@ def process_single_position_v2(
     # Loop through (T, C), deskewing and writing as we go
     click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
 
-    if channel_indices is None or len(channel_indices) == 0:
+    if input_channel_idx is None or len(input_channel_idx) == 0:
         # If C is not empty, use itertools.product with both ranges
-        iterable = itertools.product(time_indices, channel_indices)
+        iterable = itertools.product(time_indices, input_channel_idx)
         partial_apply_transform_to_zyx_and_save = partial(
             apply_transform_to_zyx_and_save_v2,
             func,
@@ -975,7 +951,8 @@ def process_single_position_v2(
             func,
             input_dataset,
             output_path,
-            channel_indices,
+            input_channel_idx,
+            output_channel_idx,
             c_idx=0,
             **func_args,
         )
@@ -1291,6 +1268,7 @@ def nuc_mem_segmentation(czyx_data, **cellpose_kwargs) -> np.ndarray:
 
     # Save
     segmentation_stack = np.stack((nuc_masks, mem_masks))
-
-    segmentation_stack = segmentation_stack[:, np.newaxis, ...]
-    return segmentation_stack
+    # segmentation_stack = segmentation_stack[:, np.newaxis, ...]
+    output_array = np.zeros_like(czyx_data)
+    output_array[:, int(cellpose_params['z_idx'])] = segmentation_stack
+    return output_array
