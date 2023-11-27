@@ -28,6 +28,7 @@ import matplotlib.pyplot as plt
 from natsort import natsorted
 import glob
 from typing import List
+import os
 
 
 # TODO: replace this with recOrder recOrder.cli.utils.create_empty_hcs()
@@ -770,11 +771,12 @@ def yaml_to_model(yaml_path: Path, model):
 def create_empty_hcs_zarr(
     store_path: Path,
     position_keys: list[Tuple[str]],
-    shape: Tuple[int],
-    chunks: Tuple[int],
-    scale: Tuple[float],
     channel_names: list[str],
-    dtype: DTypeLike,
+    shape: Tuple[int],
+    chunks: Tuple[int] = None,
+    scale: Tuple[float] = (1, 1, 1, 1, 1),
+    dtype: DTypeLike = np.float32,
+    max_chunk_size_bytes=500e6,
 ) -> None:
     """
     If the plate does not exist, create an empty zarr plate.
@@ -794,9 +796,26 @@ def create_empty_hcs_zarr(
         Channel names, will append if not present in metadata.
     dtype : DTypeLike
 
-    Borrowing form recOrder
+    Modifying from recOrder
     https://github.com/mehta-lab/recOrder/blob/d31ad910abf84c65ba927e34561f916651cbb3e8/recOrder/cli/utils.py#L12
     """
+    MAX_CHUNK_SIZE = max_chunk_size_bytes  # in bytes
+    bytes_per_pixel = np.dtype(dtype).itemsize
+
+    # Limiting the chunking to 500MB
+    if chunks is None:
+        chunk_zyx_shape = list(shape[-3:])
+        # chunk_zyx_shape[-3] > 1 ensures while loop will not stall if single
+        # XY image is larger than MAX_CHUNK_SIZE
+        while (
+            chunk_zyx_shape[-3] > 1
+            and np.prod(chunk_zyx_shape) * bytes_per_pixel > MAX_CHUNK_SIZE
+        ):
+            chunk_zyx_shape[-3] = np.ceil(chunk_zyx_shape[-3] / 2).astype(int)
+        chunk_zyx_shape = tuple(chunk_zyx_shape)
+
+        chunks = 2 * (1,) + chunk_zyx_shape
+    click.echo(f"Chunk size: {chunks}")
 
     # Create plate
     output_plate = open_ome_zarr(
@@ -1041,14 +1060,32 @@ def get_channel_combiner_metadata(data_paths: list[str]):
     return all_data_paths, all_channel_names, input_channel_indeces, output_channel_indeces
 
 
+def _assign_available_gpu():
+    """
+    Assign an available GPU if there is one.
+    """
+    # Get the list of available GPUs
+    available_gpus = (
+        os.popen('nvidia-smi --query-gpu=index --format=csv,noheader').read().split('\n')[:-1]
+    )
+
+    # Check if there are any available GPUs
+    if available_gpus:
+        # Assign the first available GPU
+        os.environ['CUDA_VISIBLE_DEVICES'] = available_gpus[0]
+        print(f'GPU {available_gpus[0]} assigned.')
+    else:
+        print('No available GPUs.')
+
+
 def denoise_nuc_mem(
     czyx_data: np.ndarray,
     model_nuc_path: Path,
     model_mem_path: Path,
 ) -> np.ndarray:
-    import os
+    _assign_available_gpu()
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     from n2v.models import N2V
 
     # NOTE: this assumes channel_order = ['nuc', 'mem']
