@@ -849,7 +849,35 @@ def create_empty_hcs_zarr(
 
 
 def _is_nested(lst):
-    return any(isinstance(i, list) for i in lst)
+    return any(isinstance(i, list) for i in lst) or any(isinstance(i, str) for i in lst)
+
+
+def _check_nan_n_zeros(input_array):
+    """
+    Checks if any of the channels are all zeros or nans and returns true
+    """
+    if len(input_array.shape) == 3:
+        # Check if all the values are zeros or nans
+        if np.all(input_array == 0) or np.all(np.isnan(input_array)):
+            # Return true
+            return True
+    elif len(input_array.shape) == 4:
+        # Get the number of channels
+        num_channels = input_array.shape[0]
+        # Loop through the channels
+        for c in range(num_channels):
+            # Get the channel
+            zyx_array = input_array[c, :, :, :]
+
+            # Check if all the values are zeros or nans
+            if np.all(zyx_array == 0) or np.all(np.isnan(zyx_array)):
+                # Return true
+                return True
+    else:
+        raise ValueError("Input array must be 3D or 4D")
+
+    # Return false
+    return False
 
 
 ## NOTE WIP
@@ -871,25 +899,33 @@ def apply_transform_to_zyx_and_save_v2(
         input_channel_indices = [int(x) for x in input_channel_indices if x.isdigit()]
     if _is_nested(output_channel_indices):
         output_channel_indices = [int(x) for x in output_channel_indices if x.isdigit()]
+    click.echo(f'input_channel_indices: {input_channel_indices}')
 
     # Process CZYX vs ZYX
     if input_channel_indices is not None:
         czyx_data = position.data.oindex[t_idx, input_channel_indices]
-        transformed_czyx = func(czyx_data, **kwargs)
-        # Write to file
-        with open_ome_zarr(output_path, mode="r+") as output_dataset:
-            output_dataset[0].oindex[t_idx, output_channel_indices] = transformed_czyx
-        click.echo(f"Finished Writing.. t={t_idx}")
+        if not _check_nan_n_zeros(czyx_data):
+            transformed_czyx = func(czyx_data, **kwargs)
+            # Write to file
+            with open_ome_zarr(output_path, mode="r+") as output_dataset:
+                output_dataset[0].oindex[t_idx, output_channel_indices] = transformed_czyx
+            click.echo(f"Finished Writing.. t={t_idx}")
+        else:
+            click.echo(f"Skipping t={t_idx} due to all zeros or nans")
     else:
         zyx_data = position.data.oindex[t_idx, c_idx]
-        # Apply transformation
-        transformed_zyx = func(zyx_data, **kwargs)
+        # Checking if nans or zeros and skip processing
+        if not _check_nan_n_zeros(zyx_data):
+            # Apply transformation
+            transformed_zyx = func(zyx_data, **kwargs)
 
-        # Write to file
-        with open_ome_zarr(output_path, mode="r+") as output_dataset:
-            output_dataset[0][t_idx, c_idx] = transformed_zyx
+            # Write to file
+            with open_ome_zarr(output_path, mode="r+") as output_dataset:
+                output_dataset[0][t_idx, c_idx] = transformed_zyx
 
-        click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
+            click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
+        else:
+            click.echo(f"Skipping c={c_idx}, t={t_idx} due to all zeros or nans")
 
 
 # TODO: modifiy how we get the time and channesl like recOrder (isinstance(input, list) or instance(input,int) or all)
@@ -960,7 +996,7 @@ def process_single_position_v2(
             func,
             input_dataset,
             output_path,
-            channel_indices=None,
+            input_channel_indices=None,
             **func_args,
         )
     else:
@@ -1013,7 +1049,15 @@ def merge_datasets(
         raise ValueError(
             f"time_indices = {time_indices} includes a time index beyond the maximum index of the dataset = {time_ubound}"
         )
-    click.echo(f'input_channel_idx {input_channel_idx}')
+
+    if input_channel_idx is None or len(input_channel_idx) == 0:
+        click.echo(f'Input_channel_idx is None. Processing all channels in the input dataset')
+        # If C is not empty, use itertools.product with both ranges
+        _, C, _, _, _ = input_position.data.shape
+        input_channel_idx = [i for i in range(C)]
+        output_channel_idx = input_channel_idx
+    else:
+        click.echo(f'Input_channel_idx {input_channel_idx}')
 
     with mp.Pool(num_processes) as p:
         partial_copy_n_paste = partial(
@@ -1029,7 +1073,9 @@ def merge_datasets(
     input_position.close()
 
 
-def get_channel_combiner_metadata(data_paths: list[str]):
+def get_channel_combiner_metadata(
+    data_paths: list[str],
+) -> Tuple[list[Path], list[str], list[list[int]], list[list[int]]]:
     all_channel_names = []
     all_data_paths = []
     input_channel_indeces = []
@@ -1083,10 +1129,9 @@ def denoise_nuc_mem(
     model_nuc_path: Path,
     model_mem_path: Path,
 ) -> np.ndarray:
-    _assign_available_gpu()
-
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     from n2v.models import N2V
+
+    _assign_available_gpu()
 
     # NOTE: this assumes channel_order = ['nuc', 'mem']
     C, Z, _, _ = czyx_data.shape
@@ -1242,25 +1287,31 @@ def custom_func_to_zyx_and_save_v2(
     # Process CZYX vs ZYX
     if input_channel_indices is not None:
         czyx_data = position.data.oindex[t_idx, input_channel_indices]
-        pattern_czyx_data = pattern_position.data[0, 0]
-        for idx in range(len(input_channel_indices) - 1):
-            pattern_czyx_data = np.stack((pattern_czyx_data, pattern_czyx_data), axis=0)
-        transformed_czyx = func(czyx_data, pattern_czyx_data, **kwargs)
-        # Write to file
-        with open_ome_zarr(output_path, mode="r+") as output_dataset:
-            output_dataset[0].oindex[t_idx, output_channel_indices] = transformed_czyx
-        click.echo(f"Finished Writing.. t={t_idx}")
+        if not _check_nan_n_zeros(czyx_data):
+            pattern_czyx_data = pattern_position.data[0, 0]
+            for idx in range(len(input_channel_indices) - 1):
+                pattern_czyx_data = np.stack((pattern_czyx_data, pattern_czyx_data), axis=0)
+            transformed_czyx = func(czyx_data, pattern_czyx_data, **kwargs)
+            # Write to file
+            with open_ome_zarr(output_path, mode="r+") as output_dataset:
+                output_dataset[0].oindex[t_idx, output_channel_indices] = transformed_czyx
+            click.echo(f"Finished Writing.. t={t_idx}")
+        else:
+            click.echo(f"Skipping t={t_idx} due to all zeros or nans")
     else:
         zyx_data = position.data.oindex[t_idx, c_idx]
-        zyx_pattern = pattern_position.data[0, 0]
-        # Apply transformation
-        transformed_zyx = func(zyx_data, zyx_pattern, **kwargs)
+        if not _check_nan_n_zeros(zyx_data):
+            zyx_pattern = pattern_position.data[0, 0]
+            # Apply transformation
+            transformed_zyx = func(zyx_data, zyx_pattern, **kwargs)
 
-        # Write to file
-        with open_ome_zarr(output_path, mode="r+") as output_dataset:
-            output_dataset[0][t_idx, c_idx] = transformed_zyx
+            # Write to file
+            with open_ome_zarr(output_path, mode="r+") as output_dataset:
+                output_dataset[0][t_idx, c_idx] = transformed_zyx
 
-        click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
+            click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
+        else:
+            click.echo(f"Skipping c={c_idx}, t={t_idx} due to all zeros or nans")
 
 
 def correct_illumination_zyx(
@@ -1321,7 +1372,9 @@ def nuc_mem_segmentation(czyx_data, **cellpose_kwargs) -> np.ndarray:
 
     # Save
     segmentation_stack = np.stack((nuc_masks, mem_masks))
-    # segmentation_stack = segmentation_stack[:, np.newaxis, ...]
-    output_array = np.zeros_like(czyx_data)
-    output_array[:, int(cellpose_params['z_idx'])] = segmentation_stack
+    segmentation_stack = segmentation_stack[:, np.newaxis, ...]
+    # TODO: uncomment if prediction is placed at the corresponding whole volume
+    # output_array = np.zeros_like(czyx_data)
+    # output_array[:, int(cellpose_params['z_idx'])] = segmentation_stack
+    output_array = segmentation_stack
     return output_array
