@@ -116,16 +116,19 @@ def apply_function_to_zyx_and_save(
 ) -> None:
     """Load a zyx array from a Position object, apply a transformation and save the result to file"""
     click.echo(f"Processing c={c_idx}, t={t_idx}")
+
     zyx_data = position[0][t_idx, c_idx]
+    if _check_nan_n_zeros(zyx_data):
+        click.echo(f"Skipping c={c_idx}, t={t_idx} due to all zeros or nans")
+    else:
+        # Apply function
+        processed_zyx = func(zyx_data, **kwargs)
 
-    # Apply function
-    processed_zyx = func(zyx_data, **kwargs)
+        # Write to file
+        with open_ome_zarr(output_path, mode="r+") as output_dataset:
+            output_dataset[0][t_idx, c_idx] = processed_zyx
 
-    # Write to file
-    with open_ome_zarr(output_path, mode="r+") as output_dataset:
-        output_dataset[0][t_idx, c_idx] = processed_zyx
-
-    click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
+        click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
 
 
 def process_single_position(
