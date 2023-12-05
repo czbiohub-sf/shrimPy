@@ -85,9 +85,9 @@ class RegistrationSettings(MyBaseModel):
 
 class StabilizationSettings(MyBaseModel):
     focus_finding_channel_index: NonNegativeInt
-    affine_transform_list: list[np.ndarray]
+    affine_transform_zyx_list: list
 
-    @validator("affine_transform_list")
+    @validator("affine_transform_zyx_list")
     def check_affine_transform_list(cls, v):
         if not isinstance(v, list):
             raise ValueError("affine_transform_list must be a list")

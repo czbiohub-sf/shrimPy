@@ -23,8 +23,8 @@ from pandas import DataFrame
 
 NA_DET = 1.35
 LAMBDA_ILL = 0.500
+# TODO: this variable should probably be exposed?
 Z_CHUNK = 5
-
 # TODO: Do we need to compute focus fiding on n_number of channels?
 
 
@@ -133,7 +133,7 @@ def calculate_z_drift(
     num_processes: int = 1,
     crop_size_xy: list[int, int] = [600, 600],
     verbose: bool = False,
-) -> None:
+) -> np.ndarray:
     output_folder_path.mkdir(parents=True, exist_ok=True)
 
     position_focus_folder = output_folder_path / 'positions_focus'
@@ -189,6 +189,11 @@ def calculate_z_drift(
             )
         )
     z_focus_shift = np.array(z_focus_shift)
+    if verbose:
+        print(f"Saving z focus shift matrices to {output_folder_path}")
+        z_focus_shift_filepath = output_folder_path / "z_focus_shift.npy"
+        np.save(z_focus_shift_filepath, z_focus_shift)
+
     return z_focus_shift
 
 
@@ -198,7 +203,7 @@ def calculate_yx_stabilization(
     c_idx: int = 0,
     crop_size_xy: list[int, int] = (400, 400),
     verbose: bool = False,
-):
+) -> np.ndarray:
     input_position = open_ome_zarr(input_data_path[0])
     output_folder_path = Path(output_folder_path)
     output_folder_path.mkdir(parents=True, exist_ok=True)
@@ -225,6 +230,7 @@ def calculate_yx_stabilization(
         ],
         **focus_params,
     )
+    print(f"Estimated in-focus slice: {z_idx}")
     # Load timelapse
     xy_timelapse = input_position[0][:T, c_idx, z_idx, Y_slice, X_slice]
     minimum = xy_timelapse.min()
@@ -242,8 +248,12 @@ def calculate_yx_stabilization(
     T_zyx_shift[:, 0, 0] = 1
 
     # Save the translation matrices
-    yx_shake_translation_tx_filepath = output_folder_path / "yx_shake_translation_tx_ants.npy"
-    np.save(yx_shake_translation_tx_filepath, T_zyx_shift)
+    if verbose:
+        print(f"Saving translation matrices to {output_folder_path}")
+        yx_shake_translation_tx_filepath = (
+            output_folder_path / "yx_shake_translation_tx_ants.npy"
+        )
+        np.save(yx_shake_translation_tx_filepath, T_zyx_shift)
 
     input_position.close()
 
@@ -252,7 +262,7 @@ def calculate_yx_stabilization(
 
 @click.command()
 @input_position_dirpaths()
-@output_dirpath()
+@output_filepath()
 @click.option(
     "--num-processes",
     "-j",
@@ -296,9 +306,9 @@ def calculate_yx_stabilization(
     default=[300, 300],
     help="Crop size in xy. Enter two integers. Default is 300 300.",
 )
-def stabilize_timelapse(
+def estimate_stabilization_affine_list(
     input_position_dirpaths,
-    output_dirpath,
+    output_filepath,
     num_processes,
     channel_index,
     estimate_yx_drift,
@@ -307,14 +317,14 @@ def stabilize_timelapse(
     crop_size_xy,
 ):
     """
-    Stabilize the timelapse input based on single position and channel.
+    Estimate the Z and/or XY timelapse stabilization matrices.
 
-    This function applies stabilization to the input data. It can estimate both yx and z drifts.
+    This function estimates yx and z drifts and returns the affine matrices per timepoint taking t=0 as reference saved as a yaml file.
     The level of verbosity can be controlled with the stabilization_verbose flag.
     The size of the crop in xy can be specified with the crop-size-xy option.
 
     Example usage:
-    mantis stabilization -i ./timelapse.zarr/0/0/0 -o ./stabilization.zarr -d -v -z -s 300 300
+    mantis stabilization -i ./timelapse.zarr/0/0/0 -o ./stabilization.yml -d -v -z -s 300 300
 
     Note: the verbose output will be saved at the same level as the output zarr.
     """
@@ -322,14 +332,16 @@ def stabilize_timelapse(
         estimate_yx_drift or estimate_z_drift
     ), "At least one of estimate_yx_drift or estimate_z_drift must be selected"
 
-    output_dirpath_parent = output_dirpath.parent
-    output_dirpath_parent.mkdir(parents=True, exist_ok=True)
+    assert output_filepath.suffix == ".yml", "Output file must be a yaml file"
+
+    output_dirpath = output_filepath.parent
+    output_dirpath.mkdir(parents=True, exist_ok=True)
 
     # Estimate z drift
     if estimate_z_drift:
         T_z_drift_mats = calculate_z_drift(
             input_data_paths=input_position_dirpaths,
-            output_folder_path=output_dirpath_parent,
+            output_folder_path=output_dirpath,
             z_drift_channel_idx=channel_index,
             num_processes=num_processes,
             crop_size_xy=crop_size_xy,
@@ -342,7 +354,7 @@ def stabilize_timelapse(
     if estimate_yx_drift:
         T_translation_mats = calculate_yx_stabilization(
             input_data_path=input_position_dirpaths,
-            output_folder_path=output_dirpath_parent,
+            output_folder_path=output_dirpath,
             c_idx=channel_index,
             crop_size_xy=crop_size_xy,
             verbose=stabilization_verbose,
@@ -359,38 +371,81 @@ def stabilize_timelapse(
                         T_translation_mats, T_z_drift_mats
                     )
                 ]
-
+                combined_mats = np.array(combined_mats)
         else:
             combined_mats = T_translation_mats
 
     # Save the combined matrices
-    combined_mats_filepath = output_dirpath_parent / "combined_mats.yml"
     model = StabilizationSettings(
         focus_finding_channel_index=channel_index,
-        affine_transform_zyx=combined_mats.tolist(),
+        affine_transform_zyx_list=combined_mats.tolist(),
     )
-    utils.model_to_yaml(model, combined_mats_filepath)
+    utils.model_to_yaml(model, output_filepath)
 
-    # Open test dataset to get the output shape and voxel size
+
+@click.command()
+@input_position_dirpaths()
+@output_dirpath()
+@config_filepath()
+@click.option(
+    "--num-processes",
+    "-j",
+    default=1,
+    help="Number of parallel processes. Default is 1.",
+    required=False,
+    type=int,
+)
+def stabilize_timelapse(
+    input_position_dirpaths, output_dirpath, config_filepath, num_processes
+):
+    """
+    Stabilize the timelapse input based on single position and channel.
+
+    This function applies stabilization to the input data. It can estimate both yx and z drifts.
+    The level of verbosity can be controlled with the stabilization_verbose flag.
+    The size of the crop in xy can be specified with the crop-size-xy option.
+
+    Example usage:
+    mantis stabilize-timelapse -i ./timelapse.zarr/0/0/0 -o ./stabilized_timelapse.zarr -c ./file_w_matrices.yml -v
+
+    """
+    assert config_filepath.suffix == ".yml", "Config file must be a yaml file"
+
+    # Load the config file
+    settings = utils.yaml_to_model(config_filepath, StabilizationSettings)
+
+    combined_mats = settings.affine_transform_zyx_list
+    combined_mats = np.array(combined_mats)
+
     with open_ome_zarr(input_position_dirpaths[0]) as dataset:
-        output_zyx_shape = dataset.data.shape[-3:]
-        voxel_size = dataset.scale[-3:]
+        T, C, Z, Y, X = dataset.data.shape
+        channel_names = dataset.channel_names
+    C = 1
+    T = 5
+    chunk_zyx_shape = (Z_CHUNK, Y, X)
+    output_metadata = {
+        "shape": (T, C, Z, Y, X),
+        "chunks": (1,) * 2 + chunk_zyx_shape,
+        "scale": dataset.scale,
+        "channel_names": channel_names,
+        "dtype": np.float32,
+    }
 
-    # Create empty zarr
-    utils.create_empty_zarr(
-        input_position_dirpaths,
-        output_dirpath,
-        output_zyx_shape=output_zyx_shape,
-        chunk_zyx_shape=(Z_CHUNK, output_zyx_shape[-2], output_zyx_shape[-1]),
-        voxel_size=tuple(voxel_size),
+    # Create the output zarr mirroring input_position_dirpaths
+    utils.create_empty_hcs_zarr(
+        store_path=output_dirpath,
+        position_keys=[p.parts[-3:] for p in input_position_dirpaths],
+        **output_metadata,
     )
-    output_zarr_path = utils.get_output_paths(input_position_dirpaths, output_dirpath)
 
     # Apply the affine transformation to the input data
-    for input_path, output_path in zip(input_position_dirpaths, output_zarr_path):
+    for input_path in input_position_dirpaths:
         utils.apply_stabilization_over_time_ants(
             list_of_shifts=combined_mats,
             input_data_path=input_path,
-            output_path=output_path,
+            output_path=output_dirpath,
+            time_indices=list(range(T)),
+            input_channel_idx=[4],
+            output_channel_idx=[0],
             num_processes=num_processes,
         )
