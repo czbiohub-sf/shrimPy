@@ -550,7 +550,7 @@ def append_channels(input_data_path: Path, target_data_path: Path) -> None:
     appending_dataset.close()
 
 
-def numpy_to_ants_transform_zyx(T_numpy):
+def numpy_to_ants_transform_zyx(T_numpy: np.ndarray):
     """Homogeneous 3D transformation matrix from numpy to ants
 
     Parameters
@@ -648,7 +648,8 @@ def apply_stabilization_over_time_ants(
             input_dataset,
             output_path / Path(*input_data_path.parts[-3:]),
             list_of_shifts,
-            input_channel_indices=None,
+            None,
+            None,
         )
     else:
         # If C is empty, use only the range for time_indices
@@ -674,7 +675,7 @@ def apply_stabilization_over_time_ants(
 def stabilization_over_time_ants(
     position: Position,
     output_path: Path,
-    list_of_shifts: np.array,
+    list_of_shifts: np.ndarray,
     input_channel_idx: list,
     output_channel_idx: list,
     t_idx: int,
@@ -682,8 +683,8 @@ def stabilization_over_time_ants(
     **kwargs,
 ) -> None:
     """Load a zyx array from a Position object, apply a transformation and save the result to file"""
-    click.echo(f"Processing c={c_idx}, t={t_idx}")
 
+    click.echo(f"Processing c={c_idx}, t={t_idx}")
     tx_shifts = numpy_to_ants_transform_zyx(list_of_shifts[t_idx])
 
     # Process CZYX vs ZYX
@@ -692,7 +693,7 @@ def stabilization_over_time_ants(
         if not _check_nan_n_zeros(czyx_data):
             for c in input_channel_idx:
                 print(f'czyx_data.shape {czyx_data.shape}')
-                zyx_data_ants = numpy_to_ants_transform_zyx(czyx_data[0])
+                zyx_data_ants = ants.from_numpy(czyx_data[0])
                 registered_zyx = tx_shifts.apply_to_image(
                     zyx_data_ants, reference=zyx_data_ants
                 )
@@ -706,10 +707,9 @@ def stabilization_over_time_ants(
             click.echo(f"Skipping t={t_idx} due to all zeros or nans")
     else:
         zyx_data = position.data.oindex[t_idx, c_idx]
-
         # Checking if nans or zeros and skip processing
         if not _check_nan_n_zeros(zyx_data):
-            zyx_data_ants = numpy_to_ants_transform_zyx(zyx_data)
+            zyx_data_ants = ants.from_numpy(zyx_data)
             # Apply transformation
             registered_zyx = tx_shifts.apply_to_image(zyx_data_ants, reference=zyx_data_ants)
 

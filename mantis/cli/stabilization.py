@@ -198,13 +198,13 @@ def calculate_z_drift(
 
 
 def calculate_yx_stabilization(
-    input_data_path: Path,
+    input_data_paths: Path,
     output_folder_path: Path,
     c_idx: int = 0,
     crop_size_xy: list[int, int] = (400, 400),
     verbose: bool = False,
 ) -> np.ndarray:
-    input_position = open_ome_zarr(input_data_path[0])
+    input_position = open_ome_zarr(input_data_paths[0])
     output_folder_path = Path(output_folder_path)
     output_folder_path.mkdir(parents=True, exist_ok=True)
 
@@ -243,6 +243,11 @@ def calculate_yx_stabilization(
 
     print("Finding XY translation matrices")
     T_stackreg = sr.register_stack(xy_timelapse, reference="previous", axis=0)
+
+    # Swap values in the array since stackreg is xy and we need yx
+    for subarray in T_stackreg:
+        subarray[0, 2], subarray[1, 2] = subarray[1, 2], subarray[0, 2]
+
     T_zyx_shift = np.zeros((T_stackreg.shape[0], 4, 4))
     T_zyx_shift[:, 1:4, 1:4] = T_stackreg
     T_zyx_shift[:, 0, 0] = 1
@@ -353,7 +358,7 @@ def estimate_stabilization_affine_list(
     # Estimate yx drift
     if estimate_yx_drift:
         T_translation_mats = calculate_yx_stabilization(
-            input_data_path=input_position_dirpaths,
+            input_data_paths=input_position_dirpaths,
             output_folder_path=output_dirpath,
             c_idx=channel_index,
             crop_size_xy=crop_size_xy,
@@ -416,12 +421,13 @@ def stabilize_timelapse(
 
     combined_mats = settings.affine_transform_zyx_list
     combined_mats = np.array(combined_mats)
+    print(combined_mats.shape)
+    print(combined_mats[0].shape)
 
     with open_ome_zarr(input_position_dirpaths[0]) as dataset:
         T, C, Z, Y, X = dataset.data.shape
         channel_names = dataset.channel_names
-    C = 1
-    T = 5
+
     chunk_zyx_shape = (Z_CHUNK, Y, X)
     output_metadata = {
         "shape": (T, C, Z, Y, X),
@@ -445,7 +451,7 @@ def stabilize_timelapse(
             input_data_path=input_path,
             output_path=output_dirpath,
             time_indices=list(range(T)),
-            input_channel_idx=[4],
-            output_channel_idx=[0],
+            input_channel_idx=None,
+            output_channel_idx=None,
             num_processes=num_processes,
         )
