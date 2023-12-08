@@ -55,16 +55,21 @@ def estimate_position_focus(
         print(f"Processing {input_data_path}")
         for t_idx in tqdm(range(T)):
             for c_idx in input_channel_indices:
-                focal_plane = focus_from_transverse_band(
-                    dataset[0][
-                        t_idx,
-                        c_idx,
-                        :,
-                        Y // 2 - crop_size_xy[1] // 2 : Y // 2 + crop_size_xy[1] // 2,
-                        X // 2 - crop_size_xy[0] // 2 : X // 2 + crop_size_xy[0] // 2,
-                    ],
-                    **focus_params,
-                )
+                data_zyx = dataset[0][
+                    t_idx,
+                    c_idx,
+                    :,
+                    Y // 2 - crop_size_xy[1] // 2 : Y // 2 + crop_size_xy[1] // 2,
+                    X // 2 - crop_size_xy[0] // 2 : X // 2 + crop_size_xy[0] // 2,
+                ]
+                # if the FOV is empty, set the focal plane to 0
+                if np.sum(data_zyx) == 0:
+                    focal_plane = 0
+                else:
+                    focal_plane = focus_from_transverse_band(
+                        data_zyx,
+                        **focus_params,
+                    )
                 pos_idx = '/'.join(input_data_path.parts[-3:]).replace('/', '_')
                 position_stats_stablized["position_idx"].append(pos_idx)
                 position_stats_stablized["time_min"].append(t_idx * T_scale)
@@ -110,12 +115,16 @@ def get_mean_z_positions(
     import matplotlib.pyplot as plt
 
     z_drift_df = pd.read_csv(input_dataframe)
-    # Filter the 0 in focal_idx
-    z_drift_df = z_drift_df[z_drift_df["focal_idx"] != 0]
+
     # Filter the DataFrame for 'channel A'
     phase_3D_df = z_drift_df[z_drift_df["channel_idx"] == z_drift_channel_idx]
     # Sort the DataFrame based on 'time_min'
     phase_3D_df = phase_3D_df.sort_values("time_min")
+
+    # TODO: this is a hack to deal with the fact that the focus finding function returns 0 if it fails
+    phase_3D_df["focal_idx"] = phase_3D_df["focal_idx"].replace(0, method="ffill")
+    # phase_3D_df["focal_idx"] = phase_3D_df["focal_idx"].replace(0,np.nan)
+
     # Get the mean of positions for each time point
     average_focal_idx = phase_3D_df.groupby("time_min")["focal_idx"].mean().reset_index()
     if verbose:
