@@ -338,7 +338,7 @@ def estimate_stabilization_affine_list(
     The size of the crop in xy can be specified with the crop-size-xy option.
 
     Example usage:
-    mantis stabilization -i ./timelapse.zarr/0/0/0 -o ./stabilization.yml -d -v -z -s 300 300
+    mantis stabilization -i ./timelapse.zarr/0/0/0 -o ./stabilization.yml -y -z -v -s 300 300
 
     Note: the verbose output will be saved at the same level as the output zarr.
     """
