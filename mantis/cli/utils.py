@@ -29,6 +29,10 @@ from natsort import natsorted
 import glob
 from typing import List
 import os
+from colorspacious import cspace_convert
+
+J_max = 65
+C_max = 60
 
 
 # TODO: replace this with recOrder recOrder.cli.utils.create_empty_hcs()
@@ -1244,15 +1248,31 @@ def correct_illumination_single_position(
             f"time_indices = {time_indices} includes a time index beyond the maximum index of the dataset = {time_ubound}"
         )
 
+    # if input_channel_idx is None or len(input_channel_idx) == 0:
+    #     click.echo(f'Input_channel_idx is None. Processing all channels in the input dataset')
+    #     # If C is not empty, use itertools.product with both ranges
+    #     _, C, _, _, _ = input_position.data.shape
+    #     input_channel_idx = [i for i in range(C)]
+    # else:
+    #     click.echo(f'Input_channel_idx {input_channel_idx}')
+
     if input_channel_idx is None or len(input_channel_idx) == 0:
-        click.echo(f'Input_channel_idx is None. Processing all channels in the input dataset')
         # If C is not empty, use itertools.product with both ranges
         _, C, _, _, _ = input_position.data.shape
-        input_channel_idx = [i for i in range(C)]
+        iterable = itertools.product(time_indices, range(C))
+        partial_denoise = partial(
+            custom_func_to_zyx_and_save_v2,
+            correct_illumination_zyx,
+            input_position,
+            pattern_position,
+            output_path / Path(*input_data_path.parts[-3:]),
+            None,
+            None,
+            **kwargs,
+        )
     else:
-        click.echo(f'Input_channel_idx {input_channel_idx}')
-
-    with mp.Pool(num_processes) as p:
+        # If C is empty, use only the range for time_indices
+        iterable = itertools.product(time_indices)
         partial_denoise = partial(
             custom_func_to_zyx_and_save_v2,
             correct_illumination_zyx,
@@ -1261,9 +1281,11 @@ def correct_illumination_single_position(
             output_path / Path(*input_data_path.parts[-3:]),
             input_channel_idx,
             output_channel_idx,
-            **kwargs,
+            c_idx=0**kwargs,
         )
-        p.starmap(partial_denoise, itertools.product(time_indices))
+
+    with mp.Pool(num_processes) as p:
+        p.starmap(partial_denoise, iterable)
     input_position.close()
 
 
@@ -1282,10 +1304,11 @@ def custom_func_to_zyx_and_save_v2(
     click.echo(f"Processing c={c_idx}, t={t_idx}")
 
     # TODO: temporary fix to slumkit issue
-    if _is_nested(input_channel_indices):
-        input_channel_indices = [int(x) for x in input_channel_indices if x.isdigit()]
-    if _is_nested(output_channel_indices):
-        output_channel_indices = [int(x) for x in output_channel_indices if x.isdigit()]
+    if input_channel_indices is not None:
+        if _is_nested(input_channel_indices):
+            input_channel_indices = [int(x) for x in input_channel_indices if x.isdigit()]
+        if _is_nested(output_channel_indices):
+            output_channel_indices = [int(x) for x in output_channel_indices if x.isdigit()]
 
     # Process CZYX vs ZYX
     if input_channel_indices is not None:
@@ -1381,3 +1404,62 @@ def nuc_mem_segmentation(czyx_data, **cellpose_kwargs) -> np.ndarray:
     # output_array[:, int(cellpose_params['z_idx'])] = segmentation_stack
     output_array = segmentation_stack
     return output_array
+
+
+def ret_ori_to_jch_quant(
+    retardance,
+    orientation,
+    ret_scale=(0, 1),
+    ret_noise_level=0.5,
+    ori_scale=(0, 180),
+    ori_levels=8,
+):
+    # orientation is in degrees
+
+    ret_ = np.interp(retardance, ret_scale, (0, J_max))
+    ori_binned = (
+        np.round(orientation / ori_scale[1] * ori_levels + 0.5) / ori_levels - 1 / ori_levels
+    )
+    ori_ = np.interp(ori_binned, (ori_scale[0] / ori_scale[1], 1), (0, 360))
+
+    J = ret_
+    C = np.ones_like(J) * C_max
+    C[retardance < ret_noise_level] = 0
+    h = ori_
+
+    JCh = np.stack((J, C, h), axis=-1)
+    JCh_rgb = cspace_convert(JCh, "JCh", "sRGB255")
+
+    JCh_rgb[JCh_rgb < 0] = 0
+    JCh_rgb[JCh_rgb > 255] = 255
+
+    return JCh_rgb.astype(np.uint8)
+
+
+def S0_ani_ori_to_jch_quant(
+    S0,
+    anisotropy,
+    orientation,
+    S0_scale=(0, 1000),
+    ani_scale=(0, 1),
+    ori_scale=(0, 180),
+    ori_levels=8,
+):
+    S0_ = np.interp(S0, S0_scale, (0, 65))
+    ani_ = np.interp(anisotropy, ani_scale, (0, 60))
+    ori_binned = (
+        np.round(orientation / ori_scale[1] * ori_levels + 0.5) / ori_levels - 1 / ori_levels
+    )
+    ori_ = np.interp(ori_binned, (ori_scale[0] / ori_scale[1], 1), (0, 360))
+
+    J = S0_
+    C = ani_
+    h = ori_
+
+    JCh = np.stack((J, C, h), axis=-1)
+    JCh_rgb = cspace_convert(JCh, "JCh", "sRGB255")
+
+    JCh_rgb[JCh_rgb < 0] = 0
+    JCh_rgb[JCh_rgb > 255] = 255
+
+    return JCh_rgb.astype(np.uint8)
