@@ -18,8 +18,6 @@ import yaml
 from iohub.ngff import Position, open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
 from tqdm import tqdm
-from numpy.typing import DTypeLike
-import torch
 import matplotlib.pyplot as plt
 
 from numpy.typing import DTypeLike
@@ -29,6 +27,7 @@ from natsort import natsorted
 import glob
 from typing import List
 import os
+
 from colorspacious import cspace_convert
 
 J_max = 65
@@ -131,7 +130,11 @@ def apply_function_to_zyx_and_save(
         # Write to file
         with open_ome_zarr(output_path, mode="r+") as output_dataset:
             output_dataset[0][t_idx, c_idx] = processed_zyx
+        # Write to file
+        with open_ome_zarr(output_path, mode="r+") as output_dataset:
+            output_dataset[0][t_idx, c_idx] = processed_zyx
 
+        click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
         click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
 
 
@@ -554,7 +557,7 @@ def append_channels(input_data_path: Path, target_data_path: Path) -> None:
     appending_dataset.close()
 
 
-def numpy_to_ants_transform_zyx(T_numpy):
+def numpy_to_ants_transform_zyx(T_numpy: np.ndarray):
     """Homogeneous 3D transformation matrix from numpy to ants
 
     Parameters
@@ -613,7 +616,10 @@ def apply_stabilization_over_time_ants(
     list_of_shifts: list,
     input_data_path: Path,
     output_path: Path,
-    num_processes: int = mp.cpu_count(),
+    time_indices: list = [0],
+    input_channel_idx: list = [],
+    output_channel_idx: list = [],
+    num_processes: int = 1,
     **kwargs,
 ) -> None:
     """Apply stabilization over time"""
@@ -639,15 +645,36 @@ def apply_stabilization_over_time_ants(
 
     # Loop through (T, C), deskewing and writing as we go
     click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
+
+    if input_channel_idx is None or len(input_channel_idx) == 0:
+        # If C is not empty, use itertools.product with both ranges
+        _, C, _, _, _ = input_dataset.data.shape
+        iterable = itertools.product(time_indices, range(C))
+        partial_stabilization_over_time_ants = partial(
+            stabilization_over_time_ants,
+            input_dataset,
+            output_path / Path(*input_data_path.parts[-3:]),
+            list_of_shifts,
+            None,
+            None,
+        )
+    else:
+        # If C is empty, use only the range for time_indices
+        iterable = itertools.product(time_indices)
+        partial_stabilization_over_time_ants = partial(
+            stabilization_over_time_ants,
+            input_dataset,
+            output_path / Path(*input_data_path.parts[-3:]),
+            list_of_shifts,
+            input_channel_idx,
+            output_channel_idx,
+            c_idx=0,
+        )
+
     with mp.Pool(num_processes) as p:
         p.starmap(
-            partial(
-                stabilization_over_time_ants,
-                input_dataset,
-                str(output_path),
-                list_of_shifts,
-            ),
-            itertools.product(range(T), range(C)),
+            partial_stabilization_over_time_ants,
+            iterable,
         )
     input_dataset.close()
 
@@ -655,28 +682,51 @@ def apply_stabilization_over_time_ants(
 def stabilization_over_time_ants(
     position: Position,
     output_path: Path,
-    list_of_shifts: np.array,
+    list_of_shifts: np.ndarray,
+    input_channel_idx: list,
+    output_channel_idx: list,
     t_idx: int,
     c_idx: int,
     **kwargs,
 ) -> None:
     """Load a zyx array from a Position object, apply a transformation and save the result to file"""
+
     click.echo(f"Processing c={c_idx}, t={t_idx}")
-
-    zyx_data = position[0][t_idx, c_idx].astype(np.float32)
-    zyx_data_ants = ants.from_numpy(zyx_data)
-
-    click.echo(f'c={c_idx}, t={t_idx}: Applying shift {list_of_shifts[t_idx]}')
     tx_shifts = numpy_to_ants_transform_zyx(list_of_shifts[t_idx])
 
-    # Apply transformation
-    registered_zyx = tx_shifts.apply_to_image(zyx_data_ants, reference=zyx_data_ants)
+    # Process CZYX vs ZYX
+    if input_channel_idx is not None:
+        czyx_data = position.data.oindex[t_idx, input_channel_idx]
+        if not _check_nan_n_zeros(czyx_data):
+            for c in input_channel_idx:
+                print(f'czyx_data.shape {czyx_data.shape}')
+                zyx_data_ants = ants.from_numpy(czyx_data[0])
+                registered_zyx = tx_shifts.apply_to_image(
+                    zyx_data_ants, reference=zyx_data_ants
+                )
+                # Write to file
+                with open_ome_zarr(output_path, mode="r+") as output_dataset:
+                    output_dataset[0].oindex[
+                        t_idx, output_channel_idx
+                    ] = registered_zyx.numpy()
+            click.echo(f"Finished Writing.. t={t_idx}")
+        else:
+            click.echo(f"Skipping t={t_idx} due to all zeros or nans")
+    else:
+        zyx_data = position.data.oindex[t_idx, c_idx]
+        # Checking if nans or zeros and skip processing
+        if not _check_nan_n_zeros(zyx_data):
+            zyx_data_ants = ants.from_numpy(zyx_data)
+            # Apply transformation
+            registered_zyx = tx_shifts.apply_to_image(zyx_data_ants, reference=zyx_data_ants)
 
-    # Write to file
-    with open_ome_zarr(output_path, mode="r+") as output_dataset:
-        output_dataset[0][t_idx, c_idx] = registered_zyx.numpy()
+            # Write to file
+            with open_ome_zarr(output_path, mode="r+") as output_dataset:
+                output_dataset[0][t_idx, c_idx] = registered_zyx.numpy()
 
-    click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
+            click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
+        else:
+            click.echo(f"Skipping c={c_idx}, t={t_idx} due to all zeros or nans")
 
 
 def model_to_yaml(model, yaml_path: Path) -> None:
