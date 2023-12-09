@@ -113,11 +113,3 @@ class CellposeSegmentationSettings(MyBaseModel):
     membrane_segmentation: Segmentation
     nuc_model_path: str
     nucleus_segmentation: Segmentation
-
-
-class CellposeSegmentationSettings(MyBaseModel):
-    z_idx: int
-    mem_model_path: str
-    membrane_segmentation: Segmentation
-    nuc_model_path: str
-    nucleus_segmentation: Segmentation
