@@ -18,6 +18,8 @@ import yaml
 from iohub.ngff import Position, open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
 from tqdm import tqdm
+from numpy.typing import DTypeLike
+import torch
 import matplotlib.pyplot as plt
 
 from numpy.typing import DTypeLike
@@ -130,11 +132,7 @@ def apply_function_to_zyx_and_save(
         # Write to file
         with open_ome_zarr(output_path, mode="r+") as output_dataset:
             output_dataset[0][t_idx, c_idx] = processed_zyx
-        # Write to file
-        with open_ome_zarr(output_path, mode="r+") as output_dataset:
-            output_dataset[0][t_idx, c_idx] = processed_zyx
 
-        click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
         click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
 
 
@@ -937,6 +935,40 @@ def _check_nan_n_zeros(input_array):
     return False
 
 
+def nuc_mem_segmentation(czyx_data, **cellpose_kwargs) -> np.ndarray:
+    """Segment nuclei and membranes using cellpose"""
+
+    from cellpose import models
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Get the key/values under this dictionary
+    # cellpose_params = cellpose_params.get('cellpose_params', {})
+    cellpose_params = cellpose_kwargs['cellpose_kwargs']
+    Z_slice = slice(int(cellpose_params['z_idx']), int(cellpose_params['z_idx']) + 1)
+    cyx_data = czyx_data[:, Z_slice]
+
+    if "nucleus_segmentation" in cellpose_params:
+        nuc_seg_kwargs = cellpose_params["nucleus_segmentation"]
+    if "membrane_segmentation" in cellpose_params:
+        mem_seg_kwargs = cellpose_params["membrane_segmentation"]
+
+    # Initialize Cellpose models
+    cyto_model = models.Cellpose(gpu=True, model_type=cellpose_params["mem_model_path"])
+    nuc_model = models.CellposeModel(
+        model_type=cellpose_params["nuc_model_path"], device=torch.device(device)
+    )
+
+    nuc_masks = nuc_model.eval(cyx_data[0], **nuc_seg_kwargs)[0]
+    mem_masks, _, _, _ = cyto_model.eval(cyx_data[1], **mem_seg_kwargs)
+
+    # Save
+    segmentation_stack = np.stack((nuc_masks, mem_masks))
+
+    segmentation_stack = segmentation_stack[:, np.newaxis, ...]
+    return segmentation_stack
+
+
 ## NOTE WIP
 def apply_transform_to_zyx_and_save_v2(
     func,
@@ -1052,7 +1084,7 @@ def process_single_position_v2(
             apply_transform_to_zyx_and_save_v2,
             func,
             input_dataset,
-            output_path,
+            output_path / Path(*input_data_path.parts[-3:]),
             input_channel_indices=None,
             **func_args,
         )
@@ -1063,7 +1095,7 @@ def process_single_position_v2(
             apply_transform_to_zyx_and_save_v2,
             func,
             input_dataset,
-            output_path,
+            output_path / Path(*input_data_path.parts[-3:]),
             input_channel_idx,
             output_channel_idx,
             c_idx=0,

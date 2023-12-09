@@ -83,11 +83,36 @@ class RegistrationSettings(MyBaseModel):
         return v
 
 
+class StabilizationSettings(MyBaseModel):
+    focus_finding_channel_index: NonNegativeInt
+    affine_transform_zyx_list: list
+
+    @validator("affine_transform_zyx_list")
+    def check_affine_transform_list(cls, v):
+        if not isinstance(v, list):
+            raise ValueError("affine_transform_list must be a list")
+
+        for arr in v:
+            arr = np.array(arr)
+            if arr.shape != (4, 4):
+                raise ValueError("Each element in affine_transform_list must be a 4x4 ndarray")
+
+        return v
+
+
 class Segmentation(MyBaseModel):
     diameter: int = None
     flow_threshold: float = None
     channels: list[int]
     do_3D: bool = None
+
+
+class CellposeSegmentationSettings(MyBaseModel):
+    z_idx: int
+    mem_model_path: str
+    membrane_segmentation: Segmentation
+    nuc_model_path: str
+    nucleus_segmentation: Segmentation
 
 
 class CellposeSegmentationSettings(MyBaseModel):
