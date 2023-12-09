@@ -12,25 +12,25 @@ import datetime
 
 
 # %%
-input_dataset_paths = "/hpc/projects/comp.micro/mantis/2023_09_21_OpenCell_targets/4-virtual_staining/H2B_CAAX_timelapse_2/prediction.zarr/0/23/000001"
-config_file = "/home/eduardo.hirata/repos/mantis/mantis/cli/test_edhirata/example_cellpose_segmentation_settings.yml"
-output_data_path = "./mask_nuc_mem_all_pos_v2.zarr"
+input_dataset_paths = "/hpc/projects/comp.micro/mantis/2023_11_08_Opencell_infection/6-VS_stabilized_crop/OC43_infection_timelapse_5_registered_stabilized_VS_cropped_v5.zarr/0/2/000000"
+config_file = "/hpc/projects/comp.micro/mantis/2023_11_08_Opencell_infection/7-segmentation/config_timelapse_5.yml"
+output_data_path = "./OC43_infection_timelapse_5_nuc_mem_segmentations_cropped_v5.zarr"
 
 # sbatch and resource parameters
-partition = 'gpu'
-cpus_per_task = 8
-mem_per_cpu = "16G"
-time = 60  # minutes
+partition = "gpu"
+cpus_per_task = 10
+mem_per_cpu = "8G"
+time = 300  # minutes
 simultaneous_processes_per_node = 5
 
 input_paths = [Path(path) for path in natsorted(glob.glob(input_dataset_paths))]
 output_data_path = Path(output_data_path)
 click.echo(f"in: {input_paths}, out: {output_data_path}")
-slurm_out_path = str(output_data_path.parent / f"slurm_output/register-%j.out")
+slurm_out_path = str(output_data_path.parent / f"slurm_output/segment2-%j.out")
 
 settings = utils.yaml_to_model(config_file, CellposeSegmentationSettings)
 kwargs = {"cellpose_kwargs": settings.dict()}
-print(f'Using settings: {kwargs}')
+print(f"Using settings: {kwargs}")
 # %%
 with open_ome_zarr(input_paths[0]) as dataset:
     T, C, Z, Y, X = dataset.data.shape
@@ -62,23 +62,55 @@ params = SlurmParams(
     output=slurm_out_path,
 )
 
+
 # wrap our utils.process_single_position() function with slurmkit
 slurm_process_single_position = slurm_function(utils.process_single_position_v2)
 segmentation_func = slurm_process_single_position(
     func=utils.nuc_mem_segmentation,
     time_indices=list(range(T)),
-    channel_indices=[0, 1],
+    input_channel_idx=[0, 1],  # chanesl in the input dataset
+    output_channel_idx=[0, 1],  # channels in the output dataset
     num_processes=simultaneous_processes_per_node,
     **kwargs,
 )
 
 # generate an array of jobs by passing the in_path and out_path to slurm wrapped function
-register_jobs = [
+segment_jobs = [
     submit_function(
         segmentation_func,
         slurm_params=params,
         input_data_path=in_path,
-        output_path=output_data_path / Path(*in_path.parts[-3:]),
+        output_path=output_data_path,
     )
     for in_path in input_paths
 ]
+
+# Making batches of jobs to avoid IO overload
+slurmkit_array_chunk = 20
+crop_jobs = []
+
+for i in range(0, len(input_paths), slurmkit_array_chunk):
+    chunk_input_paths = input_paths[i : i + slurmkit_array_chunk]
+
+    if i == 0:
+        segment_jobs = [
+            submit_function(
+                segmentation_func,
+                slurm_params=params,
+                input_data_path=in_path,
+                output_path=output_data_path,
+            )
+            for in_path in chunk_input_paths
+        ]
+
+    else:
+        segment_jobs = [
+            submit_function(
+                segmentation_func,
+                slurm_params=params,
+                input_data_path=in_path,
+                output_path=output_data_path,
+                dependencies=segment_jobs,
+            )
+            for in_path in chunk_input_paths
+        ]
