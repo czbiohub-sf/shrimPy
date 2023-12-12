@@ -1,4 +1,3 @@
-# %%
 import numpy as np
 import ants
 from mantis.cli.utils import (
@@ -53,11 +52,3 @@ def test_3d_translation():
     assert np.all(
         result[3:10, 0:9, 0:6] == 1
     )  # Test if the shifts where going to the right direction
-
-
-if __name__ == "__main__":
-    test_numpy_to_ants_transform_zyx()
-    test_ants_to_numpy_transform_zyx()
-    test_affine_transform()
-    test_3d_translation()
-# %%
