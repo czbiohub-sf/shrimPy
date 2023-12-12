@@ -1,9 +1,10 @@
-import numpy as np
 import ants
+import numpy as np
+
 from mantis.cli.utils import (
-    numpy_to_ants_transform_zyx,
-    ants_to_numpy_transform_zyx,
     affine_transform,
+    ants_to_numpy_transform_zyx,
+    numpy_to_ants_transform_zyx,
 )
 
 

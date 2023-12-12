@@ -11,6 +11,7 @@ from typing import Tuple
 import ants
 import click
 import largestinteriorrectangle as lir
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy.ndimage as ndi
 import yaml
@@ -18,7 +19,6 @@ import yaml
 from iohub.ngff import Position, open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 
 
 # TODO: replace this with recOrder recOrder.cli.utils.create_empty_hcs()
