@@ -43,7 +43,7 @@ def apply_affine(
     crop_output: bool,
 ):
     """
-    Apply an affine transformation to a single position across T and C axes using the pathfile for affine transform to the phase channel
+    Apply an affine transformation to a single position across T and C axes based on a registration config file
 
     >> mantis apply_affine -i ./acq_name_lightsheet_deskewed.zarr/*/*/* -c ./register.yml -o ./acq_name_registerred.zarr
     """
