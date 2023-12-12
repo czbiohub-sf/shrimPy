@@ -32,7 +32,8 @@ FOCUS_SLICE_ROI_WIDTH = 150  # size of central ROI used to find focal slice
 @output_filepath()
 def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_filepath):
     """
-    Estimate the affine transform between a source channel and a target with manual inputs.
+    Estimate the affine transform between a source (i.e. moving) and a target (i.e.
+    fixed) image by selecting corresponding points in each.
 
     mantis estimate-affine
     -s ./acq_name_labelfree_reconstructed.zarr/0/0/0

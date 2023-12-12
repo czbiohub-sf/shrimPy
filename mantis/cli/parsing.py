@@ -33,6 +33,7 @@ def input_position_dirpaths() -> Callable:
             cls=OptionEatAll,
             type=tuple,
             callback=_validate_and_process_paths,
+            help='Paths to input positions, for example: "input.zarr/0/0/0" or "input.zarr/*/*/*"',
         )(f)
 
     return decorator
@@ -46,6 +47,7 @@ def source_position_dirpaths() -> Callable:
             cls=OptionEatAll,
             type=tuple,
             callback=_validate_and_process_paths,
+            help='Paths to source positions, for example: "source.zarr/0/0/0" or "source.zarr/*/*/*"',
         )(f)
 
     return decorator
@@ -59,6 +61,7 @@ def target_position_dirpaths() -> Callable:
             cls=OptionEatAll,
             type=tuple,
             callback=_validate_and_process_paths,
+            help='Paths to target positions, for example: "target.zarr/0/0/0" or "target.zarr/*/*/*"',
         )(f)
 
     return decorator
