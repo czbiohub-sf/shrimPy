@@ -29,6 +29,7 @@ cpus_per_task = 12
 mem_per_cpu = "8G"
 time = 60  # minutes
 simultaneous_processes_per_node = 10
+position_multiproc_batch_size = 3
 Z_CHUNK = 5
 
 #####
@@ -83,22 +84,41 @@ params = SlurmParams(
 # wrap our utils.process_single_position() function with slurmkit
 slurm_process_single_position = slurm_function(utils.merge_datasets)
 combine_func = slurm_process_single_position(
-    time_indices='all',
+    time_indices="all",
     num_processes=simultaneous_processes_per_node,
     **copy_n_paste_kwargs,
 )
 
-# generate an array of jobs by passing the in_path and out_path to slurm wrapped function
-register_jobs = [
-    submit_function(
-        combine_func,
-        slurm_params=params,
-        input_data_path=in_path,
-        output_path=output_data_path,
-        input_channel_idx=input_c_idx,
-        output_channel_idx=output_c_idx,
-    )
-    for in_path, input_c_idx, output_c_idx in zip(
-        all_data_paths, input_channel_indeces, output_channel_indeces
-    )
-]
+register_jobs = []
+
+for i in range(0, len(all_data_paths), position_multiproc_batch_size):
+    chunk_input_paths = all_data_paths[i : i + position_multiproc_batch_size]
+
+    if i == 0:
+        register_jobs = [
+            submit_function(
+                combine_func,
+                slurm_params=params,
+                input_data_path=in_path,
+                output_path=output_data_path,
+                input_channel_idx=input_c_idx,
+                output_channel_idx=output_c_idx,
+            )
+            for in_path, input_c_idx, output_c_idx in zip(
+                chunk_input_paths, input_channel_indeces, output_channel_indeces
+            )
+        ]
+    else:
+        register_jobs = [
+            submit_function(
+                combine_func,
+                slurm_params=params,
+                input_data_path=in_path,
+                output_path=output_data_path,
+                input_channel_idx=input_c_idx,
+                output_channel_idx=output_c_idx,
+            )
+            for in_path, input_c_idx, output_c_idx in zip(
+                chunk_input_paths, input_channel_indeces, output_channel_indeces
+            )
+        ]
