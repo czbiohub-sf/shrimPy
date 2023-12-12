@@ -2,15 +2,14 @@ from typing import Optional
 
 import numpy as np
 
-from pydantic import BaseModel, Extra, NonNegativeInt, PositiveFloat, PositiveInt, validator
+from pydantic import ConfigDict, NonNegativeInt, PositiveFloat, PositiveInt, validator
+from pydantic.dataclasses import dataclass
+
+config = ConfigDict(extra="forbid")
 
 
-# All settings classes inherit from MyBaseModel, which forbids extra parameters to guard against typos
-class MyBaseModel(BaseModel, extra=Extra.forbid):
-    pass
-
-
-class DeskewSettings(MyBaseModel):
+@dataclass(config=config)
+class DeskewSettings:
     pixel_size_um: PositiveFloat
     ls_angle_deg: PositiveFloat
     px_to_scan_ratio: Optional[PositiveFloat] = None
@@ -37,7 +36,8 @@ class DeskewSettings(MyBaseModel):
                 raise TypeError("px_to_scan_ratio is not valid")
 
 
-class RegistrationSettings(MyBaseModel):
+@dataclass(config=config)
+class RegistrationSettings:
     source_channel_index: NonNegativeInt
     target_channel_index: NonNegativeInt
     affine_transform_zyx: list
