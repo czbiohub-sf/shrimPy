@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
 
@@ -15,7 +15,7 @@ class DeskewSettings(MyBaseModel):
     ls_angle_deg: PositiveFloat
     px_to_scan_ratio: Optional[PositiveFloat] = None
     scan_step_um: Optional[PositiveFloat] = None
-    keep_overhang: bool = True
+    keep_overhang: bool = False
     average_n_slices: PositiveInt = 3
 
     @validator("ls_angle_deg")
@@ -43,6 +43,7 @@ class RegistrationSettings(MyBaseModel):
     affine_transform_zyx: list
     source_shape_zyx: list
     target_shape_zyx: list
+    keep_overhang: bool = False
 
     @validator("affine_transform_zyx")
     def check_affine_transform(cls, v):

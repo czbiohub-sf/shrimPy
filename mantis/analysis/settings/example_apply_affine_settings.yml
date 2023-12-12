@@ -7,3 +7,4 @@ affine_transform_zyx:
 - [0.0, 0.0, 0.0, 1.0]
 source_shape_zyx: [8, 100, 100]
 target_shape_zyx: [8, 512, 512]
+keep_overhang: false # Optional, if true datasets will have non-overlapping regions

@@ -11,6 +11,7 @@ from typing import Tuple
 import ants
 import click
 import largestinteriorrectangle as lir
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy.ndimage as ndi
 import yaml
@@ -18,7 +19,6 @@ import yaml
 from iohub.ngff import Position, open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 
 
 # TODO: replace this with recOrder recOrder.cli.utils.create_empty_hcs()
@@ -264,8 +264,8 @@ def affine_transform(
     zyx_data: np.ndarray,
     matrix: np.ndarray,
     output_shape_zyx: Tuple,
+    output_roi: tuple = None,
     method='ants',
-    crop_output_slicing: bool = None,
 ) -> np.ndarray:
     """_summary_
 
@@ -279,8 +279,10 @@ def affine_transform(
         output target zyx shape
     method : str, optional
         method to use for transformation, by default 'ants'
-    crop_output : bool, optional
-        crop the output to the largest interior rectangle, by default False
+    output_roi : Tuple, optional
+        ROI, e.g. (slice(z_start, z_stop), slice(y_start, y_stop),
+        slice(x_start, x_stop)) of the registered data which is returned, by
+        default None
 
     Returns
     -------
@@ -312,8 +314,8 @@ def affine_transform(
         raise ValueError(f'Unknown method {method}')
 
     # Crop the output to the largest interior rectangle
-    if crop_output_slicing is not None:
-        Z_slice, Y_slice, X_slice = crop_output_slicing
+    if output_roi is not None:
+        Z_slice, Y_slice, X_slice = output_roi
         registered_zyx = registered_zyx[Z_slice, Y_slice, X_slice]
 
     return registered_zyx

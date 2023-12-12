@@ -28,19 +28,11 @@ def apply_affine_to_scale(affine_matrix, input_scale):
     required=False,
     type=int,
 )
-@click.option(
-    "--crop-output",
-    "-k",
-    is_flag=True,
-    help="Crop the output image to largest common region",
-    required=False,
-)
 def apply_affine(
     input_position_dirpaths: List[str],
     config_filepath: str,
     output_dirpath: str,
     num_processes: int,
-    crop_output: bool,
 ):
     """
     Apply an affine transformation to a single position across T and C axes based on a registration config file
@@ -60,6 +52,7 @@ def apply_affine(
     matrix = np.array(settings.affine_transform_zyx)
     source_shape_zyx = tuple(settings.source_shape_zyx)
     target_shape_zyx = tuple(settings.target_shape_zyx)
+    keep_overhang = settings.keep_overhang
 
     # Calculate the output voxel size from the input scale and affine transform
     with open_ome_zarr(input_position_dirpaths[0]) as input_dataset:
@@ -70,10 +63,11 @@ def apply_affine(
     click.echo(f'Voxel size: {output_voxel_size}')
 
     # Find the largest interior rectangle
-    if crop_output:
+    if not keep_overhang:
         Z_slice, Y_slice, X_slice = utils.find_lir_slicing_params(
             source_shape_zyx, target_shape_zyx, matrix
         )
+        # TODO: start or stop may be None
         target_shape_zyx = (
             Z_slice.stop - Z_slice.start,
             Y_slice.stop - Y_slice.start,
@@ -97,7 +91,7 @@ def apply_affine(
     affine_transform_args = {
         'matrix': matrix,
         'output_shape_zyx': settings.target_shape_zyx,
-        'crop_output_slicing': ([Z_slice, Y_slice, X_slice] if crop_output else None),
+        'output_roi': ([Z_slice, Y_slice, X_slice] if not keep_overhang else None),
         'extra_metadata': extra_metadata,
     }
 
