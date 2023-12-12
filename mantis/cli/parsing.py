@@ -30,6 +30,7 @@ def input_position_dirpaths() -> Callable:
         return click.option(
             "--input-position-dirpaths",
             "-i",
+            required=True,
             cls=OptionEatAll,
             type=tuple,
             callback=_validate_and_process_paths,
@@ -44,6 +45,7 @@ def source_position_dirpaths() -> Callable:
         return click.option(
             "--source-position-dirpaths",
             "-s",
+            required=True,
             cls=OptionEatAll,
             type=tuple,
             callback=_validate_and_process_paths,
@@ -58,6 +60,7 @@ def target_position_dirpaths() -> Callable:
         return click.option(
             "--target-position-dirpaths",
             "-t",
+            required=True,
             cls=OptionEatAll,
             type=tuple,
             callback=_validate_and_process_paths,

@@ -36,7 +36,7 @@ T_IDX = 0
     "--optimizer-verbose",
     "-v",
     is_flag=True,
-    help="Optimizer verbose",
+    help="Show verbose output of optimizer",
 )
 def optimize_affine(
     source_position_dirpaths,
@@ -47,7 +47,7 @@ def optimize_affine(
     optimizer_verbose,
 ):
     """
-    Optimize the affine transform between two channels (source channel and target channel) by manual inputs.
+    Optimize the affine transform between source and target channels using ANTs library.
 
     mantis optimize-affine -s ./acq_name_virtual_staining_reconstructed.zarr/0/0/0 -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 -c ./transform.yml -o ./optimized_transform.yml -d -v
     """
