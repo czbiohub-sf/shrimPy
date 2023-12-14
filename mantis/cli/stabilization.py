@@ -430,8 +430,6 @@ def stabilize_timelapse(
 
     combined_mats = settings.affine_transform_zyx_list
     combined_mats = np.array(combined_mats)
-    print(combined_mats.shape)
-    print(combined_mats[0].shape)
 
     with open_ome_zarr(input_position_dirpaths[0]) as dataset:
         T, C, Z, Y, X = dataset.data.shape

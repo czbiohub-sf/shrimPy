@@ -9,102 +9,59 @@ from iohub import open_ome_zarr
 from pathlib import Path
 from mantis.cli.stabilization import calculate_z_drift, calculate_yx_stabilization
 import numpy as np
+from mantis.analysis.AnalysisSettings import StabilizationSettings
 
 # NOTE: this pipeline uses the focus found on well one for all. Perhaps this should be done per FOV(?)
 
 # io parameters
-input_position_dirpaths = "/hpc/projects/comp.micro/mantis/2023_11_08_Opencell_infection/4-registration/OC43_infection_timelapse_3_registered.zarr/*/*/*"
-output_data_path = "./OC43_infection_timelapse_3_registered_stabilized_2.zarr"
-
-# convert to Path
-output_data_path = Path(output_data_path)
+input_position_dirpaths = "/hpc/projects/comp.micro/mantis/2023_09_22_A549_0.52NA_illum/4.1-virutal-staining-v2/A549_MitoViewGreen_LysoTracker_W3_FOV5_1_phase_VS.zarr/0/FOV0/0"
+output_dirpath = "./test_stabilized.zarr"
+config_filepath = "/hpc/projects/comp.micro/mantis/2023_09_22_A549_0.52NA_illum/4.1-virutal-staining-v2/test_stabilization.yml"
 
 # batch and resource parameters
-cpus_per_task = 20
-mem_per_cpu = "8G"
+partition = 'preempted'
+cpus_per_task = 8
+mem_per_cpu = "4G"
 time = 300  # minutes
-simultaneous_processes_per_node = 12
-Z_CHUNK = 5
-channel_for_stabilization = 0
-crop_size_xy = [300, 300]
-stabilization_verbose = True
-estimate_z_drift = True
-estimate_yx_drift = False
-stabilzation_channel_index = 0
+simultaneous_processes_per_node = 4
+slurmkit_array_chunk = 20
+Z_CHUNK=20
 
-# Path handling
-input_position_dirpaths = [
-    Path(path) for path in natsorted(glob.glob(input_position_dirpaths))
-]
-output_dir = output_data_path.parent
 
-output_paths = utils.get_output_paths(input_position_dirpaths, output_data_path)
-click.echo(f"in: {input_position_dirpaths}, out: {output_paths}")
-slurm_out_path = str(os.path.join(output_dir, "slurm_output/register-%j.out"))
+# convert to Path
+input_position_dirpaths = [Path(p) for p in natsorted(glob.glob(input_position_dirpaths))]
+output_dirpath = Path(output_dirpath)
+config_filepath = Path(config_filepath)
 
-# Additional registraion arguments
-input_position = open_ome_zarr(input_position_dirpaths[0])  # take position 0 to get metadata
-output_shape_zyx = input_position[0].shape[-3:]
-output_voxel_size = input_position.scale[-3:]
-chunk_zyx_shape = (Z_CHUNK, output_shape_zyx[-2], output_shape_zyx[-1])
+settings = utils.yaml_to_model(config_filepath, StabilizationSettings)
+combined_mats = settings.affine_transform_zyx_list
+combined_mats = np.array(combined_mats)
 
-# Estimate z drift
-if estimate_z_drift:
-    T_z_drift_mats = calculate_z_drift(
-        input_data_paths=input_position_dirpaths,
-        output_folder_path=output_dir,
-        num_processes=5,
-        crop_size_xy=crop_size_xy,
-        verbose=stabilization_verbose,
-    )
-    if not estimate_yx_drift:
-        combined_mats = T_z_drift_mats
+with open_ome_zarr(input_position_dirpaths[0]) as dataset:
+    T, C, Z, Y, X = dataset.data.shape
+    channel_names = dataset.channel_names
 
-# Estimate yx drift
-if estimate_yx_drift:
-    T_translation_mats = calculate_yx_stabilization(
-        input_data_path=input_position_dirpaths,
-        output_folder_path=output_dir,
-        c_idx=stabilzation_channel_index,
-        crop_size_xy=crop_size_xy,
-        verbose=stabilization_verbose,
-    )
-    if estimate_z_drift:
-        if T_translation_mats.shape[0] != T_z_drift_mats.shape[0]:
-            raise ValueError(
-                "The number of translation matrices and z drift matrices must be the same"
-            )
-        else:
-            combined_mats = [
-                np.dot(T_translation_mat, T_z_drift_mat)
-                for T_translation_mat, T_z_drift_mat in zip(T_translation_mats, T_z_drift_mats)
-            ]
+chunk_zyx_shape = (Z_CHUNK, Y, X)
+output_metadata = {
+    "shape": (T, C, Z, Y, X),
+    "chunks": (1,) * 2 + chunk_zyx_shape,
+    "scale": dataset.scale,
+    "channel_names": channel_names,
+    "dtype": np.float32,
+}
 
-    else:
-        combined_mats = T_translation_mats
-
-# Save the combined matrices
-print(f'Drift correction matrices: {combined_mats}')
-combined_mats_filepath = output_dir / "combined_mats.npy"
-np.save(combined_mats_filepath, combined_mats)
-
-# Create the empty store
-utils.create_empty_zarr(
-    position_paths=input_position_dirpaths,
-    output_path=output_data_path,
-    output_zyx_shape=output_shape_zyx,
-    chunk_zyx_shape=chunk_zyx_shape,
-    voxel_size=tuple(output_voxel_size),
+# Create the output zarr mirroring input_position_dirpaths
+utils.create_empty_hcs_zarr(
+    store_path=output_dirpath,
+    position_keys=[p.parts[-3:] for p in input_position_dirpaths],
+    **output_metadata,
 )
 
-extra_metadata = {}
-extra_arguments = {
-    "extra_metadata": extra_metadata,
-}
+slurm_out_path = str(os.path.join(output_dirpath.parent, "slurm_output/stabilization-%j.out"))
 
 # prepare slurm parameters
 params = SlurmParams(
-    partition="preempted",
+    partition=partition,
     cpus_per_task=cpus_per_task,
     mem_per_cpu=mem_per_cpu,
     time=datetime.timedelta(minutes=time),
@@ -113,19 +70,39 @@ params = SlurmParams(
 
 # wrap our utils.process_single_position() function with slurmkit
 slurm_process_single_position = slurm_function(utils.apply_stabilization_over_time_ants)
-register_func = slurm_process_single_position(
+stabilization_function = slurm_process_single_position(
     list_of_shifts=combined_mats,
     num_processes=simultaneous_processes_per_node,
-    **extra_arguments,
+    time_indices = list(range(T)),
+    input_channel_idx = None,
+    output_channel_idx = None
 )
 
-# generate an array of jobs by passing the in_path and out_path to slurm wrapped function
-register_jobs = [
-    submit_function(
-        register_func,
-        slurm_params=params,
-        input_data_path=in_path,
-        output_path=out_path,
-    )
-    for in_path, out_path in zip(input_position_dirpaths, output_paths)
-]
+# Making batches of jobs to avoid IO overload
+
+stabilization_jobs = []
+for i in range(0, len(input_position_dirpaths), slurmkit_array_chunk):
+    chunk_input_paths = input_position_dirpaths[i : i + slurmkit_array_chunk]
+
+    if i == 0:
+        stabilization_jobs = [
+            submit_function(
+                stabilization_function,
+                slurm_params=params,
+                input_data_path=in_path,
+                output_path=output_dirpath,
+            )
+            for in_path in chunk_input_paths
+        ]
+
+    else:
+        stabilization_jobs = [
+            submit_function(
+                stabilization_function,
+                slurm_params=params,
+                input_data_path=in_path,
+                output_path=output_dirpath,
+                dependencies=stabilization_jobs,
+            )
+            for in_path in chunk_input_paths
+        ]
