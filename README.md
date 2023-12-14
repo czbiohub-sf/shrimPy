@@ -69,48 +69,48 @@ A typical set of CLI calls to go from raw data to registered volumes looks like:
 
 ```sh
 # CONVERT TO ZARR
-iohub convert `
-    -i ./acq_name/acq_name_labelfree_1 `
-    -o ./acq_name_labelfree.zarr `
-iohub convert `
-    -i ./acq_name/acq_name_lightsheet_1
+iohub convert \
+    -i ./acq_name/acq_name_labelfree_1 \
+    -o ./acq_name_labelfree.zarr \
+iohub convert \
+    -i ./acq_name/acq_name_lightsheet_1 \
     -o ./acq_name_lightsheet.zarr
 
 # DESKEW FLUORESCENCE
 # estimate deskew parameters
-mantis estimate-deskew `
-    -i ./acq_name_lightsheet.zarr/0/0/0 `
+mantis estimate-deskew \
+    -i ./acq_name_lightsheet.zarr/0/0/0 \
     -o ./deskew.yml
 # apply deskew parameters
-mantis deskew `
-    -i ./acq_name_lightsheet.zarr/*/*/*
-    -c ./deskew_params.yml `
+mantis deskew \
+    -i ./acq_name_lightsheet.zarr/*/*/* \
+    -c ./deskew_params.yml \
     -o ./acq_name_lightsheet_deskewed.zarr
 
-# RECONSTRUCT PHASE/
-recorder reconstruct `
-    -i ./acq_name_labelfree.zarr/*/*/* `
-    -c ./recon.yml `
+# RECONSTRUCT PHASE/BIREFRINGENCE
+recorder reconstruct \
+    -i ./acq_name_labelfree.zarr/*/*/* \
+    -c ./recon.yml \
     -o ./acq_name_labelfree_reconstructed.zarr
 
 # TODO: rename function calls as below
 # REGISTER
 # estimate registration parameters
-mantis estimate-registration `
-    --input-source ./acq_name_labelfree_reconstructed.zarr/0/0/0 `
-    --input-target ./acq_name_lightsheet_deskewed.zarr/0/0/0 `
+mantis estimate-registration \
+    --input-source ./acq_name_labelfree_reconstructed.zarr/0/0/0 \
+    --input-target ./acq_name_lightsheet_deskewed.zarr/0/0/0 \
     -o ./register.yml
 # optimize registration parameters
-mantis optimize-registration `
-    --input-source ./acq_name_labelfree_reconstructed.zarr/0/0/0 `
-    --input-target ./acq_name_lightsheet_deskewed.zarr/0/0/0 `
-    -c ./register.yml
+mantis optimize-registration \
+    --input-source ./acq_name_labelfree_reconstructed.zarr/0/0/0 \
+    --input-target ./acq_name_lightsheet_deskewed.zarr/0/0/0 \
+    -c ./register.yml \
     -o ./register_optimized.yml
 # register data
-mantis register `
-    --input-source ./acq_name_labelfree_reconstructed.zarr/*/*/* `
-    --input-target ./acq_name_lightsheet_deskewed.zarr/*/*/* `
-    -c ./register_optimized.yml
+mantis register \
+    --input-source ./acq_name_labelfree_reconstructed.zarr/*/*/* \
+    --input-target ./acq_name_lightsheet_deskewed.zarr/*/*/* \
+    -c ./register_optimized.yml \
     -o ./acq_name_registered.zarr
 ```
 
