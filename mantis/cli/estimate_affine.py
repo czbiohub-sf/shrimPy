@@ -21,8 +21,8 @@ from mantis.cli.utils import model_to_yaml
 # TODO: see if at some point these globals should be hidden or exposed.
 NA_DETECTION_SOURCE = 1.35
 NA_DETECTION_TARGET = 1.35
-WAVELENGTH_EMISSION_SOURCE_CHANNEL = 0.45  # [um]
-WAVELENGTH_EMISSION_TARGET_CHANNEL = 0.6  # [um]
+WAVELENGTH_EMISSION_SOURCE_CHANNEL = 0.45  # in um
+WAVELENGTH_EMISSION_TARGET_CHANNEL = 0.6  # in um
 FOCUS_SLICE_ROI_WIDTH = 150  # size of central ROI used to find focal slice
 
 
@@ -59,10 +59,6 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     # Display volumes rescaled
     with open_ome_zarr(source_position_dirpaths[0], mode="r") as source_channel_position:
         source_channel_str = source_channel_position.channel_names[source_channel_index]
-
-        source_channel_Z, source_channel_Y, source_channel_X = source_channel_position[
-            0
-        ].shape[-3:]
         source_channel_volume = source_channel_position[0][0, source_channel_index]
 
         source_channel_Z, source_channel_Y, source_channel_X = source_channel_volume.shape[-3:]
@@ -76,29 +72,32 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
 
         # Find the infocus slice
         focus_source_channel_idx = focus_from_transverse_band(
-            source_channel_position[0][
-                0,
-                source_channel_index,
+            source_channel_volume[
                 :,
-                source_channel_position[0].shape[-2] // 2
-                - FOCUS_SLICE_ROI_WIDTH : source_channel_position[0].shape[-2] // 2
+                source_channel_Y // 2
+                - FOCUS_SLICE_ROI_WIDTH : source_channel_Y // 2
                 + FOCUS_SLICE_ROI_WIDTH,
-                source_channel_position[0].shape[-1] // 2
-                - FOCUS_SLICE_ROI_WIDTH : source_channel_position[0].shape[-1] // 2
+                source_channel_X // 2
+                - FOCUS_SLICE_ROI_WIDTH : source_channel_X // 2
                 + FOCUS_SLICE_ROI_WIDTH,
             ],
             NA_det=NA_DETECTION_SOURCE,
             lambda_ill=WAVELENGTH_EMISSION_SOURCE_CHANNEL,
             pixel_size=x_sample_space_source_channel,
         )
-    click.echo(f"Best focus source z_idx: {focus_source_channel_idx}")
+
+    if focus_source_channel_idx not in (0, source_channel_Z - 1):
+        click.echo(f"Best focus source z_idx: {focus_source_channel_idx}")
+    else:
+        focus_source_channel_idx = source_channel_Z // 2
+        click.echo(
+            f"Could not determine best focus source z_idx, using {focus_source_channel_idx}"
+        )
 
     with open_ome_zarr(target_position_dirpaths[0], mode="r") as target_channel_position:
         target_channel_str = target_channel_position.channel_names[target_channel_index]
-        target_channel_Z, target_channel_Y, target_channel_X = target_channel_position[
-            0
-        ].shape[-3:]
         target_channel_volume = target_channel_position[0][0, target_channel_index]
+
         target_channel_Z, target_channel_Y, target_channel_X = target_channel_volume.shape[-3:]
 
         # Get the voxel dimension in sample space
@@ -110,22 +109,27 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
 
         # Finding the infocus plane
         focus_target_channel_idx = focus_from_transverse_band(
-            target_channel_position[0][
-                0,
-                target_channel_index,
+            target_channel_volume[
                 :,
-                target_channel_position[0].shape[-2] // 2
-                - FOCUS_SLICE_ROI_WIDTH : target_channel_position[0].shape[-2] // 2
+                target_channel_Y // 2
+                - FOCUS_SLICE_ROI_WIDTH : target_channel_Y // 2
                 + FOCUS_SLICE_ROI_WIDTH,
-                target_channel_position[0].shape[-1] // 2
-                - FOCUS_SLICE_ROI_WIDTH : target_channel_position[0].shape[-1] // 2
+                target_channel_X // 2
+                - FOCUS_SLICE_ROI_WIDTH : target_channel_X // 2
                 + FOCUS_SLICE_ROI_WIDTH,
             ],
             NA_det=NA_DETECTION_TARGET,
             lambda_ill=WAVELENGTH_EMISSION_TARGET_CHANNEL,
             pixel_size=x_sample_space_target_channel,
         )
-    click.echo(f"Best focus target z_idx: {focus_target_channel_idx}")
+
+    if focus_target_channel_idx not in (0, target_channel_Z - 1):
+        click.echo(f"Best focus target z_idx: {focus_target_channel_idx}")
+    else:
+        focus_target_channel_idx = target_channel_Z // 2
+        click.echo(
+            f"Could not determine best focus target z_idx, using {focus_target_channel_idx}"
+        )
 
     # Calculate scaling factors for displaying data
     scaling_factor_z = z_sample_space_source_channel / z_sample_space_target_channel
@@ -212,8 +216,11 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
                 else:
                     prev_step_target_channel = (next_layer.data[-1][0], 0, 0)
                 # Add a point to the active layer
-                cursor_position = np.array(viewer.cursor.position)
-                layer.add(cursor_position)
+                # viewer.cursor.position is return in world coordinates
+                # point position needs to be converted to data coordinates before plotting
+                # on top of layer
+                cursor_position_data_coords = layer.world_to_data(viewer.cursor.position)
+                layer.add(cursor_position_data_coords)
 
                 # Change the colors
                 current_index = COLOR_CYCLE.index(layer.current_face_color)
@@ -239,8 +246,8 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
                 else:
                     # TODO: this +1 is not clear to me?
                     prev_step_source_channel = (next_layer.data[-1][0], 0, 0)
-                cursor_position = np.array(viewer.cursor.position)
-                layer.add(cursor_position)
+                cursor_position_data_coords = layer.world_to_data(viewer.cursor.position)
+                layer.add(cursor_position_data_coords)
                 # Change the colors
                 current_index = COLOR_CYCLE.index(layer.current_face_color)
                 next_index = (current_index + 1) % len(COLOR_CYCLE)
@@ -312,6 +319,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     )
 
     print("Showing registered source image in magenta")
+    viewer.grid.enabled = False
     viewer.add_image(
         source_zxy_manual_reg.numpy(),
         name=f"registered_{source_channel_str}",
