@@ -29,12 +29,17 @@ class DeskewSettings(MyBaseModel):
         if v is not None:
             return round(float(v), 3)
 
-    def __post_init__(self):
-        if self.px_to_scan_ratio is None:
-            if self.scan_step_um is not None:
-                self.px_to_scan_ratio = round(self.pixel_size_um / self.scan_step_um, 3)
+    def __init__(self, **data):
+        if data.get("px_to_scan_ratio") is None:
+            if data.get("scan_step_um") is not None:
+                data["px_to_scan_ratio"] = round(
+                    data["pixel_size_um"] / data["scan_step_um"], 3
+                )
             else:
-                raise TypeError("px_to_scan_ratio is not valid")
+                raise ValueError(
+                    "If px_to_scan_ratio is not provided, both pixel_size_um and scan_step_um must be provided"
+                )
+        super().__init__(**data)
 
 
 class RegistrationSettings(MyBaseModel):
