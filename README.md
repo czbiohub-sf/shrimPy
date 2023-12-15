@@ -1,24 +1,25 @@
-# Acquisition and data reconstruction platform for the mantis microscope
-
+# SHRIMPy: Smart High-throughput Real-time Imaging & Measurement in Python
 ![acquisition and reconstruction schematic](docs/figure_3a.png)
 
-This package facilitates acquiring and reconstructing data from the mantis microscope. The microscope simultaneously acquires label-free and fluorescence light-sheet data on two independent arms running separate instances of [Micro-manager](https://micro-manager.org/) and [pycromanager](https://pycro-manager.readthedocs.io/). The acquisition module synchronizes data collection using hardware triggering and carries out smart microscopy tasks such as autofocus and autoexposure.
+This package currently enables acquisition and reconstruction of data from the mantis microscope. The package is written such that it can be adapted to diverse smart high-throughput live imaging projects.
 
-The acquired multidimensional raw datasets are processed by the mantis reconstruction engine to generate registered multimodal data that can be used for analysis. Raw data are first converted to the [OME-Zarr](https://ngff.openmicroscopy.org/) format using [iohub](https://github.com/czbiohub-sf/iohub) to facilitate parallel processing and metadata management. Discrete data volumes then undergo deskewing of fluorescence channels, reconstruction of phase and orientation (using [recOrder](https://github.com/mehta-lab/recOrder)), registration and virtual staining (using [VisCy](https://github.com/mehta-lab/viscy)).
+The mantis microscope simultaneously acquires label-free and fluorescence light-sheet data on two independent arms running separate instances of [Micro-manager](https://micro-manager.org/) and [pycromanager](https://pycro-manager.readthedocs.io/). The acquisition engine synchronizes data collection using hardware triggering and carries out smart microscopy tasks such as autofocus and autoexposure.
 
-## Hardware setup
+The acquired multidimensional raw datasets are processed by the reconstruction engine to generate registered multimodal data that can be used for analysis. Raw data are first converted to the [OME-Zarr](https://ngff.openmicroscopy.org/) format using [iohub](https://github.com/czbiohub-sf/iohub) to facilitate parallel processing and metadata management. Discrete data volumes then undergo deskewing of fluorescence channels, reconstruction of phase and orientation (using [recOrder](https://github.com/mehta-lab/recOrder)), registration and virtual staining (using [VisCy](https://github.com/mehta-lab/viscy)).
 
-Microscope hardware is set up as outlined in the [Setup Guide](docs/setup_guide.md).
+## Mantis Microscope setup
+
+Mantis Microscope's set up is outlined in the [Setup Guide](docs/setup_guide.md).
 
 ## Installation
 
-`mantis` can be installed as follows:
+`shrimpy` can be installed as follows:
 
 1. Create a new Python 3.10 virtual environment using conda:
 
 ```sh
-conda create -y --name mantis python=3.10
-conda activate mantis
+conda create -y --name shrimpy python=3.10
+conda activate shrimpy
 ```
 
 2. Clone the repo and install this package:
@@ -31,15 +32,15 @@ pip install .
 
 Mantis acquisitions and analyses use a command-line interface.
 
-A list of `mantis` commands can be displayed with:
+A list of `shrimpy` commands can be displayed with:
 ```sh
-mantis --help
+shrimpy --help
 ```
 
-Data are acquired using `mantis run-acquisition`, and a list of arguments can be displayed with:
+Data are acquired using `shrimpy run-acquisition`, and a list of arguments can be displayed with:
 
 ```sh
-mantis run-acquisition --help
+shrimpy run-acquisition --help
 ```
 
 The mantis acquisition is configured using a YAML file. An example of a configuration file can be found [here](mantis/acquisition/settings/example_acquisition_settings.yaml).
@@ -47,7 +48,7 @@ The mantis acquisition is configured using a YAML file. An example of a configur
 This is an example of a command which will start an acquisition on the mantis microscope:
 
 ```pwsh
-mantis run-acquisition `
+shrimpy run-acquisition `
     --config-filepath path/to/config.yaml `
     --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name
 ```
@@ -55,7 +56,7 @@ mantis run-acquisition `
 The acquisition may also be run in "demo" mode with the Micro-manager `MMConfig_Demo.cfg` config. This does not require any microscope hardware. A demo run can be started with:
 
 ```pwsh
-mantis run-acquisition `
+shrimpy run-acquisition `
     --config-filepath path/to/config.yaml `
     --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name `
     --mm-config-filepath path/to/MMConfig_Demo.cfg
@@ -78,11 +79,11 @@ iohub convert \
 
 # DESKEW FLUORESCENCE
 # estimate deskew parameters
-mantis estimate-deskew \
+shrimpy estimate-deskew \
     -i ./acq_name_lightsheet.zarr/0/0/0 \
     -o ./deskew.yml
 # apply deskew parameters
-mantis deskew \
+shrimpy deskew \
     -i ./acq_name_lightsheet.zarr/*/*/* \
     -c ./deskew_params.yml \
     -o ./acq_name_lightsheet_deskewed.zarr
@@ -96,18 +97,18 @@ recorder reconstruct \
 # TODO: rename function calls as below
 # REGISTER
 # estimate registration parameters
-mantis estimate-registration \
+shrimpy estimate-registration \
     --input-source ./acq_name_labelfree_reconstructed.zarr/0/0/0 \
     --input-target ./acq_name_lightsheet_deskewed.zarr/0/0/0 \
     -o ./register.yml
 # optimize registration parameters
-mantis optimize-registration \
+shrimpy optimize-registration \
     --input-source ./acq_name_labelfree_reconstructed.zarr/0/0/0 \
     --input-target ./acq_name_lightsheet_deskewed.zarr/0/0/0 \
     -c ./register.yml \
     -o ./register_optimized.yml
 # register data
-mantis register \
+shrimpy register \
     --input-source ./acq_name_labelfree_reconstructed.zarr/*/*/* \
     --input-target ./acq_name_lightsheet_deskewed.zarr/*/*/* \
     -c ./register_optimized.yml \
