@@ -1,9 +1,7 @@
-# SHRIMPy: Smart High-throughput Real-time Imaging & Measurement in Python
+# SHRIMPy: Smart High-throughput Robust Imaging & Measurement in Python
 ![acquisition and reconstruction schematic](docs/figure_3a.png)
 
-This package currently enables acquisition and reconstruction of data from the mantis microscope. The package is written such that it can be adapted to diverse smart high-throughput live imaging projects.
-
-The mantis microscope simultaneously acquires label-free and fluorescence light-sheet data on two independent arms running separate instances of [Micro-manager](https://micro-manager.org/) and [pycromanager](https://pycro-manager.readthedocs.io/). The acquisition engine synchronizes data collection using hardware triggering and carries out smart microscopy tasks such as autofocus and autoexposure.
+SHRIMPy (pronounced: ʃrɪm-pai) is a pythonic framework for high-throughput smart microscopy and high-throughput analysis. It was developed for acquisition and reconstruction of image data acquired with the mantis microscope.  The mantis microscope implements simultaneous label-free and light-sheet imaging on two independent arms running separate instances of [Micro-manager](https://micro-manager.org/) and [pycromanager](https://pycro-manager.readthedocs.io/). The acquisition engine synchronizes data collection using hardware triggering and carries out smart microscopy tasks such as autofocus and autoexposure.
 
 The acquired multidimensional raw datasets are processed by the reconstruction engine to generate registered multimodal data that can be used for analysis. Raw data are first converted to the [OME-Zarr](https://ngff.openmicroscopy.org/) format using [iohub](https://github.com/czbiohub-sf/iohub) to facilitate parallel processing and metadata management. Discrete data volumes then undergo deskewing of fluorescence channels, reconstruction of phase and orientation (using [recOrder](https://github.com/mehta-lab/recOrder)), registration and virtual staining (using [VisCy](https://github.com/mehta-lab/viscy)).
 
@@ -120,5 +118,4 @@ shrimpy register \
 The format of the raw and reconstructed data and associated metadata is documented [here](/docs/data_structure.md).
 
 ## Contributing
-
-If you would like to contribute to this package, please read the [contributing guide](CONTRIBUTING.md).
+We are updating the code to enable smart high throughput microscopy on any Micro-Manager controlled microscope. The code will have rough edges for the next several months. We appreciate the bug reports and code contributions if you use this package. If you would like to contribute to this package, please read the [contributing guide](CONTRIBUTING.md).
