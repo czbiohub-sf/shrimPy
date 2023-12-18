@@ -30,7 +30,7 @@ The mantis microscope implements simultaneous label-free and light-sheet imaging
 Mantis Microscope's set up is outlined in the [Setup Guide](docs/setup_guide.md).
 
 
-## Data Acquisition with mantis
+## Data acquisition with mantis
 
 Mantis acquisitions and analyses use a command-line interface.
 
