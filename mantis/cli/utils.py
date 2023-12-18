@@ -958,9 +958,10 @@ def nuc_mem_segmentation(czyx_data, **cellpose_kwargs) -> np.ndarray:
     mem_masks, _, _, _ = cyto_model.eval(cyx_data[1], **mem_seg_kwargs)
 
     # Save
-    segmentation_stack = np.stack((nuc_masks, mem_masks))
+    segmentation_stack = np.zeros_like(czyx_data)
+    zyx_mask = np.stack((nuc_masks, mem_masks))
+    segmentation_stack[:,Z_slice] = zyx_mask[:, np.newaxis,]
 
-    segmentation_stack = segmentation_stack[:, np.newaxis, ...]
     return segmentation_stack
 
 
