@@ -1,0 +1,10 @@
+z_idx: 30                 # infocus slice
+mem_model_path: "cyto2"   # default "ctyto2" model works well for cells
+membrane_segmentation:
+  diameter: 200       
+  flow_threshold: 0.4
+  channels: [1, 0]  # [membrane, nucleus] membrane channel has to be first
+  do_3D: false      # 3D segmentations only
+nuc_model_path: "/hpc/projects/comp.micro/virtual_staining/models/cellpose_models/CP_20220902_NuclFL"
+nucleus_segmentation:
+  channels: [0, 0]

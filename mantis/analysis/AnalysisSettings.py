@@ -98,3 +98,18 @@ class StabilizationSettings(MyBaseModel):
                 raise ValueError("Each element in affine_transform_list must be a 4x4 ndarray")
 
         return v
+
+
+class Segmentation(MyBaseModel):
+    diameter: int = None
+    flow_threshold: float = None
+    channels: list[int]
+    do_3D: bool = None
+
+
+class CellposeSegmentationSettings(MyBaseModel):
+    z_idx: int
+    mem_model_path: str
+    membrane_segmentation: Segmentation
+    nuc_model_path: str
+    nucleus_segmentation: Segmentation
