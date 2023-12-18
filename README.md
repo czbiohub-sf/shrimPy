@@ -25,7 +25,7 @@ pip install .
 ```
 
 ## Setting up the mantis microscope
-The mantis microscope implements simultaneous label-free and light-sheet imaging on two independent arms running separate instances of [Micro-manager](https://micro-manager.org/) and [pycromanager](https://pycro-manager.readthedocs.io/). shrimPy was developed to enable robust long-term imaging with mantis and efficient analysis of resulting TB-scale datasets. 
+The mantis microscope implements simultaneous label-free and light-sheet imaging on two independent arms running separate instances of [Micro-Manager](https://micro-manager.org/) and [pycromanager](https://pycro-manager.readthedocs.io/). shrimPy was developed to enable robust long-term imaging with mantis and efficient analysis of resulting TB-scale datasets. 
 
 Mantis Microscope's set up is outlined in the [Setup Guide](docs/setup_guide.md).
 
