@@ -50,17 +50,17 @@ The mantis acquisition is configured using a YAML file. An example of a configur
 This is an example of a command which will start an acquisition on the mantis microscope:
 
 ```pwsh
-mantis run-acquisition 
-    --config-filepath path/to/config.yaml 
+mantis run-acquisition \ 
+    --config-filepath path/to/config.yaml \  
     --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name
 ```
 
 The acquisition may also be run in "demo" mode with the Micro-manager `MMConfig_Demo.cfg` config. This does not require any microscope hardware. A demo run can be started with:
 
 ```pwsh
-mantis run-acquisition
-    --config-filepath path/to/config.yaml
-    --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name
+mantis run-acquisition \ 
+    --config-filepath path/to/config.yaml \ 
+    --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name \ 
     --mm-config-filepath path/to/MMConfig_Demo.cfg
 ```
 
