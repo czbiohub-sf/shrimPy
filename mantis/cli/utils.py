@@ -986,9 +986,10 @@ def apply_transform_to_zyx_and_save_v2(
 
     # TODO: temporary fix to slumkit issue
     if _is_nested(input_channel_indices):
-        print(f'input_channel_indices: {input_channel_indices}')
+        # print(f'input_channel_indices: {input_channel_indices}')
         input_channel_indices = [int(x) for x in input_channel_indices if x.isdigit()]
     if _is_nested(output_channel_indices):
+        # print(f'input_channel_indices: {output_channel_indices}')
         output_channel_indices = [int(x) for x in output_channel_indices if x.isdigit()]
     click.echo(f'input_channel_indices: {input_channel_indices}')
 

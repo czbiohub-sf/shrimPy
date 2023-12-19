@@ -118,7 +118,6 @@ def apply_affine(
         non_processed_source_c_idx_output = [tmp_non_processed_source_c_idx_output.copy() for _ in range(len(source_position_dirpaths)) if len(tmp_non_processed_source_c_idx_output)>0]
         non_procesed_target_c_idx_output = [tmp_non_processed_target_c_idx_output.copy() for _ in range(len(target_position_dirpaths)) if len(tmp_non_processed_target_c_idx_output)>0]
 
-        
         non_processed_input_c_idx = []
         non_processed_output_c_idx = []
         if len(tmp_non_processed_source_c_idx_input) > 0:
@@ -128,25 +127,12 @@ def apply_affine(
             non_processed_input_c_idx.extend(non_procesed_target_c_idx_input)
             non_processed_output_c_idx.extend(non_procesed_target_c_idx_output)
 
-        print(f'tmp_non_processed_source_c_idx_input: {tmp_non_processed_source_c_idx_input}')
-        print(f'tmp_non_processed_source_c_idx_output: {tmp_non_processed_source_c_idx_output}')
-        print(f'tmp_non_processed_target_c_idx_input: {tmp_non_processed_target_c_idx_input}')
-        print(f'tmp_non_processed_target_c_idx_output: {tmp_non_processed_target_c_idx_output}')
-
-        print(f'non_processed_source_c_idx_input: {non_processed_source_c_idx_input}')
-        print(f'non_processed_source_c_idx_output: {non_processed_source_c_idx_output}')
-        print(f'non_processed_target_c_idx_input: {non_procesed_target_c_idx_input}')
-        print(f'non_processed_target_c_idx_output: {non_procesed_target_c_idx_output}')
-        print(f'non_processed_input_c_idx: {non_processed_input_c_idx}')
-        print(f'non_processed_output_c_idx: {non_processed_output_c_idx}')
-
         # Get matching paths to the non processed channels to copy over
         non_proc_paths = []
         if len(non_processed_source_c_idx_input) > 0:
             non_proc_paths.extend(source_position_dirpaths)
         if len(non_procesed_target_c_idx_input)>0:
             non_proc_paths.extend(target_position_dirpaths)
-        print(f'non_proc_paths {non_proc_paths}')
 
      # Find the largest interior rectangle
     print('Find the cropping parameters for the largest interior rectangle of the affine transform')

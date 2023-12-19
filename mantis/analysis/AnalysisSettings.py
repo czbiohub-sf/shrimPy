@@ -53,8 +53,8 @@ class RegistrationSettings(MyBaseModel):
     time_indices: Union[
         NonNegativeInt, List[NonNegativeInt], Literal["all"]
     ] = "all"    
-    channels_to_register:Union[
-       list[str], Literal["all"],int, list[int]
+    channels_to_register:Union[list[int],
+       list[str], Literal["all"],int, 
     ] = "all"    
 
     @validator("affine_transform_zyx")
