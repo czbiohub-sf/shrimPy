@@ -1,14 +1,12 @@
 import contextlib
-import glob
 import inspect
 import io
 import itertools
 import multiprocessing as mp
-import os
 
 from functools import partial
 from pathlib import Path
-from typing import List, Tuple
+from typing import Tuple
 
 import ants
 import click
@@ -16,12 +14,10 @@ import largestinteriorrectangle as lir
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.ndimage as ndi
-import torch
 import yaml
 
 from iohub.ngff import Position, open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
-from natsort import natsorted
 from numpy.typing import DTypeLike
 from tqdm import tqdm
 
@@ -966,7 +962,7 @@ def _check_nan_n_zeros(input_array):
     return False
 
 
-## NOTE WIP
+# NOTE WIP
 def apply_transform_to_zyx_and_save_v2(
     func,
     position: Position,
