@@ -1,9 +1,8 @@
-from typing import Optional
+from typing import List, Literal, Optional, Union
 
 import numpy as np
 
 from pydantic import BaseModel, Extra, NonNegativeInt, PositiveFloat, PositiveInt, validator
-from typing import List, Literal, Optional, Union
 
 
 # All settings classes inherit from MyBaseModel, which forbids extra parameters to guard against typos
