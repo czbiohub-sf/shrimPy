@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Union
+from typing import Literal, Optional, Union
 
 import numpy as np
 
@@ -49,9 +49,7 @@ class RegistrationSettings(MyBaseModel):
     source_shape_zyx: list
     target_shape_zyx: list
     keep_overhang: bool = False
-    time_indices: Union[
-        NonNegativeInt, list[NonNegativeInt], Literal["all"]
-    ] = "all" 
+    time_indices: Union[NonNegativeInt, list[NonNegativeInt], Literal["all"]] = "all"
 
     @validator("affine_transform_zyx")
     def check_affine_transform(cls, v):
