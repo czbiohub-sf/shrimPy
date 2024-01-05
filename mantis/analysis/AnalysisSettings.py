@@ -1,9 +1,8 @@
-from typing import Optional
+from typing import List, Literal, Optional, Union
 
 import numpy as np
 
 from pydantic import BaseModel, Extra, NonNegativeInt, PositiveFloat, PositiveInt, validator
-from typing import List, Literal, Optional, Union
 
 
 # All settings classes inherit from MyBaseModel, which forbids extra parameters to guard against typos
@@ -50,12 +49,8 @@ class RegistrationSettings(MyBaseModel):
     source_shape_zyx: list
     target_shape_zyx: list
     keep_overhang: bool = False
-    time_indices: Union[
-        NonNegativeInt, List[NonNegativeInt], Literal["all"]
-    ] = "all"    
-    channels_to_register:Union[
-       list[str], Literal["all"],int, list[int]
-    ] = "all"    
+    time_indices: Union[NonNegativeInt, List[NonNegativeInt], Literal["all"]] = "all"
+    channels_to_register: Union[list[str], Literal["all"], int, list[int]] = "all"
 
     @validator("affine_transform_zyx")
     def check_affine_transform(cls, v):

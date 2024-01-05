@@ -1,34 +1,29 @@
 import contextlib
+import glob
 import inspect
 import io
 import itertools
 import multiprocessing as mp
+import os
 
 from functools import partial
 from pathlib import Path
-from typing import Tuple
+from typing import List, Tuple
 
 import ants
 import click
 import largestinteriorrectangle as lir
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy.ndimage as ndi
+import torch
 import yaml
 
 from iohub.ngff import Position, open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
-from tqdm import tqdm
-from numpy.typing import DTypeLike
-import torch
-import matplotlib.pyplot as plt
-
-from numpy.typing import DTypeLike
-import torch
-import matplotlib.pyplot as plt
 from natsort import natsorted
-import glob
-from typing import List
-import os
+from numpy.typing import DTypeLike
+from tqdm import tqdm
 
 
 # TODO: replace this with recOrder recOrder.cli.utils.create_empty_hcs()
@@ -299,16 +294,16 @@ def affine_transform(
     -------
     np.ndarray
         registered zyx data
-    """ 
+    """
 
-    if crop_output_slicing is not None:      
+    if crop_output_slicing is not None:
         Z_slice, Y_slice, X_slice = crop_output_slicing
         Z = Z_slice.stop - Z_slice.start
         Y = Y_slice.stop - Y_slice.start
         X = X_slice.stop - X_slice.start
-    
+
     if zyx_data.ndim == 4:
-        registered_czyx = np.zeros((zyx_data.shape[0],Z,Y,X),dtype=np.float32)
+        registered_czyx = np.zeros((zyx_data.shape[0], Z, Y, X), dtype=np.float32)
         for c in range(zyx_data.shape[0]):
             registered_czyx[c] = affine_transform(
                 zyx_data[c],
@@ -590,6 +585,7 @@ def numpy_to_ants_transform_zyx(T_numpy: np.ndarray):
 
     return T_ants
 
+
 def numpy_to_ants_transform_czyx(T_numpy: np.ndarray):
     """Homogeneous 3D transformation matrix from numpy to ants
 
@@ -604,7 +600,7 @@ def numpy_to_ants_transform_czyx(T_numpy: np.ndarray):
     assert T_numpy.shape == (5, 5)
     shape = T_numpy.shape
     T_ants_style = T_numpy[:, :-1].ravel()
-    T_ants_style[-shape[0]+1:] = T_numpy[-shape[0]:-1, -1]
+    T_ants_style[-shape[0] + 1 :] = T_numpy[-shape[0] : -1, -1]
     T_ants = ants.new_ants_transform(
         transform_type='AffineTransform',
     )

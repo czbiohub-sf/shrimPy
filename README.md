@@ -1,7 +1,7 @@
 # shrimPy: Smart High-throughput Robust Imaging & Measurement in Python
 ![acquisition and reconstruction schematic](docs/figure_3a.png)
 
-shrimPy (pronounced: ʃrɪm-pai) is a pythonic framework for high-throughput smart microscopy and high-performance analysis. The current alpha version of the framework is specific to the mantis microscope (described below), but extensible to a high throughput microscope that is controlled with [Micro-Manager](https://micro-manager.org/). 
+shrimPy (pronounced: ʃrɪm-pai) is a pythonic framework for high-throughput smart microscopy and high-performance analysis. The current alpha version of the framework is specific to the mantis microscope (described below), but extensible to a high throughput microscope that is controlled with [Micro-Manager](https://micro-manager.org/).
 
 The acquisition engine synchronizes data collection using hardware triggering and carries out smart microscopy tasks such as autofocus and autoexposure.
 
@@ -25,7 +25,7 @@ pip install .
 ```
 
 ## Setting up the mantis microscope
-The mantis microscope implements simultaneous label-free and light-sheet imaging on two independent arms running separate instances of [Micro-Manager](https://micro-manager.org/) and [pycromanager](https://pycro-manager.readthedocs.io/). shrimPy was developed to enable robust long-term imaging with mantis and efficient analysis of resulting TB-scale datasets. 
+The mantis microscope implements simultaneous label-free and light-sheet imaging on two independent arms running separate instances of [Micro-Manager](https://micro-manager.org/) and [pycromanager](https://pycro-manager.readthedocs.io/). shrimPy was developed to enable robust long-term imaging with mantis and efficient analysis of resulting TB-scale datasets.
 
 Mantis Microscope's set up is outlined in the [Setup Guide](docs/setup_guide.md).
 
@@ -50,17 +50,17 @@ The mantis acquisition is configured using a YAML file. An example of a configur
 This is an example of a command which will start an acquisition on the mantis microscope:
 
 ```pwsh
-mantis run-acquisition \ 
-    --config-filepath path/to/config.yaml \  
+mantis run-acquisition \
+    --config-filepath path/to/config.yaml \
     --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name
 ```
 
 The acquisition may also be run in "demo" mode with the Micro-manager `MMConfig_Demo.cfg` config. This does not require any microscope hardware. A demo run can be started with:
 
 ```pwsh
-mantis run-acquisition \ 
-    --config-filepath path/to/config.yaml \ 
-    --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name \ 
+mantis run-acquisition \
+    --config-filepath path/to/config.yaml \
+    --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name \
     --mm-config-filepath path/to/MMConfig_Demo.cfg
 ```
 
