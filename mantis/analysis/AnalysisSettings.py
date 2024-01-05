@@ -43,18 +43,15 @@ class DeskewSettings(MyBaseModel):
 
 
 class RegistrationSettings(MyBaseModel):
-    source_channel_index: NonNegativeInt
-    target_channel_index: NonNegativeInt
+    source_channel_names: list[str]
+    target_channel_name: str
     affine_transform_zyx: list
     source_shape_zyx: list
     target_shape_zyx: list
     keep_overhang: bool = False
     time_indices: Union[
-        NonNegativeInt, List[NonNegativeInt], Literal["all"]
-    ] = "all"    
-    channels_to_register:Union[list[int],
-       list[str], Literal["all"],int, 
-    ] = "all"    
+        NonNegativeInt, list[NonNegativeInt], Literal["all"]
+    ] = "all" 
 
     @validator("affine_transform_zyx")
     def check_affine_transform(cls, v):
