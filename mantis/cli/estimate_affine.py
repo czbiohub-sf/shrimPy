@@ -58,6 +58,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
 
     # Display volumes rescaled
     with open_ome_zarr(source_position_dirpaths[0], mode="r") as source_channel_position:
+        source_channels = source_channel_position.channel_names
         source_channel_str = source_channel_position.channel_names[source_channel_index]
         source_channel_volume = source_channel_position[0][0, source_channel_index]
 
@@ -95,6 +96,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         )
 
     with open_ome_zarr(target_position_dirpaths[0], mode="r") as target_channel_position:
+        target_channels = target_channel_position.channel_names
         target_channel_str = target_channel_position.channel_names[target_channel_index]
         target_channel_volume = target_channel_position[0][0, target_channel_index]
 
@@ -335,15 +337,26 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     T_manual_numpy = utils.ants_to_numpy_transform_zyx(tx_manual)
     print(T_manual_numpy)
 
-    # TODO: should this be model_to_yaml() from recOrder? Should it override the previous config?
+
+    flag_apply_to_all_channels= str(input("\n Save all source channels for registration yml? Default:only the source channel used for estimation (Y/N):"))
+
+    target_channel_name = target_channel_str
+    if flag_apply_to_all_channels == 'Y' or 'y':
+        if target_channel_name in source_channels:
+            source_channels.remove(target_channel_name)
+        source_channel_names = source_channels
+    else:
+        source_channel_names = [source_channel_str] 
+    
     model = RegistrationSettings(
-        source_channel_index=source_channel_index,
-        target_channel_index=target_channel_index,
+        source_channel_names=source_channel_names,
+        target_channel_name=target_channel_name,
         affine_transform_zyx=T_manual_numpy.tolist(),
         source_shape_zyx=list(source_zyx_ants.numpy().shape),
         target_shape_zyx=list(target_zyx_ants.numpy().shape),
     )
     click.echo(f"Writing registration parameters to {output_filepath}")
     model_to_yaml(model, output_filepath)
+
 
     input("\n Displaying registered channels. Press <enter> to close...")
