@@ -1069,8 +1069,6 @@ def process_single_position_v2(
                 output_dataset.zattrs['extra_metadata'] = non_func_args['extra_metadata']
 
     # Loop through (T, C), deskewing and writing as we go
-    click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
-
     if input_channel_idx is None or len(input_channel_idx) == 0:
         # If C is not empty, use itertools.product with both ranges
         _, C, _, _, _ = input_dataset.data.shape
@@ -1096,8 +1094,13 @@ def process_single_position_v2(
             c_idx=0,
             **func_args,
         )
-    with mp.Pool(num_processes) as p:
-        p.starmap(
-            partial_apply_transform_to_zyx_and_save,
-            iterable,
-        )
+
+    if len(list(iterable)) == 1:  # efficient way to get length of generator
+        itertools.starmap(partial_apply_transform_to_zyx_and_save, iterable)
+    else:
+        click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
+        with mp.Pool(num_processes) as p:
+            p.starmap(
+                partial_apply_transform_to_zyx_and_save,
+                iterable,
+            )
