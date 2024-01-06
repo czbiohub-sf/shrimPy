@@ -341,7 +341,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     flag_apply_to_all_channels= str(input("\n Save all source channels for registration yml? Default:only the source channel used for estimation (Y/N):"))
 
     target_channel_name = target_channel_str
-    if flag_apply_to_all_channels == 'Y' or 'y':
+    if flag_apply_to_all_channels == 'Y' or flag_apply_to_all_channels == 'y':
         if target_channel_name in source_channels:
             source_channels.remove(target_channel_name)
         source_channel_names = source_channels
