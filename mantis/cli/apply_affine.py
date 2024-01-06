@@ -138,7 +138,10 @@ def apply_affine(
     }
 
     # NOTE: channels will not be processed in parallel
-    # apply affine transform to all channels in the source datastore that should be registered as given in the config file
+    # NOTE: the the source and target datastores may be the same (e.g. Hummingbird datasets)
+
+    # apply affine transform to channels in the source datastore that should be registered
+    # as given in the config file (i.e. settings.source_channel_names)
     for input_position_path in source_position_dirpaths:
         for channel_name in source_channel_names:
             if channel_name in settings.source_channel_names:
@@ -152,21 +155,10 @@ def apply_affine(
                     num_processes=num_processes,  # parallel processing over time
                     **affine_transform_args,
                 )
-            # if there are other channels in the source store that are not being registered, crop and copy them over to the output store
-            else:
-                utils.process_single_position_v2(
-                    utils.copy_n_paste_czyx,
-                    input_data_path=input_position_path,  # target store
-                    output_path=output_dirpath,
-                    time_indices=time_indices,
-                    input_channel_idx=[source_channel_names.index(channel_name)],
-                    output_channel_idx=[output_channel_names.index(channel_name)],
-                    num_processes=num_processes,
-                    **copy_n_pase_kwargs,
-                )
 
-    # crop all channels that are not being registered and save in the output zarr store
-    # note: target and source stores may be the same - in that case, don't process channels which were already registered (i.e. settings.source_channel_names)
+    # crop all channels that are not being registered and save them in the output zarr store
+    # Note: when target and source datastores are the same we don't process channels which
+    # were already registered in the previous step
     for input_position_path in target_position_dirpaths:
         for channel_name in target_channel_names:
             if channel_name not in settings.source_channel_names:
