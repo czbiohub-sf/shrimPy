@@ -344,6 +344,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     if flag_apply_to_all_channels == 'Y' or flag_apply_to_all_channels == 'y':
         if target_channel_name in source_channels:
             source_channels.remove(target_channel_name)
+        source_channels.insert(0,source_channels.pop(source_channel_index))
         source_channel_names = source_channels
     else:
         source_channel_names = [source_channel_str] 
