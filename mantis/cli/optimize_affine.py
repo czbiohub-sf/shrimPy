@@ -60,19 +60,21 @@ def optimize_affine(
 
     settings = yaml_to_model(config_filepath, RegistrationSettings)
 
-    source_channel_index = settings.source_channel_index
-    target_channel_index = settings.target_channel_index
-
     click.echo("Loading source and target")
 
     # Load the source volume
     source_position = open_ome_zarr(source_position_dirpaths[0])
+    source_channel_names = source_position.channel_names
+    #NOTE: using the first channel in the config to register
+    source_channel_index = source_channel_names.index(settings.source_channel_names[0])        
     source_data_zyx = source_position[0][T_IDX, source_channel_index].astype(np.float32)
     source_zyx_ants = ants.from_numpy(source_data_zyx)
     click.echo(f"Using source channel {source_position.channel_names[source_channel_index]}")
 
     # Load the target volume
     target_position = open_ome_zarr(target_position_dirpaths[0])
+    target_channel_names = target_position.channel_names
+    target_channel_index = target_channel_names.index(settings.target_channel_name)
     target_channel_zyx = target_position[0][T_IDX, target_channel_index]
     target_zyx_ants = ants.from_numpy(target_channel_zyx.astype(np.float32))
     click.echo(f"Using target channel {target_position.channel_names[target_channel_index]}")
@@ -111,8 +113,8 @@ def optimize_affine(
 
     # TODO: should this be model_to_yaml() from recOrder? Should it override the previous config?
     model = RegistrationSettings(
-        source_channel_index=source_channel_index,
-        target_channel_index=target_channel_index,
+        source_channel_names=settings.source_channel_names,
+        target_channel_name=settings.target_channel_name,
         affine_transform_zyx=composed_matrix.tolist(),
         source_shape_zyx=list(source_zyx_ants.numpy().shape),
         target_shape_zyx=list(target_zyx_ants.numpy().shape),
@@ -141,5 +143,8 @@ def optimize_affine(
             colormap="magenta",
             blending="additive",
         )
-
+    
         input("\n Displaying registered channels. Press <enter> to close...")
+
+    source_position.close()
+    target_position.close()
