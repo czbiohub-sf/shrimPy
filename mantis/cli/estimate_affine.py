@@ -43,9 +43,9 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
 
     print("Getting dataset info")
     print("\n Target channel INFO:")
-    os.system(f"iohub info {target_position_dirpaths[0]} ")
+    os.system(f'iohub info "{str(target_position_dirpaths[0])}"')
     print("\n Source channel INFO:")
-    os.system(f"iohub info {source_position_dirpaths[0]}")
+    os.system(f'iohub info "{str(source_position_dirpaths[0])}"')
 
     target_channel_index = int(input("Enter target channel index to process: "))
     source_channel_index = int(input("Enter source channel index to process: "))
@@ -59,7 +59,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     # Display volumes rescaled
     with open_ome_zarr(source_position_dirpaths[0], mode="r") as source_channel_position:
         source_channels = source_channel_position.channel_names
-        source_channel_str = source_channel_position.channel_names[source_channel_index]
+        source_channel_name = source_channels[source_channel_index]
         source_channel_volume = source_channel_position[0][0, source_channel_index]
 
         source_channel_Z, source_channel_Y, source_channel_X = source_channel_volume.shape[-3:]
@@ -96,8 +96,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         )
 
     with open_ome_zarr(target_position_dirpaths[0], mode="r") as target_channel_position:
-        target_channels = target_channel_position.channel_names
-        target_channel_str = target_channel_position.channel_names[target_channel_index]
+        target_channel_name = target_channel_position.channel_names[target_channel_index]
         target_channel_volume = target_channel_position[0][0, target_channel_index]
 
         target_channel_Z, target_channel_Y, target_channel_X = target_channel_volume.shape[-3:]
@@ -180,19 +179,19 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         "magenta",
     ]
 
-    viewer.add_image(target_channel_volume, name=target_channel_str)
+    viewer.add_image(target_channel_volume, name=target_channel_name)
     points_target_channel = viewer.add_points(
-        ndim=3, name=f"pts_{target_channel_str}", size=50, face_color=COLOR_CYCLE[0]
+        ndim=3, name=f"pts_{target_channel_name}", size=50, face_color=COLOR_CYCLE[0]
     )
 
     viewer.add_image(
         source_zxy_pre_reg.numpy(),
-        name=source_channel_str,
+        name=source_channel_name,
         blending='additive',
         colormap='bop blue',
     )
     points_source_channel = viewer.add_points(
-        ndim=3, name=f"pts_{source_channel_str}", size=50, face_color=COLOR_CYCLE[0]
+        ndim=3, name=f"pts_{source_channel_name}", size=50, face_color=COLOR_CYCLE[0]
     )
 
     # setup viewer
@@ -324,31 +323,33 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     viewer.grid.enabled = False
     viewer.add_image(
         source_zxy_manual_reg.numpy(),
-        name=f"registered_{source_channel_str}",
+        name=f"registered_{source_channel_name}",
         colormap="magenta",
         blending='additive',
     )
-    viewer.layers.remove(f"pts_{source_channel_str}")
-    viewer.layers.remove(f"pts_{target_channel_str}")
-    viewer.layers[source_channel_str].visible = False
+    viewer.layers.remove(f"pts_{source_channel_name}")
+    viewer.layers.remove(f"pts_{target_channel_name}")
+    viewer.layers[source_channel_name].visible = False
 
     click.echo("Saving affine transforms")
     # Ants affine transforms
     T_manual_numpy = utils.ants_to_numpy_transform_zyx(tx_manual)
     print(T_manual_numpy)
 
+    flag_apply_to_all_channels = str(
+        input(
+            "\n Save all source channels for registration yml? Default:only the source channel used for estimation (Y/N):"
+        )
+    )
 
-    flag_apply_to_all_channels= str(input("\n Save all source channels for registration yml? Default:only the source channel used for estimation (Y/N):"))
-
-    target_channel_name = target_channel_str
     if flag_apply_to_all_channels == 'Y' or flag_apply_to_all_channels == 'y':
         if target_channel_name in source_channels:
             source_channels.remove(target_channel_name)
-        source_channels.insert(0,source_channels.pop(source_channel_index))
+        source_channels.insert(0, source_channels.pop(source_channel_index))
         source_channel_names = source_channels
     else:
-        source_channel_names = [source_channel_str] 
-    
+        source_channel_names = [source_channel_name]
+
     model = RegistrationSettings(
         source_channel_names=source_channel_names,
         target_channel_name=target_channel_name,
@@ -359,5 +360,8 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     click.echo(f"Writing registration parameters to {output_filepath}")
     model_to_yaml(model, output_filepath)
 
-
     input("\n Displaying registered channels. Press <enter> to close...")
+
+
+if __name__ == "__main__":
+    estimate_affine()
