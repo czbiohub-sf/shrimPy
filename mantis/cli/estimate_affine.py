@@ -1,11 +1,10 @@
-import os
-
 import ants
 import click
 import napari
 import numpy as np
 
 from iohub import open_ome_zarr
+from iohub.reader import print_info
 from skimage.transform import EuclideanTransform
 from waveorder.focus import focus_from_transverse_band
 
@@ -43,9 +42,9 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
 
     print("Getting dataset info")
     print("\n Target channel INFO:")
-    os.system(f'iohub info "{str(target_position_dirpaths[0])}"')
+    print_info(target_position_dirpaths[0], verbose=False)
     print("\n Source channel INFO:")
-    os.system(f'iohub info "{str(source_position_dirpaths[0])}"')
+    print_info(source_position_dirpaths[0], verbose=False)
 
     target_channel_index = int(input("Enter target channel index to process: "))
     source_channel_index = int(input("Enter source channel index to process: "))
