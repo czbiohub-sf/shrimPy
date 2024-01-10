@@ -40,20 +40,17 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     -o ./output.yml
     """
 
-    print("Getting dataset info")
-    print("\n Target channel INFO:")
+    click.echo("\nTarget channel INFO:")
     print_info(target_position_dirpaths[0], verbose=False)
-    print("\n Source channel INFO:")
+    click.echo("\nSource channel INFO:")
     print_info(source_position_dirpaths[0], verbose=False)
 
-    target_channel_index = int(input("Enter target channel index to process: "))
-    source_channel_index = int(input("Enter source channel index to process: "))
+    click.echo()  # prints empty line
+    target_channel_index = int(input("Enter target channel index: "))
+    source_channel_index = int(input("Enter source channel index: "))
     pre_affine_90degree_rotations_about_z = int(
         input("Rotate the source channel by 90 degrees? (0, 1, or -1): ")
     )
-
-    click.echo(f"Estimating registration with labelfree channel index {source_channel_index}")
-    click.echo("Loading data and estimating best focus plane...")
 
     # Display volumes rescaled
     with open_ome_zarr(source_position_dirpaths[0], mode="r") as source_channel_position:
@@ -86,12 +83,13 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
             pixel_size=x_sample_space_source_channel,
         )
 
+    click.echo()
     if focus_source_channel_idx not in (0, source_channel_Z - 1):
-        click.echo(f"Best focus source z_idx: {focus_source_channel_idx}")
+        click.echo(f"Best source channel focus slice: {focus_source_channel_idx}")
     else:
         focus_source_channel_idx = source_channel_Z // 2
         click.echo(
-            f"Could not determine best focus source z_idx, using {focus_source_channel_idx}"
+            f"Could not determine best source channel focus slice, using {focus_source_channel_idx}"
         )
 
     with open_ome_zarr(target_position_dirpaths[0], mode="r") as target_channel_position:
@@ -124,17 +122,19 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         )
 
     if focus_target_channel_idx not in (0, target_channel_Z - 1):
-        click.echo(f"Best focus target z_idx: {focus_target_channel_idx}")
+        click.echo(f"Best target channel focus slice: {focus_target_channel_idx}")
     else:
         focus_target_channel_idx = target_channel_Z // 2
         click.echo(
-            f"Could not determine best focus target z_idx, using {focus_target_channel_idx}"
+            f"Could not determine best target channel focus slice, using {focus_target_channel_idx}"
         )
 
     # Calculate scaling factors for displaying data
     scaling_factor_z = z_sample_space_source_channel / z_sample_space_target_channel
     scaling_factor_yx = x_sample_space_source_channel / x_sample_space_target_channel
-    print(f"scaling factor z {scaling_factor_z}, scaling factor xy {scaling_factor_yx}")
+    click.echo(
+        f"Z scaling factor: {scaling_factor_z:.3f}; ZY scaling factor: {scaling_factor_yx:.3f}\n"
+    )
     # Add layers to napari with and transform
     # Rotate the image if needed here
 
@@ -275,7 +275,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     points_target_channel.mouse_drag_callbacks.append(lambda_callback)
 
     input(
-        "\nAdd at least three points in the two channels by sequentially clicking "
+        "Add at least three points in the two channels by sequentially clicking "
         + "on a feature in the source channel and its corresponding feature in target channel. "
         + "Select grid mode if you prefer side-by-side view. "
         + "Press <enter> when done..."
@@ -318,7 +318,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         source_zyx_ants, reference=target_zyx_ants
     )
 
-    print("Showing registered source image in magenta")
+    click.echo("\nShowing registered source image in magenta")
     viewer.grid.enabled = False
     viewer.add_image(
         source_zxy_manual_reg.numpy(),
@@ -330,18 +330,15 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     viewer.layers.remove(f"pts_{target_channel_name}")
     viewer.layers[source_channel_name].visible = False
 
-    click.echo("Saving affine transforms")
     # Ants affine transforms
     T_manual_numpy = utils.ants_to_numpy_transform_zyx(tx_manual)
-    print(T_manual_numpy)
+    click.echo(f'Estimated affine transformation matrix:\n{T_manual_numpy}\n')
 
     flag_apply_to_all_channels = str(
-        input(
-            "\n Save all source channels for registration yml? Default:only the source channel used for estimation (Y/N):"
-        )
+        input("Registered all channels in the source dataset? (y/N): ")
     )
 
-    if flag_apply_to_all_channels == 'Y' or flag_apply_to_all_channels == 'y':
+    if flag_apply_to_all_channels in ('Y', 'y'):
         if target_channel_name in source_channels:
             source_channels.remove(target_channel_name)
         source_channels.insert(0, source_channels.pop(source_channel_index))
@@ -358,8 +355,6 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     )
     click.echo(f"Writing registration parameters to {output_filepath}")
     model_to_yaml(model, output_filepath)
-
-    input("\n Displaying registered channels. Press <enter> to close...")
 
 
 if __name__ == "__main__":
