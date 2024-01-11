@@ -292,12 +292,14 @@ def affine_transform(
         registered zyx data
     """
 
+    Z, Y, X = zyx_data.shape[-3:]
     if crop_output_slicing is not None:
         Z_slice, Y_slice, X_slice = crop_output_slicing
         Z = Z_slice.stop - Z_slice.start
         Y = Y_slice.stop - Y_slice.start
         X = X_slice.stop - X_slice.start
 
+    # TODO: based on the signature of this function, it should not be called on 4D array
     if zyx_data.ndim == 4:
         registered_czyx = np.zeros((zyx_data.shape[0], Z, Y, X), dtype=np.float32)
         for c in range(zyx_data.shape[0]):
@@ -1095,9 +1097,6 @@ def process_single_position_v2(
             **func_args,
         )
 
-    if len(list(iterable)) == 1:  # efficient way to get length of generator
-        itertools.starmap(partial_apply_transform_to_zyx_and_save, iterable)
-    else:
         click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
         with mp.Pool(num_processes) as p:
             p.starmap(
