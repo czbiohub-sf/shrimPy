@@ -52,7 +52,8 @@ def apply_affine(
     config_filepath = Path(config_filepath)
 
     # Handle single position or wildcard filepath
-    click.echo(f"List of input_pos:{source_position_dirpaths} output_pos:{output_dirpath}")
+    click.echo(f"\nInput positions: {[str(path) for path in source_position_dirpaths]}")
+    click.echo(f"Output position: {output_dirpath}")
 
     # Parse from the yaml file
     settings = yaml_to_model(config_filepath, RegistrationSettings)
@@ -71,7 +72,7 @@ def apply_affine(
         target_channel_names = target_dataset.channel_names
 
     click.echo('\nREGISTRATION PARAMETERS:')
-    click.echo(f'Affine transform: {matrix}')
+    click.echo(f'Transformation matrix:\n{matrix}')
     click.echo(f'Voxel size: {output_voxel_size}')
 
     # Logic to parse time indices
@@ -87,9 +88,7 @@ def apply_affine(
         output_channel_names += source_channel_names
 
     # Find the largest interior rectangle
-    print(
-        'Find the cropping parameters for the largest interior rectangle of the affine transform'
-    )
+    click.echo('\nFinding largest overlapping volume between source and target datasets')
     if not keep_overhang:
         Z_slice, Y_slice, X_slice = utils.find_lir_slicing_params(
             source_shape_zyx, target_shape_zyx, matrix
@@ -101,7 +100,7 @@ def apply_affine(
             X_slice.stop - X_slice.start,
         )
         Z, Y, X = target_shape_zyx[-3:]
-        print(f'New target shape: {target_shape_zyx}')
+        click.echo(f'Shape of cropped output dataset: {target_shape_zyx}\n')
 
     output_metadata = {
         "shape": (len(time_indices), len(output_channel_names), Z, Y, X),

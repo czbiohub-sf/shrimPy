@@ -496,40 +496,6 @@ def find_lir_slicing_params(
 
     Z_slice, Y_slice, X_slice = find_lir(registered_zyx.numpy(), plot=plot)
 
-    # registered_zyx_bool = registered_zyx.numpy().copy()
-    # registered_zyx_bool = registered_zyx_bool > 0
-    # # NOTE: we use the center of the volume as reference
-    # rectangle_coords_yx = lir.lir(registered_zyx_bool[registered_zyx.shape[0] // 2])
-
-    # # Find the overlap in XY
-    # x = rectangle_coords_yx[0]
-    # y = rectangle_coords_yx[1]
-    # width = rectangle_coords_yx[2]
-    # height = rectangle_coords_yx[3]
-    # corner1_xy = (x, y)  # Bottom-left corner
-    # corner2_xy = (x + width, y)  # Bottom-right corner
-    # corner3_xy = (x + width, y + height)  # Top-right corner
-    # corner4_xy = (x, y + height)  # Top-left corner
-    # rectangle_xy = np.array((corner1_xy, corner2_xy, corner3_xy, corner4_xy))
-    # X_slice = slice(rectangle_xy.min(axis=0)[0], rectangle_xy.max(axis=0)[0])
-    # Y_slice = slice(rectangle_xy.min(axis=0)[1], rectangle_xy.max(axis=0)[1])
-
-    # # Find the overlap in Z
-    # registered_zx = registered_zyx.numpy()
-    # registered_zx = registered_zx.transpose((2, 0, 1)) > 0
-    # rectangle_coords_zx = lir.lir(registered_zx[registered_zyx.shape[0] // 2].copy())
-    # x = rectangle_coords_zx[0]
-    # y = rectangle_coords_zx[1]
-    # width = rectangle_coords_zx[2]
-    # height = rectangle_coords_zx[3]
-    # corner1_zx = (x, y)  # Bottom-left corner
-    # corner2_zx = (x + width, y)  # Bottom-right corner
-    # corner3_zx = (x + width, y + height)  # Top-right corner
-    # corner4_zx = (x, y + height)  # Top-left corner
-    # rectangle_zx = np.array((corner1_zx, corner2_zx, corner3_zx, corner4_zx))
-    # Z_slice = slice(rectangle_zx.min(axis=0)[1], rectangle_zx.max(axis=0)[1])
-
-    print(f'Slicing parameters Z:{Z_slice}, Y:{Y_slice}, X:{X_slice}')
     return (Z_slice, Y_slice, X_slice)
 
 
@@ -899,7 +865,6 @@ def create_empty_hcs_zarr(
         chunk_zyx_shape = tuple(chunk_zyx_shape)
 
         chunks = 2 * (1,) + chunk_zyx_shape
-    click.echo(f"Chunk size: {chunks}")
 
     # Create plate
     output_plate = open_ome_zarr(
