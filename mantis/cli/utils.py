@@ -292,12 +292,14 @@ def affine_transform(
         registered zyx data
     """
 
+    Z, Y, X = zyx_data.shape[-3:]
     if crop_output_slicing is not None:
         Z_slice, Y_slice, X_slice = crop_output_slicing
         Z = Z_slice.stop - Z_slice.start
         Y = Y_slice.stop - Y_slice.start
         X = X_slice.stop - X_slice.start
 
+    # TODO: based on the signature of this function, it should not be called on 4D array
     if zyx_data.ndim == 4:
         registered_czyx = np.zeros((zyx_data.shape[0], Z, Y, X), dtype=np.float32)
         for c in range(zyx_data.shape[0]):
@@ -494,40 +496,6 @@ def find_lir_slicing_params(
 
     Z_slice, Y_slice, X_slice = find_lir(registered_zyx.numpy(), plot=plot)
 
-    # registered_zyx_bool = registered_zyx.numpy().copy()
-    # registered_zyx_bool = registered_zyx_bool > 0
-    # # NOTE: we use the center of the volume as reference
-    # rectangle_coords_yx = lir.lir(registered_zyx_bool[registered_zyx.shape[0] // 2])
-
-    # # Find the overlap in XY
-    # x = rectangle_coords_yx[0]
-    # y = rectangle_coords_yx[1]
-    # width = rectangle_coords_yx[2]
-    # height = rectangle_coords_yx[3]
-    # corner1_xy = (x, y)  # Bottom-left corner
-    # corner2_xy = (x + width, y)  # Bottom-right corner
-    # corner3_xy = (x + width, y + height)  # Top-right corner
-    # corner4_xy = (x, y + height)  # Top-left corner
-    # rectangle_xy = np.array((corner1_xy, corner2_xy, corner3_xy, corner4_xy))
-    # X_slice = slice(rectangle_xy.min(axis=0)[0], rectangle_xy.max(axis=0)[0])
-    # Y_slice = slice(rectangle_xy.min(axis=0)[1], rectangle_xy.max(axis=0)[1])
-
-    # # Find the overlap in Z
-    # registered_zx = registered_zyx.numpy()
-    # registered_zx = registered_zx.transpose((2, 0, 1)) > 0
-    # rectangle_coords_zx = lir.lir(registered_zx[registered_zyx.shape[0] // 2].copy())
-    # x = rectangle_coords_zx[0]
-    # y = rectangle_coords_zx[1]
-    # width = rectangle_coords_zx[2]
-    # height = rectangle_coords_zx[3]
-    # corner1_zx = (x, y)  # Bottom-left corner
-    # corner2_zx = (x + width, y)  # Bottom-right corner
-    # corner3_zx = (x + width, y + height)  # Top-right corner
-    # corner4_zx = (x, y + height)  # Top-left corner
-    # rectangle_zx = np.array((corner1_zx, corner2_zx, corner3_zx, corner4_zx))
-    # Z_slice = slice(rectangle_zx.min(axis=0)[1], rectangle_zx.max(axis=0)[1])
-
-    print(f'Slicing parameters Z:{Z_slice}, Y:{Y_slice}, X:{X_slice}')
     return (Z_slice, Y_slice, X_slice)
 
 
@@ -897,7 +865,6 @@ def create_empty_hcs_zarr(
         chunk_zyx_shape = tuple(chunk_zyx_shape)
 
         chunks = 2 * (1,) + chunk_zyx_shape
-    click.echo(f"Chunk size: {chunks}")
 
     # Create plate
     output_plate = open_ome_zarr(
@@ -1069,8 +1036,6 @@ def process_single_position_v2(
                 output_dataset.zattrs['extra_metadata'] = non_func_args['extra_metadata']
 
     # Loop through (T, C), deskewing and writing as we go
-    click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
-
     if input_channel_idx is None or len(input_channel_idx) == 0:
         # If C is not empty, use itertools.product with both ranges
         _, C, _, _, _ = input_dataset.data.shape
@@ -1096,8 +1061,10 @@ def process_single_position_v2(
             c_idx=0,
             **func_args,
         )
-    with mp.Pool(num_processes) as p:
-        p.starmap(
-            partial_apply_transform_to_zyx_and_save,
-            iterable,
-        )
+
+        click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
+        with mp.Pool(num_processes) as p:
+            p.starmap(
+                partial_apply_transform_to_zyx_and_save,
+                iterable,
+            )

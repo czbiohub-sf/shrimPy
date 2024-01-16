@@ -52,7 +52,8 @@ def apply_affine(
     config_filepath = Path(config_filepath)
 
     # Handle single position or wildcard filepath
-    click.echo(f"List of input_pos:{source_position_dirpaths} output_pos:{output_dirpath}")
+    click.echo(f"\nInput positions: {[str(path) for path in source_position_dirpaths]}")
+    click.echo(f"Output position: {output_dirpath}")
 
     # Parse from the yaml file
     settings = yaml_to_model(config_filepath, RegistrationSettings)
@@ -71,7 +72,7 @@ def apply_affine(
         target_channel_names = target_dataset.channel_names
 
     click.echo('\nREGISTRATION PARAMETERS:')
-    click.echo(f'Affine transform: {matrix}')
+    click.echo(f'Transformation matrix:\n{matrix}')
     click.echo(f'Voxel size: {output_voxel_size}')
 
     # Logic to parse time indices
@@ -82,98 +83,12 @@ def apply_affine(
     elif isinstance(settings.time_indices, int):
         time_indices = [settings.time_indices]
 
-    # Logic to parse channels
-    if settings.channels_to_register == 'all':
-        input_channel_indeces = list(range(len(source_channel_names)))
-        output_channel_indeces = list(range(len(input_channel_indeces)))
-    elif isinstance(settings.channels_to_register, list):
-        # check list is integers or strings
-        if all(isinstance(item, int) for item in settings.channels_to_register):
-            assert len(settings.channels_to_register) <= len(source_channel_names)
-            input_channel_indeces = settings.channels_to_register
-            output_channel_indeces = input_channel_indeces
-        else:
-            # get channel indeces
-            input_channel_indeces = [
-                source_channel_names.index(c) for c in settings.channels_to_register
-            ]
-            output_channel_indeces = input_channel_indeces
-    elif isinstance(settings.channels_to_register, int):
-        input_channel_indeces = list(settings.channels_to_register)
-        output_channel_indeces = input_channel_indeces
-
-    # Logic to parse channels
-    if target_position_dirpaths == source_position_dirpaths:
-        all_channel_names = source_channel_names
-        tmp_non_processed_source_c_idx = [
-            i
-            for i in range(len(all_channel_names))
-            if i not in input_channel_indeces and i < len(source_channel_names)
-        ]
-        non_processed_input_c_idx = [
-            tmp_non_processed_source_c_idx.copy() for _ in range(len(source_position_dirpaths))
-        ]
-        non_processed_output_c_idx = non_processed_input_c_idx
-    else:
-        all_channel_names = source_channel_names + target_channel_names
-        print(f'all_channel_names: {all_channel_names}')
-        # Check which channels are copyied over without processing
-        tmp_non_processed_source_c_idx_input = [
-            i
-            for i in range(len(all_channel_names))
-            if i not in input_channel_indeces and i <= len(source_channel_names) - 1
-        ]
-        tmp_non_processed_target_c_idx_input = [
-            i - len(source_channel_names)
-            for i in range(len(all_channel_names))
-            if i not in input_channel_indeces and i > len(source_channel_names) - 1
-        ]
-
-        tmp_non_processed_source_c_idx_output = [
-            i
-            for i in range(len(all_channel_names))
-            if i not in input_channel_indeces and i <= len(source_channel_names) - 1
-        ]
-        tmp_non_processed_target_c_idx_output = [
-            i
-            for i in range(len(all_channel_names))
-            if i not in input_channel_indeces and i > len(source_channel_names) - 1
-        ]
-
-        non_processed_source_c_idx_input = [
-            tmp_non_processed_source_c_idx_input.copy()
-            for _ in range(len(source_position_dirpaths))
-            if len(tmp_non_processed_source_c_idx_input) > 0
-        ]
-        non_procesed_target_c_idx_input = [
-            tmp_non_processed_target_c_idx_input.copy()
-            for _ in range(len(target_position_dirpaths))
-            if len(tmp_non_processed_target_c_idx_input) > 0
-        ]
-
-        non_processed_source_c_idx_output = [tmp_non_processed_source_c_idx_output.copy() for _ in range(len(source_position_dirpaths)) if len(tmp_non_processed_source_c_idx_output)>0]
-        non_procesed_target_c_idx_output = [tmp_non_processed_target_c_idx_output.copy() for _ in range(len(target_position_dirpaths)) if len(tmp_non_processed_target_c_idx_output)>0]
-
-        non_processed_input_c_idx = []
-        non_processed_output_c_idx = []
-        if len(tmp_non_processed_source_c_idx_input) > 0:
-            non_processed_input_c_idx.extend(non_processed_source_c_idx_input)
-            non_processed_output_c_idx.extend(non_processed_source_c_idx_output)
-        if len(tmp_non_processed_target_c_idx_input) > 0:
-            non_processed_input_c_idx.extend(non_procesed_target_c_idx_input)
-            non_processed_output_c_idx.extend(non_procesed_target_c_idx_output)
-
-        # Get matching paths to the non processed channels to copy over
-        non_proc_paths = []
-        if len(non_processed_source_c_idx_input) > 0:
-            non_proc_paths.extend(source_position_dirpaths)
-        if len(non_procesed_target_c_idx_input) > 0:
-            non_proc_paths.extend(target_position_dirpaths)
+    output_channel_names = target_channel_names
+    if target_position_dirpaths != source_position_dirpaths:
+        output_channel_names += source_channel_names
 
     # Find the largest interior rectangle
-    print(
-        'Find the cropping parameters for the largest interior rectangle of the affine transform'
-    )
+    click.echo('\nFinding largest overlapping volume between source and target datasets')
     if not keep_overhang:
         Z_slice, Y_slice, X_slice = utils.find_lir_slicing_params(
             source_shape_zyx, target_shape_zyx, matrix
@@ -185,13 +100,13 @@ def apply_affine(
             X_slice.stop - X_slice.start,
         )
         Z, Y, X = target_shape_zyx[-3:]
-        print(f'New target shape: {target_shape_zyx}')
+        click.echo(f'Shape of cropped output dataset: {target_shape_zyx}\n')
 
     output_metadata = {
-        "shape": (len(time_indices), len(all_channel_names), Z, Y, X),
+        "shape": (len(time_indices), len(output_channel_names), Z, Y, X),
         "chunks": None,
         "scale": (1,) * 2 + tuple(output_voxel_size),
-        "channel_names": all_channel_names,
+        "channel_names": output_channel_names,
         "dtype": np.float32,
     }
 
@@ -221,30 +136,42 @@ def apply_affine(
         "czyx_slicing_params": ([Z_slice, Y_slice, X_slice] if not keep_overhang else None),
     }
 
-    # # Loop over positions
-    for input_position_path in source_position_dirpaths:
-        utils.process_single_position_v2(
-            utils.affine_transform,
-            input_data_path=input_position_path,
-            output_path=output_dirpath,
-            time_indices=time_indices,
-            input_channel_idx=input_channel_indeces,
-            output_channel_idx=output_channel_indeces,
-            num_processes=num_processes,
-            **affine_transform_args,
-        )
+    # NOTE: channels will not be processed in parallel
+    # NOTE: the the source and target datastores may be the same (e.g. Hummingbird datasets)
 
-    # Crop and copy the data that did not need to be processed
-    for input_position_path, input_c_idx, output_c_idx in zip(
-        non_proc_paths, non_processed_input_c_idx, non_processed_output_c_idx
-    ):
-        utils.process_single_position_v2(
-            utils.copy_n_paste_czyx,
-            input_data_path=input_position_path,
-            output_path=output_dirpath,
-            time_indices=time_indices,
-            input_channel_idx=input_c_idx,
-            output_channel_idx=output_c_idx,
-            num_processes=num_processes,
-            **copy_n_pase_kwargs,
-        )
+    # apply affine transform to channels in the source datastore that should be registered
+    # as given in the config file (i.e. settings.source_channel_names)
+    for input_position_path in source_position_dirpaths:
+        for channel_name in source_channel_names:
+            if channel_name in settings.source_channel_names:
+                utils.process_single_position_v2(
+                    utils.affine_transform,
+                    input_data_path=input_position_path,  # source store
+                    output_path=output_dirpath,
+                    time_indices=time_indices,
+                    input_channel_idx=[source_channel_names.index(channel_name)],
+                    output_channel_idx=[output_channel_names.index(channel_name)],
+                    num_processes=num_processes,  # parallel processing over time
+                    **affine_transform_args,
+                )
+
+    # crop all channels that are not being registered and save them in the output zarr store
+    # Note: when target and source datastores are the same we don't process channels which
+    # were already registered in the previous step
+    for input_position_path in target_position_dirpaths:
+        for channel_name in target_channel_names:
+            if channel_name not in settings.source_channel_names:
+                utils.process_single_position_v2(
+                    utils.copy_n_paste_czyx,
+                    input_data_path=input_position_path,  # target store
+                    output_path=output_dirpath,
+                    time_indices=time_indices,
+                    input_channel_idx=[target_channel_names.index(channel_name)],
+                    output_channel_idx=[output_channel_names.index(channel_name)],
+                    num_processes=num_processes,
+                    **copy_n_pase_kwargs,
+                )
+
+
+if __name__ == "__main__":
+    apply_affine()
