@@ -58,8 +58,6 @@ def apply_affine(
     # Parse from the yaml file
     settings = yaml_to_model(config_filepath, RegistrationSettings)
     matrix = np.array(settings.affine_transform_zyx)
-    source_shape_zyx = tuple(settings.source_shape_zyx)
-    target_shape_zyx = tuple(settings.target_shape_zyx)
     keep_overhang = settings.keep_overhang
 
     # Calculate the output voxel size from the input scale and affine transform
@@ -67,9 +65,12 @@ def apply_affine(
         output_voxel_size = apply_affine_to_scale(matrix[:3, :3], source_dataset.scale[-3:])
         T, C, Z, Y, X = source_dataset.data.shape
         source_channel_names = source_dataset.channel_names
+        source_shape_zyx = source_dataset.data.shape[-3:]
 
     with open_ome_zarr(target_position_dirpaths[0]) as target_dataset:
         target_channel_names = target_dataset.channel_names
+        Z_target, Y_target, X_target = target_dataset.data.shape[-3:]
+        target_shape_zyx = target_dataset.data.shape[-3:]
 
     click.echo('\nREGISTRATION PARAMETERS:')
     click.echo(f'Transformation matrix:\n{matrix}')
@@ -87,23 +88,30 @@ def apply_affine(
     if target_position_dirpaths != source_position_dirpaths:
         output_channel_names += source_channel_names
 
-    # Find the largest interior rectangle
-    click.echo('\nFinding largest overlapping volume between source and target datasets')
     if not keep_overhang:
+        # Find the largest interior rectangle
+        click.echo('\nFinding largest overlapping volume between source and target datasets')
         Z_slice, Y_slice, X_slice = utils.find_lir_slicing_params(
             source_shape_zyx, target_shape_zyx, matrix
         )
         # TODO: start or stop may be None
-        target_shape_zyx = (
+        cropped_target_shape_zyx = (
             Z_slice.stop - Z_slice.start,
             Y_slice.stop - Y_slice.start,
             X_slice.stop - X_slice.start,
         )
-        Z, Y, X = target_shape_zyx[-3:]
+        # Overwrite the previous target shape
+        Z_target, Y_target, X_target = cropped_target_shape_zyx[-3:]
         click.echo(f'Shape of cropped output dataset: {target_shape_zyx}\n')
+    else:
+        Z_slice, Y_slice, X_slice = (
+            slice(0, Z_target),
+            slice(0, Y_target),
+            slice(0, X_target),
+        )
 
     output_metadata = {
-        "shape": (len(time_indices), len(output_channel_names), Z, Y, X),
+        "shape": (len(time_indices), len(output_channel_names), Z_target, Y_target, X_target),
         "chunks": None,
         "scale": (1,) * 2 + tuple(output_voxel_size),
         "channel_names": output_channel_names,
@@ -127,14 +135,12 @@ def apply_affine(
 
     affine_transform_args = {
         'matrix': matrix,
-        'output_shape_zyx': settings.target_shape_zyx,
+        'output_shape_zyx': target_shape_zyx,  # NOTE: this is the shape of the original target dataset
         'crop_output_slicing': ([Z_slice, Y_slice, X_slice] if not keep_overhang else None),
         'extra_metadata': extra_metadata,
     }
 
-    copy_n_pase_kwargs = {
-        "czyx_slicing_params": ([Z_slice, Y_slice, X_slice] if not keep_overhang else None),
-    }
+    copy_n_paste_kwargs = {"czyx_slicing_params": ([Z_slice, Y_slice, X_slice])}
 
     # NOTE: channels will not be processed in parallel
     # NOTE: the the source and target datastores may be the same (e.g. Hummingbird datasets)
@@ -169,7 +175,7 @@ def apply_affine(
                     input_channel_idx=[target_channel_names.index(channel_name)],
                     output_channel_idx=[output_channel_names.index(channel_name)],
                     num_processes=num_processes,
-                    **copy_n_pase_kwargs,
+                    **copy_n_paste_kwargs,
                 )
 
 

@@ -292,7 +292,7 @@ def affine_transform(
         registered zyx data
     """
 
-    Z, Y, X = zyx_data.shape[-3:]
+    Z, Y, X = output_shape_zyx
     if crop_output_slicing is not None:
         Z_slice, Y_slice, X_slice = crop_output_slicing
         Z = Z_slice.stop - Z_slice.start

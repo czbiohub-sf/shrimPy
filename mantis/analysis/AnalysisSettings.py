@@ -46,8 +46,6 @@ class RegistrationSettings(MyBaseModel):
     source_channel_names: list[str]
     target_channel_name: str
     affine_transform_zyx: list
-    source_shape_zyx: list
-    target_shape_zyx: list
     keep_overhang: bool = False
     time_indices: Union[NonNegativeInt, list[NonNegativeInt], Literal["all"]] = "all"
 
@@ -68,16 +66,4 @@ class RegistrationSettings(MyBaseModel):
         except ValueError:
             raise ValueError("The array must contain valid numerical values.")
 
-        return v
-
-    @validator("source_shape_zyx")
-    def check_source_shape_zyx(cls, v):
-        if not isinstance(v, list) or len(v) != 3:
-            raise ValueError("The output shape zyx must be a list of length 3.")
-        return v
-
-    @validator("target_shape_zyx")
-    def check_target_shape_zyx(cls, v):
-        if not isinstance(v, list) or len(v) != 3:
-            raise ValueError("The output shape zyx must be a list of length 3.")
         return v
