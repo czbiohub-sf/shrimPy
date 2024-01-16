@@ -350,8 +350,6 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         source_channel_names=source_channel_names,
         target_channel_name=target_channel_name,
         affine_transform_zyx=T_manual_numpy.tolist(),
-        source_shape_zyx=list(source_zyx_ants.numpy().shape),
-        target_shape_zyx=list(target_zyx_ants.numpy().shape),
     )
     click.echo(f"Writing registration parameters to {output_filepath}")
     model_to_yaml(model, output_filepath)
