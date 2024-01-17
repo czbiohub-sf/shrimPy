@@ -12,7 +12,7 @@ import numpy as np
 
 from iohub.ngff import Position, open_ome_zarr
 
-from mantis.analysis.register import numpy_to_ants_transform_zyx
+from mantis.analysis.register import convert_transform_to_ants
 from mantis.cli.utils import _check_nan_n_zeros
 
 
@@ -29,7 +29,7 @@ def stabilization_over_time_ants(
     """Load a zyx array from a Position object, apply a transformation and save the result to file"""
 
     click.echo(f"Processing c={c_idx}, t={t_idx}")
-    tx_shifts = numpy_to_ants_transform_zyx(list_of_shifts[t_idx])
+    tx_shifts = convert_transform_to_ants(list_of_shifts[t_idx])
 
     # Process CZYX vs ZYX
     if input_channel_idx is not None:

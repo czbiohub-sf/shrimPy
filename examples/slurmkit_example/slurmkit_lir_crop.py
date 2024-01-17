@@ -1,7 +1,7 @@
 import datetime
 import os
 import glob
-from mantis.analysis.register import find_lir_slicing_params
+from mantis.analysis.register import find_overlapping_volume
 from mantis.cli import utils
 from slurmkit import SlurmParams, slurm_function, submit_function
 from natsort import natsorted
@@ -51,7 +51,7 @@ with open_ome_zarr(input_paths[0], mode="r") as input_dataset:
 
 print(f'matrix: {matrix}')
 # Find the largest interior rectangle
-Z_slice, Y_slice, X_slice = find_lir_slicing_params(
+Z_slice, Y_slice, X_slice = find_overlapping_volume(
     input_zyx_shape=source_shape_zyx,
     target_zyx_shape=target_shape_zyx,
     transformation_matrix=matrix,

@@ -4,10 +4,10 @@ import ants
 import largestinteriorrectangle as lir
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy.ndimage as ndi
+import scipy.ndimage
 
 
-def scale_affine(start_shape_zyx, scaling_factor_zyx=(1, 1, 1), end_shape_zyx=None):
+def get_3D_rescaling_matrix(start_shape_zyx, scaling_factor_zyx=(1, 1, 1), end_shape_zyx=None):
     center_Y_start, center_X_start = np.array(start_shape_zyx)[-2:] / 2
     if end_shape_zyx is None:
         center_Y_end, center_X_end = (center_Y_start, center_X_start)
@@ -35,7 +35,7 @@ def scale_affine(start_shape_zyx, scaling_factor_zyx=(1, 1, 1), end_shape_zyx=No
     return scaling_matrix
 
 
-def rotate_affine(
+def get_3D_rotation_matrix(
     start_shape_zyx: Tuple, angle: float = 0.0, end_shape_zyx: Tuple = None
 ) -> np.ndarray:
     """
@@ -86,13 +86,10 @@ def rotate_affine(
             [0, 0, 0, 1],
         ]
     )
-
-    affine_rot_n_scale_matrix_zyx = rotation_matrix
-
-    return affine_rot_n_scale_matrix_zyx
+    return rotation_matrix
 
 
-def numpy_to_ants_transform_zyx(T_numpy: np.ndarray):
+def convert_transform_to_ants(T_numpy: np.ndarray):
     """Homogeneous 3D transformation matrix from numpy to ants
 
     Parameters
@@ -115,7 +112,62 @@ def numpy_to_ants_transform_zyx(T_numpy: np.ndarray):
     return T_ants
 
 
-def affine_transform(
+# def numpy_to_ants_transform_czyx(T_numpy: np.ndarray):
+#     """Homogeneous 3D transformation matrix from numpy to ants
+
+#     Parameters
+#     ----------
+#     numpy_transform :4x4 homogenous matrix
+
+#     Returns
+#     -------
+#     Ants transformation matrix object
+#     """
+#     assert T_numpy.shape == (5, 5)
+#     shape = T_numpy.shape
+#     T_ants_style = T_numpy[:, :-1].ravel()
+#     T_ants_style[-shape[0] + 1 :] = T_numpy[-shape[0] : -1, -1]
+#     T_ants = ants.new_ants_transform(
+#         transform_type='AffineTransform',
+#     )
+#     T_ants.set_parameters(T_ants_style)
+
+#     return T_ants
+
+
+def convert_transform_to_numpy(T_ants):
+    """
+    Convert the ants transformation matrix to numpy 3D homogenous transform
+
+    Modified from Jordao's dexp code
+
+    Parameters
+    ----------
+    T_ants : Ants transfromation matrix object
+
+    Returns
+    -------
+    np.array
+        Converted Ants to numpy array
+
+    """
+
+    T_numpy = T_ants.parameters.reshape((3, 4), order="F")
+    T_numpy[:, :3] = T_numpy[:, :3].transpose()
+    T_numpy = np.vstack((T_numpy, np.array([0, 0, 0, 1])))
+
+    # Reference:
+    # https://sourceforge.net/p/advants/discussion/840261/thread/9fbbaab7/
+    # https://github.com/netstim/leaddbs/blob/a2bb3e663cf7fceb2067ac887866124be54aca7d/helpers/ea_antsmat2mat.m
+    # T = original translation offset from A
+    # T = T + (I - A) @ centering
+
+    T_numpy[:3, -1] += (np.eye(3) - T_numpy[:3, :3]) @ T_ants.fixed_parameters
+
+    return T_numpy
+
+
+def apply_affine_transform(
     zyx_data: np.ndarray,
     matrix: np.ndarray,
     output_shape_zyx: Tuple,
@@ -154,7 +206,7 @@ def affine_transform(
     if zyx_data.ndim == 4:
         registered_czyx = np.zeros((zyx_data.shape[0], Z, Y, X), dtype=np.float32)
         for c in range(zyx_data.shape[0]):
-            registered_czyx[c] = affine_transform(
+            registered_czyx[c] = apply_affine_transform(
                 zyx_data[c],
                 matrix,
                 output_shape_zyx,
@@ -174,7 +226,7 @@ def affine_transform(
             empty_target_array = np.zeros((output_shape_zyx), dtype=np.float32)
             target_zyx_ants = ants.from_numpy(empty_target_array)
 
-            T_ants = numpy_to_ants_transform_zyx(matrix)
+            T_ants = convert_transform_to_ants(matrix)
 
             zyx_data_ants = ants.from_numpy(zyx_data.astype(np.float32))
             registered_zyx = T_ants.apply_to_image(
@@ -182,7 +234,7 @@ def affine_transform(
             ).numpy()
 
         elif method == 'scipy':
-            registered_zyx = ndi.affine_transform(zyx_data, matrix, output_shape_zyx)
+            registered_zyx = scipy.ndimage.affine_transform(zyx_data, matrix, output_shape_zyx)
 
         else:
             raise ValueError(f'Unknown method {method}')
@@ -253,15 +305,15 @@ def find_lir(registered_zyx: np.ndarray, plot: bool = False) -> Tuple:
     return (Z_slice, Y_slice, X_slice)
 
 
-def find_lir_slicing_params(
+def find_overlapping_volume(
     input_zyx_shape: Tuple,
     target_zyx_shape: Tuple,
     transformation_matrix: np.ndarray,
+    method: str = 'LIR',
     plot: bool = False,
 ) -> Tuple:
     """
-    Find the largest internal rectangle between the transformed input and the target
-    and return the cropping parameters
+    Find the overlapping rectangular volume after registration of two 3D datasets
 
     Parameters
     ----------
@@ -270,15 +322,16 @@ def find_lir_slicing_params(
     target_zyx_shape : Tuple
         shape of target array
     transformation_matrix : np.ndarray
-        transformation matrix between input and target
+        affine transformation matrix
+    method : str, optional
+        method of finding the overlapping volume, by default 'LIR'
 
     Returns
     -------
     Tuple
-        Slicing parameters to crop LIR
+        ZYX slices of the overlapping volume after registration
 
     """
-    print('Starting Largest interior rectangle (LIR) search')
 
     # Make dummy volumes
     img1 = np.ones(tuple(input_zyx_shape), dtype=np.float32)
@@ -288,68 +341,17 @@ def find_lir_slicing_params(
     target_zyx_ants = ants.from_numpy(img2.astype(np.float32))
     zyx_data_ants = ants.from_numpy(img1.astype(np.float32))
 
-    ants_composed_matrix = numpy_to_ants_transform_zyx(transformation_matrix)
+    ants_composed_matrix = convert_transform_to_ants(transformation_matrix)
 
     # Apply affine
     registered_zyx = ants_composed_matrix.apply_to_image(
         zyx_data_ants, reference=target_zyx_ants
     )
 
-    Z_slice, Y_slice, X_slice = find_lir(registered_zyx.numpy(), plot=plot)
+    if method == 'LIR':
+        print('Starting Largest interior rectangle (LIR) search')
+        Z_slice, Y_slice, X_slice = find_lir(registered_zyx.numpy(), plot=plot)
+    else:
+        raise ValueError(f'Unknown method {method}')
 
     return (Z_slice, Y_slice, X_slice)
-
-
-def numpy_to_ants_transform_czyx(T_numpy: np.ndarray):
-    """Homogeneous 3D transformation matrix from numpy to ants
-
-    Parameters
-    ----------
-    numpy_transform :4x4 homogenous matrix
-
-    Returns
-    -------
-    Ants transformation matrix object
-    """
-    assert T_numpy.shape == (5, 5)
-    shape = T_numpy.shape
-    T_ants_style = T_numpy[:, :-1].ravel()
-    T_ants_style[-shape[0] + 1 :] = T_numpy[-shape[0] : -1, -1]
-    T_ants = ants.new_ants_transform(
-        transform_type='AffineTransform',
-    )
-    T_ants.set_parameters(T_ants_style)
-
-    return T_ants
-
-
-def ants_to_numpy_transform_zyx(T_ants):
-    """
-    Convert the ants transformation matrix to numpy 3D homogenous transform
-
-    Modified from Jordao's dexp code
-
-    Parameters
-    ----------
-    T_ants : Ants transfromation matrix object
-
-    Returns
-    -------
-    np.array
-        Converted Ants to numpy array
-
-    """
-
-    T_numpy = T_ants.parameters.reshape((3, 4), order="F")
-    T_numpy[:, :3] = T_numpy[:, :3].transpose()
-    T_numpy = np.vstack((T_numpy, np.array([0, 0, 0, 1])))
-
-    # Reference:
-    # https://sourceforge.net/p/advants/discussion/840261/thread/9fbbaab7/
-    # https://github.com/netstim/leaddbs/blob/a2bb3e663cf7fceb2067ac887866124be54aca7d/helpers/ea_antsmat2mat.m
-    # T = original translation offset from A
-    # T = T + (I - A) @ centering
-
-    T_numpy[:3, -1] += (np.eye(3) - T_numpy[:3, :3]) @ T_ants.fixed_parameters
-
-    return T_numpy

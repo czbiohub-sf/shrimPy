@@ -7,7 +7,7 @@ import numpy as np
 from iohub import open_ome_zarr
 
 from mantis.analysis.AnalysisSettings import RegistrationSettings
-from mantis.analysis.register import affine_transform, find_lir_slicing_params
+from mantis.analysis.register import apply_affine_transform, find_overlapping_volume
 from mantis.cli.parsing import (
     config_filepath,
     output_dirpath,
@@ -22,7 +22,7 @@ from mantis.cli.utils import (
 )
 
 
-def apply_affine_to_scale(affine_matrix, input_scale):
+def rescale_voxel_size(affine_matrix, input_scale):
     return np.linalg.norm(affine_matrix, axis=1) * input_scale
 
 
@@ -67,10 +67,11 @@ def apply_affine(
 
     # Calculate the output voxel size from the input scale and affine transform
     with open_ome_zarr(source_position_dirpaths[0]) as source_dataset:
-        output_voxel_size = apply_affine_to_scale(matrix[:3, :3], source_dataset.scale[-3:])
         T, C, Z, Y, X = source_dataset.data.shape
         source_channel_names = source_dataset.channel_names
         source_shape_zyx = source_dataset.data.shape[-3:]
+        source_voxel_size = source_dataset.scale[-3:]
+        output_voxel_size = rescale_voxel_size(matrix[:3, :3], source_voxel_size)
 
     with open_ome_zarr(target_position_dirpaths[0]) as target_dataset:
         target_channel_names = target_dataset.channel_names
@@ -96,7 +97,7 @@ def apply_affine(
     if not keep_overhang:
         # Find the largest interior rectangle
         click.echo('\nFinding largest overlapping volume between source and target datasets')
-        Z_slice, Y_slice, X_slice = find_lir_slicing_params(
+        Z_slice, Y_slice, X_slice = find_overlapping_volume(
             source_shape_zyx, target_shape_zyx, matrix
         )
         # TODO: start or stop may be None
@@ -156,7 +157,7 @@ def apply_affine(
         for channel_name in source_channel_names:
             if channel_name in settings.source_channel_names:
                 process_single_position_v2(
-                    affine_transform,
+                    apply_affine_transform,
                     input_data_path=input_position_path,  # source store
                     output_path=output_dirpath,
                     time_indices=time_indices,

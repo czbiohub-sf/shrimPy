@@ -3,7 +3,7 @@ import numpy as np
 from click.testing import CliRunner
 from numpy import testing
 
-from mantis.cli.apply_affine import apply_affine_to_scale
+from mantis.cli.apply_affine import rescale_voxel_size
 from mantis.cli.main import cli
 
 
@@ -37,18 +37,18 @@ def test_apply_affine_to_scale():
     # Test real positive
     m1_diag = np.array([2, 3, 4])
     m1 = np.diag(m1_diag)
-    output1 = apply_affine_to_scale(m1, input)
+    output1 = rescale_voxel_size(m1, input)
     testing.assert_allclose(m1_diag, output1)
 
     # Test real with negative
     m2_diag = np.array([2, -3, 4])
     m2 = np.diag(m2_diag)
-    output2 = apply_affine_to_scale(m2, input)
+    output2 = rescale_voxel_size(m2, input)
     testing.assert_allclose(np.abs(m2_diag), output2)
 
     # Test transpose
     m3 = np.array([[0, 2, 0], [1, 0, 0], [0, 0, 3]])
-    output3 = apply_affine_to_scale(m3, input)
+    output3 = rescale_voxel_size(m3, input)
     testing.assert_allclose(np.array([2, 1, 3]), output3)
 
     # Test rotation
@@ -60,5 +60,5 @@ def test_apply_affine_to_scale():
             [0, 3 * np.sin(theta), 3 * np.cos(theta)],
         ]
     )
-    output4 = apply_affine_to_scale(m4, input)
+    output4 = rescale_voxel_size(m4, input)
     testing.assert_allclose(np.array([2, 3, 3]), output4)

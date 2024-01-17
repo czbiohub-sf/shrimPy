@@ -10,8 +10,8 @@ from mantis.analysis.AnalysisSettings import RegistrationSettings
 from pathlib import Path
 from typing import List
 from mantis.analysis.register import (
-    find_lir_slicing_params,
-    affine_transform
+    find_overlapping_volume,
+    apply_affine_transform
 )
 from mantis.cli.utils import (
     yaml_to_model,
@@ -19,7 +19,7 @@ from mantis.cli.utils import (
     create_empty_zarr,
     process_single_position
 )
-from mantis.cli.apply_affine import apply_affine_to_scale
+from mantis.cli.apply_affine import rescale_voxel_size
 
 # io parameters
 dataset = 'HSP90AB1_registration_v2_1_phase.zarr'
@@ -51,11 +51,11 @@ target_shape_zyx = tuple(settings.target_shape_zyx)
 
 # Calculate the output voxel size from the input scale and affine transform
 with open_ome_zarr(source_data_paths[0]) as input_dataset:
-    output_voxel_size = apply_affine_to_scale(matrix[:3, :3], input_dataset.scale[-3:])
+    output_voxel_size = rescale_voxel_size(matrix[:3, :3], input_dataset.scale[-3:])
 
 # Crop the output image to largest common region
 if crop_output:
-    Z_slice, Y_slice, X_slice = find_lir_slicing_params(
+    Z_slice, Y_slice, X_slice = find_overlapping_volume(
         source_shape_zyx, target_shape_zyx, matrix
     )
     target_shape_zyx = (
@@ -97,7 +97,7 @@ params = SlurmParams(
 # wrap our utils.process_single_position() function with slurmkit
 slurm_process_single_position = slurm_function(process_single_position)
 register_func = slurm_process_single_position(
-    func=affine_transform,
+    func=apply_affine_transform,
     num_processes=simultaneous_processes_per_node,
     **affine_transform_args,
 )

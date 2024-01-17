@@ -9,7 +9,11 @@ from skimage.transform import EuclideanTransform
 from waveorder.focus import focus_from_transverse_band
 
 from mantis.analysis.AnalysisSettings import RegistrationSettings
-from mantis.analysis.register import ants_to_numpy_transform_zyx, rotate_affine, scale_affine
+from mantis.analysis.register import (
+    ants_to_numpy_transform_zyx,
+    get_3D_rescaling_matrix,
+    rotate_affine,
+)
 from mantis.cli.parsing import (
     output_filepath,
     source_position_dirpaths,
@@ -142,7 +146,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     source_zyx_ants = ants.from_numpy(source_channel_volume.astype(np.float32))
     target_zyx_ants = ants.from_numpy(target_channel_volume.astype(np.float32))
 
-    scaling_affine = scale_affine(
+    scaling_affine = get_3D_rescaling_matrix(
         (target_channel_Z, target_channel_Y, target_channel_X),
         (scaling_factor_z, scaling_factor_yx, scaling_factor_yx),
         (target_channel_Z, target_channel_Y, target_channel_X),
@@ -299,7 +303,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         (z_scale_translate_matrix, np.insert(yx_points_transformation_matrix, 0, 0, axis=1))
     )  # Insert 0 in the third entry of each row
 
-    scaling_affine = scale_affine(
+    scaling_affine = get_3D_rescaling_matrix(
         (1, target_channel_Y, target_channel_X),
         (scaling_factor_z, scaling_factor_yx, scaling_factor_yx),
     )

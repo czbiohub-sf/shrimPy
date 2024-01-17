@@ -6,7 +6,7 @@ import numpy as np
 from iohub import open_ome_zarr
 
 from mantis.analysis.AnalysisSettings import RegistrationSettings
-from mantis.analysis.register import ants_to_numpy_transform_zyx, numpy_to_ants_transform_zyx
+from mantis.analysis.register import convert_transform_to_ants, convert_transform_to_numpy
 from mantis.cli.parsing import (
     config_filepath,
     output_filepath,
@@ -76,7 +76,7 @@ def optimize_affine(
     # Affine Transforms
     # numpy to ants
     T_pre_optimize_numpy = np.array(settings.affine_transform_zyx)
-    T_pre_optimize = numpy_to_ants_transform_zyx(T_pre_optimize_numpy)
+    T_pre_optimize = convert_transform_to_ants(T_pre_optimize_numpy)
 
     # Apply transformation to source prior to optimization of the matrix
     source_zyx_pre_optim = T_pre_optimize.apply_to_image(
@@ -93,7 +93,7 @@ def optimize_affine(
     )
 
     tx_opt_mat = ants.read_transform(tx_opt["fwdtransforms"][0])
-    tx_opt_numpy = ants_to_numpy_transform_zyx(tx_opt_mat)
+    tx_opt_numpy = convert_transform_to_numpy(tx_opt_mat)
     composed_matrix = T_pre_optimize_numpy @ tx_opt_numpy
 
     # Saving the parameters
@@ -104,7 +104,7 @@ def optimize_affine(
     model_to_yaml(output_settings, output_filepath)
 
     if display_viewer:
-        composed_matrix_ants = numpy_to_ants_transform_zyx(composed_matrix)
+        composed_matrix_ants = convert_transform_to_ants(composed_matrix)
         source_registered = composed_matrix_ants.apply_to_image(
             source_zyx_ants, reference=target_zyx_ants
         )
