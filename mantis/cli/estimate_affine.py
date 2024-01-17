@@ -10,9 +10,9 @@ from waveorder.focus import focus_from_transverse_band
 
 from mantis.analysis.AnalysisSettings import RegistrationSettings
 from mantis.analysis.register import (
-    ants_to_numpy_transform_zyx,
+    convert_transform_to_numpy,
     get_3D_rescaling_matrix,
-    rotate_affine,
+    get_3D_rotation_matrix,
 )
 from mantis.cli.parsing import (
     output_filepath,
@@ -137,7 +137,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         (scaling_factor_z, scaling_factor_yx, scaling_factor_yx),
         (target_channel_Z, target_channel_Y, target_channel_X),
     )
-    rotate90_affine = rotate_affine(
+    rotate90_affine = get_3D_rotation_matrix(
         (source_channel_Z, source_channel_Y, source_channel_X),
         90 * pre_affine_90degree_rotations_about_z,
         (target_channel_Z, target_channel_Y, target_channel_X),
@@ -321,7 +321,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     viewer.layers[source_channel_name].visible = False
 
     # Ants affine transforms
-    T_manual_numpy = ants_to_numpy_transform_zyx(tx_manual)
+    T_manual_numpy = convert_transform_to_numpy(tx_manual)
     click.echo(f'Estimated affine transformation matrix:\n{T_manual_numpy}\n')
 
     flag_apply_to_all_channels = str(
