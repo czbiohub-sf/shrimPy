@@ -39,8 +39,6 @@ def test_apply_affine_settings():
             source_channel_index=0,
             target_channel_index=0,
             affine_transform_zyx=np.identity(4).tolist(),
-            source_shape_zyx=[1, 2, 3],
-            target_shape_zyx=[1, 2, 3],
             typo_param="test",
         )
 
@@ -50,8 +48,6 @@ def test_apply_affine_settings():
             source_channel_index=0,
             target_channel_index=0,
             affine_transform_zyx=np.identity(4).tolist(),
-            source_shape_zyx=[1, 2, 3, 4],
-            target_shape_zyx=[1, 2, 3],
             typo_param="test",
         )
 
@@ -61,8 +57,6 @@ def test_apply_affine_settings():
             source_channel_index=0,
             target_channel_index=0,
             affine_transform_zyx=np.identity(5).tolist(),
-            source_shape_zyx=[1, 2, 3, 4],
-            target_shape_zyx=[1, 2, 3],
             typo_param="test",
         )
 
