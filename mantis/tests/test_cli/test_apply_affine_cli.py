@@ -7,8 +7,11 @@ from mantis.cli.apply_affine import rescale_voxel_size
 from mantis.cli.main import cli
 
 
-def test_apply_affine_cli(tmp_path, example_plate, example_apply_affine_settings):
+def test_apply_affine_cli(
+    tmp_path, example_plate, example_plate_2, example_apply_affine_settings
+):
     plate_path, _ = example_plate
+    plate_path_2, _ = example_plate_2
     config_path, _ = example_apply_affine_settings
     output_path = tmp_path / "output.zarr"
 
@@ -17,8 +20,10 @@ def test_apply_affine_cli(tmp_path, example_plate, example_apply_affine_settings
         cli,
         [
             "apply-affine",
-            "-i",
+            "-s",
             str(plate_path) + "/A/1/0",
+            "-t",
+            str(plate_path_2) + "/A/1/0",  # test could be improved with different stores
             "-c",
             str(config_path),
             "-o",
@@ -27,8 +32,8 @@ def test_apply_affine_cli(tmp_path, example_plate, example_apply_affine_settings
         catch_exceptions=False,
     )
 
-    assert output_path.exists()
     assert result.exit_code == 0
+    assert output_path.exists()
 
 
 def test_apply_affine_to_scale():
