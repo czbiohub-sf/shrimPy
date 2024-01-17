@@ -61,31 +61,46 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         source_channels = source_channel_position.channel_names
         source_channel_name = source_channels[source_channel_index]
         source_channel_volume = source_channel_position[0][0, source_channel_index]
+        source_channel_voxel_size = source_channel_position.scale[-3:]
 
-        source_channel_Z, source_channel_Y, source_channel_X = source_channel_volume.shape[-3:]
+    with open_ome_zarr(target_position_dirpaths[0], mode="r") as target_channel_position:
+        target_channel_name = target_channel_position.channel_names[target_channel_index]
+        target_channel_volume = target_channel_position[0][0, target_channel_index]
+        target_channel_voxel_size = target_channel_position.scale[-3:]
 
-        # Get the voxel dimensions in sample space
-        (
-            z_sample_space_source_channel,
-            y_sample_space_source_channel,
-            x_sample_space_source_channel,
-        ) = source_channel_position.scale[-3:]
+    # Find the infocus slice
+    source_channel_Z, source_channel_Y, source_channel_X = source_channel_volume.shape[-3:]
+    target_channel_Z, target_channel_Y, target_channel_X = target_channel_volume.shape[-3:]
 
-        # Find the infocus slice
-        focus_source_channel_idx = focus_from_transverse_band(
-            source_channel_volume[
-                :,
-                source_channel_Y // 2
-                - FOCUS_SLICE_ROI_WIDTH : source_channel_Y // 2
-                + FOCUS_SLICE_ROI_WIDTH,
-                source_channel_X // 2
-                - FOCUS_SLICE_ROI_WIDTH : source_channel_X // 2
-                + FOCUS_SLICE_ROI_WIDTH,
-            ],
-            NA_det=NA_DETECTION_SOURCE,
-            lambda_ill=WAVELENGTH_EMISSION_SOURCE_CHANNEL,
-            pixel_size=x_sample_space_source_channel,
-        )
+    focus_source_channel_idx = focus_from_transverse_band(
+        source_channel_volume[
+            :,
+            source_channel_Y // 2
+            - FOCUS_SLICE_ROI_WIDTH : source_channel_Y // 2
+            + FOCUS_SLICE_ROI_WIDTH,
+            source_channel_X // 2
+            - FOCUS_SLICE_ROI_WIDTH : source_channel_X // 2
+            + FOCUS_SLICE_ROI_WIDTH,
+        ],
+        NA_det=NA_DETECTION_SOURCE,
+        lambda_ill=WAVELENGTH_EMISSION_SOURCE_CHANNEL,
+        pixel_size=source_channel_voxel_size[-1],
+    )
+
+    focus_target_channel_idx = focus_from_transverse_band(
+        target_channel_volume[
+            :,
+            target_channel_Y // 2
+            - FOCUS_SLICE_ROI_WIDTH : target_channel_Y // 2
+            + FOCUS_SLICE_ROI_WIDTH,
+            target_channel_X // 2
+            - FOCUS_SLICE_ROI_WIDTH : target_channel_X // 2
+            + FOCUS_SLICE_ROI_WIDTH,
+        ],
+        NA_det=NA_DETECTION_TARGET,
+        lambda_ill=WAVELENGTH_EMISSION_TARGET_CHANNEL,
+        pixel_size=target_channel_voxel_size[-1],
+    )
 
     click.echo()
     if focus_source_channel_idx not in (0, source_channel_Z - 1):
@@ -94,35 +109,6 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         focus_source_channel_idx = source_channel_Z // 2
         click.echo(
             f"Could not determine best source channel focus slice, using {focus_source_channel_idx}"
-        )
-
-    with open_ome_zarr(target_position_dirpaths[0], mode="r") as target_channel_position:
-        target_channel_name = target_channel_position.channel_names[target_channel_index]
-        target_channel_volume = target_channel_position[0][0, target_channel_index]
-
-        target_channel_Z, target_channel_Y, target_channel_X = target_channel_volume.shape[-3:]
-
-        # Get the voxel dimension in sample space
-        (
-            z_sample_space_target_channel,
-            y_sample_space_target_channel,
-            x_sample_space_target_channel,
-        ) = target_channel_position.scale[-3:]
-
-        # Finding the infocus plane
-        focus_target_channel_idx = focus_from_transverse_band(
-            target_channel_volume[
-                :,
-                target_channel_Y // 2
-                - FOCUS_SLICE_ROI_WIDTH : target_channel_Y // 2
-                + FOCUS_SLICE_ROI_WIDTH,
-                target_channel_X // 2
-                - FOCUS_SLICE_ROI_WIDTH : target_channel_X // 2
-                + FOCUS_SLICE_ROI_WIDTH,
-            ],
-            NA_det=NA_DETECTION_TARGET,
-            lambda_ill=WAVELENGTH_EMISSION_TARGET_CHANNEL,
-            pixel_size=x_sample_space_target_channel,
         )
 
     if focus_target_channel_idx not in (0, target_channel_Z - 1):
@@ -134,8 +120,8 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         )
 
     # Calculate scaling factors for displaying data
-    scaling_factor_z = z_sample_space_source_channel / z_sample_space_target_channel
-    scaling_factor_yx = x_sample_space_source_channel / x_sample_space_target_channel
+    scaling_factor_z = source_channel_voxel_size[-3] / target_channel_voxel_size[-3]
+    scaling_factor_yx = source_channel_voxel_size[-1] / target_channel_voxel_size[-1]
     click.echo(
         f"Z scaling factor: {scaling_factor_z:.3f}; ZY scaling factor: {scaling_factor_yx:.3f}\n"
     )
