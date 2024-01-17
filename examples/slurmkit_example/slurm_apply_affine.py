@@ -1,7 +1,6 @@
 import datetime
 import os
 import glob
-from mantis.cli import utils
 from slurmkit import SlurmParams, slurm_function, submit_function
 from natsort import natsorted
 import click
@@ -10,7 +9,16 @@ from iohub import open_ome_zarr
 from mantis.analysis.AnalysisSettings import RegistrationSettings
 from pathlib import Path
 from typing import List
-from mantis.cli.utils import yaml_to_model
+from mantis.analysis.register import (
+    find_lir_slicing_params,
+    affine_transform
+)
+from mantis.cli.utils import (
+    yaml_to_model,
+    get_output_paths,
+    create_empty_zarr,
+    process_single_position
+)
 from mantis.cli.apply_affine import apply_affine_to_scale
 
 # io parameters
@@ -30,7 +38,7 @@ simultaneous_processes_per_node = 1
 # path handling
 source_data_paths = natsorted(glob.glob(str(source_data_paths)))
 output_dir = os.path.dirname(output_data_path)
-output_paths = utils.get_output_paths(source_data_paths, output_data_path)
+output_paths = get_output_paths(source_data_paths, output_data_path)
 click.echo(f"in: {source_data_paths}, out: {output_paths}")
 slurm_out_path = str(os.path.join(output_dir, "slurm_output/register-%j.out"))
 
@@ -47,7 +55,7 @@ with open_ome_zarr(source_data_paths[0]) as input_dataset:
 
 # Crop the output image to largest common region
 if crop_output:
-    Z_slice, Y_slice, X_slice = utils.find_lir_slicing_params(
+    Z_slice, Y_slice, X_slice = find_lir_slicing_params(
         source_shape_zyx, target_shape_zyx, matrix
     )
     target_shape_zyx = (
@@ -56,7 +64,7 @@ if crop_output:
         X_slice.stop - X_slice.start,
     )
 
-utils.create_empty_zarr(
+create_empty_zarr(
     position_paths=source_data_paths,
     output_path=output_data_path,
     output_zyx_shape=target_shape_zyx,
@@ -87,9 +95,9 @@ params = SlurmParams(
 )
 
 # wrap our utils.process_single_position() function with slurmkit
-slurm_process_single_position = slurm_function(utils.process_single_position)
+slurm_process_single_position = slurm_function(process_single_position)
 register_func = slurm_process_single_position(
-    func=utils.affine_transform,
+    func=affine_transform,
     num_processes=simultaneous_processes_per_node,
     **affine_transform_args,
 )

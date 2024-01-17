@@ -1,6 +1,7 @@
 import datetime
 import os
 import glob
+from mantis.analysis.register import affine_transform
 from mantis.cli import utils
 from slurmkit import SlurmParams, slurm_function, submit_function
 from natsort import natsorted
@@ -76,7 +77,7 @@ params = SlurmParams(
 # wrap our utils.process_single_position() function with slurmkit
 slurm_process_single_position = slurm_function(utils.process_single_position)
 register_func = slurm_process_single_position(
-    func=utils.affine_transform,
+    func=affine_transform,
     num_processes=simultaneous_processes_per_node,
     **affine_transform_args,
 )

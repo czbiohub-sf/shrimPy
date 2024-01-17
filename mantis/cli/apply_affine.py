@@ -7,14 +7,19 @@ import numpy as np
 from iohub import open_ome_zarr
 
 from mantis.analysis.AnalysisSettings import RegistrationSettings
-from mantis.cli import utils
+from mantis.analysis.register import affine_transform, find_lir_slicing_params
 from mantis.cli.parsing import (
     config_filepath,
     output_dirpath,
     source_position_dirpaths,
     target_position_dirpaths,
 )
-from mantis.cli.utils import yaml_to_model
+from mantis.cli.utils import (
+    copy_n_paste_czyx,
+    create_empty_hcs_zarr,
+    process_single_position_v2,
+    yaml_to_model,
+)
 
 
 def apply_affine_to_scale(affine_matrix, input_scale):
@@ -91,7 +96,7 @@ def apply_affine(
     if not keep_overhang:
         # Find the largest interior rectangle
         click.echo('\nFinding largest overlapping volume between source and target datasets')
-        Z_slice, Y_slice, X_slice = utils.find_lir_slicing_params(
+        Z_slice, Y_slice, X_slice = find_lir_slicing_params(
             source_shape_zyx, target_shape_zyx, matrix
         )
         # TODO: start or stop may be None
@@ -119,7 +124,7 @@ def apply_affine(
     }
 
     # Create the output zarr mirroring source_position_dirpaths
-    utils.create_empty_hcs_zarr(
+    create_empty_hcs_zarr(
         store_path=output_dirpath,
         position_keys=[p.parts[-3:] for p in source_position_dirpaths],
         **output_metadata,
@@ -150,8 +155,8 @@ def apply_affine(
     for input_position_path in source_position_dirpaths:
         for channel_name in source_channel_names:
             if channel_name in settings.source_channel_names:
-                utils.process_single_position_v2(
-                    utils.affine_transform,
+                process_single_position_v2(
+                    affine_transform,
                     input_data_path=input_position_path,  # source store
                     output_path=output_dirpath,
                     time_indices=time_indices,
@@ -167,8 +172,8 @@ def apply_affine(
     for input_position_path in target_position_dirpaths:
         for channel_name in target_channel_names:
             if channel_name not in settings.source_channel_names:
-                utils.process_single_position_v2(
-                    utils.copy_n_paste_czyx,
+                process_single_position_v2(
+                    copy_n_paste_czyx,
                     input_data_path=input_position_path,  # target store
                     output_path=output_dirpath,
                     time_indices=time_indices,

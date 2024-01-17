@@ -1,7 +1,7 @@
 import ants
 import numpy as np
 
-from mantis.cli.utils import (
+from mantis.analysis.register import (
     affine_transform,
     ants_to_numpy_transform_zyx,
     numpy_to_ants_transform_zyx,

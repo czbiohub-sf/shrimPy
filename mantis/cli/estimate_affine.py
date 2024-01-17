@@ -9,7 +9,7 @@ from skimage.transform import EuclideanTransform
 from waveorder.focus import focus_from_transverse_band
 
 from mantis.analysis.AnalysisSettings import RegistrationSettings
-from mantis.cli import utils
+from mantis.analysis.register import ants_to_numpy_transform_zyx, rotate_affine, scale_affine
 from mantis.cli.parsing import (
     output_filepath,
     source_position_dirpaths,
@@ -142,12 +142,12 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     source_zyx_ants = ants.from_numpy(source_channel_volume.astype(np.float32))
     target_zyx_ants = ants.from_numpy(target_channel_volume.astype(np.float32))
 
-    scaling_affine = utils.scale_affine(
+    scaling_affine = scale_affine(
         (target_channel_Z, target_channel_Y, target_channel_X),
         (scaling_factor_z, scaling_factor_yx, scaling_factor_yx),
         (target_channel_Z, target_channel_Y, target_channel_X),
     )
-    rotate90_affine = utils.rotate_affine(
+    rotate90_affine = rotate_affine(
         (source_channel_Z, source_channel_Y, source_channel_X),
         90 * pre_affine_90degree_rotations_about_z,
         (target_channel_Z, target_channel_Y, target_channel_X),
@@ -299,7 +299,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         (z_scale_translate_matrix, np.insert(yx_points_transformation_matrix, 0, 0, axis=1))
     )  # Insert 0 in the third entry of each row
 
-    scaling_affine = utils.scale_affine(
+    scaling_affine = scale_affine(
         (1, target_channel_Y, target_channel_X),
         (scaling_factor_z, scaling_factor_yx, scaling_factor_yx),
     )
@@ -331,7 +331,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     viewer.layers[source_channel_name].visible = False
 
     # Ants affine transforms
-    T_manual_numpy = utils.ants_to_numpy_transform_zyx(tx_manual)
+    T_manual_numpy = ants_to_numpy_transform_zyx(tx_manual)
     click.echo(f'Estimated affine transformation matrix:\n{T_manual_numpy}\n')
 
     flag_apply_to_all_channels = str(
