@@ -123,7 +123,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     scaling_factor_z = source_channel_voxel_size[-3] / target_channel_voxel_size[-3]
     scaling_factor_yx = source_channel_voxel_size[-1] / target_channel_voxel_size[-1]
     click.echo(
-        f"Z scaling factor: {scaling_factor_z:.3f}; ZY scaling factor: {scaling_factor_yx:.3f}\n"
+        f"Z scaling factor: {scaling_factor_z:.3f}; XY scaling factor: {scaling_factor_yx:.3f}\n"
     )
     # Add layers to napari with and transform
     # Rotate the image if needed here
