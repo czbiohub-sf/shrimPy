@@ -324,17 +324,22 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     T_manual_numpy = convert_transform_to_numpy(tx_manual)
     click.echo(f'Estimated affine transformation matrix:\n{T_manual_numpy}\n')
 
-    flag_apply_to_all_channels = str(
-        input("Registered all channels in the source dataset? (y/N): ")
-    )
+    additional_source_channels = source_channels.copy()
+    additional_source_channels.remove(source_channel_name)
+    if target_channel_name in additional_source_channels:
+        additional_source_channels.remove(target_channel_name)
 
+    flag_apply_to_all_channels = 'N'
+    if len(additional_source_channels) > 0:
+        flag_apply_to_all_channels = str(
+            input(
+                f"Would you like to register these additional source channels: {additional_source_channels}? (y/N): "
+            )
+        )
+
+    source_channel_names = [source_channel_name]
     if flag_apply_to_all_channels in ('Y', 'y'):
-        if target_channel_name in source_channels:
-            source_channels.remove(target_channel_name)
-        source_channels.insert(0, source_channels.pop(source_channel_index))
-        source_channel_names = source_channels
-    else:
-        source_channel_names = [source_channel_name]
+        source_channel_names += additional_source_channels
 
     model = RegistrationSettings(
         source_channel_names=source_channel_names,
