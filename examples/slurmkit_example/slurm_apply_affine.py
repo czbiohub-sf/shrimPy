@@ -177,27 +177,17 @@ for i in range(0, len(source_position_dirpaths), position_batch_size):
     for input_position_path in chunk_input_paths:
         for channel_name in source_channel_names:
             if channel_name in settings.source_channel_names:
-                if i == 0:
-                    affine_jobs.append(
-                        submit_function(
-                            register_func,
-                            slurm_params=params,
-                            input_data_path=input_position_path,
-                            input_channel_idx=[source_channel_names.index(channel_name)],
-                            output_channel_idx=[output_channel_names.index(channel_name)],
-                        )
+                dependencies = affine_jobs if i != 0 else None
+                affine_jobs.append(
+                    submit_function(
+                        register_func,
+                        slurm_params=params,
+                        input_data_path=input_position_path,
+                        input_channel_idx=[source_channel_names.index(channel_name)],
+                        output_channel_idx=[output_channel_names.index(channel_name)],
+                        dependencies=dependencies,
                     )
-                else:
-                    affine_jobs.append(
-                        submit_function(
-                            register_func,
-                            slurm_params=params,
-                            input_data_path=input_position_path,
-                            input_channel_idx=[source_channel_names.index(channel_name)],
-                            output_channel_idx=[output_channel_names.index(channel_name)],
-                            dependencies=affine_jobs,
-                        )
-                    )
+                )
 # Copy over the channels that were not processed
 copy_paste_jobs = []
 for i in range(0, len(target_position_dirpaths), position_batch_size):
@@ -205,24 +195,14 @@ for i in range(0, len(target_position_dirpaths), position_batch_size):
     for input_position_path in chunk_input_paths:
         for channel_name in target_channel_names:
             if channel_name not in settings.source_channel_names:
-                if i == 0:
-                    affine_jobs.append(
-                        submit_function(
-                            copy_n_paste_func,
-                            slurm_params=params,
-                            input_data_path=input_position_path,
-                            input_channel_idx=[target_channel_names.index(channel_name)],
-                            output_channel_idx=[output_channel_names.index(channel_name)],
-                        )
+                dependencies = copy_paste_jobs if i != 0 else None
+                affine_jobs.append(
+                    submit_function(
+                        copy_n_paste_func,
+                        slurm_params=params,
+                        input_data_path=input_position_path,
+                        input_channel_idx=[target_channel_names.index(channel_name)],
+                        output_channel_idx=[output_channel_names.index(channel_name)],
+                        dependencies=dependencies,
                     )
-                else:
-                    affine_jobs.append(
-                        submit_function(
-                            copy_n_paste_func,
-                            slurm_params=params,
-                            input_data_path=input_position_path,
-                            input_channel_idx=[target_channel_names.index(channel_name)],
-                            output_channel_idx=[output_channel_names.index(channel_name)],
-                            dependencies=copy_paste_jobs,
-                        )
-                    )
+                )
