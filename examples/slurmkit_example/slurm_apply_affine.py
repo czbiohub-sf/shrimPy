@@ -37,7 +37,6 @@ partition = 'cpu'
 simultaneous_processes_per_node = (
     8  # number of processes that are run in parallel on a single node
 )
-position_batch_size = 3  # number of positions that are processed in parallel
 
 # NOTE: parameters from here and below should not have to be changed
 source_position_dirpaths = [
@@ -49,7 +48,7 @@ target_position_dirpaths = [
 output_dirpath = Path(output_dirpath)
 config_filepath = Path(config_filepath)
 
-click.echo(f"in_path: {source_position_dirpaths[0].parent}, out_path: {output_dirpath}")
+click.echo(f"in_path: {source_position_dirpaths[0]}, out_path: {output_dirpath}")
 slurm_out_path = output_dirpath.parent / "slurm_output" / "register-%j.out"
 
 # Parse from the yaml file
@@ -171,38 +170,25 @@ copy_n_paste_func = slurm_process_single_position(
 # NOTE: the the source and target datastores may be the same (e.g. Hummingbird datasets)
 # apply affine transform to channels in the source datastore that should be registered
 # as given in the config file (i.e. settings.source_channel_names)
-affine_jobs = []
-for i in range(0, len(source_position_dirpaths), position_batch_size):
-    chunk_input_paths = source_position_dirpaths[i : i + position_batch_size]
-    for input_position_path in chunk_input_paths:
-        for channel_name in source_channel_names:
-            if channel_name in settings.source_channel_names:
-                dependencies = affine_jobs if i != 0 else None
-                affine_jobs.append(
-                    submit_function(
-                        register_func,
-                        slurm_params=params,
-                        input_data_path=input_position_path,
-                        input_channel_idx=[source_channel_names.index(channel_name)],
-                        output_channel_idx=[output_channel_names.index(channel_name)],
-                        dependencies=dependencies,
-                    )
-                )
+for input_position_path in source_position_dirpaths:
+    for channel_name in source_channel_names:
+        if channel_name in settings.source_channel_names:
+            submit_function(
+                register_func,
+                slurm_params=params,
+                input_data_path=input_position_path,
+                input_channel_idx=[source_channel_names.index(channel_name)],
+                output_channel_idx=[output_channel_names.index(channel_name)],
+            )
+
 # Copy over the channels that were not processed
-copy_paste_jobs = []
-for i in range(0, len(target_position_dirpaths), position_batch_size):
-    chunk_input_paths = target_position_dirpaths[i : i + position_batch_size]
-    for input_position_path in chunk_input_paths:
-        for channel_name in target_channel_names:
-            if channel_name not in settings.source_channel_names:
-                dependencies = copy_paste_jobs if i != 0 else None
-                affine_jobs.append(
-                    submit_function(
-                        copy_n_paste_func,
-                        slurm_params=params,
-                        input_data_path=input_position_path,
-                        input_channel_idx=[target_channel_names.index(channel_name)],
-                        output_channel_idx=[output_channel_names.index(channel_name)],
-                        dependencies=dependencies,
-                    )
-                )
+for input_position_path in target_position_dirpaths:
+    for channel_name in target_channel_names:
+        if channel_name not in settings.source_channel_names:
+            submit_function(
+                copy_n_paste_func,
+                slurm_params=params,
+                input_data_path=input_position_path,
+                input_channel_idx=[target_channel_names.index(channel_name)],
+                output_channel_idx=[output_channel_names.index(channel_name)],
+            )
