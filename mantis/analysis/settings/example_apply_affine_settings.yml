@@ -1,7 +1,9 @@
+source_channel_names: [Phase3D, Orientation, Retardance, Birefringence]
+target_channel_name: GFP
 affine_transform_zyx:
 - [1.0, 0.0, 0.0, 0.0]
 - [0.0, 1.0, 0.0, 0.0]
 - [0.0, 0.0, 1.0, 0.0]
 - [0.0, 0.0, 0.0, 1.0]
-output_shape_zyx: [8, 512, 128]
-pre_affine_90degree_rotations_about_z: -1
+keep_overhang: false   # Optional, if true datasets will have non-overlapping regions
+time_indices: all  # Optional, by default all time indices are processed

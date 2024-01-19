@@ -1,159 +1,162 @@
-import os
-
-from dataclasses import asdict
-
+import ants
 import click
 import napari
 import numpy as np
-import scipy
-import yaml
 
 from iohub import open_ome_zarr
-from skimage.transform import SimilarityTransform
+from iohub.reader import print_info
+from skimage.transform import EuclideanTransform
 from waveorder.focus import focus_from_transverse_band
 
 from mantis.analysis.AnalysisSettings import RegistrationSettings
-from mantis.cli.parsing import (
-    labelfree_position_dirpaths,
-    lightsheet_position_dirpaths,
-    output_filepath,
+from mantis.analysis.register import (
+    convert_transform_to_numpy,
+    get_3D_rescaling_matrix,
+    get_3D_rotation_matrix,
 )
+from mantis.cli.parsing import (
+    output_filepath,
+    source_position_dirpaths,
+    target_position_dirpaths,
+)
+from mantis.cli.utils import model_to_yaml
 
 # TODO: see if at some point these globals should be hidden or exposed.
-FOCUS_SLICE_ROI_SIDE = 150
-NA_DETECTION_PHASE = 1.35
-NA_DETECTION_FLUOR = 1.35
-WAVELENGTH_EMISSION_PHASE_CHANNEL = 0.45  # [um]
-WAVELENGTH_EMISSION_FLUOR_CHANNEL = 0.6  # [um]
-
-# TODO:the current pipeline always assumes we register to fluoresence mcherry/mScarlet channel so it will change the colormaps to magenta
+NA_DETECTION_SOURCE = 1.35
+NA_DETECTION_TARGET = 1.35
+WAVELENGTH_EMISSION_SOURCE_CHANNEL = 0.45  # in um
+WAVELENGTH_EMISSION_TARGET_CHANNEL = 0.6  # in um
+FOCUS_SLICE_ROI_WIDTH = 150  # size of central ROI used to find focal slice
 
 
 @click.command()
-@labelfree_position_dirpaths()
-@lightsheet_position_dirpaths()
+@source_position_dirpaths()
+@target_position_dirpaths()
 @output_filepath()
-@click.option(
-    "--pre-affine-90degree-rotations-about-z",
-    "-k",
-    default=1,
-    help="Pre-affine 90degree rotations about z",
-    required=False,
-    type=int,
-)
-def estimate_phase_to_fluor_affine(
-    labelfree_position_dirpaths,
-    lightsheet_position_dirpaths,
-    output_filepath,
-    pre_affine_90degree_rotations_about_z,
-):
+def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_filepath):
     """
-    Estimate the affine transform between two channels (source channel and target channel) by manual inputs.
+    Estimate the affine transform between a source (i.e. moving) and a target (i.e.
+    fixed) image by selecting corresponding points in each.
 
-    mantis estimate-phase-to-fluor-affine -lf ./acq_name_labelfree_reconstructed.zarr/0/0/0 -ls ./acq_name_lightsheet_deskewed.zarr/0/0/0 -o ./register.yml
+    mantis estimate-affine
+    -s ./acq_name_labelfree_reconstructed.zarr/0/0/0
+    -t ./acq_name_lightsheet_deskewed.zarr/0/0/0
+    -o ./output.yml
     """
-    assert str(output_filepath).endswith(('.yaml', '.yml')), "Output file must be a YAML file."
 
-    # Get a napari viewer()
-    viewer = napari.Viewer()
+    click.echo("\nTarget channel INFO:")
+    print_info(target_position_dirpaths[0], verbose=False)
+    click.echo("\nSource channel INFO:")
+    print_info(source_position_dirpaths[0], verbose=False)
 
-    print("Getting dataset info")
-    print("\n phase channel INFO:")
-    os.system(f"iohub info {labelfree_position_dirpaths[0]}")
-    print("\n fluorescence channel INFO:")
-    os.system(f"iohub info {lightsheet_position_dirpaths[0]} ")
-
-    phase_channel_idx = int(input("Enter phase_channel index to process: "))
-    fluor_channel_idx = int(input("Enter fluor_channel index to process: "))
-
-    click.echo("Loading data and estimating best focus plane...")
+    click.echo()  # prints empty line
+    target_channel_index = int(input("Enter target channel index: "))
+    source_channel_index = int(input("Enter source channel index: "))
+    pre_affine_90degree_rotations_about_z = int(
+        input("Rotate the source channel by 90 degrees? (0, 1, or -1): ")
+    )
 
     # Display volumes rescaled
-    with open_ome_zarr(labelfree_position_dirpaths[0], mode="r") as phase_channel_position:
-        phase_channel_str = phase_channel_position.channel_names[phase_channel_idx]
-        phase_channel_volume = phase_channel_position[0][0, phase_channel_idx]
-        phase_channel_Z, phase_channel_Y, phase_channel_X = phase_channel_volume.shape
-        # Get the voxel dimensions in sample space
-        (
-            z_sample_space_phase_channel,
-            y_sample_space_phase_channel,
-            x_sample_space_phase_channel,
-        ) = phase_channel_position.scale[-3:]
+    with open_ome_zarr(source_position_dirpaths[0], mode="r") as source_channel_position:
+        source_channels = source_channel_position.channel_names
+        source_channel_name = source_channels[source_channel_index]
+        source_channel_volume = source_channel_position[0][0, source_channel_index]
+        source_channel_voxel_size = source_channel_position.scale[-3:]
 
-        # Find the infocus slice
-        focus_phase_channel_idx = focus_from_transverse_band(
-            phase_channel_position[0][
-                0,
-                phase_channel_idx,
-                :,
-                phase_channel_Y // 2
-                - FOCUS_SLICE_ROI_SIDE : phase_channel_Y // 2
-                + FOCUS_SLICE_ROI_SIDE,
-                phase_channel_X // 2
-                - FOCUS_SLICE_ROI_SIDE : phase_channel_X // 2
-                + FOCUS_SLICE_ROI_SIDE,
-            ],
-            NA_det=NA_DETECTION_PHASE,
-            lambda_ill=WAVELENGTH_EMISSION_PHASE_CHANNEL,
-            pixel_size=x_sample_space_phase_channel,
-            plot_path="./best_focus_phase.svg",
+    with open_ome_zarr(target_position_dirpaths[0], mode="r") as target_channel_position:
+        target_channel_name = target_channel_position.channel_names[target_channel_index]
+        target_channel_volume = target_channel_position[0][0, target_channel_index]
+        target_channel_voxel_size = target_channel_position.scale[-3:]
+
+    # Find the infocus slice
+    source_channel_Z, source_channel_Y, source_channel_X = source_channel_volume.shape[-3:]
+    target_channel_Z, target_channel_Y, target_channel_X = target_channel_volume.shape[-3:]
+
+    focus_source_channel_idx = focus_from_transverse_band(
+        source_channel_volume[
+            :,
+            source_channel_Y // 2
+            - FOCUS_SLICE_ROI_WIDTH : source_channel_Y // 2
+            + FOCUS_SLICE_ROI_WIDTH,
+            source_channel_X // 2
+            - FOCUS_SLICE_ROI_WIDTH : source_channel_X // 2
+            + FOCUS_SLICE_ROI_WIDTH,
+        ],
+        NA_det=NA_DETECTION_SOURCE,
+        lambda_ill=WAVELENGTH_EMISSION_SOURCE_CHANNEL,
+        pixel_size=source_channel_voxel_size[-1],
+    )
+
+    focus_target_channel_idx = focus_from_transverse_band(
+        target_channel_volume[
+            :,
+            target_channel_Y // 2
+            - FOCUS_SLICE_ROI_WIDTH : target_channel_Y // 2
+            + FOCUS_SLICE_ROI_WIDTH,
+            target_channel_X // 2
+            - FOCUS_SLICE_ROI_WIDTH : target_channel_X // 2
+            + FOCUS_SLICE_ROI_WIDTH,
+        ],
+        NA_det=NA_DETECTION_TARGET,
+        lambda_ill=WAVELENGTH_EMISSION_TARGET_CHANNEL,
+        pixel_size=target_channel_voxel_size[-1],
+    )
+
+    click.echo()
+    if focus_source_channel_idx not in (0, source_channel_Z - 1):
+        click.echo(f"Best source channel focus slice: {focus_source_channel_idx}")
+    else:
+        focus_source_channel_idx = source_channel_Z // 2
+        click.echo(
+            f"Could not determine best source channel focus slice, using {focus_source_channel_idx}"
         )
-    click.echo(f"Best focus phase z_idx: {focus_phase_channel_idx}")
 
-    with open_ome_zarr(lightsheet_position_dirpaths[0], mode="r") as fluor_channel_position:
-        fluor_channel_str = fluor_channel_position.channel_names[fluor_channel_idx]
-        fluor_channel_volume = fluor_channel_position[0][0, fluor_channel_idx]
-        fluor_channel_Z, fluor_channel_Y, fluor_channel_X = fluor_channel_volume.shape
-        # Get the voxel dimension in sample space
-        (
-            z_sample_space_fluor_channel,
-            y_sample_space_fluor_channel,
-            x_sample_space_fluor_channel,
-        ) = fluor_channel_position.scale[-3:]
-
-        # Finding the infocus plane
-        focus_fluor_channel_idx = focus_from_transverse_band(
-            fluor_channel_position[0][
-                0,
-                fluor_channel_idx,
-                :,
-                fluor_channel_Y // 2
-                - FOCUS_SLICE_ROI_SIDE : fluor_channel_Y // 2
-                + FOCUS_SLICE_ROI_SIDE,
-                fluor_channel_X // 2
-                - FOCUS_SLICE_ROI_SIDE : fluor_channel_X // 2
-                + FOCUS_SLICE_ROI_SIDE,
-            ],
-            NA_det=NA_DETECTION_FLUOR,
-            lambda_ill=WAVELENGTH_EMISSION_FLUOR_CHANNEL,
-            pixel_size=x_sample_space_fluor_channel,
-            plot_path="./best_focus_fluor.svg",
+    if focus_target_channel_idx not in (0, target_channel_Z - 1):
+        click.echo(f"Best target channel focus slice: {focus_target_channel_idx}")
+    else:
+        focus_target_channel_idx = target_channel_Z // 2
+        click.echo(
+            f"Could not determine best target channel focus slice, using {focus_target_channel_idx}"
         )
-    click.echo(f"Best focus fluor z_idx: {focus_fluor_channel_idx}")
 
     # Calculate scaling factors for displaying data
-    scaling_factor_z = z_sample_space_phase_channel / z_sample_space_fluor_channel
-    scaling_factor_yx = x_sample_space_phase_channel / x_sample_space_fluor_channel
-
+    scaling_factor_z = source_channel_voxel_size[-3] / target_channel_voxel_size[-3]
+    scaling_factor_yx = source_channel_voxel_size[-1] / target_channel_voxel_size[-1]
+    click.echo(
+        f"Z scaling factor: {scaling_factor_z:.3f}; XY scaling factor: {scaling_factor_yx:.3f}\n"
+    )
     # Add layers to napari with and transform
     # Rotate the image if needed here
-    phase_channel_volume_rotated = np.rot90(
-        phase_channel_volume, k=pre_affine_90degree_rotations_about_z, axes=(1, 2)
-    )
-    layer_phase_channel = viewer.add_image(
-        phase_channel_volume_rotated, name=phase_channel_str
-    )
-    layer_fluor_channel = viewer.add_image(fluor_channel_volume, name=fluor_channel_str)
-    layer_phase_channel.scale = (scaling_factor_z, scaling_factor_yx, scaling_factor_yx)
-    Z_rot, Y_rot, X_rot = phase_channel_volume_rotated.shape
-    layer_fluor_channel.translate = (
-        0,
-        0,
-        phase_channel_Y * scaling_factor_yx,
-    )
 
-    # %%
-    # Manual annotation of features
+    # Convert to ants objects
+    source_zyx_ants = ants.from_numpy(source_channel_volume.astype(np.float32))
+    target_zyx_ants = ants.from_numpy(target_channel_volume.astype(np.float32))
+
+    scaling_affine = get_3D_rescaling_matrix(
+        (target_channel_Z, target_channel_Y, target_channel_X),
+        (scaling_factor_z, scaling_factor_yx, scaling_factor_yx),
+        (target_channel_Z, target_channel_Y, target_channel_X),
+    )
+    rotate90_affine = get_3D_rotation_matrix(
+        (source_channel_Z, source_channel_Y, source_channel_X),
+        90 * pre_affine_90degree_rotations_about_z,
+        (target_channel_Z, target_channel_Y, target_channel_X),
+    )
+    compound_affine = scaling_affine @ rotate90_affine
+
+    # NOTE: these two functions are key to pass the function properly to ANTs
+    compound_affine_ants_style = compound_affine[:, :-1].ravel()
+    compound_affine_ants_style[-3:] = compound_affine[:3, -1]
+
+    # Ants affine transforms
+    tx_manual = ants.new_ants_transform()
+    tx_manual.set_parameters(compound_affine_ants_style)
+    tx_manual = tx_manual.invert()
+    source_zxy_pre_reg = tx_manual.apply_to_image(source_zyx_ants, reference=target_zyx_ants)
+
+    # Get a napari viewer
+    viewer = napari.Viewer()
+
     COLOR_CYCLE = [
         "white",
         "cyan",
@@ -165,22 +168,49 @@ def estimate_phase_to_fluor_affine(
         "magenta",
     ]
 
+    viewer.add_image(target_channel_volume, name=target_channel_name)
+    points_target_channel = viewer.add_points(
+        ndim=3, name=f"pts_{target_channel_name}", size=50, face_color=COLOR_CYCLE[0]
+    )
+
+    viewer.add_image(
+        source_zxy_pre_reg.numpy(),
+        name=source_channel_name,
+        blending='additive',
+        colormap='bop blue',
+    )
+    points_source_channel = viewer.add_points(
+        ndim=3, name=f"pts_{source_channel_name}", size=50, face_color=COLOR_CYCLE[0]
+    )
+
+    # setup viewer
+    viewer.layers.selection.active = points_source_channel
+    viewer.grid.enabled = False
+    viewer.grid.stride = 2
+    viewer.grid.shape = (-1, 2)
+    points_source_channel.mode = "add"
+    points_target_channel.mode = "add"
+
+    # Manual annotation of features
     def next_on_click(layer, event, in_focus):
         if layer.mode == "add":
-            if layer is points_phase_channel:
-                next_layer = points_fluor_channel
+            if layer is points_source_channel:
+                next_layer = points_target_channel
                 # Change slider value
                 if len(next_layer.data) < 1:
-                    prev_step_fluor_channel = (
+                    prev_step_target_channel = (
                         in_focus[1],
                         0,
                         0,
                     )
                 else:
-                    prev_step_fluor_channel = (next_layer.data[-1][0] + 1, 0, 0)
+                    prev_step_target_channel = (next_layer.data[-1][0], 0, 0)
                 # Add a point to the active layer
-                cursor_position = np.array(viewer.cursor.position)
-                layer.add(cursor_position)
+                # viewer.cursor.position is return in world coordinates
+                # point position needs to be converted to data coordinates before plotting
+                # on top of layer
+                cursor_position_data_coords = layer.world_to_data(viewer.cursor.position)
+                layer.add(cursor_position_data_coords)
 
                 # Change the colors
                 current_index = COLOR_CYCLE.index(layer.current_face_color)
@@ -192,22 +222,22 @@ def estimate_phase_to_fluor_affine(
                 next_layer.mode = "add"
                 layer.selected_data = {}
                 viewer.layers.selection.active = next_layer
-                viewer.dims.current_step = prev_step_fluor_channel
+                viewer.dims.current_step = prev_step_target_channel
 
             else:
-                next_layer = points_phase_channel
+                next_layer = points_source_channel
                 # Change slider value
                 if len(next_layer.data) < 1:
-                    prev_step_phase_channel = (
+                    prev_step_source_channel = (
                         in_focus[0] * scaling_factor_z,
                         0,
                         0,
                     )
                 else:
                     # TODO: this +1 is not clear to me?
-                    prev_step_phase_channel = (next_layer.data[-1][0] + 1, 0, 0)
-                cursor_position = np.array(viewer.cursor.position)
-                layer.add(cursor_position)
+                    prev_step_source_channel = (next_layer.data[-1][0], 0, 0)
+                cursor_position_data_coords = layer.world_to_data(viewer.cursor.position)
+                layer.add(cursor_position_data_coords)
                 # Change the colors
                 current_index = COLOR_CYCLE.index(layer.current_face_color)
                 next_index = (current_index + 1) % len(COLOR_CYCLE)
@@ -218,22 +248,10 @@ def estimate_phase_to_fluor_affine(
                 next_layer.mode = "add"
                 layer.selected_data = {}
                 viewer.layers.selection.active = next_layer
-                viewer.dims.current_step = prev_step_phase_channel
+                viewer.dims.current_step = prev_step_source_channel
 
-    # Create the first points layer
-    points_phase_channel = viewer.add_points(
-        ndim=3, name=f"pts_{phase_channel_str}", size=50, face_color=COLOR_CYCLE[0]
-    )
-    points_fluor_channel = viewer.add_points(
-        ndim=3, name=f"pts_{fluor_channel_str}", size=50, face_color=COLOR_CYCLE[0]
-    )
-
-    # Create the second points layer
-    viewer.layers.selection.active = points_phase_channel
-    points_phase_channel.mode = "add"
-    points_fluor_channel.mode = "add"
     # Bind the mouse click callback to both point layers
-    in_focus = (focus_phase_channel_idx, focus_fluor_channel_idx)
+    in_focus = (focus_source_channel_idx, focus_target_channel_idx)
 
     def lambda_callback(layer, event):
         return next_on_click(layer=layer, event=event, in_focus=in_focus)
@@ -243,123 +261,94 @@ def estimate_phase_to_fluor_affine(
         0,
         0,
     )
-    points_phase_channel.mouse_drag_callbacks.append(lambda_callback)
-    points_fluor_channel.mouse_drag_callbacks.append(lambda_callback)
+    points_source_channel.mouse_drag_callbacks.append(lambda_callback)
+    points_target_channel.mouse_drag_callbacks.append(lambda_callback)
 
     input(
-        "\n Add at least three points in the two channels by sequentially clicking a feature on phase channel and its corresponding feature in fluorescence channel.  Press <enter> when done..."
+        "Add at least three points in the two channels by sequentially clicking "
+        + "on a feature in the source channel and its corresponding feature in target channel. "
+        + "Select grid mode if you prefer side-by-side view. "
+        + "Press <enter> when done..."
     )
 
     # Get the data from the layers
-    pts_phase_channel = points_phase_channel.data
-    pts_fluor_channel = points_fluor_channel.data
-
-    # De-apply the scaling and translation that was applied in the viewer
-    pts_phase_channel[:, 1:] /= scaling_factor_yx
-    pts_fluor_channel[:, 2] -= (
-        phase_channel_Y * scaling_factor_yx
-    )  # subtract the translation offset for display
+    pts_source_channel = points_source_channel.data
+    pts_target_channel = points_target_channel.data
 
     # Estimate the affine transform between the points xy to make sure registration is good
-    transform = SimilarityTransform()
-    transform.estimate(pts_phase_channel[:, 1:], pts_fluor_channel[:, 1:])
+    transform = EuclideanTransform()
+    transform.estimate(pts_source_channel[:, 1:], pts_target_channel[:, 1:])
     yx_points_transformation_matrix = transform.params
 
-    z_shift = np.array([1, 0, 0, 0])
+    z_translation = pts_target_channel[0, 0] - pts_source_channel[0, 0]
+
+    z_scale_translate_matrix = np.array([[1, 0, 0, z_translation]])
 
     # 2D to 3D matrix
-    zyx_affine_transform = np.vstack(
-        (z_shift, np.insert(yx_points_transformation_matrix, 0, 0, axis=1))
-    )  # Insert 0 in the third entry of each row
-    zyx_affine_transform = np.linalg.inv(zyx_affine_transform)
-    # Get the transformation matrix
-    output_shape_zyx = (fluor_channel_Z, fluor_channel_Y, fluor_channel_X)
-
-    # Demo: apply the affine transform to the image at the z-slice where all the points are located
-    aligned_image = scipy.ndimage.affine_transform(
-        phase_channel_volume_rotated[
-            int(np.ceil(pts_phase_channel[0, 0])) : int(np.ceil(pts_phase_channel[0, 0])) + 1
-        ],
-        zyx_affine_transform,
-        output_shape=(1, fluor_channel_Y, fluor_channel_X),
-    )
-    viewer.add_image(
-        fluor_channel_position[0][
-            0,
-            fluor_channel_idx,
-            int(np.ceil(pts_fluor_channel[0, 0])) : int(np.ceil(pts_fluor_channel[0, 0])) + 1,
-        ],
-        name=f"middle_plane_{fluor_channel_str}",
-        colormap="magenta",
-    )
-    print(
-        'Showing registered pair (phase and fluorescence) with pseudo colored fluorescence in magenta'
-    )
-    viewer.add_image(aligned_image, name=f"registered_{phase_channel_str}", opacity=0.5)
-    viewer.layers.remove(f"pts_{phase_channel_str}")
-    viewer.layers.remove(f"pts_{fluor_channel_str}")
-    viewer.layers[fluor_channel_str].visible = False
-    viewer.layers[phase_channel_str].visible = False
-    viewer.dims.current_step = (0, 0, 0)  # Return to slice 0
-
-    # NOTE: This assumes within a channel will lie in the same plane
-    # Compute the 3D registration
-    # Estimate the Similarity Transform (rotation,scaling,translation)
-    transform = SimilarityTransform()
-    transform.estimate(pts_phase_channel[:, 1:], pts_fluor_channel[:, 1:])
-    yx_points_transformation_matrix = transform.params
-    z_translation = pts_fluor_channel[0, 0] - pts_phase_channel[0, 0]
-
-    z_scale_translate_matrix = np.array([[scaling_factor_z, 0, 0, z_translation]])
-    zyx_affine_transform = np.vstack(
+    euclidian_transform = np.vstack(
         (z_scale_translate_matrix, np.insert(yx_points_transformation_matrix, 0, 0, axis=1))
+    )  # Insert 0 in the third entry of each row
+
+    scaling_affine = get_3D_rescaling_matrix(
+        (1, target_channel_Y, target_channel_X),
+        (scaling_factor_z, scaling_factor_yx, scaling_factor_yx),
+    )
+    manual_estimated_transform = euclidian_transform @ compound_affine
+
+    # NOTE: these two functions are key to pass the function properly to ANTs
+    manual_estimated_transform_ants_style = manual_estimated_transform[:, :-1].ravel()
+    manual_estimated_transform_ants_style[-3:] = manual_estimated_transform[:3, -1]
+
+    # Ants affine transforms
+    tx_manual = ants.new_ants_transform()
+    tx_manual.set_parameters(manual_estimated_transform_ants_style)
+    tx_manual = tx_manual.invert()
+
+    source_zxy_manual_reg = tx_manual.apply_to_image(
+        source_zyx_ants, reference=target_zyx_ants
     )
 
-    # Composite of all transforms
-    zyx_affine_transform = np.linalg.inv(zyx_affine_transform)  # phase to fluorescence mapping
-    print(f"Affine Transform Matrix:\n {zyx_affine_transform}\n")
-    settings = RegistrationSettings(
-        affine_transform_zyx=zyx_affine_transform.tolist(),  # phase to fluorescence mapping
-        output_shape_zyx=list(output_shape_zyx),
-        pre_affine_90degree_rotations_about_z=pre_affine_90degree_rotations_about_z,
+    click.echo("\nShowing registered source image in magenta")
+    viewer.grid.enabled = False
+    viewer.add_image(
+        source_zxy_manual_reg.numpy(),
+        name=f"registered_{source_channel_name}",
+        colormap="magenta",
+        blending='additive',
     )
+    viewer.layers.remove(f"pts_{source_channel_name}")
+    viewer.layers.remove(f"pts_{target_channel_name}")
+    viewer.layers[source_channel_name].visible = False
 
-    print(f"Writing registration parameters to {output_filepath}")
-    with open(output_filepath, "w") as f:
-        yaml.dump(asdict(settings), f)
+    # Ants affine transforms
+    T_manual_numpy = convert_transform_to_numpy(tx_manual)
+    click.echo(f'Estimated affine transformation matrix:\n{T_manual_numpy}\n')
 
-    # Apply the transformation to 3D volume
-    flag_apply_3D_transform = input("\n Apply 3D registration *this make some time* (Y/N) :")
-    if flag_apply_3D_transform == "Y" or flag_apply_3D_transform == "y":
-        print("Applying 3D Affine Transform...")
-        # Rotate the image first
+    additional_source_channels = source_channels.copy()
+    additional_source_channels.remove(source_channel_name)
+    if target_channel_name in additional_source_channels:
+        additional_source_channels.remove(target_channel_name)
 
-        phase_volume_rotated = np.rot90(
-            phase_channel_position[0][0, phase_channel_idx],
-            k=pre_affine_90degree_rotations_about_z,
-            axes=(1, 2),
+    flag_apply_to_all_channels = 'N'
+    if len(additional_source_channels) > 0:
+        flag_apply_to_all_channels = str(
+            input(
+                f"Would you like to register these additional source channels: {additional_source_channels}? (y/N): "
+            )
         )
 
-        registered_3D_volume = scipy.ndimage.affine_transform(
-            phase_volume_rotated,
-            zyx_affine_transform,
-            output_shape=output_shape_zyx,
-        )
-        viewer.add_image(
-            registered_3D_volume,
-            name=f"registered_volume_{phase_channel_str}",
-            opacity=1.0,
-        )
+    source_channel_names = [source_channel_name]
+    if flag_apply_to_all_channels in ('Y', 'y'):
+        source_channel_names += additional_source_channels
 
-        viewer.add_image(
-            fluor_channel_position[0][0, fluor_channel_idx],
-            name=f"{fluor_channel_str}",
-            opacity=0.5,
-            colormap="magenta",
-        )
+    model = RegistrationSettings(
+        source_channel_names=source_channel_names,
+        target_channel_name=target_channel_name,
+        affine_transform_zyx=T_manual_numpy.tolist(),
+    )
+    click.echo(f"Writing registration parameters to {output_filepath}")
+    model_to_yaml(model, output_filepath)
 
-        viewer.layers[f"registered_{phase_channel_str}"].visible = False
-        viewer.layers[f"{phase_channel_str}"].visible = False
-        viewer.layers[f"middle_plane_{fluor_channel_str}"].visible = False
 
-    input("\n Displaying registered channels. Press <enter> to close...")
+if __name__ == "__main__":
+    estimate_affine()

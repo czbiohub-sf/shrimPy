@@ -37,6 +37,8 @@ dependencies = [
   "slurmkit @ git+https://github.com/royerlab/slurmkit",
   "tifffile",
   "waveorder @ git+https://github.com/mehta-lab/waveorder",
+  "largestinteriorrectangle",
+  "antspyx",
 ]
 
 

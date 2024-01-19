@@ -21,40 +21,50 @@ def _validate_and_process_paths(ctx: click.Context, opt: click.Option, value: st
     return input_paths
 
 
+def _str_to_path(ctx: click.Context, opt: click.Option, value: str) -> Path:
+    return Path(value)
+
+
 def input_position_dirpaths() -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.option(
             "--input-position-dirpaths",
             "-i",
+            required=True,
             cls=OptionEatAll,
             type=tuple,
             callback=_validate_and_process_paths,
+            help='Paths to input positions, for example: "input.zarr/0/0/0" or "input.zarr/*/*/*"',
         )(f)
 
     return decorator
 
 
-def labelfree_position_dirpaths() -> Callable:
+def source_position_dirpaths() -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.option(
-            "--labelfree-position-dirpaths",
-            "-lf",
+            "--source-position-dirpaths",
+            "-s",
+            required=True,
             cls=OptionEatAll,
             type=tuple,
             callback=_validate_and_process_paths,
+            help='Paths to source positions, for example: "source.zarr/0/0/0" or "source.zarr/*/*/*"',
         )(f)
 
     return decorator
 
 
-def lightsheet_position_dirpaths() -> Callable:
+def target_position_dirpaths() -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.option(
-            "--lightsheet-position-dirpaths",
-            "-ls",
+            "--target-position-dirpaths",
+            "-t",
+            required=True,
             cls=OptionEatAll,
             type=tuple,
             callback=_validate_and_process_paths,
+            help='Paths to target positions, for example: "target.zarr/0/0/0" or "target.zarr/*/*/*"',
         )(f)
 
     return decorator
@@ -67,7 +77,8 @@ def config_filepath() -> Callable:
             "-c",
             required=True,
             type=click.Path(exists=True, file_okay=True, dir_okay=False),
-            help="Path to YAML configuration file",
+            callback=_str_to_path,
+            help="Path to YAML configuration file.",
         )(f)
 
     return decorator
@@ -81,6 +92,7 @@ def output_dirpath() -> Callable:
             required=True,
             type=click.Path(exists=False, file_okay=False, dir_okay=True),
             help="Path to output directory",
+            callback=_str_to_path,
         )(f)
 
     return decorator
