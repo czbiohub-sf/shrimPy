@@ -64,11 +64,37 @@ def example_plate(tmp_path):
         plate_path,
         layout="hcs",
         mode="w",
+        channel_names=["GFP", "RFP", "Phase3D", "Orientation", "Retardance", "Birefringence"],
+    )
+
+    for row, col, fov in position_list:
+        position = plate_dataset.create_position(row, col, fov)
+        position["0"] = np.random.uniform(0.0, 255.0, size=(3, 6, 4, 5, 6)).astype(np.float32)
+
+    yield plate_path, plate_dataset
+
+
+@pytest.fixture(scope="function")
+def example_plate_2(tmp_path):
+    plate_path = tmp_path / "plate.zarr"
+
+    position_list = (
+        ("A", "1", "0"),
+        ("B", "1", "0"),
+        ("B", "2", "0"),
+    )
+
+    # Generate input dataset
+    plate_dataset = open_ome_zarr(
+        plate_path,
+        layout="hcs",
+        mode="w",
         channel_names=["GFP", "RFP"],
     )
 
     for row, col, fov in position_list:
         position = plate_dataset.create_position(row, col, fov)
-        position.create_zeros("0", (3, 2, 4, 5, 6), dtype=np.uint16)
-
+        position["0"] = np.random.randint(
+            0, np.iinfo(np.uint16).max, size=(3, 2, 4, 5, 6), dtype=np.uint16
+        )
     yield plate_path, plate_dataset

@@ -3,12 +3,15 @@ import numpy as np
 from click.testing import CliRunner
 from numpy import testing
 
-from mantis.cli.apply_affine import apply_affine_to_scale
+from mantis.cli.apply_affine import rescale_voxel_size
 from mantis.cli.main import cli
 
 
-def test_apply_affine_cli(tmp_path, example_plate, example_apply_affine_settings):
+def test_apply_affine_cli(
+    tmp_path, example_plate, example_plate_2, example_apply_affine_settings
+):
     plate_path, _ = example_plate
+    plate_path_2, _ = example_plate_2
     config_path, _ = example_apply_affine_settings
     output_path = tmp_path / "output.zarr"
 
@@ -17,8 +20,10 @@ def test_apply_affine_cli(tmp_path, example_plate, example_apply_affine_settings
         cli,
         [
             "apply-affine",
-            "-i",
+            "-s",
             str(plate_path) + "/A/1/0",
+            "-t",
+            str(plate_path_2) + "/A/1/0",  # test could be improved with different stores
             "-c",
             str(config_path),
             "-o",
@@ -27,8 +32,8 @@ def test_apply_affine_cli(tmp_path, example_plate, example_apply_affine_settings
         catch_exceptions=False,
     )
 
-    assert output_path.exists()
     assert result.exit_code == 0
+    assert output_path.exists()
 
 
 def test_apply_affine_to_scale():
@@ -37,18 +42,18 @@ def test_apply_affine_to_scale():
     # Test real positive
     m1_diag = np.array([2, 3, 4])
     m1 = np.diag(m1_diag)
-    output1 = apply_affine_to_scale(m1, input)
+    output1 = rescale_voxel_size(m1, input)
     testing.assert_allclose(m1_diag, output1)
 
     # Test real with negative
     m2_diag = np.array([2, -3, 4])
     m2 = np.diag(m2_diag)
-    output2 = apply_affine_to_scale(m2, input)
+    output2 = rescale_voxel_size(m2, input)
     testing.assert_allclose(np.abs(m2_diag), output2)
 
     # Test transpose
     m3 = np.array([[0, 2, 0], [1, 0, 0], [0, 0, 3]])
-    output3 = apply_affine_to_scale(m3, input)
+    output3 = rescale_voxel_size(m3, input)
     testing.assert_allclose(np.array([2, 1, 3]), output3)
 
     # Test rotation
@@ -60,5 +65,5 @@ def test_apply_affine_to_scale():
             [0, 3 * np.sin(theta), 3 * np.cos(theta)],
         ]
     )
-    output4 = apply_affine_to_scale(m4, input)
+    output4 = rescale_voxel_size(m4, input)
     testing.assert_allclose(np.array([2, 3, 3]), output4)
