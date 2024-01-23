@@ -1,12 +1,13 @@
-from mantis.cli.stabilization import (
-    estimate_position_focus,
-    combine_dataframes,
-    get_mean_z_positions,
-    calculate_z_drift,
-    calculate_yx_stabilization,
-)
-import pandas as pd
 import numpy as np
+import pandas as pd
+
+from mantis.cli.stabilization import (
+    calculate_yx_stabilization,
+    calculate_z_drift,
+    combine_dataframes,
+    estimate_position_focus,
+    get_mean_z_positions,
+)
 
 
 def test_estimate_position_focus():
@@ -30,7 +31,7 @@ def test_mean_z_positions():
         {
             "channel": ["GFP"],
             "channel_idx": [0, 0, 0, 0, 0, 0, 0, 0],
-            "time_min": [1.0, 1.0, 1.0 , 1.0 , 2.0 , 2.0 , 2.0 , 2.0],
+            "time_min": [1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0],
             "focal_idx": [20, 25, 19, 16, 24, 29, 21, 18],
             "position_idx": [1, 2, 3, 4, 1, 2, 3, 4],
         }
@@ -42,5 +43,4 @@ def test_mean_z_positions():
     pos_2 = np.array([24, 29, 21, 18]).mean()
 
     # Check the result
-    assert result == [pos_1,pos_2]
-
+    assert result == [pos_1, pos_2]

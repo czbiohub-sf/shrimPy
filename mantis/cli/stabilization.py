@@ -1,25 +1,29 @@
-import pandas as pd
-from pathlib import Path
-from natsort import natsorted
-import multiprocessing as mp
-from tqdm import tqdm
-from iohub.ngff import open_ome_zarr
-from waveorder.focus import focus_from_transverse_band
 import glob
+import multiprocessing as mp
 import os
+
+from pathlib import Path
+from typing import Tuple
+
+import click
 import numpy as np
+import pandas as pd
+
+from iohub.ngff import open_ome_zarr
+from natsort import natsorted
+from pandas import DataFrame
 from pystackreg import StackReg
+from tqdm import tqdm
+from waveorder.focus import focus_from_transverse_band
+
+from mantis.analysis.AnalysisSettings import StabilizationSettings
 from mantis.cli import utils
 from mantis.cli.parsing import (
     config_filepath,
-    output_filepath,
-    output_dirpath,
     input_position_dirpaths,
+    output_dirpath,
+    output_filepath,
 )
-import click
-from typing import Tuple
-from mantis.analysis.AnalysisSettings import StabilizationSettings
-from pandas import DataFrame
 
 NA_DET = 1.35
 LAMBDA_ILL = 0.500

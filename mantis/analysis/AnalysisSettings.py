@@ -68,6 +68,7 @@ class RegistrationSettings(MyBaseModel):
 
         return v
 
+
 class StabilizationSettings(MyBaseModel):
     focus_finding_channel_index: NonNegativeInt
     affine_transform_zyx_list: list

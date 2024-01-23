@@ -7,8 +7,8 @@ from mantis.cli.estimate_bleaching import estimate_bleaching
 from mantis.cli.estimate_deskew import estimate_deskew
 from mantis.cli.optimize_affine import optimize_affine
 from mantis.cli.run_acquisition import run_acquisition
-from mantis.cli.update_scale_metadata import update_scale_metadata
 from mantis.cli.stabilization import estimate_stabilization_affine_list, stabilize_timelapse
+from mantis.cli.update_scale_metadata import update_scale_metadata
 
 CONTEXT = {"help_option_names": ["-h", "--help"]}
 
