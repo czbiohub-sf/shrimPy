@@ -25,4 +25,7 @@ def test_optimize_affine_cli(tmp_path, example_plate, example_apply_affine_setti
     )
 
     # Weak test
-    assert "Getting dataset info" in result.output
+    # NOTE: we changed the output of the function so this is no longer printed. Do we need to compare with something?
+    # assert "Getting dataset info" in result.output
+    assert result.exit_code == 0
+    assert output_path.exists()

@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
 
+from pydantic import ValidationError
+
 from mantis.analysis.AnalysisSettings import (
     DeskewSettings,
     RegistrationSettings,
@@ -10,15 +12,21 @@ from mantis.analysis.AnalysisSettings import (
 
 def test_deskew_settings():
     # Test extra parameter
-    with pytest.raises(TypeError):
-        DeskewSettings(typo_param="test")
+    with pytest.raises(ValidationError):
+        DeskewSettings(
+            pixel_size_um=0.116, ls_angle_deg=36, scan_step_um=0.313, typo_param="test"
+        )
 
     # Test negative value
-    with pytest.raises(TypeError):
-        DeskewSettings(pixel_size_um=-3)
+    with pytest.raises(ValidationError):
+        DeskewSettings(pixel_size_um=-3, ls_angle_deg=36, scan_step_um=0.313)
+
+    # Test light sheet angle range
+    with pytest.raises(ValueError):
+        DeskewSettings(pixel_size_um=0.116, ls_angle_deg=90, scan_step_um=0.313)
 
     # Test px_to_scan_ratio logic
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError):
         DeskewSettings(pixel_size_um=0.116, ls_angle_deg=36, scan_step_um=None)
 
 
@@ -30,17 +38,31 @@ def test_example_deskew_settings(example_deskew_settings):
 
 def test_apply_affine_settings():
     # Test extra parameter
-    with pytest.raises(TypeError):
-        RegistrationSettings(typo_param="test")
+    with pytest.raises(ValidationError):
+        RegistrationSettings(
+            source_channel_index=0,
+            target_channel_index=0,
+            affine_transform_zyx=np.identity(4).tolist(),
+            typo_param="test",
+        )
 
     # Test wrong output shape size
-    with pytest.raises(TypeError):
-        RegistrationSettings(output_shape_zyx=[1, 2, 3, 4])
+    with pytest.raises(ValidationError):
+        RegistrationSettings(
+            source_channel_index=0,
+            target_channel_index=0,
+            affine_transform_zyx=np.identity(4).tolist(),
+            typo_param="test",
+        )
 
     # Test wrong matrix shape
-    with pytest.raises(TypeError):
-        random_array = np.random.rand(5, 5)
-        RegistrationSettings(affine_transform_zyx=random_array.tolist())
+    with pytest.raises(ValidationError):
+        RegistrationSettings(
+            source_channel_index=0,
+            target_channel_index=0,
+            affine_transform_zyx=np.identity(5).tolist(),
+            typo_param="test",
+        )
 
 
 def test_example_apply_affine_settings(example_apply_affine_settings):

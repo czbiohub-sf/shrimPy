@@ -1,15 +1,8 @@
-from typing import Optional, Tuple
+from typing import Literal, Optional, Union
 
 import numpy as np
 
-from pydantic import (
-    BaseModel,
-    Extra,
-    NonNegativeInt,
-    PositiveFloat,
-    PositiveInt,
-    validator,
-)
+from pydantic import BaseModel, Extra, NonNegativeInt, PositiveFloat, PositiveInt, validator
 
 
 # All settings classes inherit from MyBaseModel, which forbids extra parameters to guard against typos
@@ -22,7 +15,7 @@ class DeskewSettings(MyBaseModel):
     ls_angle_deg: PositiveFloat
     px_to_scan_ratio: Optional[PositiveFloat] = None
     scan_step_um: Optional[PositiveFloat] = None
-    keep_overhang: bool = True
+    keep_overhang: bool = False
     average_n_slices: PositiveInt = 3
 
     @validator("ls_angle_deg")
@@ -36,20 +29,25 @@ class DeskewSettings(MyBaseModel):
         if v is not None:
             return round(float(v), 3)
 
-    def __post_init__(self):
-        if self.px_to_scan_ratio is None:
-            if self.scan_step_um is not None:
-                self.px_to_scan_ratio = round(self.pixel_size_um / self.scan_step_um, 3)
+    def __init__(self, **data):
+        if data.get("px_to_scan_ratio") is None:
+            if data.get("scan_step_um") is not None:
+                data["px_to_scan_ratio"] = round(
+                    data["pixel_size_um"] / data["scan_step_um"], 3
+                )
             else:
-                raise TypeError("px_to_scan_ratio is not valid")
+                raise ValueError(
+                    "If px_to_scan_ratio is not provided, both pixel_size_um and scan_step_um must be provided"
+                )
+        super().__init__(**data)
 
 
 class RegistrationSettings(MyBaseModel):
-    source_channel_index: NonNegativeInt
-    target_channel_index: NonNegativeInt
+    source_channel_names: list[str]
+    target_channel_name: str
     affine_transform_zyx: list
-    source_shape_zyx: list
-    target_shape_zyx: list
+    keep_overhang: bool = False
+    time_indices: Union[NonNegativeInt, list[NonNegativeInt], Literal["all"]] = "all"
 
     @validator("affine_transform_zyx")
     def check_affine_transform(cls, v):
@@ -68,18 +66,6 @@ class RegistrationSettings(MyBaseModel):
         except ValueError:
             raise ValueError("The array must contain valid numerical values.")
 
-        return v
-
-    @validator("source_shape_zyx")
-    def check_source_shape_zyx(cls, v):
-        if not isinstance(v, list) or len(v) != 3:
-            raise ValueError("The output shape zyx must be a list of length 3.")
-        return v
-
-    @validator("target_shape_zyx")
-    def check_target_shape_zyx(cls, v):
-        if not isinstance(v, list) or len(v) != 3:
-            raise ValueError("The output shape zyx must be a list of length 3.")
         return v
 
 

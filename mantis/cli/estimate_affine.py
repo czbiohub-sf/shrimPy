@@ -1,16 +1,19 @@
-import os
-
 import ants
 import click
 import napari
 import numpy as np
 
 from iohub import open_ome_zarr
+from iohub.reader import print_info
 from skimage.transform import EuclideanTransform
 from waveorder.focus import focus_from_transverse_band
 
 from mantis.analysis.AnalysisSettings import RegistrationSettings
-from mantis.cli import utils
+from mantis.analysis.register import (
+    convert_transform_to_numpy,
+    get_3D_rescaling_matrix,
+    get_3D_rotation_matrix,
+)
 from mantis.cli.parsing import (
     output_filepath,
     source_position_dirpaths,
@@ -21,8 +24,8 @@ from mantis.cli.utils import model_to_yaml
 # TODO: see if at some point these globals should be hidden or exposed.
 NA_DETECTION_SOURCE = 1.35
 NA_DETECTION_TARGET = 1.35
-WAVELENGTH_EMISSION_SOURCE_CHANNEL = 0.45  # [um]
-WAVELENGTH_EMISSION_TARGET_CHANNEL = 0.6  # [um]
+WAVELENGTH_EMISSION_SOURCE_CHANNEL = 0.45  # in um
+WAVELENGTH_EMISSION_TARGET_CHANNEL = 0.6  # in um
 FOCUS_SLICE_ROI_WIDTH = 150  # size of central ROI used to find focal slice
 
 
@@ -32,7 +35,8 @@ FOCUS_SLICE_ROI_WIDTH = 150  # size of central ROI used to find focal slice
 @output_filepath()
 def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_filepath):
     """
-    Estimate the affine transform between a source channel and a target with manual inputs.
+    Estimate the affine transform between a source (i.e. moving) and a target (i.e.
+    fixed) image by selecting corresponding points in each.
 
     mantis estimate-affine
     -s ./acq_name_labelfree_reconstructed.zarr/0/0/0
@@ -40,96 +44,87 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     -o ./output.yml
     """
 
-    print("Getting dataset info")
-    print("\n Target channel INFO:")
-    os.system(f"iohub info {target_position_dirpaths[0]} ")
-    print("\n Source channel INFO:")
-    os.system(f"iohub info {source_position_dirpaths[0]}")
+    click.echo("\nTarget channel INFO:")
+    print_info(target_position_dirpaths[0], verbose=False)
+    click.echo("\nSource channel INFO:")
+    print_info(source_position_dirpaths[0], verbose=False)
 
-    target_channel_index = int(input("Enter target channel index to process: "))
-    source_channel_index = int(input("Enter source channel index to process: "))
+    click.echo()  # prints empty line
+    target_channel_index = int(input("Enter target channel index: "))
+    source_channel_index = int(input("Enter source channel index: "))
     pre_affine_90degree_rotations_about_z = int(
         input("Rotate the source channel by 90 degrees? (0, 1, or -1): ")
     )
 
-    click.echo(f"Estimating registration with labelfree channel index {source_channel_index}")
-    click.echo("Loading data and estimating best focus plane...")
-
     # Display volumes rescaled
     with open_ome_zarr(source_position_dirpaths[0], mode="r") as source_channel_position:
-        source_channel_str = source_channel_position.channel_names[source_channel_index]
-
-        source_channel_Z, source_channel_Y, source_channel_X = source_channel_position[
-            0
-        ].shape[-3:]
+        source_channels = source_channel_position.channel_names
+        source_channel_name = source_channels[source_channel_index]
         source_channel_volume = source_channel_position[0][0, source_channel_index]
-
-        source_channel_Z, source_channel_Y, source_channel_X = source_channel_volume.shape[-3:]
-
-        # Get the voxel dimensions in sample space
-        (
-            z_sample_space_source_channel,
-            y_sample_space_source_channel,
-            x_sample_space_source_channel,
-        ) = source_channel_position.scale[-3:]
-
-        # Find the infocus slice
-        focus_source_channel_idx = focus_from_transverse_band(
-            source_channel_position[0][
-                0,
-                source_channel_index,
-                :,
-                source_channel_position[0].shape[-2] // 2
-                - FOCUS_SLICE_ROI_WIDTH : source_channel_position[0].shape[-2] // 2
-                + FOCUS_SLICE_ROI_WIDTH,
-                source_channel_position[0].shape[-1] // 2
-                - FOCUS_SLICE_ROI_WIDTH : source_channel_position[0].shape[-1] // 2
-                + FOCUS_SLICE_ROI_WIDTH,
-            ],
-            NA_det=NA_DETECTION_SOURCE,
-            lambda_ill=WAVELENGTH_EMISSION_SOURCE_CHANNEL,
-            pixel_size=x_sample_space_source_channel,
-        )
-    click.echo(f"Best focus source z_idx: {focus_source_channel_idx}")
+        source_channel_voxel_size = source_channel_position.scale[-3:]
 
     with open_ome_zarr(target_position_dirpaths[0], mode="r") as target_channel_position:
-        target_channel_str = target_channel_position.channel_names[target_channel_index]
-        target_channel_Z, target_channel_Y, target_channel_X = target_channel_position[
-            0
-        ].shape[-3:]
+        target_channel_name = target_channel_position.channel_names[target_channel_index]
         target_channel_volume = target_channel_position[0][0, target_channel_index]
-        target_channel_Z, target_channel_Y, target_channel_X = target_channel_volume.shape[-3:]
+        target_channel_voxel_size = target_channel_position.scale[-3:]
 
-        # Get the voxel dimension in sample space
-        (
-            z_sample_space_target_channel,
-            y_sample_space_target_channel,
-            x_sample_space_target_channel,
-        ) = target_channel_position.scale[-3:]
+    # Find the infocus slice
+    source_channel_Z, source_channel_Y, source_channel_X = source_channel_volume.shape[-3:]
+    target_channel_Z, target_channel_Y, target_channel_X = target_channel_volume.shape[-3:]
 
-        # Finding the infocus plane
-        focus_target_channel_idx = focus_from_transverse_band(
-            target_channel_position[0][
-                0,
-                target_channel_index,
-                :,
-                target_channel_position[0].shape[-2] // 2
-                - FOCUS_SLICE_ROI_WIDTH : target_channel_position[0].shape[-2] // 2
-                + FOCUS_SLICE_ROI_WIDTH,
-                target_channel_position[0].shape[-1] // 2
-                - FOCUS_SLICE_ROI_WIDTH : target_channel_position[0].shape[-1] // 2
-                + FOCUS_SLICE_ROI_WIDTH,
-            ],
-            NA_det=NA_DETECTION_TARGET,
-            lambda_ill=WAVELENGTH_EMISSION_TARGET_CHANNEL,
-            pixel_size=x_sample_space_target_channel,
+    focus_source_channel_idx = focus_from_transverse_band(
+        source_channel_volume[
+            :,
+            source_channel_Y // 2
+            - FOCUS_SLICE_ROI_WIDTH : source_channel_Y // 2
+            + FOCUS_SLICE_ROI_WIDTH,
+            source_channel_X // 2
+            - FOCUS_SLICE_ROI_WIDTH : source_channel_X // 2
+            + FOCUS_SLICE_ROI_WIDTH,
+        ],
+        NA_det=NA_DETECTION_SOURCE,
+        lambda_ill=WAVELENGTH_EMISSION_SOURCE_CHANNEL,
+        pixel_size=source_channel_voxel_size[-1],
+    )
+
+    focus_target_channel_idx = focus_from_transverse_band(
+        target_channel_volume[
+            :,
+            target_channel_Y // 2
+            - FOCUS_SLICE_ROI_WIDTH : target_channel_Y // 2
+            + FOCUS_SLICE_ROI_WIDTH,
+            target_channel_X // 2
+            - FOCUS_SLICE_ROI_WIDTH : target_channel_X // 2
+            + FOCUS_SLICE_ROI_WIDTH,
+        ],
+        NA_det=NA_DETECTION_TARGET,
+        lambda_ill=WAVELENGTH_EMISSION_TARGET_CHANNEL,
+        pixel_size=target_channel_voxel_size[-1],
+    )
+
+    click.echo()
+    if focus_source_channel_idx not in (0, source_channel_Z - 1):
+        click.echo(f"Best source channel focus slice: {focus_source_channel_idx}")
+    else:
+        focus_source_channel_idx = source_channel_Z // 2
+        click.echo(
+            f"Could not determine best source channel focus slice, using {focus_source_channel_idx}"
         )
-    click.echo(f"Best focus target z_idx: {focus_target_channel_idx}")
+
+    if focus_target_channel_idx not in (0, target_channel_Z - 1):
+        click.echo(f"Best target channel focus slice: {focus_target_channel_idx}")
+    else:
+        focus_target_channel_idx = target_channel_Z // 2
+        click.echo(
+            f"Could not determine best target channel focus slice, using {focus_target_channel_idx}"
+        )
 
     # Calculate scaling factors for displaying data
-    scaling_factor_z = z_sample_space_source_channel / z_sample_space_target_channel
-    scaling_factor_yx = x_sample_space_source_channel / x_sample_space_target_channel
-    print(f"scaling factor z {scaling_factor_z}, scaling factor xy {scaling_factor_yx}")
+    scaling_factor_z = source_channel_voxel_size[-3] / target_channel_voxel_size[-3]
+    scaling_factor_yx = source_channel_voxel_size[-1] / target_channel_voxel_size[-1]
+    click.echo(
+        f"Z scaling factor: {scaling_factor_z:.3f}; XY scaling factor: {scaling_factor_yx:.3f}\n"
+    )
     # Add layers to napari with and transform
     # Rotate the image if needed here
 
@@ -137,12 +132,12 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     source_zyx_ants = ants.from_numpy(source_channel_volume.astype(np.float32))
     target_zyx_ants = ants.from_numpy(target_channel_volume.astype(np.float32))
 
-    scaling_affine = utils.scale_affine(
+    scaling_affine = get_3D_rescaling_matrix(
         (target_channel_Z, target_channel_Y, target_channel_X),
         (scaling_factor_z, scaling_factor_yx, scaling_factor_yx),
         (target_channel_Z, target_channel_Y, target_channel_X),
     )
-    rotate90_affine = utils.rotate_affine(
+    rotate90_affine = get_3D_rotation_matrix(
         (source_channel_Z, source_channel_Y, source_channel_X),
         90 * pre_affine_90degree_rotations_about_z,
         (target_channel_Z, target_channel_Y, target_channel_X),
@@ -173,19 +168,19 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         "magenta",
     ]
 
-    viewer.add_image(target_channel_volume, name=target_channel_str)
+    viewer.add_image(target_channel_volume, name=target_channel_name)
     points_target_channel = viewer.add_points(
-        ndim=3, name=f"pts_{target_channel_str}", size=50, face_color=COLOR_CYCLE[0]
+        ndim=3, name=f"pts_{target_channel_name}", size=50, face_color=COLOR_CYCLE[0]
     )
 
     viewer.add_image(
         source_zxy_pre_reg.numpy(),
-        name=source_channel_str,
+        name=source_channel_name,
         blending='additive',
         colormap='bop blue',
     )
     points_source_channel = viewer.add_points(
-        ndim=3, name=f"pts_{source_channel_str}", size=50, face_color=COLOR_CYCLE[0]
+        ndim=3, name=f"pts_{source_channel_name}", size=50, face_color=COLOR_CYCLE[0]
     )
 
     # setup viewer
@@ -211,8 +206,11 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
                 else:
                     prev_step_target_channel = (next_layer.data[-1][0], 0, 0)
                 # Add a point to the active layer
-                cursor_position = np.array(viewer.cursor.position)
-                layer.add(cursor_position)
+                # viewer.cursor.position is return in world coordinates
+                # point position needs to be converted to data coordinates before plotting
+                # on top of layer
+                cursor_position_data_coords = layer.world_to_data(viewer.cursor.position)
+                layer.add(cursor_position_data_coords)
 
                 # Change the colors
                 current_index = COLOR_CYCLE.index(layer.current_face_color)
@@ -238,8 +236,8 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
                 else:
                     # TODO: this +1 is not clear to me?
                     prev_step_source_channel = (next_layer.data[-1][0], 0, 0)
-                cursor_position = np.array(viewer.cursor.position)
-                layer.add(cursor_position)
+                cursor_position_data_coords = layer.world_to_data(viewer.cursor.position)
+                layer.add(cursor_position_data_coords)
                 # Change the colors
                 current_index = COLOR_CYCLE.index(layer.current_face_color)
                 next_index = (current_index + 1) % len(COLOR_CYCLE)
@@ -267,7 +265,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     points_target_channel.mouse_drag_callbacks.append(lambda_callback)
 
     input(
-        "\nAdd at least three points in the two channels by sequentially clicking "
+        "Add at least three points in the two channels by sequentially clicking "
         + "on a feature in the source channel and its corresponding feature in target channel. "
         + "Select grid mode if you prefer side-by-side view. "
         + "Press <enter> when done..."
@@ -291,7 +289,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         (z_scale_translate_matrix, np.insert(yx_points_transformation_matrix, 0, 0, axis=1))
     )  # Insert 0 in the third entry of each row
 
-    scaling_affine = utils.scale_affine(
+    scaling_affine = get_3D_rescaling_matrix(
         (1, target_channel_Y, target_channel_X),
         (scaling_factor_z, scaling_factor_yx, scaling_factor_yx),
     )
@@ -310,31 +308,47 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         source_zyx_ants, reference=target_zyx_ants
     )
 
-    print("Showing registered source image in magenta")
+    click.echo("\nShowing registered source image in magenta")
+    viewer.grid.enabled = False
     viewer.add_image(
         source_zxy_manual_reg.numpy(),
-        name=f"registered_{source_channel_str}",
+        name=f"registered_{source_channel_name}",
         colormap="magenta",
         blending='additive',
     )
-    viewer.layers.remove(f"pts_{source_channel_str}")
-    viewer.layers.remove(f"pts_{target_channel_str}")
-    viewer.layers[source_channel_str].visible = False
+    viewer.layers.remove(f"pts_{source_channel_name}")
+    viewer.layers.remove(f"pts_{target_channel_name}")
+    viewer.layers[source_channel_name].visible = False
 
-    click.echo("Saving affine transforms")
     # Ants affine transforms
-    T_manual_numpy = utils.ants_to_numpy_transform_zyx(tx_manual)
-    print(T_manual_numpy)
+    T_manual_numpy = convert_transform_to_numpy(tx_manual)
+    click.echo(f'Estimated affine transformation matrix:\n{T_manual_numpy}\n')
 
-    # TODO: should this be model_to_yaml() from recOrder? Should it override the previous config?
+    additional_source_channels = source_channels.copy()
+    additional_source_channels.remove(source_channel_name)
+    if target_channel_name in additional_source_channels:
+        additional_source_channels.remove(target_channel_name)
+
+    flag_apply_to_all_channels = 'N'
+    if len(additional_source_channels) > 0:
+        flag_apply_to_all_channels = str(
+            input(
+                f"Would you like to register these additional source channels: {additional_source_channels}? (y/N): "
+            )
+        )
+
+    source_channel_names = [source_channel_name]
+    if flag_apply_to_all_channels in ('Y', 'y'):
+        source_channel_names += additional_source_channels
+
     model = RegistrationSettings(
-        source_channel_index=source_channel_index,
-        target_channel_index=target_channel_index,
+        source_channel_names=source_channel_names,
+        target_channel_name=target_channel_name,
         affine_transform_zyx=T_manual_numpy.tolist(),
-        source_shape_zyx=list(source_zyx_ants.numpy().shape),
-        target_shape_zyx=list(target_zyx_ants.numpy().shape),
     )
     click.echo(f"Writing registration parameters to {output_filepath}")
     model_to_yaml(model, output_filepath)
 
-    input("\n Displaying registered channels. Press <enter> to close...")
+
+if __name__ == "__main__":
+    estimate_affine()
