@@ -1,13 +1,15 @@
 import datetime
 import os
 import glob
-from mantis.cli import utils
 from slurmkit import SlurmParams, slurm_function, submit_function
 from natsort import natsorted
-import click
 from iohub import open_ome_zarr
 from pathlib import Path
-from mantis.cli.stabilization import calculate_z_drift, calculate_yx_stabilization
+from mantis.cli.utils import (
+    yaml_to_model,
+    create_empty_hcs_zarr
+)
+from mantis.cli.stabilize import apply_stabilization_over_time_ants
 import numpy as np
 from mantis.analysis.AnalysisSettings import StabilizationSettings
 
@@ -33,7 +35,7 @@ input_position_dirpaths = [Path(p) for p in natsorted(glob.glob(input_position_d
 output_dirpath = Path(output_dirpath)
 config_filepath = Path(config_filepath)
 
-settings = utils.yaml_to_model(config_filepath, StabilizationSettings)
+settings = yaml_to_model(config_filepath, StabilizationSettings)
 combined_mats = settings.affine_transform_zyx_list
 combined_mats = np.array(combined_mats)
 
@@ -51,7 +53,7 @@ output_metadata = {
 }
 
 # Create the output zarr mirroring input_position_dirpaths
-utils.create_empty_hcs_zarr(
+create_empty_hcs_zarr(
     store_path=output_dirpath,
     position_keys=[p.parts[-3:] for p in input_position_dirpaths],
     **output_metadata,
@@ -69,7 +71,7 @@ params = SlurmParams(
 )
 
 # wrap our utils.process_single_position() function with slurmkit
-slurm_process_single_position = slurm_function(utils.apply_stabilization_over_time_ants)
+slurm_process_single_position = slurm_function(apply_stabilization_over_time_ants)
 stabilization_function = slurm_process_single_position(
     list_of_shifts=combined_mats,
     num_processes=simultaneous_processes_per_node,

@@ -1,33 +1,29 @@
-import pandas as pd
-from pathlib import Path
-from natsort import natsorted
 import multiprocessing as mp
-from tqdm import tqdm
-from iohub.ngff import open_ome_zarr
-from waveorder.focus import focus_from_transverse_band
-import glob
 import os
-import numpy as np
-from pystackreg import StackReg
-from mantis.cli import utils
-from mantis.cli.parsing import (
-    config_filepath,
-    output_filepath,
-    output_dirpath,
-    input_position_dirpaths,
-)
-import click
+
+from pathlib import Path
 from typing import Tuple
-from mantis.analysis.AnalysisSettings import StabilizationSettings
+
+import click
+import numpy as np
+import pandas as pd
+
+from iohub.ngff import open_ome_zarr
+from natsort import natsorted
 from pandas import DataFrame
+from pystackreg import StackReg
+from tqdm import tqdm
+from waveorder.focus import focus_from_transverse_band
+
+from mantis.analysis.AnalysisSettings import StabilizationSettings
+from mantis.cli.parsing import input_position_dirpaths, output_filepath
+from mantis.cli.utils import model_to_yaml
 
 NA_DET = 1.35
 LAMBDA_ILL = 0.500
-# TODO: this variable should probably be exposed?
-Z_CHUNK = 5
+
+
 # TODO: Do we need to compute focus fiding on n_number of channels?
-
-
 def estimate_position_focus(
     input_data_path: Path,
     input_channel_indices: Tuple[int, ...],
@@ -82,6 +78,32 @@ def estimate_position_focus(
         position_focus_stats_df.to_csv(filename)
 
 
+def get_mean_z_positions(
+    input_dataframe: DataFrame, z_drift_channel_idx: int = 0, verbose: bool = False
+) -> None:
+    import matplotlib.pyplot as plt
+
+    z_drift_df = pd.read_csv(input_dataframe)
+
+    # Filter the DataFrame for 'channel A'
+    phase_3D_df = z_drift_df[z_drift_df["channel_idx"] == z_drift_channel_idx]
+    # Sort the DataFrame based on 'time_min'
+    phase_3D_df = phase_3D_df.sort_values("time_min")
+
+    # TODO: this is a hack to deal with the fact that the focus finding function returns 0 if it fails
+    phase_3D_df["focal_idx"] = phase_3D_df["focal_idx"].replace(0, method="ffill")
+    # phase_3D_df["focal_idx"] = phase_3D_df["focal_idx"].replace(0,np.nan)
+
+    # Get the mean of positions for each time point
+    average_focal_idx = phase_3D_df.groupby("time_min")["focal_idx"].mean().reset_index()
+    if verbose:
+        # Get the moving average of the focal_idx
+        plt.plot(average_focal_idx["focal_idx"], linestyle="--", label="mean of all positions")
+        plt.legend()
+        plt.savefig("./z_drift.png")
+    return average_focal_idx["focal_idx"].values
+
+
 def combine_dataframes(
     input_dir: Path, output_csv_file_path: Path, remove_intermediate_csv: bool = False
 ):
@@ -107,32 +129,6 @@ def combine_dataframes(
     if remove_intermediate_csv:
         os.rmdir(input_dir)
     pd.concat(dataframes, ignore_index=True).to_csv(output_csv_file_path, index=False)
-
-
-def get_mean_z_positions(
-    input_dataframe: DataFrame, z_drift_channel_idx: int = 0, verbose: bool = False
-) -> None:
-    import matplotlib.pyplot as plt
-
-    z_drift_df = pd.read_csv(input_dataframe)
-
-    # Filter the DataFrame for 'channel A'
-    phase_3D_df = z_drift_df[z_drift_df["channel_idx"] == z_drift_channel_idx]
-    # Sort the DataFrame based on 'time_min'
-    phase_3D_df = phase_3D_df.sort_values("time_min")
-
-    # TODO: this is a hack to deal with the fact that the focus finding function returns 0 if it fails
-    phase_3D_df["focal_idx"] = phase_3D_df["focal_idx"].replace(0, method="ffill")
-    # phase_3D_df["focal_idx"] = phase_3D_df["focal_idx"].replace(0,np.nan)
-
-    # Get the mean of positions for each time point
-    average_focal_idx = phase_3D_df.groupby("time_min")["focal_idx"].mean().reset_index()
-    if verbose:
-        # Get the moving average of the focal_idx
-        plt.plot(average_focal_idx["focal_idx"], linestyle="--", label="mean of all positions")
-        plt.legend()
-        plt.savefig("./z_drift.png")
-    return average_focal_idx["focal_idx"].values
 
 
 def calculate_z_drift(
@@ -320,7 +316,7 @@ def calculate_yx_stabilization(
     default=[300, 300],
     help="Crop size in xy. Enter two integers. Default is 300 300.",
 )
-def estimate_stabilization_affine_list(
+def estimate_stabilization(
     input_position_dirpaths,
     output_filepath,
     num_processes,
@@ -394,71 +390,8 @@ def estimate_stabilization_affine_list(
         focus_finding_channel_index=channel_index,
         affine_transform_zyx_list=combined_mats.tolist(),
     )
-    utils.model_to_yaml(model, output_filepath)
+    model_to_yaml(model, output_filepath)
 
 
-@click.command()
-@input_position_dirpaths()
-@output_dirpath()
-@config_filepath()
-@click.option(
-    "--num-processes",
-    "-j",
-    default=1,
-    help="Number of parallel processes. Default is 1.",
-    required=False,
-    type=int,
-)
-def stabilize_timelapse(
-    input_position_dirpaths, output_dirpath, config_filepath, num_processes
-):
-    """
-    Stabilize the timelapse input based on single position and channel.
-
-    This function applies stabilization to the input data. It can estimate both yx and z drifts.
-    The level of verbosity can be controlled with the stabilization_verbose flag.
-    The size of the crop in xy can be specified with the crop-size-xy option.
-
-    Example usage:
-    mantis stabilize-timelapse -i ./timelapse.zarr/0/0/0 -o ./stabilized_timelapse.zarr -c ./file_w_matrices.yml -v
-
-    """
-    assert config_filepath.suffix == ".yml", "Config file must be a yaml file"
-
-    # Load the config file
-    settings = utils.yaml_to_model(config_filepath, StabilizationSettings)
-
-    combined_mats = settings.affine_transform_zyx_list
-    combined_mats = np.array(combined_mats)
-
-    with open_ome_zarr(input_position_dirpaths[0]) as dataset:
-        T, C, Z, Y, X = dataset.data.shape
-        channel_names = dataset.channel_names
-
-    chunk_zyx_shape = (Z_CHUNK, Y, X)
-    output_metadata = {
-        "shape": (T, C, Z, Y, X),
-        "chunks": (1,) * 2 + chunk_zyx_shape,
-        "scale": dataset.scale,
-        "channel_names": channel_names,
-        "dtype": np.float32,
-    }
-
-    # Create the output zarr mirroring input_position_dirpaths
-    utils.create_empty_hcs_zarr(
-        store_path=output_dirpath,
-        position_keys=[p.parts[-3:] for p in input_position_dirpaths],
-        **output_metadata,
-    )
-
-    # Apply the affine transformation to the input data
-    for input_path in input_position_dirpaths:
-        utils.apply_stabilization_over_time_ants(
-            list_of_shifts=combined_mats,
-            input_data_path=input_path,
-            output_path=output_dirpath,
-            time_indices=list(range(T)),
-            input_channel_idx=None,
-            output_channel_idx=None,
-            num_processes=num_processes,
-        )
+if __name__ == "__main__":
+    estimate_stabilization()

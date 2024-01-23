@@ -1,19 +1,17 @@
 import datetime
 import os
 import glob
-from mantis.cli import utils
 from slurmkit import SlurmParams, slurm_function, submit_function
 from natsort import natsorted
 import click
-from mantis.cli.apply_affine import (
-    registration_params_from_file,
-    rotate_n_affine_transform,
-)
 import numpy as np
 from iohub import open_ome_zarr
 from pathlib import Path
-import ants
-from mantis.cli.stabilization import calculate_z_drift
+from mantis.cli.utils import (
+    get_output_paths,
+    create_empty_zarr,
+)
+from mantis.cli.stabilize import apply_stabilization_over_time_ants
 
 # NOTE: this pipeline uses the focus found on well one for all. Perhaps this should be done per FOV(?)
 
@@ -34,7 +32,7 @@ Z_CHUNK = 5
 input_position_dirpaths = natsorted(glob.glob(input_position_dirpaths))
 output_dir = os.path.dirname(output_data_path)
 
-output_paths = utils.get_output_paths(input_position_dirpaths, output_data_path)
+output_paths = get_output_paths(input_position_dirpaths, output_data_path)
 click.echo(f"in: {input_position_dirpaths}, out: {output_paths}")
 slurm_out_path = str(os.path.join(output_dir, "slurm_output/register-%j.out"))
 
@@ -48,7 +46,7 @@ chunk_zyx_shape = (Z_CHUNK, output_shape_zyx[-2], output_shape_zyx[-1])
 output_dirpath = Path(output_data_path)
 
 # Create the empty store
-utils.create_empty_zarr(
+create_empty_zarr(
     position_paths=input_position_dirpaths,
     output_path=output_dirpath,
     output_zyx_shape=output_shape_zyx,
@@ -74,7 +72,7 @@ params = SlurmParams(
 )
 
 # wrap our utils.process_single_position() function with slurmkit
-slurm_process_single_position = slurm_function(utils.apply_stabilization_over_time_ants)
+slurm_process_single_position = slurm_function(apply_stabilization_over_time_ants)
 register_func = slurm_process_single_position(
     list_of_shifts=z_shifts_matrices,
     num_processes=simultaneous_processes_per_node,
