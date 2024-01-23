@@ -357,8 +357,6 @@ def estimate_stabilization(
             crop_size_xy=crop_size_xy,
             verbose=stabilization_verbose,
         )
-        if not estimate_yx_drift:
-            combined_mats = T_z_drift_mats
 
     # Estimate yx drift
     if estimate_yx_drift:
@@ -369,21 +367,18 @@ def estimate_stabilization(
             crop_size_xy=crop_size_xy,
             verbose=stabilization_verbose,
         )
-        if estimate_z_drift:
-            if T_translation_mats.shape[0] != T_z_drift_mats.shape[0]:
-                raise ValueError(
-                    "The number of translation matrices and z drift matrices must be the same"
-                )
-            else:
-                combined_mats = [
-                    np.dot(T_translation_mat, T_z_drift_mat)
-                    for T_translation_mat, T_z_drift_mat in zip(
-                        T_translation_mats, T_z_drift_mats
-                    )
-                ]
-                combined_mats = np.array(combined_mats)
-        else:
-            combined_mats = T_translation_mats
+
+    if estimate_z_drift and estimate_yx_drift:
+        if T_translation_mats.shape[0] != T_z_drift_mats.shape[0]:
+            raise ValueError(
+                "The number of translation matrices and z drift matrices must be the same"
+            )
+        combined_mats = np.array([a @ b for a, b in zip(T_translation_mats, T_z_drift_mats)])
+    # note: we've checked that one of the two conditions below is true
+    elif estimate_z_drift:
+        combined_mats = T_z_drift_mats
+    elif estimate_yx_drift:
+        combined_mats = T_translation_mats
 
     # Save the combined matrices
     model = StabilizationSettings(
