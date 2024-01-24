@@ -1,6 +1,7 @@
+import itertools
 import multiprocessing as mp
-import os
 
+from functools import partial
 from pathlib import Path
 from typing import Tuple
 
@@ -9,10 +10,8 @@ import numpy as np
 import pandas as pd
 
 from iohub.ngff import open_ome_zarr
-from natsort import natsorted
 from pandas import DataFrame
 from pystackreg import StackReg
-from tqdm import tqdm
 from waveorder.focus import focus_from_transverse_band
 
 from mantis.analysis.AnalysisSettings import StabilizationSettings
@@ -28,54 +27,47 @@ def estimate_position_focus(
     input_data_path: Path,
     input_channel_indices: Tuple[int, ...],
     crop_size_xy: list[int, int],
-    output_dir: Path,
 ):
+    position_idx, time_min, channel, channel_idx, focal_idx = [], [], [], [], []
+
     with open_ome_zarr(input_data_path) as dataset:
         channel_names = dataset.channel_names
         T, C, Z, Y, X = dataset[0].shape
         T_scale, _, _, _, X_scale = dataset.scale
 
-        focus_params = {
-            "NA_det": NA_DET,
-            "lambda_ill": LAMBDA_ILL,
-            "pixel_size": X_scale,
-        }
+        for tc_idx in itertools.product(range(T), input_channel_indices):
+            data_zyx = dataset.data[tc_idx][
+                :,
+                Y // 2 - crop_size_xy[1] // 2 : Y // 2 + crop_size_xy[1] // 2,
+                X // 2 - crop_size_xy[0] // 2 : X // 2 + crop_size_xy[0] // 2,
+            ]
 
-        position_stats_stablized = {
-            "position_idx": [],
-            "time_min": [],
-            "channel": [],
-            "channel_idx": [],
-            "focal_idx": [],
-        }
-        print(f"Processing {input_data_path}")
-        for t_idx in tqdm(range(T)):
-            for c_idx in input_channel_indices:
-                data_zyx = dataset[0][
-                    t_idx,
-                    c_idx,
-                    :,
-                    Y // 2 - crop_size_xy[1] // 2 : Y // 2 + crop_size_xy[1] // 2,
-                    X // 2 - crop_size_xy[0] // 2 : X // 2 + crop_size_xy[0] // 2,
-                ]
-                # if the FOV is empty, set the focal plane to 0
-                if np.sum(data_zyx) == 0:
-                    focal_plane = 0
-                else:
-                    focal_plane = focus_from_transverse_band(
-                        data_zyx,
-                        **focus_params,
-                    )
-                pos_idx = '/'.join(input_data_path.parts[-3:]).replace('/', '_')
-                position_stats_stablized["position_idx"].append(pos_idx)
-                position_stats_stablized["time_min"].append(t_idx * T_scale)
-                position_stats_stablized["channel"].append(channel_names[c_idx])
-                position_stats_stablized["channel_idx"].append(c_idx)
-                position_stats_stablized["focal_idx"].append(focal_plane)
+            # if the FOV is empty, set the focal plane to 0
+            if np.sum(data_zyx) == 0:
+                focal_plane = 0
+            else:
+                focal_plane = focus_from_transverse_band(
+                    data_zyx,
+                    NA_det=NA_DET,
+                    lambda_ill=LAMBDA_ILL,
+                    pixel_size=X_scale,
+                )
 
-        position_focus_stats_df = pd.DataFrame(position_stats_stablized)
-        filename = output_dir / f"position_{pos_idx}_stats.csv"
-        position_focus_stats_df.to_csv(filename)
+            pos_idx = '/'.join(input_data_path.parts[-3:]).replace('/', '_')
+            position_idx.append(pos_idx)
+            time_min.append(tc_idx[0] * T_scale)
+            channel.append(channel_names[tc_idx[1]])
+            channel_idx.append(tc_idx[1])
+            focal_idx.append(focal_plane)
+
+    position_stats_stabilized = {
+        "position_idx": position_idx,
+        "time_min": time_min,
+        "channel": channel,
+        "channel_idx": channel_idx,
+        "focal_idx": focal_idx,
+    }
+    return position_stats_stabilized
 
 
 def get_mean_z_positions(
@@ -104,33 +96,6 @@ def get_mean_z_positions(
     return average_focal_idx["focal_idx"].values
 
 
-def combine_dataframes(
-    input_dir: Path, output_csv_file_path: Path, remove_intermediate_csv: bool = False
-):
-    """
-    Combine all csv files in input_dir into a single csv file at output_csv_path
-
-    Parameters
-    ----------
-    input_dir : Path
-        Folder containing CSV
-    output_csv_path : Path
-        Path to output CSV file
-    remove_intermediate_csv : bool, optional
-        Remove the intermediate csv after merging, by default False
-    """
-    input_dir = Path(input_dir)
-    dataframes = []
-
-    for csv_file in natsorted(input_dir.glob("*.csv")):
-        dataframes.append(pd.read_csv(csv_file))
-        if remove_intermediate_csv:
-            os.remove(csv_file)
-    if remove_intermediate_csv:
-        os.rmdir(input_dir)
-    pd.concat(dataframes, ignore_index=True).to_csv(output_csv_file_path, index=False)
-
-
 def calculate_z_drift(
     input_data_paths: Path,
     output_folder_path: Path,
@@ -141,35 +106,17 @@ def calculate_z_drift(
 ) -> np.ndarray:
     output_folder_path.mkdir(parents=True, exist_ok=True)
 
-    position_focus_folder = output_folder_path / 'positions_focus'
-    position_focus_folder.mkdir(parents=True, exist_ok=True)
-
-    with mp.Pool(processes=num_processes) as pool:
-        list(
-            tqdm(
-                pool.starmap(
-                    estimate_position_focus,
-                    [
-                        (
-                            input_data_path,
-                            [z_drift_channel_idx],
-                            crop_size_xy,
-                            position_focus_folder,
-                        )
-                        for input_data_path in input_data_paths
-                    ],
-                ),
-                total=len(input_data_paths),
-            )
-        )
-        pool.close()
-        pool.join()
-
-    combine_dataframes(
-        position_focus_folder,
-        output_folder_path / 'positions_focus.csv',
-        remove_intermediate_csv=True,
+    fun = partial(
+        estimate_position_focus,
+        input_channel_indices=(z_drift_channel_idx,),
+        crop_size_xy=crop_size_xy,
     )
+    # TODO: do we need to natsort the input_data_paths?
+    with mp.Pool(processes=num_processes) as pool:
+        position_stats_stabilized = pool.map(fun, input_data_paths)
+
+    df = pd.concat([pd.DataFrame.from_dict(stats) for stats in position_stats_stabilized])
+    df.to_csv(output_folder_path / 'positions_focus.csv', index=False)
 
     # Calculate and save the output file
     z_drift_offsets = get_mean_z_positions(
