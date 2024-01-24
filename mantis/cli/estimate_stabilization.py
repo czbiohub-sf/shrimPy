@@ -124,25 +124,19 @@ def calculate_z_drift(
         z_drift_channel_idx=z_drift_channel_idx,
         verbose=verbose,
     )
+
     # Calculate the z focus shift matrices
     z_focus_shift = [np.eye(4)]
     # Find the z focus shift matrices for each time point based on the z_drift_offsets relative to the first timepoint.
-    for i in range(len(z_drift_offsets) - 1):
-        z_val = z_drift_offsets[0]
-        z_val_next = z_drift_offsets[i + 1]
-        z_focus_shift.append(
-            np.array(
-                [
-                    [1, 0, 0, (z_val_next - z_val)],
-                    [0, 1, 0, 0],
-                    [0, 0, 1, 0],
-                    [0, 0, 0, 1],
-                ]
-            )
-        )
+    z_val = z_drift_offsets[0]
+    for z_val_next in z_drift_offsets[1:]:
+        shift = np.eye(4)
+        shift[0, 3] = z_val_next - z_val
+        z_focus_shift.append(shift)
     z_focus_shift = np.array(z_focus_shift)
+
     if verbose:
-        print(f"Saving z focus shift matrices to {output_folder_path}")
+        click.echo(f"Saving z focus shift matrices to {output_folder_path}")
         z_focus_shift_filepath = output_folder_path / "z_focus_shift.npy"
         np.save(z_focus_shift_filepath, z_focus_shift)
 
@@ -171,7 +165,6 @@ def calculate_yx_stabilization(
     X_slice = slice(X // 2 - crop_size_xy[0] // 2, X // 2 + crop_size_xy[0] // 2)
     Y_slice = slice(Y // 2 - crop_size_xy[1] // 2, Y // 2 + crop_size_xy[1] // 2)
 
-    print('Estimating in-focus slice')
     z_idx = focus_from_transverse_band(
         input_position[0][
             0,
@@ -182,7 +175,9 @@ def calculate_yx_stabilization(
         ],
         **focus_params,
     )
-    print(f"Estimated in-focus slice: {z_idx}")
+    if verbose:
+        click.echo(f"Estimated in-focus slice: {z_idx}")
+
     # Load timelapse
     xy_timelapse = input_position[0][:T, c_idx, z_idx, Y_slice, X_slice]
     minimum = xy_timelapse.min()
@@ -193,7 +188,6 @@ def calculate_yx_stabilization(
     # this is what the original StackReg ImageJ plugin uses
     sr = StackReg(StackReg.TRANSLATION)
 
-    print("Finding XY translation matrices")
     T_stackreg = sr.register_stack(xy_timelapse, reference="previous", axis=0)
 
     # Swap values in the array since stackreg is xy and we need yx
@@ -206,7 +200,7 @@ def calculate_yx_stabilization(
 
     # Save the translation matrices
     if verbose:
-        print(f"Saving translation matrices to {output_folder_path}")
+        click.echo(f"Saving translation matrices to {output_folder_path}")
         yx_shake_translation_tx_filepath = (
             output_folder_path / "yx_shake_translation_tx_ants.npy"
         )
@@ -296,6 +290,7 @@ def estimate_stabilization(
 
     # Estimate z drift
     if estimate_z_drift:
+        click.echo("Estimating z stabilization parameters")
         T_z_drift_mats = calculate_z_drift(
             input_data_paths=input_position_dirpaths,
             output_folder_path=output_dirpath,
@@ -307,6 +302,7 @@ def estimate_stabilization(
 
     # Estimate yx drift
     if estimate_yx_drift:
+        click.echo("Estimating xy stabilization parameters")
         T_translation_mats = calculate_yx_stabilization(
             input_data_paths=input_position_dirpaths,
             output_folder_path=output_dirpath,
