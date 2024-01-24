@@ -96,7 +96,7 @@ def get_mean_z_positions(
     return average_focal_idx["focal_idx"].values
 
 
-def calculate_z_drift(
+def estimate_z_stabilization(
     input_data_paths: Path,
     output_folder_path: Path,
     z_drift_channel_idx: int = 0,
@@ -143,7 +143,7 @@ def calculate_z_drift(
     return z_focus_shift
 
 
-def calculate_yx_stabilization(
+def estimate_xy_stabilization(
     input_data_paths: Path,
     output_folder_path: Path,
     c_idx: int = 0,
@@ -231,19 +231,19 @@ def calculate_yx_stabilization(
     type=int,
 )
 @click.option(
-    "--estimate-yx-drift",
+    "--stabilize_xy",
     "-y",
     is_flag=True,
     help="Estimate yx drift and apply to the input data. Default is False.",
 )
 @click.option(
-    "--estimate-z-drift",
+    "--stabilize_z",
     "-z",
     is_flag=True,
     help="Estimate z drift and apply to the input data. Default is False.",
 )
 @click.option(
-    "--stabilization-verbose",
+    "--verbose",
     "-v",
     is_flag=True,
     type=bool,
@@ -262,16 +262,16 @@ def estimate_stabilization(
     output_filepath,
     num_processes,
     channel_index,
-    estimate_yx_drift,
-    estimate_z_drift,
-    stabilization_verbose,
+    stabilize_xy,
+    stabilize_z,
+    verbose,
     crop_size_xy,
 ):
     """
     Estimate the Z and/or XY timelapse stabilization matrices.
 
-    This function estimates yx and z drifts and returns the affine matrices per timepoint taking t=0 as reference saved as a yaml file.
-    The level of verbosity can be controlled with the stabilization_verbose flag.
+    This function estimates xy and z drifts and returns the affine matrices per timepoint taking t=0 as reference saved as a yaml file.
+    The level of verbosity can be controlled with the verbose flag.
     The size of the crop in xy can be specified with the crop-size-xy option.
 
     Example usage:
@@ -280,8 +280,8 @@ def estimate_stabilization(
     Note: the verbose output will be saved at the same level as the output zarr.
     """
     assert (
-        estimate_yx_drift or estimate_z_drift
-    ), "At least one of estimate_yx_drift or estimate_z_drift must be selected"
+        stabilize_xy or stabilize_z
+    ), "At least one of 'stabilize_xy' or 'stabilize_z' must be selected"
 
     assert output_filepath.suffix == ".yml", "Output file must be a yaml file"
 
@@ -289,38 +289,38 @@ def estimate_stabilization(
     output_dirpath.mkdir(parents=True, exist_ok=True)
 
     # Estimate z drift
-    if estimate_z_drift:
+    if stabilize_z:
         click.echo("Estimating z stabilization parameters")
-        T_z_drift_mats = calculate_z_drift(
+        T_z_drift_mats = estimate_z_stabilization(
             input_data_paths=input_position_dirpaths,
             output_folder_path=output_dirpath,
             z_drift_channel_idx=channel_index,
             num_processes=num_processes,
             crop_size_xy=crop_size_xy,
-            verbose=stabilization_verbose,
+            verbose=verbose,
         )
 
     # Estimate yx drift
-    if estimate_yx_drift:
+    if stabilize_xy:
         click.echo("Estimating xy stabilization parameters")
-        T_translation_mats = calculate_yx_stabilization(
+        T_translation_mats = estimate_xy_stabilization(
             input_data_paths=input_position_dirpaths,
             output_folder_path=output_dirpath,
             c_idx=channel_index,
             crop_size_xy=crop_size_xy,
-            verbose=stabilization_verbose,
+            verbose=verbose,
         )
 
-    if estimate_z_drift and estimate_yx_drift:
+    if stabilize_z and stabilize_xy:
         if T_translation_mats.shape[0] != T_z_drift_mats.shape[0]:
             raise ValueError(
                 "The number of translation matrices and z drift matrices must be the same"
             )
         combined_mats = np.array([a @ b for a, b in zip(T_translation_mats, T_z_drift_mats)])
     # note: we've checked that one of the two conditions below is true
-    elif estimate_z_drift:
+    elif stabilize_z:
         combined_mats = T_z_drift_mats
-    elif estimate_yx_drift:
+    elif stabilize_xy:
         combined_mats = T_translation_mats
 
     # Save the combined matrices
