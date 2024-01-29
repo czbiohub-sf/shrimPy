@@ -213,13 +213,15 @@ def apply_transform_to_zyx_and_save_v2(
     click.echo(f"Processing c={c_idx}, t={t_idx}")
 
     # TODO: temporary fix to slumkit issue
-    if _is_nested(input_channel_indices):
+    if input_channel_indices is not None and _is_nested(input_channel_indices):
         # print(f'input_channel_indices: {input_channel_indices}')
         input_channel_indices = [int(x) for x in input_channel_indices if x.isdigit()]
-    if _is_nested(output_channel_indices):
+        click.echo(f'input_channel_indices: {input_channel_indices}')
+
+    if output_channel_indices is not None and _is_nested(output_channel_indices):
         # print(f'input_channel_indices: {output_channel_indices}')
         output_channel_indices = [int(x) for x in output_channel_indices if x.isdigit()]
-    click.echo(f'input_channel_indices: {input_channel_indices}')
+        click.echo(f'output_channel_indices: {output_channel_indices}')
 
     # Process CZYX vs ZYX
     if input_channel_indices is not None:
@@ -233,6 +235,10 @@ def apply_transform_to_zyx_and_save_v2(
         else:
             click.echo(f"Skipping t={t_idx} due to all zeros or nans")
     else:
+        # Check if t_idx should be added to kwargs
+        all_func_params = inspect.signature(func).parameters.keys()
+        if "t_idx" in all_func_params:
+            kwargs["t_idx"] = t_idx
         zyx_data = position.data.oindex[t_idx, c_idx]
         # Checking if nans or zeros and skip processing
         if not _check_nan_n_zeros(zyx_data):
@@ -371,9 +377,11 @@ def process_single_position_v2(
             func,
             input_dataset,
             output_path / Path(*input_data_path.parts[-3:]),
-            input_channel_indices=None,
+            None,
+            None,
             **func_args,
         )
+        click.echo('hello')
     else:
         # If C is empty, use only the range for time_indices
         iterable = itertools.product(time_indices)
@@ -388,12 +396,12 @@ def process_single_position_v2(
             **func_args,
         )
 
-        click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
-        with mp.Pool(num_processes) as p:
-            p.starmap(
-                partial_apply_transform_to_zyx_and_save,
-                iterable,
-            )
+    click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
+    with mp.Pool(num_processes) as p:
+        p.starmap(
+            partial_apply_transform_to_zyx_and_save,
+            iterable,
+        )
 
 
 def copy_n_paste(zyx_data: np.ndarray, zyx_slicing_params: list) -> np.ndarray:
