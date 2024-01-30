@@ -70,8 +70,11 @@ class RegistrationSettings(MyBaseModel):
 
 
 class StabilizationSettings(MyBaseModel):
-    focus_finding_channel_index: NonNegativeInt
+    focus_finding_channel: str
+    stabilization_type: Literal["z", "xy", "zyx"]
+    processing_channels : list
     affine_transform_zyx_list: list
+    time_indices: Union[NonNegativeInt, list[NonNegativeInt], Literal["all"]] = "all"
 
     @validator("affine_transform_zyx_list")
     def check_affine_transform_list(cls, v):

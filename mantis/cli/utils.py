@@ -223,6 +223,11 @@ def apply_transform_to_zyx_and_save_v2(
         output_channel_indices = [int(x) for x in output_channel_indices if x.isdigit()]
         click.echo(f'output_channel_indices: {output_channel_indices}')
 
+    # Check if t_idx should be added to kwargs to have different transformations for different timepoints
+    all_func_params = inspect.signature(func).parameters.keys()
+    if "t_idx" in all_func_params:
+        kwargs["t_idx"] = t_idx
+
     # Process CZYX vs ZYX
     if input_channel_indices is not None:
         czyx_data = position.data.oindex[t_idx, input_channel_indices]
@@ -235,10 +240,6 @@ def apply_transform_to_zyx_and_save_v2(
         else:
             click.echo(f"Skipping t={t_idx} due to all zeros or nans")
     else:
-        # Check if t_idx should be added to kwargs
-        all_func_params = inspect.signature(func).parameters.keys()
-        if "t_idx" in all_func_params:
-            kwargs["t_idx"] = t_idx
         zyx_data = position.data.oindex[t_idx, c_idx]
         # Checking if nans or zeros and skip processing
         if not _check_nan_n_zeros(zyx_data):
