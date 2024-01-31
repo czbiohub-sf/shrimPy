@@ -1,46 +1,52 @@
 # %%
-import pickle
-import shutil
-import webbrowser
-
 from pathlib import Path
 
+import cupy as cp
 import napari
 import numpy as np
 
+from cupyx.scipy.ndimage import affine_transform
+
+# from iohub.ngff_meta import TransformationMeta
 from iohub.reader import open_ome_zarr, read_micromanager
 
+from mantis.analysis.AnalysisSettings import DeskewSettings
 from mantis.analysis.analyze_psf import (
     analyze_psf,
     detect_peaks,
-    generate_html_report,
-    plot_fwhm_vs_acq_axes,
-    plot_psf_amp,
-    plot_psf_slices,
+    extract_beads,
+    generate_report,
+)
+from mantis.analysis.deskew import (  # _average_n_slices,
+    _get_transform_matrix,
+    get_deskewed_data_shape,
 )
 
 # %% Load data - swap with data acquisition block
 
 data_dir = Path(r'Z:\2023_03_30_beads')
 dataset = 'beads_ip_0.74_1'
+data_path = data_dir / dataset
 
 # data_dir = Path(r'Z:\2022_12_22_LS_after_SL2')
 # dataset = 'epi_beads_100nm_fl_mount_after_SL2_1'
-# data_path = data_dir / dataset / 'LS_beads_100nm_fl_mount_after_SL2_1_MMStack_Pos0.ome.tif'
-# zyx_data = tifffile.imread(data_path)
-
-data_path = data_dir / dataset
+# zyx_data = tifffile.imread(data_dir / dataset / 'LS_beads_100nm_fl_mount_after_SL2_1_MMStack_Pos0.ome.tif')
+# scale = (0.250, 0.069, 0.069)  # in um
+# axis_labels = ("Z", "Y", "X")
 
 if str(data_path).endswith('.zarr'):
     ds = open_ome_zarr(data_path / '0/0/0')
     zyx_data = ds.data[0, 0]
+    # channel_names = ds.channel_names
 else:
     ds = read_micromanager(str(data_path))
     zyx_data = ds.get_array(0)[0, 0]
+    # channel_names = ds.channel_names
 
 scale = (0.1565, 0.116, 0.116)  # in um
-# axis_labels = ("Z", "Y", "X")
 axis_labels = ("SCAN", "TILT", "COVERSLIP")
+
+deskew = True
 
 # %% Detect peaks
 
@@ -60,100 +66,143 @@ viewer.add_points(peaks, name='peaks local max', size=12, symbol='ring', edge_co
 
 # %% Extract and analyze bead patches
 
-beads, df_gaussian_fit, df_1d_peak_width = analyze_psf(
+beads, offsets = extract_beads(
     zyx_data=zyx_data,
     points=peaks,
     scale=scale,
 )
 
-# analyze bead patches
-num_beads = len(beads)
-num_successful = len(df_gaussian_fit)
-num_failed = num_beads - num_successful
-
-# %% Generate plots
-
-psf_analysis_path = data_dir / dataset / 'psf_analysis'
-psf_analysis_path.mkdir(exist_ok=True)
-
-plots_dir = psf_analysis_path / 'plots'
-plots_dir.mkdir(parents=True, exist_ok=True)
-random_bead_number = sorted(np.random.choice(num_successful, 3))
-
-bead_psf_slices_paths = plot_psf_slices(
-    plots_dir, [beads[i] for i in random_bead_number], scale, axis_labels, random_bead_number
+df_gaussian_fit, df_1d_peak_width = analyze_psf(
+    zyx_patches=beads,
+    bead_offsets=offsets,
+    scale=scale,
 )
-
-
-if raw:
-    plot_data_x = [df_1d_peak_width[col].values for col in ('x_mu', 'y_mu', 'z_mu')]
-    plot_data_y = [
-        df_1d_peak_width[col].values for col in ('1d_x_fwhm', '1d_y_fwhm', '1d_z_fwhm')
-    ]
-else:
-    plot_data_x = [df_gaussian_fit[col].values for col in ('x_mu', 'y_mu', 'z_mu')]
-    plot_data_y = [
-        df_gaussian_fit[col].values for col in ('zyx_x_fwhm', 'zyx_y_fwhm', 'zyx_z_fwhm')
-    ]
-
-fwhm_vs_acq_axes_paths = plot_fwhm_vs_acq_axes(
-    plots_dir,
-    *plot_data_x,
-    *plot_data_y,
-    axis_labels,
-)
-
-psf_amp_paths = plot_psf_amp(
-    plots_dir,
-    df_gaussian_fit['x_mu'].values,
-    df_gaussian_fit['y_mu'].values,
-    df_gaussian_fit['z_mu'].values,
-    df_gaussian_fit['zyx_amp'].values,
-    axis_labels,
-)
-
-fwhm_3d_mean = [
-    df_gaussian_fit[col].mean() for col in ('zyx_z_fwhm', 'zyx_y_fwhm', 'zyx_x_fwhm')
-]
-fwhm_3d_std = [
-    df_gaussian_fit[col].std() for col in ('zyx_z_fwhm', 'zyx_y_fwhm', 'zyx_x_fwhm')
-]
-fwhm_pc_mean = [
-    df_gaussian_fit[col].mean() for col in ('zyx_pc3_fwhm', 'zyx_pc2_fwhm', 'zyx_pc1_fwhm')
-]
-fwhm_1d_mean = df_1d_peak_width.mean()
-fwhm_1d_std = df_1d_peak_width.std()
 
 # %% Generate HTML report
 
-html_report = generate_html_report(
+psf_analysis_path = data_dir / dataset / 'psf_analysis'
+generate_report(
+    psf_analysis_path,
+    data_dir,
     dataset,
-    data_path.parent,
+    beads,
+    peaks,
+    df_gaussian_fit,
+    df_1d_peak_width,
     scale,
-    (num_beads, num_successful, num_failed),
-    fwhm_1d_mean,
-    fwhm_1d_std,
-    fwhm_3d_mean,
-    fwhm_3d_std,
-    fwhm_pc_mean,
-    bead_psf_slices_paths,
-    fwhm_vs_acq_axes_paths,
-    psf_amp_paths,
     axis_labels,
 )
 
-# save html file and show in browser
-with open(psf_analysis_path / 'peaks.pkl', 'wb') as file:
-    pickle.dump(peaks, file)
+# %% Deskew data
 
-df_gaussian_fit.to_csv(psf_analysis_path / 'psf_gaussian_fit.csv', index=False)
-df_1d_peak_width.to_csv(psf_analysis_path / 'psf_1d_peak_width.csv', index=False)
+if raw and deskew:
+    num_chunks = 2
+    chunked_data = np.split(zyx_data, num_chunks, axis=-1)
+    chunk_shape = chunked_data[0].shape
 
-shutil.copy('github-markdown.css', psf_analysis_path)
-html_file_path = psf_analysis_path / ('psf_analysis_report.html')
-with open(html_file_path, 'w') as file:
-    file.write(html_report)
+    settings = DeskewSettings(
+        pixel_size_um=scale[-1],
+        ls_angle_deg=30,
+        scan_step_um=scale[-3],
+        keep_overhang=True,
+        average_n_slices=3,
+    )
+    # T, C, Z, Y, X = (1, 1) + chunk_shape
 
-webbrowser.open('file://' + str(html_file_path))
+    deskewed_shape, voxel_size = get_deskewed_data_shape(
+        chunk_shape,
+        settings.ls_angle_deg,
+        settings.px_to_scan_ratio,
+        settings.keep_overhang,
+        settings.average_n_slices,
+        settings.pixel_size_um,
+    )
 
+    matrix = _get_transform_matrix(
+        chunk_shape,
+        settings.ls_angle_deg,
+        settings.px_to_scan_ratio,
+        settings.keep_overhang,
+    )
+
+    matrix_gpu = cp.asarray(matrix)
+    deskewed_chunks = []
+    for chunk in chunked_data:
+        deskewed_data_gpu = affine_transform(
+            cp.asarray(chunk),
+            matrix_gpu,
+            output_shape=deskewed_shape,
+            order=1,
+            cval=80,
+        )
+        deskewed_chunks.append(cp.asnumpy(deskewed_data_gpu))
+        del deskewed_data_gpu
+
+    # concatenate arrays in reverse order
+    # identical to cpu deskew using ndi.affine_transform
+    deskewed_data = np.concatenate(deskewed_chunks[::-1], axis=-2)
+
+    # TODO: average_n_slices
+
+    # TODO: save deskewed data to zarr
+
+    # df_deskew_gaussian_fit, df_deskew_1d_peak_width = analyze_psf(
+    #     zyx_patches=deskewed_beads,
+    #     bead_offsets=offsets,
+    #     scale=voxel_size,
+    # )
+
+    # psf_analysis_path = data_dir / dataset / 'psf_analysis_deskewed'
+    # generate_report(
+    #     psf_analysis_path,
+    #     data_dir,
+    #     dataset,
+    #     deskewed_beads,
+    #     peaks,
+    #     df_deskew_gaussian_fit,
+    #     df_deskew_1d_peak_width,
+    #     voxel_size,
+    #     axis_labels=("Z", "Y", "X"),
+    # )
+
+    # ct = np.cos(settings.ls_angle_deg * np.pi / 180)
+    # Z_shift = 0
+    # if not settings.keep_overhang:
+    #     Z_shift = int(np.floor(Y * ct * settings.px_to_scan_ratio))
+    # matrix = np.array(
+    #     [
+    #         [
+    #             -settings.px_to_scan_ratio * ct,
+    #             0,
+    #             settings.px_to_scan_ratio,
+    #             Z_shift,
+    #         ],
+    #         [-1, 0, 0, Y - 1],
+    #         [0, -1, 0, X - 1],
+    #     ]
+    # )
+
+    # deskewed_data = deskew_data(
+    #     zyx_data,
+    #     settings.ls_angle_deg,
+    #     settings.px_to_scan_ratio,
+    #     settings.keep_overhang,
+    #     settings.average_n_slices,
+    # )
+
+    # # Create a zarr store
+    # transform = TransformationMeta(
+    #     type="scale",
+    #     scale=2 * (1,) + voxel_size,
+    # )
+    # output_path = data_dir / (dataset + '_deskewed.zarr')
+
+    # with open_ome_zarr(output_path, layout="hcs", mode="w", channel_names=channel_names) as output_dataset:
+    #     pos = dataset.create_position('0', '0', '0')
+    #     pos.create_image(
+    #         name="0",
+    #         data=deskewed_data,
+    #         chunks=(1, 1) + deskewed_shape,  # may be bigger than 500 MB
+    #         transform=[transform],
+    #     )
 # %%

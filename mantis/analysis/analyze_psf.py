@@ -1,5 +1,9 @@
 import datetime
+import pickle
+import shutil
+import webbrowser
 
+from pathlib import Path
 from typing import List
 
 import markdown
@@ -16,7 +20,126 @@ from scipy.signal import peak_widths
 from skimage.feature import peak_local_max
 
 
-def analyze_psf(zyx_data: ArrayLike, points: ArrayLike, scale: tuple):
+def _make_plots(
+    output_path: Path,
+    beads: List[ArrayLike],
+    df_gaussian_fit: pd.DataFrame,
+    df_1d_peak_width: pd.DataFrame,
+    scale: tuple,
+    axis_labels: tuple,
+    raw: bool = False,
+):
+    plots_dir = output_path / 'plots'
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    random_bead_number = sorted(np.random.choice(len(beads), 3))
+
+    bead_psf_slices_paths = plot_psf_slices(
+        plots_dir,
+        [beads[i] for i in random_bead_number],
+        scale,
+        axis_labels,
+        random_bead_number,
+    )
+
+    if raw:
+        plot_data_x = [df_1d_peak_width[col].values for col in ('x_mu', 'y_mu', 'z_mu')]
+        plot_data_y = [
+            df_1d_peak_width[col].values for col in ('1d_x_fwhm', '1d_y_fwhm', '1d_z_fwhm')
+        ]
+    else:
+        plot_data_x = [df_gaussian_fit[col].values for col in ('x_mu', 'y_mu', 'z_mu')]
+        plot_data_y = [
+            df_gaussian_fit[col].values for col in ('zyx_x_fwhm', 'zyx_y_fwhm', 'zyx_z_fwhm')
+        ]
+
+    fwhm_vs_acq_axes_paths = plot_fwhm_vs_acq_axes(
+        plots_dir,
+        *plot_data_x,
+        *plot_data_y,
+        axis_labels,
+    )
+
+    psf_amp_paths = plot_psf_amp(
+        plots_dir,
+        df_gaussian_fit['x_mu'].values,
+        df_gaussian_fit['y_mu'].values,
+        df_gaussian_fit['z_mu'].values,
+        df_gaussian_fit['zyx_amp'].values,
+        axis_labels,
+    )
+
+    return (bead_psf_slices_paths, fwhm_vs_acq_axes_paths, psf_amp_paths)
+
+
+def generate_report(
+    output_path: Path,
+    data_dir: Path,
+    dataset: str,
+    beads: List[ArrayLike],
+    peaks: ArrayLike,
+    df_gaussian_fit: pd.DataFrame,
+    df_1d_peak_width: pd.DataFrame,
+    scale: tuple,
+    axis_labels: tuple,
+):
+    output_path.mkdir(exist_ok=True)
+
+    num_beads = len(beads)
+    num_successful = len(df_gaussian_fit)
+    num_failed = num_beads - num_successful
+
+    # make plots
+    (bead_psf_slices_paths, fwhm_vs_acq_axes_paths, psf_amp_paths) = _make_plots(
+        output_path, beads, df_gaussian_fit, df_1d_peak_width, scale, axis_labels, raw=False
+    )
+
+    # calculate statistics
+    fwhm_3d_mean = [
+        df_gaussian_fit[col].mean() for col in ('zyx_z_fwhm', 'zyx_y_fwhm', 'zyx_x_fwhm')
+    ]
+    fwhm_3d_std = [
+        df_gaussian_fit[col].std() for col in ('zyx_z_fwhm', 'zyx_y_fwhm', 'zyx_x_fwhm')
+    ]
+    fwhm_pc_mean = [
+        df_gaussian_fit[col].mean() for col in ('zyx_pc3_fwhm', 'zyx_pc2_fwhm', 'zyx_pc1_fwhm')
+    ]
+    fwhm_1d_mean = df_1d_peak_width.mean()
+    fwhm_1d_std = df_1d_peak_width.std()
+
+    # generate html report
+    html_report = _generate_html(
+        dataset,
+        data_dir,
+        scale,
+        (num_beads, num_successful, num_failed),
+        fwhm_1d_mean,
+        fwhm_1d_std,
+        fwhm_3d_mean,
+        fwhm_3d_std,
+        fwhm_pc_mean,
+        bead_psf_slices_paths,
+        fwhm_vs_acq_axes_paths,
+        psf_amp_paths,
+        axis_labels,
+    )
+
+    # save html report and other results
+    with open(output_path / 'peaks.pkl', 'wb') as file:
+        pickle.dump(peaks, file)
+
+    df_gaussian_fit.to_csv(output_path / 'psf_gaussian_fit.csv', index=False)
+    df_1d_peak_width.to_csv(output_path / 'psf_1d_peak_width.csv', index=False)
+
+    shutil.copy('github-markdown.css', output_path)
+    html_file_path = output_path / ('psf_analysis_report.html')
+    with open(html_file_path, 'w') as file:
+        file.write(html_report)
+
+    # display html report
+    webbrowser.open('file://' + str(html_file_path))
+
+
+def extract_beads(zyx_data: ArrayLike, points: ArrayLike, scale: tuple):
     patch_size = (scale[0] * 15, scale[1] * 18, scale[2] * 18)
 
     # extract bead patches
@@ -25,11 +148,18 @@ def analyze_psf(zyx_data: ArrayLike, points: ArrayLike, scale: tuple):
         patch_size=patch_size,
     )
     beads = bead_extractor.extract_beads(points=points)
+    # remove bad beads
+    beads = [bead for bead in beads if bead.data.size > 0]
     beads_data = [bead.data for bead in beads]
+    bead_offset = [bead.offset for bead in beads]
 
-    # analyze bead patches
+    return beads_data, bead_offset
+
+
+def analyze_psf(zyx_patches: List[ArrayLike], bead_offsets: List[tuple], scale: tuple):
     results = []
-    for bead in beads:
+    for patch, offset in zip(zyx_patches, bead_offsets):
+        bead = Calibrated3DImage(data=patch.astype(np.uint16), spacing=scale, offset=offset)
         psf = PSF(image=bead)
         try:
             psf.analyze()
@@ -39,14 +169,14 @@ def analyze_psf(zyx_data: ArrayLike, points: ArrayLike, scale: tuple):
         results.append(summary_dict)
 
     df_gaussian_fit = pd.DataFrame.from_records(results)
+    bead_offsets = np.asarray(bead_offsets)
 
-    bead_offsets = np.asarray([bead.offset for bead in beads])
     df_gaussian_fit['z_mu'] += bead_offsets[:, 0] * scale[0]
     df_gaussian_fit['y_mu'] += bead_offsets[:, 1] * scale[1]
     df_gaussian_fit['x_mu'] += bead_offsets[:, 2] * scale[2]
 
     df_1d_peak_width = pd.DataFrame(
-        [calculate_peak_widths(bead, scale) for bead in beads_data],
+        [calculate_peak_widths(zyx_patch, scale) for zyx_patch in zyx_patches],
         columns=(f'1d_{i}_fwhm' for i in ('z', 'y', 'x')),
     )
     df_1d_peak_width = pd.concat(
@@ -59,7 +189,7 @@ def analyze_psf(zyx_data: ArrayLike, points: ArrayLike, scale: tuple):
         ~(df_1d_peak_width[['1d_z_fwhm', '1d_y_fwhm', '1d_x_fwhm']] == 0).any(axis=1)
     ]
 
-    return beads_data, df_gaussian_fit, df_1d_peak_width
+    return df_gaussian_fit, df_1d_peak_width
 
 
 def calculate_peak_widths(zyx_data: ArrayLike, zyx_scale: tuple):
@@ -188,7 +318,7 @@ def plot_psf_amp(plots_dir: str, x, y, z, amp, axis_labels: tuple):
     return psf_amp_xy_path, psf_amp_z_path
 
 
-def generate_html_report(
+def _generate_html(
     dataset_name: str,
     data_path: str,
     dataset_scale: tuple,
