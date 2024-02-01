@@ -10,14 +10,14 @@ import markdown
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import torch
+import torch.nn.functional as F
 
 from napari_psf_analysis.psf_analysis.extract.BeadExtractor import BeadExtractor
 from napari_psf_analysis.psf_analysis.image import Calibrated3DImage
 from napari_psf_analysis.psf_analysis.psf import PSF
 from numpy.typing import ArrayLike
-from scipy.ndimage import uniform_filter
 from scipy.signal import peak_widths
-from skimage.feature import peak_local_max
 
 
 def _make_plots(
@@ -419,29 +419,94 @@ def _generate_html(
 
 
 def detect_peaks(
-    zyx_data,
-    raw=False,
-    min_distance=25,
-    threshold_abs=200,
-    num_peaks=1000,
-    exclude_border=(3, 10, 10),
+    zyx_data: np.ndarray,
+    block_size: int | tuple[int, int, int] = (128, 64, 64),
+    min_distance: int = 40,
+    threshold_abs: float = 200.0,
+    max_num_peaks: int = 2000,
+    exclude_border: tuple[int, int, int] | None = None,
+    blur_kernel_size: int = 3,
+    device: str = "cpu",
 ):
-    # helps speed up peak detection
-    if raw:
-        zyx_data = np.swapaxes(zyx_data, 0, 1)
+    """Detect peaks with local maxima.
+    This is an approximate torch implementation of `skimage.feature.peak_local_max`.
 
-    # runs in about 10 seconds, sensitive to parameters
-    # finds ~310 peaks
-    peaks = peak_local_max(
-        uniform_filter(zyx_data, size=3),  # helps remove hot pixels, adds ~3s
-        min_distance=min_distance,
-        threshold_abs=threshold_abs,
-        num_peaks=num_peaks,  # limit to top 1000 peaks
-        exclude_border=exclude_border,  # in zyx
+    Parameters
+    ----------
+    zyx_data : np.ndarray
+        3D image data
+    block_size : int | tuple[int, int, int], optional
+        block size to find approximate local maxima, by default (128, 64, 64)
+    min_distance : int, optional
+        minimum distance between detections,
+        this is calculated assuming a Cartesian coordinate system,
+        needs to be smaller than block size for efficiency,
+        by default 40
+    threshold_abs : float, optional
+        lower bound of detected peak intensity, by default 200.0
+    max_num_peaks : int, optional
+        max number of candidate detections to consider, by default 2000
+    exclude_border : tuple[int, int, int] | None, optional
+        width of borders to exclude, by default None
+    blur_kernel_size : int, optional
+        uniform kernel size to blur the image before detection
+        to avoid hot pixels, by default 3
+    device : str, optional
+        compute device string for torch,
+        e.g. "cpu" (slow), "cuda" (single GPU) or "cuda:0" (0th GPU among multiple),
+        by default "cpu"
+
+    Returns
+    -------
+    np.ndarray
+        3D coordinates of detected peaks (N, 3)
+
+    """
+    zyx_image = torch.from_numpy(zyx_data)
+    if device != "cpu":
+        zyx_image = zyx_image.to(torch.float16).to(device)
+
+    if blur_kernel_size % 2 != 1:
+        raise ValueError(f"kernel_size={blur_kernel_size} must be an odd number")
+    zyx_image = F.avg_pool3d(
+        input=zyx_image[None, None],
+        kernel_size=blur_kernel_size,
+        stride=1,
+        padding=blur_kernel_size // 2,
+        count_include_pad=False,
+    )[0, 0]
+
+    input_shape = zyx_image.shape
+    image = zyx_image[None, None]
+    peak_value, peak_idx = (
+        p.flatten().clone()
+        for p in F.max_pool3d(
+            image,
+            kernel_size=block_size,
+            stride=block_size,
+            padding=0,
+            return_indices=True,
+        )
     )
-
-    if raw:
-        zyx_data = np.swapaxes(zyx_data, 0, 1)
-        peaks = peaks[:, (1, 0, 2)]
-
-    return peaks
+    peak_value, sort_mask = peak_value.topk(min(max_num_peaks, peak_value.nelement()))
+    peak_idx = peak_idx[sort_mask]
+    abs_mask = peak_value > threshold_abs
+    peak_value = peak_value[abs_mask]
+    peak_idx = peak_idx[abs_mask]
+    # requires torch>=2.2
+    coords = torch.stack(torch.unravel_index(peak_idx, input_shape), -1)
+    fcoords = coords.float()
+    dist = torch.cdist(fcoords, fcoords)
+    dist_mask = (dist < min_distance).sum(0) < 2
+    match exclude_border:
+        case None:
+            pass
+        case (int(), int(), int()):
+            for dim, size in enumerate(exclude_border):
+                border_mask = (size < coords[:, dim]) & (
+                    coords[:, dim] < input_shape[dim] - size
+                )
+                dist_mask &= border_mask
+        case _:
+            raise ValueError(f"invalud argument exclude_border={exclude_border}")
+    return coords[dist_mask].cpu().numpy()

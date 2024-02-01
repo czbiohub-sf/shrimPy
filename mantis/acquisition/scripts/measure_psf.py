@@ -4,6 +4,7 @@ from pathlib import Path
 import cupy as cp
 import napari
 import numpy as np
+import torch
 
 from cupyx.scipy.ndimage import affine_transform
 
@@ -54,7 +55,14 @@ raw = False
 if axis_labels == ("SCAN", "TILT", "COVERSLIP"):
     raw = True
 
-peaks = detect_peaks(zyx_data, raw=raw)
+
+peaks = detect_peaks(
+    zyx_data,
+    block_size=(128, 64, 64),
+    min_distance=32,
+    threshold_abs=200.0,
+    device="cuda" if torch.cuda.is_available() else "cpu",
+)
 print(f'Number of peaks detected: {len(peaks)}')
 
 # %% Visualize in napari
