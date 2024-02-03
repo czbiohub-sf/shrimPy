@@ -7,8 +7,7 @@ import numpy as np
 import torch
 
 from cupyx.scipy.ndimage import affine_transform
-
-# from iohub.ngff_meta import TransformationMeta
+from iohub.ngff_meta import TransformationMeta
 from iohub.reader import open_ome_zarr, read_micromanager
 
 from mantis.analysis.AnalysisSettings import DeskewSettings
@@ -18,7 +17,8 @@ from mantis.analysis.analyze_psf import (
     extract_beads,
     generate_report,
 )
-from mantis.analysis.deskew import (  # _average_n_slices,
+from mantis.analysis.deskew import (
+    _average_n_slices,
     _get_transform_matrix,
     get_deskewed_data_shape,
 )
@@ -38,22 +38,21 @@ data_path = data_dir / dataset
 if str(data_path).endswith('.zarr'):
     ds = open_ome_zarr(data_path / '0/0/0')
     zyx_data = ds.data[0, 0]
-    # channel_names = ds.channel_names
+    channel_names = ds.channel_names
 else:
     ds = read_micromanager(str(data_path))
     zyx_data = ds.get_array(0)[0, 0]
-    # channel_names = ds.channel_names
+    channel_names = ds.channel_names
 
 scale = (0.1565, 0.116, 0.116)  # in um
 axis_labels = ("SCAN", "TILT", "COVERSLIP")
 
-deskew = True
-
-# %% Detect peaks
-
 raw = False
 if axis_labels == ("SCAN", "TILT", "COVERSLIP"):
     raw = True
+deskew = True
+
+# %% Detect peaks
 
 
 peaks = detect_peaks(
@@ -88,7 +87,7 @@ df_gaussian_fit, df_1d_peak_width = analyze_psf(
 
 # %% Generate HTML report
 
-psf_analysis_path = data_dir / dataset / 'psf_analysis'
+psf_analysis_path = data_dir / (dataset + '_psf_analysis')
 generate_report(
     psf_analysis_path,
     data_dir,
@@ -101,9 +100,10 @@ generate_report(
     axis_labels,
 )
 
-# %% Deskew data
+# %% Deskew data and analyze
 
 if raw and deskew:
+    # deskew
     num_chunks = 2
     chunked_data = np.split(zyx_data, num_chunks, axis=-1)
     chunk_shape = chunked_data[0].shape
@@ -117,13 +117,11 @@ if raw and deskew:
     )
     # T, C, Z, Y, X = (1, 1) + chunk_shape
 
-    deskewed_shape, voxel_size = get_deskewed_data_shape(
+    deskewed_shape, _ = get_deskewed_data_shape(
         chunk_shape,
         settings.ls_angle_deg,
         settings.px_to_scan_ratio,
         settings.keep_overhang,
-        settings.average_n_slices,
-        settings.pixel_size_um,
     )
 
     matrix = _get_transform_matrix(
@@ -150,67 +148,64 @@ if raw and deskew:
     # identical to cpu deskew using ndi.affine_transform
     deskewed_data = np.concatenate(deskewed_chunks[::-1], axis=-2)
 
-    # TODO: average_n_slices
+    averaged_deskewed_data = _average_n_slices(
+        deskewed_data, average_window_width=settings.average_n_slices
+    )
 
-    # TODO: save deskewed data to zarr
+    deskewed_shape, voxel_size = get_deskewed_data_shape(
+        zyx_data.shape,
+        settings.ls_angle_deg,
+        settings.px_to_scan_ratio,
+        settings.keep_overhang,
+        settings.average_n_slices,
+        settings.pixel_size_um,
+    )
 
-    # df_deskew_gaussian_fit, df_deskew_1d_peak_width = analyze_psf(
-    #     zyx_patches=deskewed_beads,
-    #     bead_offsets=offsets,
-    #     scale=voxel_size,
-    # )
+    # detect peaks again :(
+    deskewed_peaks = detect_peaks(averaged_deskewed_data, raw=False)
+    print(f'Number of peaks detected: {len(peaks)}')
 
-    # psf_analysis_path = data_dir / dataset / 'psf_analysis_deskewed'
-    # generate_report(
-    #     psf_analysis_path,
-    #     data_dir,
-    #     dataset,
-    #     deskewed_beads,
-    #     peaks,
-    #     df_deskew_gaussian_fit,
-    #     df_deskew_1d_peak_width,
-    #     voxel_size,
-    #     axis_labels=("Z", "Y", "X"),
-    # )
+    deskewed_beads, deskewed_offsets = extract_beads(
+        zyx_data=averaged_deskewed_data,
+        points=deskewed_peaks,
+        scale=scale,
+    )
 
-    # ct = np.cos(settings.ls_angle_deg * np.pi / 180)
-    # Z_shift = 0
-    # if not settings.keep_overhang:
-    #     Z_shift = int(np.floor(Y * ct * settings.px_to_scan_ratio))
-    # matrix = np.array(
-    #     [
-    #         [
-    #             -settings.px_to_scan_ratio * ct,
-    #             0,
-    #             settings.px_to_scan_ratio,
-    #             Z_shift,
-    #         ],
-    #         [-1, 0, 0, Y - 1],
-    #         [0, -1, 0, X - 1],
-    #     ]
-    # )
+    df_deskewed_gaussian_fit, df_deskewed_1d_peak_width = analyze_psf(
+        zyx_patches=deskewed_beads,
+        bead_offsets=deskewed_offsets,
+        scale=voxel_size,
+    )
 
-    # deskewed_data = deskew_data(
-    #     zyx_data,
-    #     settings.ls_angle_deg,
-    #     settings.px_to_scan_ratio,
-    #     settings.keep_overhang,
-    #     settings.average_n_slices,
-    # )
+    output_zarr_path = data_dir / (dataset + '_deskewed.zarr')
+    report_path = data_dir / (dataset + '_deskewed_psf_analysis')
+    generate_report(
+        report_path,
+        output_zarr_path,
+        dataset,
+        deskewed_beads,
+        deskewed_peaks,
+        df_deskewed_gaussian_fit,
+        df_deskewed_1d_peak_width,
+        voxel_size,
+        ('Z', 'Y', 'X'),
+    )
 
-    # # Create a zarr store
-    # transform = TransformationMeta(
-    #     type="scale",
-    #     scale=2 * (1,) + voxel_size,
-    # )
-    # output_path = data_dir / (dataset + '_deskewed.zarr')
+    # Save to zarr store
+    transform = TransformationMeta(
+        type="scale",
+        scale=2 * (1,) + voxel_size,
+    )
 
-    # with open_ome_zarr(output_path, layout="hcs", mode="w", channel_names=channel_names) as output_dataset:
-    #     pos = dataset.create_position('0', '0', '0')
-    #     pos.create_image(
-    #         name="0",
-    #         data=deskewed_data,
-    #         chunks=(1, 1) + deskewed_shape,  # may be bigger than 500 MB
-    #         transform=[transform],
-    #     )
+    with open_ome_zarr(
+        output_zarr_path, layout="hcs", mode="w", channel_names=channel_names
+    ) as output_dataset:
+        pos = output_dataset.create_position('0', '0', '0')
+        pos.create_image(
+            name="0",
+            data=averaged_deskewed_data[None, None, ...],
+            chunks=(1, 1, 50) + deskewed_shape[1:],  # may be bigger than 500 MB
+            transform=[transform],
+        )
+
 # %%

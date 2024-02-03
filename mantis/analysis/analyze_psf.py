@@ -88,9 +88,13 @@ def generate_report(
     num_successful = len(df_gaussian_fit)
     num_failed = num_beads - num_successful
 
+    raw = False
+    if axis_labels == ("SCAN", "TILT", "COVERSLIP"):
+        raw = True
+
     # make plots
     (bead_psf_slices_paths, fwhm_vs_acq_axes_paths, psf_amp_paths) = _make_plots(
-        output_path, beads, df_gaussian_fit, df_1d_peak_width, scale, axis_labels, raw=False
+        output_path, beads, df_gaussian_fit, df_1d_peak_width, scale, axis_labels, raw=raw
     )
 
     # calculate statistics
