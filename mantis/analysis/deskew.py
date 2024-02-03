@@ -2,6 +2,33 @@ import numpy as np
 import scipy
 
 
+def _deskew_matrix(px_to_scan_ratio, ct):
+    """3x3 deskew matrix, relating sampling coordinates to deskewed coordinates
+
+    Parameters
+    ----------
+    px_to_scan_ratio : float
+        Ratio of the pixel size to light sheet scan step
+    ct : float
+        cos(theta), where theta is the light-sheet tilt angle
+
+    Returns
+    -------
+    3x3 array
+    """
+    return np.array(
+        [
+            [
+                -px_to_scan_ratio * ct,
+                0,
+                px_to_scan_ratio,
+            ],
+            [-1, 0, 0],
+            [0, -1, 0],
+        ]
+    )
+
+
 def _average_n_slices(data, average_window_width=1):
     """Average an array over its first axis
 
@@ -162,18 +189,10 @@ def deskew_data(
     if not keep_overhang:
         Z_shift = int(np.floor(Y * ct * px_to_scan_ratio))
 
-    matrix = np.array(
-        [
-            [
-                -px_to_scan_ratio * ct,
-                0,
-                px_to_scan_ratio,
-                Z_shift,
-            ],
-            [-1, 0, 0, Y - 1],
-            [0, -1, 0, X - 1],
-        ]
-    )
+    deskew_matrix = _deskew_matrix(px_to_scan_ratio, ct)
+    translation = np.array([[Z_shift], [Y - 1], [X - 1]])
+    matrix = np.concatenate((deskew_matrix, translation), axis=1)
+
     output_shape, _ = get_deskewed_data_shape(
         raw_data.shape, ls_angle_deg, px_to_scan_ratio, keep_overhang
     )
