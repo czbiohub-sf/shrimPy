@@ -1,4 +1,6 @@
 # %%
+import time
+
 from pathlib import Path
 
 import cupy as cp
@@ -25,12 +27,15 @@ from mantis.analysis.deskew import (
 
 # %% Load data - swap with data acquisition block
 
-data_dir = Path(r'Z:\2023_03_30_beads')
+data_dir = Path(r'E:\temp_2023_03_30_beads')
 dataset = 'beads_ip_0.74_1'
+
+# data_dir = Path(r'E:\temp_2022_12_22_LS_after_SL2')
+# dataset = 'epi_beads_100nm_fl_mount_after_SL2_1'
+
 data_path = data_dir / dataset
 
-# data_dir = Path(r'Z:\2022_12_22_LS_after_SL2')
-# dataset = 'epi_beads_100nm_fl_mount_after_SL2_1'
+
 # zyx_data = tifffile.imread(data_dir / dataset / 'LS_beads_100nm_fl_mount_after_SL2_1_MMStack_Pos0.ome.tif')
 # scale = (0.250, 0.069, 0.069)  # in um
 # axis_labels = ("Z", "Y", "X")
@@ -50,19 +55,31 @@ axis_labels = ("SCAN", "TILT", "COVERSLIP")
 raw = False
 if axis_labels == ("SCAN", "TILT", "COVERSLIP"):
     raw = True
-deskew = True
+deskew = False
 
 # %% Detect peaks
 
+if raw:
+    zyx_data = np.swapaxes(zyx_data, 0, 1)
 
+t1 = time.time()
 peaks = detect_peaks(
     zyx_data,
-    block_size=(128, 64, 64),
-    min_distance=32,
+    block_size=(8, 8, 8),
+    blur_kernel_size=3,
+    min_distance=20,  # may double count peaks`
     threshold_abs=200.0,
+    max_num_peaks=500,
+    exclude_border=(5, 5, 5),
     device="cuda" if torch.cuda.is_available() else "cpu",
 )
+t2 = time.time()
 print(f'Number of peaks detected: {len(peaks)}')
+print(f'Time to detect peaks: {t2-t1}')
+
+if raw:
+    zyx_data = np.swapaxes(zyx_data, 0, 1)
+    peaks = peaks[:, (1, 0, 2)]
 
 # %% Visualize in napari
 
@@ -73,6 +90,7 @@ viewer.add_points(peaks, name='peaks local max', size=12, symbol='ring', edge_co
 
 # %% Extract and analyze bead patches
 
+t1 = time.time()
 beads, offsets = extract_beads(
     zyx_data=zyx_data,
     points=peaks,
@@ -84,6 +102,8 @@ df_gaussian_fit, df_1d_peak_width = analyze_psf(
     bead_offsets=offsets,
     scale=scale,
 )
+t2 = time.time()
+print(f'Time to analyze PSFs: {t2-t1}')
 
 # %% Generate HTML report
 
