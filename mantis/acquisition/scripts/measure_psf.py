@@ -8,6 +8,7 @@ import cupy as cp
 import napari
 import numpy as np
 import torch
+import warnings
 
 from cupyx.scipy.ndimage import affine_transform
 from iohub.ngff_meta import TransformationMeta
@@ -122,11 +123,13 @@ beads, offsets = extract_beads(
     scale=scale,
 )
 
-df_gaussian_fit, df_1d_peak_width = analyze_psf(
-    zyx_patches=beads,
-    bead_offsets=offsets,
-    scale=scale,
-)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    df_gaussian_fit, df_1d_peak_width = analyze_psf(
+        zyx_patches=beads,
+        bead_offsets=offsets,
+        scale=scale,
+    )
 t2 = time.time()
 print(f'Time to analyze PSFs: {t2-t1}')
 
@@ -235,11 +238,13 @@ if raw and deskew:
     )
 
     t1 = time.time()
-    df_deskewed_gaussian_fit, df_deskewed_1d_peak_width = analyze_psf(
-        zyx_patches=deskewed_beads,
-        bead_offsets=deskewed_offsets,
-        scale=voxel_size,
-    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        df_deskewed_gaussian_fit, df_deskewed_1d_peak_width = analyze_psf(
+            zyx_patches=deskewed_beads,
+            bead_offsets=deskewed_offsets,
+            scale=voxel_size,
+        )
     t2 = time.time()
     print(f'Time to analyze deskewed PSFs: {t2-t1: .2f} seconds')
 
