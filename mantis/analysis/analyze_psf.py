@@ -522,7 +522,6 @@ def detect_peaks(
         peak_idx = peak_idx[abs_mask]
         num_rejected_threshold_abs = sum(~abs_mask)
 
-
     # remove artifacts of multiple peaks detected at block boundaries
     # requires torch>=2.2
     coords = torch.stack(torch.unravel_index(peak_idx, zyx_shape), -1)

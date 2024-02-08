@@ -1,4 +1,5 @@
 # %%
+import gc
 import time
 
 from pathlib import Path
@@ -7,7 +8,6 @@ import cupy as cp
 import napari
 import numpy as np
 import torch
-import gc
 
 from cupyx.scipy.ndimage import affine_transform
 from iohub.ngff_meta import TransformationMeta
@@ -99,7 +99,8 @@ peaks = detect_peaks(
     **ls_bead_detection_settings,
     verbose=True,
 )
-gc.collect(); torch.cuda.empty_cache()
+gc.collect()
+torch.cuda.empty_cache()
 t2 = time.time()
 print(f'Time to detect peaks: {t2-t1}')
 
@@ -108,7 +109,9 @@ print(f'Time to detect peaks: {t2-t1}')
 if view:
     viewer = napari.Viewer()
     viewer.add_image(zyx_data)
-    viewer.add_points(peaks, name='peaks local max', size=12, symbol='ring', edge_color='yellow')
+    viewer.add_points(
+        peaks, name='peaks local max', size=12, symbol='ring', edge_color='yellow'
+    )
 
 # %% Extract and analyze bead patches
 
@@ -213,14 +216,17 @@ if raw and deskew:
         **deskew_bead_detection_settings,
         verbose=True,
     )
-    gc.collect(); torch.cuda.empty_cache()
+    gc.collect()
+    torch.cuda.empty_cache()
     t2 = time.time()
     print(f'Time to detect deskewed peaks: {t2-t1: .2f} seconds')
 
     if view:
         viewer2 = napari.Viewer()
         viewer2.add_image(averaged_deskewed_data)
-        viewer2.add_points(deskewed_peaks, name='peaks local max', size=12, symbol='ring', edge_color='yellow')
+        viewer2.add_points(
+            deskewed_peaks, name='peaks local max', size=12, symbol='ring', edge_color='yellow'
+        )
 
     deskewed_beads, deskewed_offsets = extract_beads(
         zyx_data=averaged_deskewed_data,
