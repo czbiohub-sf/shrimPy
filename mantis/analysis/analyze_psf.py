@@ -107,8 +107,8 @@ def generate_report(
     fwhm_pc_mean = [
         df_gaussian_fit[col].mean() for col in ('zyx_pc3_fwhm', 'zyx_pc2_fwhm', 'zyx_pc1_fwhm')
     ]
-    fwhm_1d_mean = df_1d_peak_width.mean()
-    fwhm_1d_std = df_1d_peak_width.std()
+    fwhm_1d_mean = [df_1d_peak_width[col].mean() for col in ('1d_z_fwhm', '1d_y_fwhm', '1d_x_fwhm')]
+    fwhm_1d_std = [df_1d_peak_width[col].std() for col in ('1d_z_fwhm', '1d_y_fwhm', '1d_x_fwhm')]
 
     # generate html report
     html_report = _generate_html(
@@ -353,7 +353,7 @@ def _generate_html(
 
 ### Number of beads
 
-* Defected: {num_beads_total_good_bad[0]}
+* Detected: {num_beads_total_good_bad[0]}
 * Analyzed: {num_beads_total_good_bad[1]}
 * Skipped: {num_beads_total_good_bad[2]}
 
@@ -425,12 +425,14 @@ def _generate_html(
 def detect_peaks(
     zyx_data: np.ndarray,
     block_size: int | tuple[int, int, int] = (8, 8, 8),
+    nms_distance: int = 3,
     min_distance: int = 40,
     threshold_abs: float = 200.0,
     max_num_peaks: int = 500,
     exclude_border: tuple[int, int, int] | None = None,
     blur_kernel_size: int = 3,
     device: str = "cpu",
+    verbose: bool = False,
 ):
     """Detect peaks with local maxima.
     This is an approximate torch implementation of `skimage.feature.peak_local_max`.
@@ -445,10 +447,12 @@ def detect_peaks(
         3D image data
     block_size : int | tuple[int, int, int], optional
         block size to find approximate local maxima, by default (8, 8, 8)
+    nms_distance : int, optional
+        non-maximum suppression distance, by default 3
+        distance is calculated assuming a Cartesian coordinate system
     min_distance : int, optional
         minimum distance between detections,
-        this is calculated assuming a Cartesian coordinate system,
-        needs to be smaller than block size for efficiency,
+        distance needs to be smaller than block size for efficiency,
         by default 40
     threshold_abs : float, optional
         lower bound of detected peak intensity, by default 200.0
@@ -463,6 +467,8 @@ def detect_peaks(
         compute device string for torch,
         e.g. "cpu" (slow), "cuda" (single GPU) or "cuda:0" (0th GPU among multiple),
         by default "cpu"
+    verbose : bool, optional
+        print number of peaks detected and rejected, by default False
 
     Returns
     -------
@@ -480,7 +486,8 @@ def detect_peaks(
         if blur_kernel_size % 2 != 1:
             raise ValueError(f"kernel_size={blur_kernel_size} must be an odd number")
         # smooth image
-        zyx_image = F.avg_pool3d(
+        # input and output variables need to be different for proper memory clearance
+        smooth_image = F.avg_pool3d(
             input=zyx_image,
             kernel_size=blur_kernel_size,
             stride=1,
@@ -492,24 +499,29 @@ def detect_peaks(
     peak_value, peak_idx = (
         p.flatten().clone()
         for p in F.max_pool3d(
-            zyx_image,
+            smooth_image,
             kernel_size=block_size,
             stride=block_size,
-            padding=0,  # peaks outsize of (zyx_shape % block_size) are not detected
+            padding=(block_size[0] // 2, block_size[1] // 2, block_size[2] // 2),
             return_indices=True,
         )
     )
+    num_peaks = len(peak_idx)
 
     # select only top max_num_peaks brightest peaks
     # peak_value (and peak_idx) are now sorted by brightness
     peak_value, sort_mask = peak_value.topk(min(max_num_peaks, peak_value.nelement()))
     peak_idx = peak_idx[sort_mask]
+    num_rejected_max_num_peaks = num_peaks - len(sort_mask)
 
     # select only peaks above intensity threshold
+    num_rejected_threshold_abs = 0
     if threshold_abs:
         abs_mask = peak_value > threshold_abs
         peak_value = peak_value[abs_mask]
         peak_idx = peak_idx[abs_mask]
+        num_rejected_threshold_abs = sum(~abs_mask)
+
 
     # remove artifacts of multiple peaks detected at block boundaries
     # requires torch>=2.2
@@ -518,19 +530,22 @@ def detect_peaks(
     dist = torch.cdist(fcoords, fcoords)
     dist_mask = torch.ones(len(coords), dtype=bool, device=device)
 
-    NEARBY_DIST = 3  # in pixels
-    nearby_peaks = torch.nonzero(torch.triu(dist < NEARBY_DIST, diagonal=1))
+    nearby_peaks = torch.nonzero(torch.triu(dist < nms_distance, diagonal=1))
     dist_mask[nearby_peaks[:, 1]] = False  # peak in second column is dimmer
+    num_rejected_nms_distance = sum(~dist_mask)
 
     # remove peaks withing min_distance of each other
+    num_rejected_min_distance = 0
     if min_distance:
         _dist_mask = dist < min_distance
         # exclude distances from nearby peaks rejected above
         _dist_mask[nearby_peaks[:, 0], nearby_peaks[:, 1]] = False
         dist_mask &= _dist_mask.sum(1) < 2  # Ziwen magic
+        num_rejected_min_distance = sum(~dist_mask) - num_rejected_nms_distance
     coords = coords[dist_mask]
 
     # remove peaks near the border
+    num_rejected_exclude_border = 0
     match exclude_border:
         case None:
             pass
@@ -540,7 +555,19 @@ def detect_peaks(
                     coords[:, dim] < zyx_shape[dim] - size
                 )
                 coords = coords[border_mask]
+                num_rejected_exclude_border += sum(~border_mask)
         case _:
             raise ValueError(f"invalid argument exclude_border={exclude_border}")
 
+    num_peaks_returned = len(coords)
+    if verbose:
+        print(f'Number of peaks detected: {num_peaks}')
+        print(f'Number of peaks rejected by max_num_peaks: {num_rejected_max_num_peaks}')
+        print(f'Number of peaks rejected by threshold_abs: {num_rejected_threshold_abs}')
+        print(f'Number of peaks rejected by nms_distance: {num_rejected_nms_distance}')
+        print(f'Number of peaks rejected by min_distance: {num_rejected_min_distance}')
+        print(f'Number of peaks rejected by exclude_border: {num_rejected_exclude_border}')
+        print(f'Number of peaks returned: {num_peaks_returned}')
+
+    del zyx_image, smooth_image
     return coords.cpu().numpy()

@@ -7,6 +7,7 @@ import cupy as cp
 import napari
 import numpy as np
 import torch
+import gc
 
 from cupyx.scipy.ndimage import affine_transform
 from iohub.ngff_meta import TransformationMeta
@@ -25,16 +26,53 @@ from mantis.analysis.deskew import (
     get_deskewed_data_shape,
 )
 
+epi_bead_detection_settings = {
+    "block_size": (8, 8, 8),
+    "blur_kernel_size": 3,
+    "min_distance": 20,
+    "threshold_abs": 200.0,
+    "max_num_peaks": 500,
+    "exclude_border": (5, 5, 5),
+    "device": "cuda" if torch.cuda.is_available() else "cpu",
+}
+
+ls_bead_detection_settings = {
+    "block_size": (64, 64, 32),
+    "blur_kernel_size": 3,
+    "nms_distance": 32,
+    "min_distance": 50,
+    "threshold_abs": 250.0,
+    "max_num_peaks": 2000,
+    "exclude_border": (5, 10, 5),
+    "device": "cuda" if torch.cuda.is_available() else "cpu",
+}
+
+deskew_bead_detection_settings = {
+    "block_size": (64, 32, 16),
+    "blur_kernel_size": 3,
+    "nms_distance": 10,
+    "min_distance": 50,
+    "threshold_abs": 200.0,
+    "max_num_peaks": 500,
+    "exclude_border": (5, 5, 5),
+    "device": "cuda" if torch.cuda.is_available() else "cpu",
+}
+
 # %% Load data - swap with data acquisition block
+
+deskew = True
+view = False
 
 data_dir = Path(r'E:\temp_2023_03_30_beads')
 dataset = 'beads_ip_0.74_1'
+
+scale = (0.1565, 0.116, 0.116)  # in um
+axis_labels = ("SCAN", "TILT", "COVERSLIP")
 
 # data_dir = Path(r'E:\temp_2022_12_22_LS_after_SL2')
 # dataset = 'epi_beads_100nm_fl_mount_after_SL2_1'
 
 data_path = data_dir / dataset
-
 
 # zyx_data = tifffile.imread(data_dir / dataset / 'LS_beads_100nm_fl_mount_after_SL2_1_MMStack_Pos0.ome.tif')
 # scale = (0.250, 0.069, 0.069)  # in um
@@ -49,44 +87,28 @@ else:
     zyx_data = ds.get_array(0)[0, 0]
     channel_names = ds.channel_names
 
-scale = (0.1565, 0.116, 0.116)  # in um
-axis_labels = ("SCAN", "TILT", "COVERSLIP")
-
 raw = False
 if axis_labels == ("SCAN", "TILT", "COVERSLIP"):
     raw = True
-deskew = False
 
 # %% Detect peaks
-
-if raw:
-    zyx_data = np.swapaxes(zyx_data, 0, 1)
 
 t1 = time.time()
 peaks = detect_peaks(
     zyx_data,
-    block_size=(8, 8, 8),
-    blur_kernel_size=3,
-    min_distance=20,  # may double count peaks`
-    threshold_abs=200.0,
-    max_num_peaks=500,
-    exclude_border=(5, 5, 5),
-    device="cuda" if torch.cuda.is_available() else "cpu",
+    **ls_bead_detection_settings,
+    verbose=True,
 )
+gc.collect(); torch.cuda.empty_cache()
 t2 = time.time()
-print(f'Number of peaks detected: {len(peaks)}')
 print(f'Time to detect peaks: {t2-t1}')
-
-if raw:
-    zyx_data = np.swapaxes(zyx_data, 0, 1)
-    peaks = peaks[:, (1, 0, 2)]
 
 # %% Visualize in napari
 
-viewer = napari.Viewer()
-viewer.add_image(zyx_data)
-
-viewer.add_points(peaks, name='peaks local max', size=12, symbol='ring', edge_color='yellow')
+if view:
+    viewer = napari.Viewer()
+    viewer.add_image(zyx_data)
+    viewer.add_points(peaks, name='peaks local max', size=12, symbol='ring', edge_color='yellow')
 
 # %% Extract and analyze bead patches
 
@@ -135,8 +157,8 @@ if raw and deskew:
         keep_overhang=True,
         average_n_slices=3,
     )
-    # T, C, Z, Y, X = (1, 1) + chunk_shape
 
+    t1 = time.time()
     deskewed_shape, _ = get_deskewed_data_shape(
         chunk_shape,
         settings.ls_angle_deg,
@@ -163,6 +185,7 @@ if raw and deskew:
         )
         deskewed_chunks.append(cp.asnumpy(deskewed_data_gpu))
         del deskewed_data_gpu
+    cp._default_memory_pool.free_all_blocks()
 
     # concatenate arrays in reverse order
     # identical to cpu deskew using ndi.affine_transform
@@ -180,10 +203,24 @@ if raw and deskew:
         settings.average_n_slices,
         settings.pixel_size_um,
     )
+    t2 = time.time()
+    print(f'Time to deskew: {t2-t1: .2f} seconds')
 
     # detect peaks again :(
-    deskewed_peaks = detect_peaks(averaged_deskewed_data, raw=False)
-    print(f'Number of peaks detected: {len(peaks)}')
+    t1 = time.time()
+    deskewed_peaks = detect_peaks(
+        averaged_deskewed_data,
+        **deskew_bead_detection_settings,
+        verbose=True,
+    )
+    gc.collect(); torch.cuda.empty_cache()
+    t2 = time.time()
+    print(f'Time to detect deskewed peaks: {t2-t1: .2f} seconds')
+
+    if view:
+        viewer2 = napari.Viewer()
+        viewer2.add_image(averaged_deskewed_data)
+        viewer2.add_points(deskewed_peaks, name='peaks local max', size=12, symbol='ring', edge_color='yellow')
 
     deskewed_beads, deskewed_offsets = extract_beads(
         zyx_data=averaged_deskewed_data,
@@ -191,11 +228,14 @@ if raw and deskew:
         scale=scale,
     )
 
+    t1 = time.time()
     df_deskewed_gaussian_fit, df_deskewed_1d_peak_width = analyze_psf(
         zyx_patches=deskewed_beads,
         bead_offsets=deskewed_offsets,
         scale=voxel_size,
     )
+    t2 = time.time()
+    print(f'Time to analyze deskewed PSFs: {t2-t1: .2f} seconds')
 
     output_zarr_path = data_dir / (dataset + '_deskewed.zarr')
     report_path = data_dir / (dataset + '_deskewed_psf_analysis')
