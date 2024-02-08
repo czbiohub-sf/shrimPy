@@ -251,19 +251,17 @@ def estimate_xy_stabilization(
 )
 @click.option(
     "--crop-size-xy",
-    "-s",
     nargs=2,
     type=int,
     default=[300, 300],
     help="Crop size in xy. Enter two integers. Default is 300 300.",
 )
 @click.option(
-    "--process-channels-idx",
-    "-p",
-    help="Channel indeces to processes. Default is all channels.",
+    "--stabilization-channel-indices",
+    help="Indices of channels which will be stabilized. Default is all channels.",
     multiple=True,
     type=int,
-    default=[]
+    default=[],
 )
 def estimate_stabilization(
     input_position_dirpaths,
@@ -274,7 +272,7 @@ def estimate_stabilization(
     stabilize_z,
     verbose,
     crop_size_xy,
-    process_channels_idx,
+    stabilization_channel_indices,
 ):
     """
     Estimate the Z and/or XY timelapse stabilization matrices.
@@ -298,22 +296,24 @@ def estimate_stabilization(
     output_dirpath.mkdir(parents=True, exist_ok=True)
 
     # Channel names to process
-    process_channels_names = []
+    stabilization_channel_names = []
     with open_ome_zarr(input_position_dirpaths[0]) as dataset:
         channel_names = dataset.channel_names
-    if len(process_channels_idx) < 1:
-        process_channels_idx = range(len(channel_names))
-        process_channels_names = channel_names
+    if len(stabilization_channel_indices) < 1:
+        stabilization_channel_indices = range(len(channel_names))
+        stabilization_channel_names = channel_names
     else:
         # Make the input a list
-        process_channels_idx = list(process_channels_idx)
-        process_channels_names = []
+        stabilization_channel_indices = list(stabilization_channel_indices)
+        stabilization_channel_names = []
         # Check the channel indeces are valid
-        for c_idx in process_channels_idx:
+        for c_idx in stabilization_channel_indices:
             if c_idx not in range(len(channel_names)):
-                raise ValueError(f"Channel index {c_idx} is not valid. Please provide channel indeces from 0 to {len(channel_names)-1}")
+                raise ValueError(
+                    f"Channel index {c_idx} is not valid. Please provide channel indeces from 0 to {len(channel_names)-1}"
+                )
             else:
-                process_channels_names.append(channel_names[c_idx])
+                stabilization_channel_names.append(channel_names[c_idx])
 
     # Estimate z drift
     if stabilize_z:
@@ -346,7 +346,7 @@ def estimate_stabilization(
                 "The number of translation matrices and z drift matrices must be the same"
             )
         combined_mats = np.array([a @ b for a, b in zip(T_translation_mats, T_z_drift_mats)])
-        stabilization_type = "zyx"
+        stabilization_type = "xyz"
 
     # NOTE: we've checked that one of the two conditions below is true
     elif stabilize_z:
@@ -358,9 +358,9 @@ def estimate_stabilization(
     model = StabilizationSettings(
         stabilization_type=stabilization_type,
         focus_finding_channel=channel_names[channel_index],
-        processing_channels=process_channels_names,
+        stabilization_channels=stabilization_channel_names,
         affine_transform_zyx_list=combined_mats.tolist(),
-        time_indices="all"
+        time_indices="all",
     )
     model_to_yaml(model, output_filepath)
 

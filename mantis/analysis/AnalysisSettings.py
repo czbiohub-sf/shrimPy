@@ -71,8 +71,8 @@ class RegistrationSettings(MyBaseModel):
 
 class StabilizationSettings(MyBaseModel):
     focus_finding_channel: str
-    stabilization_type: Literal["z", "xy", "zyx"]
-    processing_channels : list
+    stabilization_type: Literal["z", "xy", "xyz"]
+    stabilization_channels: list
     affine_transform_zyx_list: list
     time_indices: Union[NonNegativeInt, list[NonNegativeInt], Literal["all"]] = "all"
 
