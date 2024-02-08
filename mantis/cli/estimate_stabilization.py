@@ -357,7 +357,7 @@ def estimate_stabilization(
     # Save the combined matrices
     model = StabilizationSettings(
         stabilization_type=stabilization_type,
-        focus_finding_channel=channel_names[channel_index],
+        stabilization_estimation_channel=channel_names[channel_index],
         stabilization_channels=stabilization_channel_names,
         affine_transform_zyx_list=combined_mats.tolist(),
         time_indices="all",

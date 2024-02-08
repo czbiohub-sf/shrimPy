@@ -70,7 +70,7 @@ class RegistrationSettings(MyBaseModel):
 
 
 class StabilizationSettings(MyBaseModel):
-    focus_finding_channel: str
+    stabilization_estimation_channel: str
     stabilization_type: Literal["z", "xy", "xyz"]
     stabilization_channels: list
     affine_transform_zyx_list: list
