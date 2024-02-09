@@ -150,7 +150,8 @@ def estimate_xy_stabilization(
     crop_size_xy: list[int, int] = (400, 400),
     verbose: bool = False,
 ) -> np.ndarray:
-    input_position = open_ome_zarr(input_data_paths[0])
+    input_data_path = input_data_paths[0]
+    input_position = open_ome_zarr(input_data_path)
     output_folder_path = Path(output_folder_path)
     output_folder_path.mkdir(parents=True, exist_ok=True)
 
@@ -162,33 +163,45 @@ def estimate_xy_stabilization(
 
     # Get metadata
     T, C, Z, Y, X = input_position.data.shape
-    X_slice = slice(X // 2 - crop_size_xy[0] // 2, X // 2 + crop_size_xy[0] // 2)
-    Y_slice = slice(Y // 2 - crop_size_xy[1] // 2, Y // 2 + crop_size_xy[1] // 2)
+    x_idx = slice(X // 2 - crop_size_xy[0] // 2, X // 2 + crop_size_xy[0] // 2)
+    y_idx = slice(Y // 2 - crop_size_xy[1] // 2, Y // 2 + crop_size_xy[1] // 2)
 
-    z_idx = focus_from_transverse_band(
-        input_position[0][
-            0,
-            c_idx,
-            :,
-            Y_slice,
-            X_slice,
-        ],
-        **focus_params,
+    if (output_folder_path / "positions_focus.csv").exists():
+        df = pd.read_csv(output_folder_path / "positions_focus.csv")
+        pos_idx = '_'.join(
+            [p.name for p in input_data_path.parents[1::-1] + (input_data_path,)]
+        )
+        z_idx = list(df[df["position_idx"] == pos_idx]["focal_idx"].replace(0, method="ffill"))
+    else:
+        z_idx = [
+            focus_from_transverse_band(
+                input_position[0][
+                    0,
+                    c_idx,
+                    :,
+                    y_idx,
+                    x_idx,
+                ],
+                **focus_params,
+            )
+        ] * T
+        if verbose:
+            click.echo(f"Estimated in-focus slice: {z_idx}")
+
+    # Load timelapse and ensure negative values are not present
+    tyx_data = np.stack(
+        [
+            input_position[0][_t_idx, c_idx, _z_idx, y_idx, x_idx]
+            for _t_idx, _z_idx in zip(range(T), z_idx)
+        ]
     )
-    if verbose:
-        click.echo(f"Estimated in-focus slice: {z_idx}")
-
-    # Load timelapse
-    xy_timelapse = input_position[0][:T, c_idx, z_idx, Y_slice, X_slice]
-    minimum = xy_timelapse.min()
-
-    xy_timelapse = xy_timelapse + minimum  # Ensure negative values are not present
+    tyx_data = np.clip(tyx_data, a_min=0, a_max=None)
 
     # register each frame to the previous (already registered) one
     # this is what the original StackReg ImageJ plugin uses
     sr = StackReg(StackReg.TRANSLATION)
 
-    T_stackreg = sr.register_stack(xy_timelapse, reference="previous", axis=0)
+    T_stackreg = sr.register_stack(tyx_data, reference="previous", axis=0)
 
     # Swap values in the array since stackreg is xy and we need yx
     for subarray in T_stackreg:
@@ -231,13 +244,13 @@ def estimate_xy_stabilization(
     type=int,
 )
 @click.option(
-    "--stabilize_xy",
+    "--stabilize-xy",
     "-y",
     is_flag=True,
     help="Estimate yx drift and apply to the input data. Default is False.",
 )
 @click.option(
-    "--stabilize_z",
+    "--stabilize-z",
     "-z",
     is_flag=True,
     help="Estimate z drift and apply to the input data. Default is False.",
