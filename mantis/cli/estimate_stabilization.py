@@ -83,6 +83,8 @@ def get_mean_z_positions(dataframe_path: Path, verbose: bool = False) -> None:
     if verbose:
         # Get the moving average of the focus_idx
         plt.plot(average_focus_idx["focus_idx"], linestyle="--", label="mean of all positions")
+        plt.xlabel('Time index')
+        plt.ylabel('Focus index')
         plt.legend()
         plt.savefig(dataframe_path.parent / "z_drift.png")
     return average_focus_idx["focus_idx"].values
