@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 
 from iohub.ngff import open_ome_zarr
-from pandas import DataFrame
 from pystackreg import StackReg
 from waveorder.focus import focus_from_transverse_band
 
@@ -28,7 +27,7 @@ def estimate_position_focus(
     input_channel_indices: Tuple[int, ...],
     crop_size_xy: list[int, int],
 ):
-    position_idx, time_min, channel, channel_idx, focal_idx = [], [], [], [], []
+    position, time_idx, channel, focus_idx = [], [], [], []
 
     with open_ome_zarr(input_data_path) as dataset:
         channel_names = dataset.channel_names
@@ -53,47 +52,40 @@ def estimate_position_focus(
                     pixel_size=X_scale,
                 )
 
-            pos_idx = '/'.join(input_data_path.parts[-3:]).replace('/', '_')
-            position_idx.append(pos_idx)
-            time_min.append(tc_idx[0] * T_scale)
+            position.append(str(Path(*input_data_path.parts[-3:])))
+            time_idx.append(tc_idx[0])
             channel.append(channel_names[tc_idx[1]])
-            channel_idx.append(tc_idx[1])
-            focal_idx.append(focal_plane)
+            focus_idx.append(focal_plane)
 
     position_stats_stabilized = {
-        "position_idx": position_idx,
-        "time_min": time_min,
+        "position": position,
+        "time_idx": time_idx,
         "channel": channel,
-        "channel_idx": channel_idx,
-        "focal_idx": focal_idx,
+        "focus_idx": focus_idx,
     }
     return position_stats_stabilized
 
 
-def get_mean_z_positions(
-    input_dataframe: DataFrame, z_drift_channel_idx: int = 0, verbose: bool = False
-) -> None:
+def get_mean_z_positions(dataframe_path: Path, verbose: bool = False) -> None:
     import matplotlib.pyplot as plt
 
-    z_drift_df = pd.read_csv(input_dataframe)
+    df = pd.read_csv(dataframe_path)
 
-    # Filter the DataFrame for 'channel A'
-    phase_3D_df = z_drift_df[z_drift_df["channel_idx"] == z_drift_channel_idx]
-    # Sort the DataFrame based on 'time_min'
-    phase_3D_df = phase_3D_df.sort_values("time_min")
+    # Sort the DataFrame based on 'time_idx'
+    df = df.sort_values("time_idx")
 
     # TODO: this is a hack to deal with the fact that the focus finding function returns 0 if it fails
-    phase_3D_df["focal_idx"] = phase_3D_df["focal_idx"].replace(0, method="ffill")
-    # phase_3D_df["focal_idx"] = phase_3D_df["focal_idx"].replace(0,np.nan)
+    df["focus_idx"] = df["focus_idx"].replace(0, method="ffill")
+    # phase_3D_df["focus_idx"] = phase_3D_df["focus_idx"].replace(0,np.nan)
 
     # Get the mean of positions for each time point
-    average_focal_idx = phase_3D_df.groupby("time_min")["focal_idx"].mean().reset_index()
+    average_focus_idx = df.groupby("time_idx")["focus_idx"].mean().reset_index()
     if verbose:
-        # Get the moving average of the focal_idx
-        plt.plot(average_focal_idx["focal_idx"], linestyle="--", label="mean of all positions")
+        # Get the moving average of the focus_idx
+        plt.plot(average_focus_idx["focus_idx"], linestyle="--", label="mean of all positions")
         plt.legend()
         plt.savefig("./z_drift.png")
-    return average_focal_idx["focal_idx"].values
+    return average_focus_idx["focus_idx"].values
 
 
 def estimate_z_stabilization(
@@ -121,7 +113,6 @@ def estimate_z_stabilization(
     # Calculate and save the output file
     z_drift_offsets = get_mean_z_positions(
         output_folder_path / 'positions_focus.csv',
-        z_drift_channel_idx=z_drift_channel_idx,
         verbose=verbose,
     )
 
@@ -168,10 +159,8 @@ def estimate_xy_stabilization(
 
     if (output_folder_path / "positions_focus.csv").exists():
         df = pd.read_csv(output_folder_path / "positions_focus.csv")
-        pos_idx = '_'.join(
-            [p.name for p in input_data_path.parents[1::-1] + (input_data_path,)]
-        )
-        z_idx = list(df[df["position_idx"] == pos_idx]["focal_idx"].replace(0, method="ffill"))
+        pos_idx = str(Path(*input_data_path.parts[-3:]))
+        z_idx = list(df[df["position"] == pos_idx]["focus_idx"].replace(0, method="ffill"))
     else:
         z_idx = [
             focus_from_transverse_band(

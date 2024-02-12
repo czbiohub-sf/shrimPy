@@ -30,6 +30,7 @@ dependencies = [
   "ndtiff>=2.0",
   "nidaqmx",
   "numpy",
+  "pandas~=2.1",
   "pycromanager==0.28.1",
   "pydantic",
   "pylablib==1.4.1",
