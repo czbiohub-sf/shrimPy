@@ -332,9 +332,9 @@ def _generate_html(
     fwhm_3d_mean: tuple,
     fwhm_3d_std: tuple,
     fwhm_pc_mean: tuple,
-    bead_psf_slices_paths: tuple,
-    fwhm_vs_acq_axes_paths: tuple,
-    psf_amp_paths: tuple,
+    bead_psf_slices_paths: list,
+    fwhm_vs_acq_axes_paths: list,
+    psf_amp_paths: list,
     axis_labels: tuple,
 ):
 
