@@ -13,6 +13,7 @@ import warnings
 from cupyx.scipy.ndimage import affine_transform
 from iohub.ngff_meta import TransformationMeta
 from iohub.reader import open_ome_zarr, read_micromanager
+from pycromanager import Acquisition, multi_d_acquisition_events, Core
 
 from mantis.analysis.AnalysisSettings import DeskewSettings
 from mantis.analysis.analyze_psf import (
@@ -42,7 +43,7 @@ ls_bead_detection_settings = {
     "blur_kernel_size": 3,
     "nms_distance": 32,
     "min_distance": 50,
-    "threshold_abs": 250.0,
+    "threshold_abs": 200.0,
     "max_num_peaks": 2000,
     "exclude_border": (5, 10, 5),
     "device": "cuda" if torch.cuda.is_available() else "cpu",
@@ -59,34 +60,70 @@ deskew_bead_detection_settings = {
     "device": "cuda" if torch.cuda.is_available() else "cpu",
 }
 
-# %% Load data - swap with data acquisition block
+mmc = Core()
 
-deskew = True
-view = False
+# %%
+data_dir = Path(r'D:\2024_02_08_mantis_alignment')
+dataset = '2024_02_13_LS_0.169_96wp_IP_Galvo_0.72'
 
-data_dir = Path(r'E:\temp_2023_03_30_beads')
-dataset = 'beads_ip_0.74_1'
-
-scale = (0.1565, 0.116, 0.116)  # in um
-axis_labels = ("SCAN", "TILT", "COVERSLIP")
-
-# data_dir = Path(r'E:\temp_2022_12_22_LS_after_SL2')
-# dataset = 'epi_beads_100nm_fl_mount_after_SL2_1'
-
-data_path = data_dir / dataset
-
-# zyx_data = tifffile.imread(data_dir / dataset / 'LS_beads_100nm_fl_mount_after_SL2_1_MMStack_Pos0.ome.tif')
-# scale = (0.250, 0.069, 0.069)  # in um
+# epi settings
+# z_stage = 'PiezoStage:Q:35'
+# z_step = 0.2  # in um
+# z_range = (-2, 50)  # in um
+# pixel_size = 0.069  # in um
 # axis_labels = ("Z", "Y", "X")
 
-if str(data_path).endswith('.zarr'):
-    ds = open_ome_zarr(data_path / '0/0/0')
-    zyx_data = ds.data[0, 0]
-    channel_names = ds.channel_names
-else:
-    ds = read_micromanager(str(data_path))
-    zyx_data = ds.get_array(0)[0, 0]
-    channel_names = ds.channel_names
+# ls_settings
+z_stage = 'AP Galvo'
+z_step = 0.205  # in um
+z_range = (-100, 85)  # in um
+pixel_size = 0.116  # in um
+axis_labels = ("SCAN", "TILT", "COVERSLIP")
+
+# epi illumination ls detection settings
+# z_stage = 'PiezoStage:Q:35'
+# z_step = 0.2  # in um
+# z_range = (-2, 50)  # in um
+# pixel_size = 0.116  # in um
+# axis_labels = ("Z", "Y", "X")
+
+deskew = True
+view = True
+scale = (z_step, pixel_size, pixel_size)
+data_path = data_dir / dataset
+
+mmc.set_property('Core', 'Focus', z_stage)
+z_pos = mmc.get_position(z_stage)
+events = multi_d_acquisition_events(
+    z_start=z_pos + z_range[0],
+    z_end=z_pos + z_range[1],
+    z_step=z_step,
+)
+
+camera = mmc.get_camera_device()
+if camera == 'Prime BSI Express':
+    mmc.set_property('Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter')
+    mmc.set_property('TS2_TTL1-8', 'Blanking', 'On')
+    mmc.set_property('TS2_DAC03', 'Sequence', 'On')
+
+mmc.set_auto_shutter(False)
+mmc.set_shutter_open(True)
+with Acquisition(
+    directory=str(data_dir),
+    name=dataset,
+    show_display=False,
+) as acq:
+    acq.acquire(events)
+mmc.set_shutter_open(False)
+mmc.set_auto_shutter(True)
+mmc.set_position(z_stage, z_pos)
+
+if camera == 'Prime BSI Express':
+    mmc.set_property('TS2_TTL1-8', 'Blanking', 'Off')
+
+ds = acq.get_dataset()
+zyx_data = np.asarray(ds.as_array())
+channel_names = ['GFP']
 
 raw = False
 if axis_labels == ("SCAN", "TILT", "COVERSLIP"):
