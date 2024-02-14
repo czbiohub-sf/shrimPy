@@ -121,9 +121,9 @@ def generate_report(
         fwhm_3d_mean,
         fwhm_3d_std,
         fwhm_pc_mean,
-        bead_psf_slices_paths,
-        fwhm_vs_acq_axes_paths,
-        psf_amp_paths,
+        [str(_path.relative_to(output_path).as_posix()) for _path in bead_psf_slices_paths],
+        [str(_path.relative_to(output_path).as_posix()) for _path in fwhm_vs_acq_axes_paths],
+        [str(_path.relative_to(output_path).as_posix()) for _path in psf_amp_paths],
         axis_labels,
     )
 
