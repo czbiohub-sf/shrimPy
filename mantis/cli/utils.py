@@ -940,8 +940,14 @@ def nuc_mem_segmentation(czyx_data, **cellpose_kwargs) -> np.ndarray:
     # Get the key/values under this dictionary
     # cellpose_params = cellpose_params.get('cellpose_params', {})
     cellpose_params = cellpose_kwargs['cellpose_kwargs']
-    Z_slice = slice(int(cellpose_params['z_idx']), int(cellpose_params['z_idx']) + 1)
-    cyx_data = czyx_data[:, Z_slice]
+    Z_center_slice = slice(int(cellpose_params['z_idx']), int(cellpose_params['z_idx']) + 1)
+    Z_slice = slice(int(cellpose_params['z_idx'])-3, int(cellpose_params['z_idx']) + 3)
+    C, Z, Y, X = czyx_data.shape
+
+    czyx_data_mip = np.zeros((C, 1, Y, X))
+    for c in range(C):
+        czyx_data_mip[c, 0] = np.max(czyx_data[c , Z_slice], axis=0)
+    cyx_data = czyx_data_mip[:, 0]
 
     if "nucleus_segmentation" in cellpose_params:
         nuc_seg_kwargs = cellpose_params["nucleus_segmentation"]
@@ -958,9 +964,9 @@ def nuc_mem_segmentation(czyx_data, **cellpose_kwargs) -> np.ndarray:
     mem_masks, _, _, _ = cyto_model.eval(cyx_data[1], **mem_seg_kwargs)
 
     # Save
-    segmentation_stack = np.zeros_like(czyx_data)
+    segmentation_stack = np.zeros_like(czyx_data_mip)
     zyx_mask = np.stack((nuc_masks, mem_masks))
-    segmentation_stack[:,Z_slice] = zyx_mask[:, np.newaxis,]
+    segmentation_stack[:, 0:1] = zyx_mask[:, np.newaxis]
 
     return segmentation_stack
 
