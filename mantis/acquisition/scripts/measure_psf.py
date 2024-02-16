@@ -63,8 +63,8 @@ deskew_bead_detection_settings = {
 mmc = Core()
 
 # %%
-data_dir = Path(r'D:\2024_02_08_mantis_alignment')
-dataset = '2024_02_13_LS_0.169_96wp_IP_Galvo_0.72'
+data_dir = Path(r'D:\2024_02_15_mantis_alignment')
+dataset = '2024_02_15_LS_0.17_96wp_redo_epi_illum'
 
 # epi settings
 # z_stage = 'PiezoStage:Q:35'
@@ -74,21 +74,21 @@ dataset = '2024_02_13_LS_0.169_96wp_IP_Galvo_0.72'
 # axis_labels = ("Z", "Y", "X")
 
 # ls_settings
+# z_stage = 'AP Galvo'
+# z_step = 0.205  # in um
+# z_range = (-100, 85)  # in um
+# pixel_size = 0.116  # in um
+# axis_labels = ("SCAN", "TILT", "COVERSLIP")
+
+# epi illumination ls detection settings
 z_stage = 'AP Galvo'
 z_step = 0.205  # in um
 z_range = (-100, 85)  # in um
 pixel_size = 0.116  # in um
 axis_labels = ("SCAN", "TILT", "COVERSLIP")
 
-# epi illumination ls detection settings
-# z_stage = 'PiezoStage:Q:35'
-# z_step = 0.2  # in um
-# z_range = (-2, 50)  # in um
-# pixel_size = 0.116  # in um
-# axis_labels = ("Z", "Y", "X")
-
 deskew = True
-view = True
+view = False
 scale = (z_step, pixel_size, pixel_size)
 data_path = data_dir / dataset
 
@@ -124,6 +124,7 @@ if camera == 'Prime BSI Express':
 ds = acq.get_dataset()
 zyx_data = np.asarray(ds.as_array())
 channel_names = ['GFP']
+dataset = Path(ds.path).name
 
 raw = False
 if axis_labels == ("SCAN", "TILT", "COVERSLIP"):
