@@ -349,6 +349,8 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     click.echo(f"Writing registration parameters to {output_filepath}")
     model_to_yaml(model, output_filepath)
 
+    input("Press <enter> to close the viewer and exit...")
+
 
 if __name__ == "__main__":
     estimate_affine()
