@@ -20,7 +20,7 @@ to [fork](https://github.com/czbiohub/mantis/fork) the repository.
 1. Install the package in development mode:
 
 ```
-pip install ".[dev]"
+pip install -e ".[dev]"
 ```
 
 2. Install pre-commit hooks:
