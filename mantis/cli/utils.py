@@ -8,14 +8,27 @@ from functools import partial
 from pathlib import Path
 from typing import Tuple
 
+import ants
 import click
+import largestinteriorrectangle as lir
 import numpy as np
+import scipy.ndimage as ndi
 import yaml
 
 from iohub.ngff import Position, open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
-from numpy.typing import DTypeLike
 from tqdm import tqdm
+from numpy.typing import DTypeLike
+import torch
+import matplotlib.pyplot as plt
+
+from numpy.typing import DTypeLike
+import torch
+import matplotlib.pyplot as plt
+from natsort import natsorted
+import glob
+from typing import List
+import os
 
 
 # TODO: replace this with recOrder recOrder.cli.utils.create_empty_hcs()
@@ -87,86 +100,6 @@ def create_empty_zarr(
     input_dataset.close()
 
 
-# TODO: convert all code to use this function from now on
-def create_empty_hcs_zarr(
-    store_path: Path,
-    position_keys: list[Tuple[str]],
-    channel_names: list[str],
-    shape: Tuple[int],
-    chunks: Tuple[int] = None,
-    scale: Tuple[float] = (1, 1, 1, 1, 1),
-    dtype: DTypeLike = np.float32,
-    max_chunk_size_bytes=500e6,
-) -> None:
-    """
-    If the plate does not exist, create an empty zarr plate.
-    If the plate exists, append positions and channels if they are not
-    already in the plate.
-    Parameters
-    ----------
-    store_path : Path
-        hcs plate path
-    position_keys : list[Tuple[str]]
-        Position keys, will append if not present in the plate.
-        e.g. [("A", "1", "0"), ("A", "1", "1")]
-    shape : Tuple[int]
-    chunks : Tuple[int]
-    scale : Tuple[float]
-    channel_names : list[str]
-        Channel names, will append if not present in metadata.
-    dtype : DTypeLike
-
-    Modifying from recOrder
-    https://github.com/mehta-lab/recOrder/blob/d31ad910abf84c65ba927e34561f916651cbb3e8/recOrder/cli/utils.py#L12
-    """
-    MAX_CHUNK_SIZE = max_chunk_size_bytes  # in bytes
-    bytes_per_pixel = np.dtype(dtype).itemsize
-
-    # Limiting the chunking to 500MB
-    if chunks is None:
-        chunk_zyx_shape = list(shape[-3:])
-        # chunk_zyx_shape[-3] > 1 ensures while loop will not stall if single
-        # XY image is larger than MAX_CHUNK_SIZE
-        while (
-            chunk_zyx_shape[-3] > 1
-            and np.prod(chunk_zyx_shape) * bytes_per_pixel > MAX_CHUNK_SIZE
-        ):
-            chunk_zyx_shape[-3] = np.ceil(chunk_zyx_shape[-3] / 2).astype(int)
-        chunk_zyx_shape = tuple(chunk_zyx_shape)
-
-        chunks = 2 * (1,) + chunk_zyx_shape
-
-    # Create plate
-    output_plate = open_ome_zarr(
-        str(store_path), layout="hcs", mode="a", channel_names=channel_names
-    )
-
-    # Create positions
-    for position_key in position_keys:
-        position_key_string = "/".join(position_key)
-        # Check if position is already in the store, if not create it
-        if position_key_string not in output_plate.zgroup:
-            position = output_plate.create_position(*position_key)
-            _ = position.create_zeros(
-                name="0",
-                shape=shape,
-                chunks=chunks,
-                dtype=dtype,
-                transform=[TransformationMeta(type="scale", scale=scale)],
-            )
-        else:
-            position = output_plate[position_key_string]
-
-    # Check if channel_names are already in the store, if not append them
-    for channel_name in channel_names:
-        # Read channel names directly from metadata to avoid race conditions
-        metadata_channel_names = [
-            channel.label for channel in position.metadata.omero.channels
-        ]
-        if channel_name not in metadata_channel_names:
-            position.append_channel(channel_name, resize_arrays=True)
-
-
 def get_output_paths(input_paths: list[Path], output_zarr_path: Path) -> list[Path]:
     """Generates a mirrored output path list given an input list of positions"""
     list_output_path = []
@@ -196,56 +129,6 @@ def apply_function_to_zyx_and_save(
             output_dataset[0][t_idx, c_idx] = processed_zyx
 
         click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
-
-
-# NOTE WIP
-def apply_transform_to_zyx_and_save_v2(
-    func,
-    position: Position,
-    output_path: Path,
-    input_channel_indices: list[int],
-    output_channel_indices: list[int],
-    t_idx: int,
-    c_idx: int = None,
-    **kwargs,
-) -> None:
-    """Load a zyx array from a Position object, apply a transformation to CZYX or ZYX and save the result to file"""
-    click.echo(f"Processing c={c_idx}, t={t_idx}")
-
-    # TODO: temporary fix to slumkit issue
-    if _is_nested(input_channel_indices):
-        # print(f'input_channel_indices: {input_channel_indices}')
-        input_channel_indices = [int(x) for x in input_channel_indices if x.isdigit()]
-    if _is_nested(output_channel_indices):
-        # print(f'input_channel_indices: {output_channel_indices}')
-        output_channel_indices = [int(x) for x in output_channel_indices if x.isdigit()]
-    click.echo(f'input_channel_indices: {input_channel_indices}')
-
-    # Process CZYX vs ZYX
-    if input_channel_indices is not None:
-        czyx_data = position.data.oindex[t_idx, input_channel_indices]
-        if not _check_nan_n_zeros(czyx_data):
-            transformed_czyx = func(czyx_data, **kwargs)
-            # Write to file
-            with open_ome_zarr(output_path, mode="r+") as output_dataset:
-                output_dataset[0].oindex[t_idx, output_channel_indices] = transformed_czyx
-            click.echo(f"Finished Writing.. t={t_idx}")
-        else:
-            click.echo(f"Skipping t={t_idx} due to all zeros or nans")
-    else:
-        zyx_data = position.data.oindex[t_idx, c_idx]
-        # Checking if nans or zeros and skip processing
-        if not _check_nan_n_zeros(zyx_data):
-            # Apply transformation
-            transformed_zyx = func(zyx_data, **kwargs)
-
-            # Write to file
-            with open_ome_zarr(output_path, mode="r+") as output_dataset:
-                output_dataset[0][t_idx, c_idx] = transformed_zyx
-
-            click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
-        else:
-            click.echo(f"Skipping c={c_idx}, t={t_idx} due to all zeros or nans")
 
 
 def process_single_position(
@@ -284,11 +167,11 @@ def process_single_position(
 
     # Write the settings into the metadata if existing
     # TODO: alternatively we can throw all extra arguments as metadata.
-    if 'extra_metadata' in non_func_args:
+    if "extra_metadata" in non_func_args:
         # For each dictionary in the nest
-        with open_ome_zarr(output_path, mode='r+') as output_dataset:
-            for params_metadata_keys in kwargs['extra_metadata'].keys():
-                output_dataset.zattrs['extra_metadata'] = non_func_args['extra_metadata']
+        with open_ome_zarr(output_path, mode="r+") as output_dataset:
+            for params_metadata_keys in kwargs["extra_metadata"].keys():
+                output_dataset.zattrs["extra_metadata"] = non_func_args["extra_metadata"]
 
     # Loop through (T, C), deskewing and writing as we go
     click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
@@ -305,95 +188,207 @@ def process_single_position(
         )
 
 
-# TODO: modifiy how we get the time and channesl like recOrder (isinstance(input, list) or instance(input,int) or all)
-def process_single_position_v2(
-    func,
-    input_data_path: Path,
-    output_path: Path,
-    time_indices: list = [0],
-    input_channel_idx: list = [],
-    output_channel_idx: list = [],
-    num_processes: int = mp.cpu_count(),
-    **kwargs,
-) -> None:
-    """Register a single position with multiprocessing parallelization over T and C"""
-    # Function to be applied
-    click.echo(f"Function to be applied: \t{func}")
-
-    # Get the reader and writer
-    click.echo(f"Input data path:\t{input_data_path}")
-    click.echo(f"Output data path:\t{str(output_path)}")
-    input_dataset = open_ome_zarr(str(input_data_path))
-    stdout_buffer = io.StringIO()
-    with contextlib.redirect_stdout(stdout_buffer):
-        input_dataset.print_tree()
-    click.echo(f" Input data tree: {stdout_buffer.getvalue()}")
-
-    # Find time indices
-    if time_indices == "all":
-        time_indices = range(input_dataset.data.shape[0])
-    elif isinstance(time_indices, list):
-        time_indices = time_indices
-
-    # Check for invalid times
-    time_ubound = input_dataset.data.shape[0] - 1
-    if np.max(time_indices) > time_ubound:
-        raise ValueError(
-            f"time_indices = {time_indices} includes a time index beyond the maximum index of the dataset = {time_ubound}"
-        )
-
-    # Check the arguments for the function
-    all_func_params = inspect.signature(func).parameters.keys()
-    # Extract the relevant kwargs for the function 'func'
-    func_args = {}
-    non_func_args = {}
-
-    for k, v in kwargs.items():
-        if k in all_func_params:
-            func_args[k] = v
-        else:
-            non_func_args[k] = v
-
-    # Write the settings into the metadata if existing
-    if 'extra_metadata' in non_func_args:
-        # For each dictionary in the nest
-        with open_ome_zarr(output_path, mode='r+') as output_dataset:
-            for params_metadata_keys in kwargs['extra_metadata'].keys():
-                output_dataset.zattrs['extra_metadata'] = non_func_args['extra_metadata']
-
-    # Loop through (T, C), deskewing and writing as we go
-    if input_channel_idx is None or len(input_channel_idx) == 0:
-        # If C is not empty, use itertools.product with both ranges
-        _, C, _, _, _ = input_dataset.data.shape
-        iterable = itertools.product(time_indices, range(C))
-        partial_apply_transform_to_zyx_and_save = partial(
-            apply_transform_to_zyx_and_save_v2,
-            func,
-            input_dataset,
-            output_path / Path(*input_data_path.parts[-3:]),
-            input_channel_indices=None,
-            **func_args,
-        )
+def scale_affine(start_shape_zyx, scaling_factor_zyx=(1, 1, 1), end_shape_zyx=None):
+    center_Y_start, center_X_start = np.array(start_shape_zyx)[-2:] / 2
+    if end_shape_zyx is None:
+        center_Y_end, center_X_end = (center_Y_start, center_X_start)
     else:
-        # If C is empty, use only the range for time_indices
-        iterable = itertools.product(time_indices)
-        partial_apply_transform_to_zyx_and_save = partial(
-            apply_transform_to_zyx_and_save_v2,
-            func,
-            input_dataset,
-            output_path / Path(*input_data_path.parts[-3:]),
-            input_channel_idx,
-            output_channel_idx,
-            c_idx=0,
-            **func_args,
-        )
+        center_Y_end, center_X_end = np.array(end_shape_zyx)[-2:] / 2
 
-        click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
-        with mp.Pool(num_processes) as p:
-            p.starmap(
-                partial_apply_transform_to_zyx_and_save,
-                iterable,
-            )
+    scaling_matrix = np.array(
+        [
+            [scaling_factor_zyx[-3], 0, 0, 0],
+            [
+                0,
+                scaling_factor_zyx[-2],
+                0,
+                -center_Y_start * scaling_factor_zyx[-2] + center_Y_end,
+            ],
+            [
+                0,
+                0,
+                scaling_factor_zyx[-1],
+                -center_X_start * scaling_factor_zyx[-1] + center_X_end,
+            ],
+            [0, 0, 0, 1],
+        ]
+    )
+    return scaling_matrix
+
+
+def rotate_affine(
+    start_shape_zyx: Tuple, angle: float = 0.0, end_shape_zyx: Tuple = None
+) -> np.ndarray:
+    """
+    Rotate Transformation Matrix
+
+    Parameters
+    ----------
+    start_shape_zyx : Tuple
+        Shape of the input
+    angle : float, optional
+        Angles of rotation in degrees
+    end_shape_zyx : Tuple, optional
+       Shape of output space
+
+    Returns
+    -------
+    np.ndarray
+        Rotation matrix
+    """
+    # TODO: make this 3D?
+    center_Y_start, center_X_start = np.array(start_shape_zyx)[-2:] / 2
+    if end_shape_zyx is None:
+        center_Y_end, center_X_end = (center_Y_start, center_X_start)
+    else:
+        center_Y_end, center_X_end = np.array(end_shape_zyx)[-2:] / 2
+
+    theta = np.radians(angle)
+
+    rotation_matrix = np.array(
+        [
+            [1, 0, 0, 0],
+            [
+                0,
+                np.cos(theta),
+                -np.sin(theta),
+                -center_Y_start * np.cos(theta)
+                + np.sin(theta) * center_X_start
+                + center_Y_end,
+            ],
+            [
+                0,
+                np.sin(theta),
+                np.cos(theta),
+                -center_Y_start * np.sin(theta)
+                - center_X_start * np.cos(theta)
+                + center_X_end,
+            ],
+            [0, 0, 0, 1],
+        ]
+    )
+
+    affine_rot_n_scale_matrix_zyx = rotation_matrix
+
+    return affine_rot_n_scale_matrix_zyx
+
+
+def affine_transform(
+    zyx_data: np.ndarray,
+    matrix: np.ndarray,
+    output_shape_zyx: Tuple,
+    method="ants",
+    crop_output_slicing: bool = None,
+) -> np.ndarray:
+    """_summary_
+
+    Parameters
+    ----------
+    zyx_data : np.ndarray
+        3D input array to be transformed
+    matrix : np.ndarray
+        3D Homogenous transformation matrix
+    output_shape_zyx : Tuple
+        output target zyx shape
+    method : str, optional
+        method to use for transformation, by default 'ants'
+    crop_output : bool, optional
+        crop the output to the largest interior rectangle, by default False
+
+    Returns
+    -------
+    np.ndarray
+        registered zyx data
+    """
+    # Convert nans to 0
+    zyx_data = np.nan_to_num(zyx_data, nan=0)
+
+    # NOTE: default set to ANTS apply_affine method until we decide we get a benefit from using cupy
+    # The ants method on CPU is 10x faster than scipy on CPU. Cupy method has not been bencharked vs ANTs
+
+    if method == "ants":
+        # The output has to be a ANTImage Object
+        empty_target_array = np.zeros((output_shape_zyx), dtype=np.float32)
+        target_zyx_ants = ants.from_numpy(empty_target_array)
+
+        T_ants = numpy_to_ants_transform_zyx(matrix)
+
+        zyx_data_ants = ants.from_numpy(zyx_data.astype(np.float32))
+        registered_zyx = T_ants.apply_to_image(
+            zyx_data_ants, reference=target_zyx_ants
+        ).numpy()
+
+    elif method == "scipy":
+        registered_zyx = ndi.affine_transform(zyx_data, matrix, output_shape_zyx)
+
+    else:
+        raise ValueError(f"Unknown method {method}")
+
+    # Crop the output to the largest interior rectangle
+    if crop_output_slicing is not None:
+        Z_slice, Y_slice, X_slice = crop_output_slicing
+        registered_zyx = registered_zyx[Z_slice, Y_slice, X_slice]
+
+    return registered_zyx
+
+
+def find_lir(registered_zyx: np.ndarray, plot: bool = False) -> Tuple:
+    # Find the lir YX
+    registered_yx_bool = registered_zyx[registered_zyx.shape[0] // 2].copy()
+    registered_yx_bool = registered_yx_bool > 0 * 1.0
+    rectangle_coords_yx = lir.lir(registered_yx_bool)
+
+    x = rectangle_coords_yx[0]
+    y = rectangle_coords_yx[1]
+    width = rectangle_coords_yx[2]
+    height = rectangle_coords_yx[3]
+    corner1_xy = (x, y)  # Bottom-left corner
+    corner2_xy = (x + width, y)  # Bottom-right corner
+    corner3_xy = (x + width, y + height)  # Top-right corner
+    corner4_xy = (x, y + height)  # Top-left corner
+    rectangle_xy = np.array((corner1_xy, corner2_xy, corner3_xy, corner4_xy))
+    X_slice = slice(rectangle_xy.min(axis=0)[0], rectangle_xy.max(axis=0)[0])
+    Y_slice = slice(rectangle_xy.min(axis=0)[1], rectangle_xy.max(axis=0)[1])
+
+    # Find the lir Z
+    zyx_shape = registered_zyx.shape
+    registered_zx_bool = registered_zyx.transpose((2, 0, 1)) > 0
+    registered_zx_bool = registered_zx_bool[zyx_shape[0] // 2].copy()
+    rectangle_coords_zx = lir.lir(registered_zx_bool)
+    x = rectangle_coords_zx[0]
+    z = rectangle_coords_zx[1]
+    width = rectangle_coords_zx[2]
+    height = rectangle_coords_zx[3]
+    corner1_zx = (x, z)  # Bottom-left corner
+    corner2_zx = (x + width, z)  # Bottom-right corner
+    corner3_zx = (x + width, z + height)  # Top-right corner
+    corner4_zx = (x, z + height)  # Top-left corner
+    rectangle_zx = np.array((corner1_zx, corner2_zx, corner3_zx, corner4_zx))
+    Z_slice = slice(rectangle_zx.min(axis=0)[1], rectangle_zx.max(axis=0)[1])
+
+    if plot:
+        rectangle_yx = plt.Polygon(
+            (corner1_xy, corner2_xy, corner3_xy, corner4_xy),
+            closed=True,
+            fill=None,
+            edgecolor="r",
+        )
+        # Add the rectangle to the plot
+        fig, ax = plt.subplots(nrows=1, ncols=2)
+        ax[0].imshow(registered_yx_bool)
+        ax[0].add_patch(rectangle_yx)
+
+        rectangle_zx = plt.Polygon(
+            (corner1_zx, corner2_zx, corner3_zx, corner4_zx),
+            closed=True,
+            fill=None,
+            edgecolor="r",
+        )
+        ax[1].imshow(registered_zx_bool)
+        ax[1].add_patch(rectangle_zx)
+        plt.savefig("./lir.png")
+
+    return (Z_slice, Y_slice, X_slice)
 
 
 def copy_n_paste(zyx_data: np.ndarray, zyx_slicing_params: list) -> np.ndarray:
@@ -446,6 +441,87 @@ def copy_n_paste_czyx(czyx_data: np.ndarray, czyx_slicing_params: list) -> np.nd
     return czyx_data_sliced
 
 
+def find_lir_slicing_params(
+    input_zyx_shape: Tuple,
+    target_zyx_shape: Tuple,
+    transformation_matrix: np.ndarray,
+    plot: bool = False,
+) -> Tuple:
+    """
+    Find the largest internal rectangle between the transformed input and the target
+    and return the cropping parameters
+
+    Parameters
+    ----------
+    input_zyx_shape : Tuple
+        shape of input array
+    target_zyx_shape : Tuple
+        shape of target array
+    transformation_matrix : np.ndarray
+        transformation matrix between input and target
+
+    Returns
+    -------
+    Tuple
+        Slicing parameters to crop LIR
+
+    """
+    print("Starting Largest interior rectangle (LIR) search")
+
+    # Make dummy volumes
+    img1 = np.ones(tuple(input_zyx_shape), dtype=np.float32)
+    img2 = np.ones(tuple(target_zyx_shape), dtype=np.float32)
+
+    # Conver to ants objects
+    target_zyx_ants = ants.from_numpy(img2.astype(np.float32))
+    zyx_data_ants = ants.from_numpy(img1.astype(np.float32))
+
+    ants_composed_matrix = numpy_to_ants_transform_zyx(transformation_matrix)
+
+    # Apply affine
+    registered_zyx = ants_composed_matrix.apply_to_image(
+        zyx_data_ants, reference=target_zyx_ants
+    )
+
+    Z_slice, Y_slice, X_slice = find_lir(registered_zyx.numpy(), plot=plot)
+
+    # registered_zyx_bool = registered_zyx.numpy().copy()
+    # registered_zyx_bool = registered_zyx_bool > 0
+    # # NOTE: we use the center of the volume as reference
+    # rectangle_coords_yx = lir.lir(registered_zyx_bool[registered_zyx.shape[0] // 2])
+
+    # # Find the overlap in XY
+    # x = rectangle_coords_yx[0]
+    # y = rectangle_coords_yx[1]
+    # width = rectangle_coords_yx[2]
+    # height = rectangle_coords_yx[3]
+    # corner1_xy = (x, y)  # Bottom-left corner
+    # corner2_xy = (x + width, y)  # Bottom-right corner
+    # corner3_xy = (x + width, y + height)  # Top-right corner
+    # corner4_xy = (x, y + height)  # Top-left corner
+    # rectangle_xy = np.array((corner1_xy, corner2_xy, corner3_xy, corner4_xy))
+    # X_slice = slice(rectangle_xy.min(axis=0)[0], rectangle_xy.max(axis=0)[0])
+    # Y_slice = slice(rectangle_xy.min(axis=0)[1], rectangle_xy.max(axis=0)[1])
+
+    # # Find the overlap in Z
+    # registered_zx = registered_zyx.numpy()
+    # registered_zx = registered_zx.transpose((2, 0, 1)) > 0
+    # rectangle_coords_zx = lir.lir(registered_zx[registered_zyx.shape[0] // 2].copy())
+    # x = rectangle_coords_zx[0]
+    # y = rectangle_coords_zx[1]
+    # width = rectangle_coords_zx[2]
+    # height = rectangle_coords_zx[3]
+    # corner1_zx = (x, y)  # Bottom-left corner
+    # corner2_zx = (x + width, y)  # Bottom-right corner
+    # corner3_zx = (x + width, y + height)  # Top-right corner
+    # corner4_zx = (x, y + height)  # Top-left corner
+    # rectangle_zx = np.array((corner1_zx, corner2_zx, corner3_zx, corner4_zx))
+    # Z_slice = slice(rectangle_zx.min(axis=0)[1], rectangle_zx.max(axis=0)[1])
+
+    print(f"Slicing parameters Z:{Z_slice}, Y:{Y_slice}, X:{X_slice}")
+    return (Z_slice, Y_slice, X_slice)
+
+
 def append_channels(input_data_path: Path, target_data_path: Path) -> None:
     """
     Append channels to a target zarr store
@@ -464,14 +540,186 @@ def append_channels(input_data_path: Path, target_data_path: Path) -> None:
         num_channels = len(target_data_channel_names) - 1
         print(f"channels in target {target_data_channel_names}")
         print(f"adding channels {appending_channel_names}")
-        for name, position in tqdm(dataset.positions(), desc='Positions'):
+        for name, position in tqdm(dataset.positions(), desc="Positions"):
             for i, appending_channel_idx in enumerate(
-                tqdm(appending_channel_names, desc='Channel', leave=False)
+                tqdm(appending_channel_names, desc="Channel", leave=False)
             ):
                 position.append_channel(appending_channel_idx)
                 position["0"][:, num_channels + i + 1] = appending_dataset[str(name)][0][:, i]
         dataset.print_tree()
     appending_dataset.close()
+
+
+def numpy_to_ants_transform_zyx(T_numpy: np.ndarray):
+    """Homogeneous 3D transformation matrix from numpy to ants
+
+    Parameters
+    ----------
+    numpy_transform :4x4 homogenous matrix
+
+    Returns
+    -------
+    Ants transformation matrix object
+    """
+    assert T_numpy.shape == (4, 4)
+
+    T_ants_style = T_numpy[:, :-1].ravel()
+    T_ants_style[-3:] = T_numpy[:3, -1]
+    T_ants = ants.new_ants_transform(
+        transform_type="AffineTransform",
+    )
+    T_ants.set_parameters(T_ants_style)
+
+    return T_ants
+
+
+def ants_to_numpy_transform_zyx(T_ants):
+    """
+    Convert the ants transformation matrix to numpy 3D homogenous transform
+
+    Modified from Jordao's dexp code
+
+    Parameters
+    ----------
+    T_ants : Ants transfromation matrix object
+
+    Returns
+    -------
+    np.array
+        Converted Ants to numpy array
+
+    """
+
+    T_numpy = T_ants.parameters.reshape((3, 4), order="F")
+    T_numpy[:, :3] = T_numpy[:, :3].transpose()
+    T_numpy = np.vstack((T_numpy, np.array([0, 0, 0, 1])))
+
+    # Reference:
+    # https://sourceforge.net/p/advants/discussion/840261/thread/9fbbaab7/
+    # https://github.com/netstim/leaddbs/blob/a2bb3e663cf7fceb2067ac887866124be54aca7d/helpers/ea_antsmat2mat.m
+    # T = original translation offset from A
+    # T = T + (I - A) @ centering
+
+    T_numpy[:3, -1] += (np.eye(3) - T_numpy[:3, :3]) @ T_ants.fixed_parameters
+
+    return T_numpy
+
+
+def apply_stabilization_over_time_ants(
+    list_of_shifts: list,
+    input_data_path: Path,
+    output_path: Path,
+    time_indices: list = [0],
+    input_channel_idx: list = [],
+    output_channel_idx: list = [],
+    num_processes: int = 1,
+    **kwargs,
+) -> None:
+    """Apply stabilization over time"""
+    # Function to be applied
+    # Get the reader and writer
+    click.echo(f"Input data path:\t{input_data_path}")
+    click.echo(f"Output data path:\t{str(output_path)}")
+    input_dataset = open_ome_zarr(str(input_data_path))
+    stdout_buffer = io.StringIO()
+    with contextlib.redirect_stdout(stdout_buffer):
+        input_dataset.print_tree()
+    click.echo(f" Input data tree: {stdout_buffer.getvalue()}")
+
+    T, C, _, _, _ = input_dataset.data.shape
+
+    # Write the settings into the metadata if existing
+    # TODO: alternatively we can throw all extra arguments as metadata.
+    if "extra_metadata" in kwargs:
+        # For each dictionary in the nest
+        with open_ome_zarr(output_path, mode="r+") as output_dataset:
+            for params_metadata_keys in kwargs["extra_metadata"].keys():
+                output_dataset.zattrs["extra_metadata"] = kwargs["extra_metadata"]
+
+    # Loop through (T, C), deskewing and writing as we go
+    click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
+
+    if input_channel_idx is None or len(input_channel_idx) == 0:
+        # If C is not empty, use itertools.product with both ranges
+        _, C, _, _, _ = input_dataset.data.shape
+        iterable = itertools.product(time_indices, range(C))
+        partial_stabilization_over_time_ants = partial(
+            stabilization_over_time_ants,
+            input_dataset,
+            output_path / Path(*input_data_path.parts[-3:]),
+            list_of_shifts,
+            None,
+            None,
+        )
+    else:
+        # If C is empty, use only the range for time_indices
+        iterable = itertools.product(time_indices)
+        partial_stabilization_over_time_ants = partial(
+            stabilization_over_time_ants,
+            input_dataset,
+            output_path / Path(*input_data_path.parts[-3:]),
+            list_of_shifts,
+            input_channel_idx,
+            output_channel_idx,
+            c_idx=0,
+        )
+
+    with mp.Pool(num_processes) as p:
+        p.starmap(
+            partial_stabilization_over_time_ants,
+            iterable,
+        )
+    input_dataset.close()
+
+
+def stabilization_over_time_ants(
+    position: Position,
+    output_path: Path,
+    list_of_shifts: np.ndarray,
+    input_channel_idx: list,
+    output_channel_idx: list,
+    t_idx: int,
+    c_idx: int,
+    **kwargs,
+) -> None:
+    """Load a zyx array from a Position object, apply a transformation and save the result to file"""
+
+    click.echo(f"Processing c={c_idx}, t={t_idx}")
+    tx_shifts = numpy_to_ants_transform_zyx(list_of_shifts[t_idx])
+
+    # Process CZYX vs ZYX
+    if input_channel_idx is not None:
+        czyx_data = position.data.oindex[t_idx, input_channel_idx]
+        if not _check_nan_n_zeros(czyx_data):
+            for c in input_channel_idx:
+                print(f"czyx_data.shape {czyx_data.shape}")
+                zyx_data_ants = ants.from_numpy(czyx_data[0])
+                registered_zyx = tx_shifts.apply_to_image(
+                    zyx_data_ants, reference=zyx_data_ants
+                )
+                # Write to file
+                with open_ome_zarr(output_path, mode="r+") as output_dataset:
+                    output_dataset[0].oindex[
+                        t_idx, output_channel_idx
+                    ] = registered_zyx.numpy()
+            click.echo(f"Finished Writing.. t={t_idx}")
+        else:
+            click.echo(f"Skipping t={t_idx} due to all zeros or nans")
+    else:
+        zyx_data = position.data.oindex[t_idx, c_idx]
+        # Checking if nans or zeros and skip processing
+        if not _check_nan_n_zeros(zyx_data):
+            zyx_data_ants = ants.from_numpy(zyx_data)
+            # Apply transformation
+            registered_zyx = tx_shifts.apply_to_image(zyx_data_ants, reference=zyx_data_ants)
+
+            # Write to file
+            with open_ome_zarr(output_path, mode="r+") as output_dataset:
+                output_dataset[0][t_idx, c_idx] = registered_zyx.numpy()
+
+            click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
+        else:
+            click.echo(f"Skipping c={c_idx}, t={t_idx} due to all zeros or nans")
 
 
 def model_to_yaml(model, yaml_path: Path) -> None:
@@ -569,6 +817,87 @@ def yaml_to_model(yaml_path: Path, model):
     return model(**raw_settings)
 
 
+# TODO: convert all code to use this function from now on
+def create_empty_hcs_zarr(
+    store_path: Path,
+    position_keys: list[Tuple[str]],
+    channel_names: list[str],
+    shape: Tuple[int],
+    chunks: Tuple[int] = None,
+    scale: Tuple[float] = (1, 1, 1, 1, 1),
+    dtype: DTypeLike = np.float32,
+    max_chunk_size_bytes=500e6,
+) -> None:
+    """
+    If the plate does not exist, create an empty zarr plate.
+    If the plate exists, append positions and channels if they are not
+    already in the plate.
+    Parameters
+    ----------
+    store_path : Path
+        hcs plate path
+    position_keys : list[Tuple[str]]
+        Position keys, will append if not present in the plate.
+        e.g. [("A", "1", "0"), ("A", "1", "1")]
+    shape : Tuple[int]
+    chunks : Tuple[int]
+    scale : Tuple[float]
+    channel_names : list[str]
+        Channel names, will append if not present in metadata.
+    dtype : DTypeLike
+
+    Modifying from recOrder
+    https://github.com/mehta-lab/recOrder/blob/d31ad910abf84c65ba927e34561f916651cbb3e8/recOrder/cli/utils.py#L12
+    """
+    MAX_CHUNK_SIZE = max_chunk_size_bytes  # in bytes
+    bytes_per_pixel = np.dtype(dtype).itemsize
+
+    # Limiting the chunking to 500MB
+    if chunks is None:
+        chunk_zyx_shape = list(shape[-3:])
+        # chunk_zyx_shape[-3] > 1 ensures while loop will not stall if single
+        # XY image is larger than MAX_CHUNK_SIZE
+        while (
+            chunk_zyx_shape[-3] > 1
+            and np.prod(chunk_zyx_shape) * bytes_per_pixel > MAX_CHUNK_SIZE
+        ):
+            chunk_zyx_shape[-3] = np.ceil(chunk_zyx_shape[-3] / 2).astype(int)
+        chunk_zyx_shape = tuple(chunk_zyx_shape)
+
+        chunks = 2 * (1,) + chunk_zyx_shape
+    click.echo(f"Chunk size: {chunks}")
+
+    # Create plate
+    output_plate = open_ome_zarr(
+        str(store_path), layout="hcs", mode="a", channel_names=channel_names
+    )
+
+    # Create positions
+    for position_key in position_keys:
+        position_key_string = "/".join(position_key)
+        # Check if position is already in the store, if not create it
+        if position_key_string not in output_plate.zgroup:
+            position = output_plate.create_position(*position_key)
+            _ = position.create_zeros(
+                name="0",
+                shape=shape,
+                chunks=chunks,
+                dtype=dtype,
+                transform=[TransformationMeta(type="scale", scale=scale)],
+            )
+        else:
+            position = output_plate[position_key_string]
+
+    # Check if channel_names are already in the store, if not append them
+    for channel_name in channel_names:
+        # Read channel names directly from metadata to avoid race conditions
+        metadata_channel_names = [
+            channel.label for channel in position.metadata.omero.channels
+        ]
+        if channel_name not in metadata_channel_names:
+            position.append_channel(channel_name, resize_arrays=True)
+
+
 def _is_nested(lst):
     return any(isinstance(i, list) for i in lst) or any(isinstance(i, str) for i in lst)
 
@@ -599,3 +928,244 @@ def _check_nan_n_zeros(input_array):
 
     # Return false
     return False
+
+
+def nuc_mem_segmentation(czyx_data, **cellpose_kwargs) -> np.ndarray:
+    """Segment nuclei and membranes using cellpose"""
+
+    from cellpose import models
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Get the key/values under this dictionary
+    # cellpose_params = cellpose_params.get('cellpose_params', {})
+    cellpose_params = cellpose_kwargs["cellpose_kwargs"]
+    Z_center_slice = slice(int(cellpose_params["z_idx"]), int(cellpose_params["z_idx"]) + 1)
+    Z_slice = slice(int(cellpose_params["z_idx"]) - 3, int(cellpose_params["z_idx"]) + 3)
+    C, Z, Y, X = czyx_data.shape
+
+    czyx_data[0][czyx_data[0] < 0] = 0
+    czyx_data[1][czyx_data[1] < 0] = 0
+
+    czyx_data_mip = np.zeros((C, 1, Y, X))
+    for c in range(C):
+        czyx_data_mip[c, 0] = np.max(czyx_data[c, Z_slice], axis=0)
+    cyx_data = czyx_data_mip[:, 0]
+
+    if "nucleus_segmentation" in cellpose_params:
+        nuc_seg_kwargs = cellpose_params["nucleus_segmentation"]
+    if "membrane_segmentation" in cellpose_params:
+        mem_seg_kwargs = cellpose_params["membrane_segmentation"]
+
+    # Initialize Cellpose models
+    cyto_model = models.Cellpose(gpu=True, model_type=cellpose_params["mem_model_path"])
+    nuc_model = models.CellposeModel(
+        model_type=cellpose_params["nuc_model_path"], device=torch.device(device)
+    )
+
+    nuc_masks = nuc_model.eval(cyx_data[0], **nuc_seg_kwargs)[0]
+    mem_masks, _, _, _ = cyto_model.eval(cyx_data[1], **mem_seg_kwargs)
+
+    # Save
+    segmentation_stack = np.zeros_like(czyx_data_mip)
+    zyx_mask = np.stack((nuc_masks, mem_masks))
+    segmentation_stack[:, 0:1] = zyx_mask[:, np.newaxis]
+
+    return segmentation_stack
+
+
+## NOTE WIP
+def apply_transform_to_zyx_and_save_v2(
+    func,
+    position: Position,
+    output_path: Path,
+    input_channel_indices: list[int],
+    output_channel_indices: list[int],
+    t_idx: int,
+    t_idx_out: int,
+    c_idx: int = None,
+    **kwargs,
+) -> None:
+    """Load a zyx array from a Position object, apply a transformation to CZYX or ZYX and save the result to file"""
+    click.echo(f"Processing c={c_idx}, t={t_idx}")
+
+    # TODO: temporary fix to slumkit issue
+    if _is_nested(input_channel_indices):
+        input_channel_indices = [int(x) for x in input_channel_indices if x.isdigit()]
+    if _is_nested(output_channel_indices):
+        output_channel_indices = [int(x) for x in output_channel_indices if x.isdigit()]
+    click.echo(f"input_channel_indices: {input_channel_indices}")
+
+    # Process CZYX vs ZYX
+    if input_channel_indices is not None:
+        czyx_data = position.data.oindex[t_idx, input_channel_indices]
+        if not _check_nan_n_zeros(czyx_data):
+            transformed_czyx = func(czyx_data, **kwargs)
+            # Write to file
+            with open_ome_zarr(output_path, mode="r+") as output_dataset:
+                output_dataset[0].oindex[t_idx_out, output_channel_indices] = transformed_czyx
+            click.echo(f"Finished Writing.. t={t_idx}")
+        else:
+            click.echo(f"Skipping t={t_idx} due to all zeros or nans")
+    else:
+        zyx_data = position.data.oindex[t_idx, c_idx]
+        # Checking if nans or zeros and skip processing
+        if not _check_nan_n_zeros(zyx_data):
+            # Apply transformation
+            transformed_zyx = func(zyx_data, **kwargs)
+
+            # Write to file
+            with open_ome_zarr(output_path, mode="r+") as output_dataset:
+                output_dataset[0][t_idx, c_idx] = transformed_zyx
+
+            click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
+        else:
+            click.echo(f"Skipping c={c_idx}, t={t_idx} due to all zeros or nans")
+
+
+# TODO: modifiy how we get the time and channesl like recOrder (isinstance(input, list) or instance(input,int) or all)
+def process_single_position_v2(
+    func,
+    input_data_path: Path,
+    output_path: Path,
+    time_indices: list = [0],
+    input_channel_idx: list = [],
+    output_channel_idx: list = [],
+    num_processes: int = mp.cpu_count(),
+    **kwargs,
+) -> None:
+    """Register a single position with multiprocessing parallelization over T and C"""
+    # Function to be applied
+    click.echo(f"Function to be applied: \t{func}")
+
+    # Get the reader and writer
+    click.echo(f"Input data path:\t{input_data_path}")
+    click.echo(f"Output data path:\t{str(output_path)}")
+    input_dataset = open_ome_zarr(str(input_data_path))
+    stdout_buffer = io.StringIO()
+    with contextlib.redirect_stdout(stdout_buffer):
+        input_dataset.print_tree()
+    click.echo(f" Input data tree: {stdout_buffer.getvalue()}")
+
+    # Find time indices
+    if time_indices == "all":
+        time_indices = range(input_dataset.data.shape[0])
+    elif isinstance(time_indices, list):
+        time_indices = time_indices
+
+    # Make a time_indices_out list to keep track of the indices
+    time_indices_out = range(len(time_indices))
+
+    # Check for invalid times
+    time_ubound = input_dataset.data.shape[0] - 1
+    if np.max(time_indices) > time_ubound:
+        raise ValueError(
+            f"time_indices = {time_indices} includes a time index beyond the maximum index of the dataset = {time_ubound}"
+        )
+
+    # Check the arguments for the function
+    all_func_params = inspect.signature(func).parameters.keys()
+    # Extract the relevant kwargs for the function 'func'
+    func_args = {}
+    non_func_args = {}
+
+    for k, v in kwargs.items():
+        if k in all_func_params:
+            func_args[k] = v
+        else:
+            non_func_args[k] = v
+
+    # Write the settings into the metadata if existing
+    if "extra_metadata" in non_func_args:
+        # For each dictionary in the nest
+        with open_ome_zarr(output_path, mode="r+") as output_dataset:
+            for params_metadata_keys in kwargs["extra_metadata"].keys():
+                output_dataset.zattrs["extra_metadata"] = non_func_args["extra_metadata"]
+
+    # Loop through (T, C), deskewing and writing as we go
+    click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
+
+    if input_channel_idx is None or len(input_channel_idx) == 0:
+        # If C is not empty, use itertools.product with both ranges
+        _, C, _, _, _ = input_dataset.data.shape
+        iterable = itertools.product(time_indices, time_indices_out, range(C))
+        partial_apply_transform_to_zyx_and_save = partial(
+            apply_transform_to_zyx_and_save_v2,
+            func,
+            input_dataset,
+            output_path / Path(*input_data_path.parts[-3:]),
+            input_channel_indices=None,
+            **func_args,
+        )
+    else:
+        # If C is empty, use only the range for time_indices
+        iterable = itertools.product(time_indices, time_indices_out)
+        partial_apply_transform_to_zyx_and_save = partial(
+            apply_transform_to_zyx_and_save_v2,
+            func,
+            input_dataset,
+            output_path / Path(*input_data_path.parts[-3:]),
+            input_channel_idx,
+            output_channel_idx,
+            c_idx=0,
+            **func_args,
+        )
+    with mp.Pool(num_processes) as p:
+        p.starmap(
+            partial_apply_transform_to_zyx_and_save,
+            iterable,
+        )
+
+
+def nuc_mem_segmentation_3D(czyx_data, zyx_slicing, **cellpose_kwargs):
+    from cellpose import models
+    from skimage.exposure import rescale_intensity
+    from skimage.util import invert
+
+    Z_slice = zyx_slicing[0]
+    Y_slice = zyx_slicing[1]
+    X_slice = zyx_slicing[2]
+    czyx_data = czyx_data[:, Z_slice, Y_slice, X_slice]
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    segmentation_stack = np.zeros_like(czyx_data)
+    click.echo(f'Segmentation Stack shape {segmentation_stack.shape}')
+    cellpose_params = cellpose_kwargs["cellpose_kwargs"]
+    c_idx = 0
+    if "nucleus_kwargs" in cellpose_params:
+        click.echo('Segmenting Nuclei')
+        nuc_seg_kwargs = cellpose_params["nucleus_kwargs"]
+
+        model_nucleus_3D = models.CellposeModel(
+            pretrained_model=cellpose_params["nuc_model_path"],
+            # net_avg=True, #Note removed CP3.0
+            gpu=True,
+            device=torch.device(device),
+        )
+        nuc_segmentation, _, _ = model_nucleus_3D.eval(czyx_data, **nuc_seg_kwargs)
+        segmentation_stack[c_idx] = nuc_segmentation.astype(np.uint16)
+        c_idx += 1
+    if "membrane_kwargs" in cellpose_params:
+        click.echo('Segmenting Membrane')
+        mem_seg_kwargs = cellpose_params["membrane_kwargs"]
+
+        model_membrane_3D = models.CellposeModel(
+            pretrained_model=cellpose_params["mem_model_path"],
+            # net_avg=True,
+            gpu=True,
+            device=torch.device(device),
+        )
+        c_idx_mem, c_idx_nuc = mem_seg_kwargs['channels']
+        czyx_data[c_idx_mem] = rescale_intensity(
+            invert(czyx_data[c_idx_mem]), out_range='uint16'
+        )
+        czyx_data[c_idx_nuc] = rescale_intensity(
+            czyx_data[c_idx_nuc],
+            out_range=(np.min(czyx_data[c_idx_mem]), np.max(czyx_data[c_idx_mem])),
+        )
+
+        mem_segmentation, _, _ = model_membrane_3D.eval(czyx_data, **mem_seg_kwargs)
+        segmentation_stack[c_idx] = mem_segmentation.astype(np.uint16)
+
+    return segmentation_stack
