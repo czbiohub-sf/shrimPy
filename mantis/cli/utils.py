@@ -1088,7 +1088,7 @@ def process_single_position_v2(
     if input_channel_idx is None or len(input_channel_idx) == 0:
         # If C is not empty, use itertools.product with both ranges
         _, C, _, _, _ = input_dataset.data.shape
-        iterable = itertools.product(time_indices, time_indices_out, range(C))
+        iterable = itertools.product(time_indices, range(C))
         partial_apply_transform_to_zyx_and_save = partial(
             apply_transform_to_zyx_and_save_v2,
             func,
@@ -1099,7 +1099,7 @@ def process_single_position_v2(
         )
     else:
         # If C is empty, use only the range for time_indices
-        iterable = itertools.product(time_indices, time_indices_out)
+        iterable = zip(time_indices, time_indices_out)
         partial_apply_transform_to_zyx_and_save = partial(
             apply_transform_to_zyx_and_save_v2,
             func,
