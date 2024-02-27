@@ -198,7 +198,6 @@ def apply_function_to_zyx_and_save(
         click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
 
 
-# NOTE WIP
 def apply_transform_to_zyx_and_save_v2(
     func,
     position: Position,
@@ -206,6 +205,7 @@ def apply_transform_to_zyx_and_save_v2(
     input_channel_indices: list[int],
     output_channel_indices: list[int],
     t_idx: int,
+    t_idx_out: int,
     c_idx: int = None,
     **kwargs,
 ) -> None:
@@ -214,12 +214,10 @@ def apply_transform_to_zyx_and_save_v2(
 
     # TODO: temporary fix to slumkit issue
     if _is_nested(input_channel_indices):
-        # print(f'input_channel_indices: {input_channel_indices}')
         input_channel_indices = [int(x) for x in input_channel_indices if x.isdigit()]
     if _is_nested(output_channel_indices):
-        # print(f'input_channel_indices: {output_channel_indices}')
         output_channel_indices = [int(x) for x in output_channel_indices if x.isdigit()]
-    click.echo(f'input_channel_indices: {input_channel_indices}')
+    click.echo(f"input_channel_indices: {input_channel_indices}")
 
     # Process CZYX vs ZYX
     if input_channel_indices is not None:
@@ -228,7 +226,7 @@ def apply_transform_to_zyx_and_save_v2(
             transformed_czyx = func(czyx_data, **kwargs)
             # Write to file
             with open_ome_zarr(output_path, mode="r+") as output_dataset:
-                output_dataset[0].oindex[t_idx, output_channel_indices] = transformed_czyx
+                output_dataset[0].oindex[t_idx_out, output_channel_indices] = transformed_czyx
             click.echo(f"Finished Writing.. t={t_idx}")
         else:
             click.echo(f"Skipping t={t_idx} due to all zeros or nans")
