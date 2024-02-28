@@ -411,9 +411,16 @@ def _generate_html(
 </style>
 '''
 
+    head = f'''
+<head>
+    <title>PSF Analysis: {dataset_name}</title>
+</head>
+    '''
+
     html = markdown.markdown(report_str)
     formatted_html = f'''
 {css_style}
+{head}
 <article class="markdown-body">
 {html}
 </article>
