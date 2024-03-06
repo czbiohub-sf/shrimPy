@@ -34,7 +34,12 @@ FOCUS_SLICE_ROI_WIDTH = 150  # size of central ROI used to find focal slice
 @source_position_dirpaths()
 @target_position_dirpaths()
 @output_filepath()
-@click.option("--similarity-flag", '-x', is_flag=True)
+@click.option(
+    "--similarity-flag",
+    '-x',
+    is_flag=True,
+    help='flag to use similarity transform (rotation, translation, scaling) default:Eucledian (rotation, translation)',
+)
 def estimate_affine(
     source_position_dirpaths, target_position_dirpaths, output_filepath, similarity_flag
 ):
@@ -46,6 +51,7 @@ def estimate_affine(
     -s ./acq_name_labelfree_reconstructed.zarr/0/0/0
     -t ./acq_name_lightsheet_deskewed.zarr/0/0/0
     -o ./output.yml
+    -x  flag to use similarity transform (rotation, translation, scaling) default:Eucledian (rotation, translation)
     """
 
     click.echo("\nTarget channel INFO:")
@@ -76,35 +82,39 @@ def estimate_affine(
     source_channel_Z, source_channel_Y, source_channel_X = source_channel_volume.shape[-3:]
     target_channel_Z, target_channel_Y, target_channel_X = target_channel_volume.shape[-3:]
 
-    focus_source_channel_idx = focus_from_transverse_band(
-        source_channel_volume[
-            :,
-            source_channel_Y // 2
-            - FOCUS_SLICE_ROI_WIDTH : source_channel_Y // 2
-            + FOCUS_SLICE_ROI_WIDTH,
-            source_channel_X // 2
-            - FOCUS_SLICE_ROI_WIDTH : source_channel_X // 2
-            + FOCUS_SLICE_ROI_WIDTH,
-        ],
-        NA_det=NA_DETECTION_SOURCE,
-        lambda_ill=WAVELENGTH_EMISSION_SOURCE_CHANNEL,
-        pixel_size=source_channel_voxel_size[-1],
-    )
+    if source_channel_Z < 2 or target_channel_Z < 2:
+        focus_source_channel_idx = 1
+        focus_target_channel_idx = 1
+    else:
+        focus_source_channel_idx = focus_from_transverse_band(
+            source_channel_volume[
+                :,
+                source_channel_Y // 2
+                - FOCUS_SLICE_ROI_WIDTH : source_channel_Y // 2
+                + FOCUS_SLICE_ROI_WIDTH,
+                source_channel_X // 2
+                - FOCUS_SLICE_ROI_WIDTH : source_channel_X // 2
+                + FOCUS_SLICE_ROI_WIDTH,
+            ],
+            NA_det=NA_DETECTION_SOURCE,
+            lambda_ill=WAVELENGTH_EMISSION_SOURCE_CHANNEL,
+            pixel_size=source_channel_voxel_size[-1],
+        )
 
-    focus_target_channel_idx = focus_from_transverse_band(
-        target_channel_volume[
-            :,
-            target_channel_Y // 2
-            - FOCUS_SLICE_ROI_WIDTH : target_channel_Y // 2
-            + FOCUS_SLICE_ROI_WIDTH,
-            target_channel_X // 2
-            - FOCUS_SLICE_ROI_WIDTH : target_channel_X // 2
-            + FOCUS_SLICE_ROI_WIDTH,
-        ],
-        NA_det=NA_DETECTION_TARGET,
-        lambda_ill=WAVELENGTH_EMISSION_TARGET_CHANNEL,
-        pixel_size=target_channel_voxel_size[-1],
-    )
+        focus_target_channel_idx = focus_from_transverse_band(
+            target_channel_volume[
+                :,
+                target_channel_Y // 2
+                - FOCUS_SLICE_ROI_WIDTH : target_channel_Y // 2
+                + FOCUS_SLICE_ROI_WIDTH,
+                target_channel_X // 2
+                - FOCUS_SLICE_ROI_WIDTH : target_channel_X // 2
+                + FOCUS_SLICE_ROI_WIDTH,
+            ],
+            NA_det=NA_DETECTION_TARGET,
+            lambda_ill=WAVELENGTH_EMISSION_TARGET_CHANNEL,
+            pixel_size=target_channel_voxel_size[-1],
+        )
 
     click.echo()
     if focus_source_channel_idx not in (0, source_channel_Z - 1):
