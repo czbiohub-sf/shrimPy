@@ -6,6 +6,7 @@ import numpy as np
 from iohub import open_ome_zarr
 from iohub.reader import print_info
 from skimage.transform import EuclideanTransform
+from skimage.transform import SimilarityTransform
 from waveorder.focus import focus_from_transverse_band
 
 from mantis.analysis.AnalysisSettings import RegistrationSettings
@@ -33,7 +34,15 @@ FOCUS_SLICE_ROI_WIDTH = 150  # size of central ROI used to find focal slice
 @source_position_dirpaths()
 @target_position_dirpaths()
 @output_filepath()
-def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_filepath):
+@click.option(
+    "--similarity-flag",
+    '-x',
+    is_flag=True,
+    help='flag to use similarity transform (rotation, translation, scaling) default:Eucledian (rotation, translation)',
+)
+def estimate_affine(
+    source_position_dirpaths, target_position_dirpaths, output_filepath, similarity_flag
+):
     """
     Estimate the affine transform between a source (i.e. moving) and a target (i.e.
     fixed) image by selecting corresponding points in each.
@@ -42,6 +51,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     -s ./acq_name_labelfree_reconstructed.zarr/0/0/0
     -t ./acq_name_lightsheet_deskewed.zarr/0/0/0
     -o ./output.yml
+    -x  flag to use similarity transform (rotation, translation, scaling) default:Eucledian (rotation, translation)
     """
 
     click.echo("\nTarget channel INFO:")
@@ -72,35 +82,39 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     source_channel_Z, source_channel_Y, source_channel_X = source_channel_volume.shape[-3:]
     target_channel_Z, target_channel_Y, target_channel_X = target_channel_volume.shape[-3:]
 
-    focus_source_channel_idx = focus_from_transverse_band(
-        source_channel_volume[
-            :,
-            source_channel_Y // 2
-            - FOCUS_SLICE_ROI_WIDTH : source_channel_Y // 2
-            + FOCUS_SLICE_ROI_WIDTH,
-            source_channel_X // 2
-            - FOCUS_SLICE_ROI_WIDTH : source_channel_X // 2
-            + FOCUS_SLICE_ROI_WIDTH,
-        ],
-        NA_det=NA_DETECTION_SOURCE,
-        lambda_ill=WAVELENGTH_EMISSION_SOURCE_CHANNEL,
-        pixel_size=source_channel_voxel_size[-1],
-    )
+    if source_channel_Z < 2 or target_channel_Z < 2:
+        focus_source_channel_idx = 1
+        focus_target_channel_idx = 1
+    else:
+        focus_source_channel_idx = focus_from_transverse_band(
+            source_channel_volume[
+                :,
+                source_channel_Y // 2
+                - FOCUS_SLICE_ROI_WIDTH : source_channel_Y // 2
+                + FOCUS_SLICE_ROI_WIDTH,
+                source_channel_X // 2
+                - FOCUS_SLICE_ROI_WIDTH : source_channel_X // 2
+                + FOCUS_SLICE_ROI_WIDTH,
+            ],
+            NA_det=NA_DETECTION_SOURCE,
+            lambda_ill=WAVELENGTH_EMISSION_SOURCE_CHANNEL,
+            pixel_size=source_channel_voxel_size[-1],
+        )
 
-    focus_target_channel_idx = focus_from_transverse_band(
-        target_channel_volume[
-            :,
-            target_channel_Y // 2
-            - FOCUS_SLICE_ROI_WIDTH : target_channel_Y // 2
-            + FOCUS_SLICE_ROI_WIDTH,
-            target_channel_X // 2
-            - FOCUS_SLICE_ROI_WIDTH : target_channel_X // 2
-            + FOCUS_SLICE_ROI_WIDTH,
-        ],
-        NA_det=NA_DETECTION_TARGET,
-        lambda_ill=WAVELENGTH_EMISSION_TARGET_CHANNEL,
-        pixel_size=target_channel_voxel_size[-1],
-    )
+        focus_target_channel_idx = focus_from_transverse_band(
+            target_channel_volume[
+                :,
+                target_channel_Y // 2
+                - FOCUS_SLICE_ROI_WIDTH : target_channel_Y // 2
+                + FOCUS_SLICE_ROI_WIDTH,
+                target_channel_X // 2
+                - FOCUS_SLICE_ROI_WIDTH : target_channel_X // 2
+                + FOCUS_SLICE_ROI_WIDTH,
+            ],
+            NA_det=NA_DETECTION_TARGET,
+            lambda_ill=WAVELENGTH_EMISSION_TARGET_CHANNEL,
+            pixel_size=target_channel_voxel_size[-1],
+        )
 
     click.echo()
     if focus_source_channel_idx not in (0, source_channel_Z - 1):
@@ -276,24 +290,36 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     pts_target_channel = points_target_channel.data
 
     # Estimate the affine transform between the points xy to make sure registration is good
-    transform = EuclideanTransform()
-    transform.estimate(pts_source_channel[:, 1:], pts_target_channel[:, 1:])
-    yx_points_transformation_matrix = transform.params
+    if similarity_flag:
+        # Similarity transform (rotation, translation, scaling)
+        transform = SimilarityTransform()
+        transform.estimate(pts_source_channel, pts_target_channel)
+        manual_estimated_transform = transform.params @ compound_affine
 
-    z_translation = pts_target_channel[0, 0] - pts_source_channel[0, 0]
+    else:
+        # Euclidean transform (rotation, translation) limiting this dataset's scale and just z-translation
+        transform = EuclideanTransform()
+        transform.estimate(pts_source_channel[:, 1:], pts_target_channel[:, 1:])
+        yx_points_transformation_matrix = transform.params
 
-    z_scale_translate_matrix = np.array([[1, 0, 0, z_translation]])
+        z_translation = pts_target_channel[0, 0] - pts_source_channel[0, 0]
 
-    # 2D to 3D matrix
-    euclidian_transform = np.vstack(
-        (z_scale_translate_matrix, np.insert(yx_points_transformation_matrix, 0, 0, axis=1))
-    )  # Insert 0 in the third entry of each row
+        z_scale_translate_matrix = np.array([[1, 0, 0, z_translation]])
 
-    scaling_affine = get_3D_rescaling_matrix(
-        (1, target_channel_Y, target_channel_X),
-        (scaling_factor_z, scaling_factor_yx, scaling_factor_yx),
-    )
-    manual_estimated_transform = euclidian_transform @ compound_affine
+        # 2D to 3D matrix
+        euclidian_transform = np.vstack(
+            (
+                z_scale_translate_matrix,
+                np.insert(yx_points_transformation_matrix, 0, 0, axis=1),
+            )
+        )  # Insert 0 in the third entry of each row
+
+        scaling_affine = get_3D_rescaling_matrix(
+            (1, target_channel_Y, target_channel_X),
+            (scaling_factor_z, scaling_factor_yx, scaling_factor_yx),
+        )
+
+        manual_estimated_transform = euclidian_transform @ compound_affine
 
     # NOTE: these two functions are key to pass the function properly to ANTs
     manual_estimated_transform_ants_style = manual_estimated_transform[:, :-1].ravel()
@@ -348,6 +374,8 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     )
     click.echo(f"Writing registration parameters to {output_filepath}")
     model_to_yaml(model, output_filepath)
+
+    input("Press <enter> to close the viewer and exit...")
 
 
 if __name__ == "__main__":

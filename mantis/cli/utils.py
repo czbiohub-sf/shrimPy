@@ -198,7 +198,6 @@ def apply_function_to_zyx_and_save(
         click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
 
 
-# NOTE WIP
 def apply_transform_to_zyx_and_save_v2(
     func,
     position: Position,
@@ -206,6 +205,7 @@ def apply_transform_to_zyx_and_save_v2(
     input_channel_indices: list[int],
     output_channel_indices: list[int],
     t_idx: int,
+    t_idx_out: int,
     c_idx: int = None,
     **kwargs,
 ) -> None:
@@ -214,12 +214,10 @@ def apply_transform_to_zyx_and_save_v2(
 
     # TODO: temporary fix to slumkit issue
     if _is_nested(input_channel_indices):
-        # print(f'input_channel_indices: {input_channel_indices}')
         input_channel_indices = [int(x) for x in input_channel_indices if x.isdigit()]
     if _is_nested(output_channel_indices):
-        # print(f'input_channel_indices: {output_channel_indices}')
         output_channel_indices = [int(x) for x in output_channel_indices if x.isdigit()]
-    click.echo(f'input_channel_indices: {input_channel_indices}')
+    click.echo(f"input_channel_indices: {input_channel_indices}")
 
     # Process CZYX vs ZYX
     if input_channel_indices is not None:
@@ -228,7 +226,7 @@ def apply_transform_to_zyx_and_save_v2(
             transformed_czyx = func(czyx_data, **kwargs)
             # Write to file
             with open_ome_zarr(output_path, mode="r+") as output_dataset:
-                output_dataset[0].oindex[t_idx, output_channel_indices] = transformed_czyx
+                output_dataset[0].oindex[t_idx_out, output_channel_indices] = transformed_czyx
             click.echo(f"Finished Writing.. t={t_idx}")
         else:
             click.echo(f"Skipping t={t_idx} due to all zeros or nans")
@@ -305,7 +303,6 @@ def process_single_position(
         )
 
 
-# TODO: modifiy how we get the time and channesl like recOrder (isinstance(input, list) or instance(input,int) or all)
 def process_single_position_v2(
     func,
     input_data_path: Path,
@@ -335,6 +332,9 @@ def process_single_position_v2(
     elif isinstance(time_indices, list):
         time_indices = time_indices
 
+    # Make a time_indices_out list to keep track of the indices
+    time_indices_out = range(len(time_indices))
+
     # Check for invalid times
     time_ubound = input_dataset.data.shape[0] - 1
     if np.max(time_indices) > time_ubound:
@@ -355,17 +355,23 @@ def process_single_position_v2(
             non_func_args[k] = v
 
     # Write the settings into the metadata if existing
-    if 'extra_metadata' in non_func_args:
+    if "extra_metadata" in non_func_args:
         # For each dictionary in the nest
-        with open_ome_zarr(output_path, mode='r+') as output_dataset:
-            for params_metadata_keys in kwargs['extra_metadata'].keys():
-                output_dataset.zattrs['extra_metadata'] = non_func_args['extra_metadata']
+        with open_ome_zarr(output_path, mode="r+") as output_dataset:
+            for params_metadata_keys in kwargs["extra_metadata"].keys():
+                output_dataset.zattrs["extra_metadata"] = non_func_args["extra_metadata"]
 
     # Loop through (T, C), deskewing and writing as we go
+    click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
+
     if input_channel_idx is None or len(input_channel_idx) == 0:
         # If C is not empty, use itertools.product with both ranges
         _, C, _, _, _ = input_dataset.data.shape
-        iterable = itertools.product(time_indices, range(C))
+        iterable = [
+            (t[0], t[1], c)
+            for t, c in itertools.product(zip(time_indices, time_indices_out), range(C))
+        ]
+
         partial_apply_transform_to_zyx_and_save = partial(
             apply_transform_to_zyx_and_save_v2,
             func,
@@ -376,7 +382,7 @@ def process_single_position_v2(
         )
     else:
         # If C is empty, use only the range for time_indices
-        iterable = itertools.product(time_indices)
+        iterable = zip(time_indices, time_indices_out)
         partial_apply_transform_to_zyx_and_save = partial(
             apply_transform_to_zyx_and_save_v2,
             func,
@@ -387,13 +393,11 @@ def process_single_position_v2(
             c_idx=0,
             **func_args,
         )
-
-        click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
-        with mp.Pool(num_processes) as p:
-            p.starmap(
-                partial_apply_transform_to_zyx_and_save,
-                iterable,
-            )
+    with mp.Pool(num_processes) as p:
+        p.starmap(
+            partial_apply_transform_to_zyx_and_save,
+            iterable,
+        )
 
 
 def copy_n_paste(zyx_data: np.ndarray, zyx_slicing_params: list) -> np.ndarray:
