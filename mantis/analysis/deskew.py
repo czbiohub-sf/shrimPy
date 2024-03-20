@@ -53,6 +53,47 @@ def _get_averaged_shape(deskewed_data_shape: tuple, average_window_width: int) -
     return averaged_shape
 
 
+def _get_transform_matrix(
+    data_shape: tuple, ls_angle_deg: float, px_to_scan_ratio: float, keep_overhang: bool
+):
+    """
+    Compute affine transformation matrix used to deskew data.
+
+    Parameters
+    ----------
+    data_shape : tuple
+    ls_angle_deg : float
+    px_to_scan_ratio : float
+    keep_overhang : bool
+
+    Returns
+    -------
+    matrix : np.array
+        Affine transformation matrix.
+    """
+    Z, Y, X = data_shape
+
+    ct = np.cos(ls_angle_deg * np.pi / 180)
+    Z_shift = 0
+    if not keep_overhang:
+        Z_shift = int(np.floor(Y * ct * px_to_scan_ratio))
+
+    matrix = np.array(
+        [
+            [
+                -px_to_scan_ratio * ct,
+                0,
+                px_to_scan_ratio,
+                Z_shift,
+            ],
+            [-1, 0, 0, Y - 1],
+            [0, -1, 0, X - 1],
+        ]
+    )
+
+    return matrix
+
+
 def get_deskewed_data_shape(
     raw_data_shape: tuple,
     ls_angle_deg: float,
@@ -155,25 +196,10 @@ def deskew_data(
         cval = np.min(np.ravel(raw_data))
 
     # Prepare transforms
-    Z, Y, X = raw_data.shape
-
-    ct = np.cos(ls_angle_deg * np.pi / 180)
-    Z_shift = 0
-    if not keep_overhang:
-        Z_shift = int(np.floor(Y * ct * px_to_scan_ratio))
-
-    matrix = np.array(
-        [
-            [
-                -px_to_scan_ratio * ct,
-                0,
-                px_to_scan_ratio,
-                Z_shift,
-            ],
-            [-1, 0, 0, Y - 1],
-            [0, -1, 0, X - 1],
-        ]
+    matrix = _get_transform_matrix(
+        raw_data.shape, ls_angle_deg, px_to_scan_ratio, keep_overhang
     )
+
     output_shape, _ = get_deskewed_data_shape(
         raw_data.shape, ls_angle_deg, px_to_scan_ratio, keep_overhang
     )
