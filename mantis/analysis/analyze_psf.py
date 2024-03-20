@@ -348,7 +348,7 @@ def _generate_html(
 
 * Name: `{dataset_name}`
 * Path: `{data_path}`
-* Scale: {dataset_scale[::-1]} um  <!-- in XYZ order -->
+* Scale: {tuple(np.round(dataset_scale[::-1], 3))} um  <!-- in XYZ order -->
 * Date analyzed: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 ### Number of beads

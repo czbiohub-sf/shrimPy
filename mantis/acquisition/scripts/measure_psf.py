@@ -15,6 +15,11 @@ from iohub.ngff_meta import TransformationMeta
 from iohub.reader import open_ome_zarr, read_micromanager
 from pycromanager import Acquisition, multi_d_acquisition_events, Core
 
+from mantis.acquisition.microscope_operations import (
+    acquire_defocus_stack,
+    setup_kim101_stage
+)
+
 from mantis.analysis.AnalysisSettings import DeskewSettings
 from mantis.analysis.analyze_psf import (
     analyze_psf,
@@ -60,71 +65,120 @@ deskew_bead_detection_settings = {
     "device": "cuda" if torch.cuda.is_available() else "cpu",
 }
 
+def check_acquisition_directory(root_dir: Path, acq_name: str, suffix='', idx=1) -> Path:
+    acq_dir = root_dir / f'{acq_name}_{idx}{suffix}'
+    if acq_dir.exists():
+        return check_acquisition_directory(root_dir, acq_name, suffix, idx + 1)
+    return acq_dir
+
 mmc = Core()
 
 # %%
-data_dir = Path(r'D:\2024_02_15_mantis_alignment')
-dataset = '2024_02_15_LS_0.17_96wp_redo_epi_illum'
+data_dir = Path(r'D:\2024_03_18_mantis_alignment')
+dataset = '2024_03_18_RR_Straight_O3_scan_Blackfly_smaller_z_step'
+# dataset = '2024_03_18_epi_O1_benchmark'
 
 # epi settings
 # z_stage = 'PiezoStage:Q:35'
 # z_step = 0.2  # in um
 # z_range = (-2, 50)  # in um
-# pixel_size = 0.069  # in um
+# pixel_size = 2 * 3.45 / 100  # in um
+# # pixel_size = 3.45 / 55.7  # in um
 # axis_labels = ("Z", "Y", "X")
 
-# ls_settings
+# ls settings
 # z_stage = 'AP Galvo'
 # z_step = 0.205  # in um
 # z_range = (-100, 85)  # in um
 # pixel_size = 0.116  # in um
 # axis_labels = ("SCAN", "TILT", "COVERSLIP")
 
-# epi illumination ls detection settings
-z_stage = 'AP Galvo'
-z_step = 0.205  # in um
-z_range = (-100, 85)  # in um
-pixel_size = 0.116  # in um
-axis_labels = ("SCAN", "TILT", "COVERSLIP")
+# epi illumination rr detection settings
+# z_stage = 'AP Galvo'
+# z_step = 0.205  # in um
+# z_range = (-100, 85)  # in um
+# pixel_size = 0.116  # in um
+# axis_labels = ("SCAN", "TILT", "COVERSLIP")
+
+# ls straight  settings
+z_stage = setup_kim101_stage('74000291')
+step_per_um = 35  # matches ~30 nm per step quoted in PIA13 specs
+z_start = 0 / step_per_um  # in um
+z_end = 1000 / step_per_um
+z_step = 5 / step_per_um
+z_range = np.arange(z_start, z_end + z_step, z_step)  # in um
+z_step /= 1.4 # count in 1.4x remote volume magnification
+pixel_size = 3.45 / 40 / 1.4  # in um, counting the 1.4x remote volume magnification
+axis_labels = ("Z", "Y", "X")
+
 
 deskew = True
-view = False
+view = True
 scale = (z_step, pixel_size, pixel_size)
 data_path = data_dir / dataset
 
-mmc.set_property('Core', 'Focus', z_stage)
-z_pos = mmc.get_position(z_stage)
-events = multi_d_acquisition_events(
-    z_start=z_pos + z_range[0],
-    z_end=z_pos + z_range[1],
-    z_step=z_step,
-)
+if isinstance(z_stage, str):
+    mmc.set_property('Core', 'Focus', z_stage)
+    z_pos = mmc.get_position(z_stage)
+    events = multi_d_acquisition_events(
+        z_start=z_pos + z_range[0],
+        z_end=z_pos + z_range[-1],
+        z_step=z_step,
+    )
 
-camera = mmc.get_camera_device()
-if camera == 'Prime BSI Express':
-    mmc.set_property('Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter')
-    mmc.set_property('TS2_TTL1-8', 'Blanking', 'On')
-    mmc.set_property('TS2_DAC03', 'Sequence', 'On')
+    camera = mmc.get_camera_device()
+    if camera == 'Prime BSI Express' and z_stage == 'AP Galvo':
+        mmc.set_property('Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter')
+        mmc.set_property('TS2_TTL1-8', 'Blanking', 'On')
+        mmc.set_property('TS2_DAC03', 'Sequence', 'On')
 
-mmc.set_auto_shutter(False)
-mmc.set_shutter_open(True)
-with Acquisition(
-    directory=str(data_dir),
-    name=dataset,
-    show_display=False,
-) as acq:
-    acq.acquire(events)
-mmc.set_shutter_open(False)
-mmc.set_auto_shutter(True)
-mmc.set_position(z_stage, z_pos)
+    mmc.set_auto_shutter(False)
+    mmc.set_shutter_open(True)
+    with Acquisition(
+        directory=str(data_dir),
+        name=dataset,
+        show_display=False,
+    ) as acq:
+        acq.acquire(events)
+    mmc.set_shutter_open(False)
+    mmc.set_auto_shutter(True)
+    mmc.set_position(z_stage, z_pos)
 
-if camera == 'Prime BSI Express':
-    mmc.set_property('TS2_TTL1-8', 'Blanking', 'Off')
+    if camera == 'Prime BSI Express' and z_stage == 'AP Galvo':
+        mmc.set_property('TS2_TTL1-8', 'Blanking', 'Off')
 
-ds = acq.get_dataset()
-zyx_data = np.asarray(ds.as_array())
-channel_names = ['GFP']
-dataset = Path(ds.path).name
+    ds = acq.get_dataset()
+    zyx_data = np.asarray(ds.as_array())
+    channel_names = ['GFP']
+    dataset = Path(ds.path).name
+    ds.close()
+
+else:
+    acq_dir = check_acquisition_directory(data_dir, dataset, suffix='.zarr')
+    dataset = acq_dir.stem
+
+    mmc.set_auto_shutter(False)
+    mmc.set_shutter_open(True)
+    z_range_microsteps = (z_range * step_per_um).astype(int)
+    zyx_data = acquire_defocus_stack(mmc, z_stage, z_range_microsteps)
+    mmc.set_shutter_open(False)
+    mmc.set_auto_shutter(True)
+
+    # save to zarr store
+    channel_names = ['GFP']
+    with open_ome_zarr(
+        data_dir / (dataset + '.zarr'),
+        layout="hcs",
+        mode="w",
+        channel_names=channel_names,
+    ) as output_dataset:
+        pos = output_dataset.create_position('0', '0', '0')
+        pos.create_image(
+            name="0",
+            data=zyx_data[None, None, ...],
+            chunks=(1, 1, 50) + zyx_data.shape[1:],  # may be bigger than 500 MB
+        )
+    z_stage.close()
 
 raw = False
 if axis_labels == ("SCAN", "TILT", "COVERSLIP"):
@@ -135,7 +189,7 @@ if axis_labels == ("SCAN", "TILT", "COVERSLIP"):
 t1 = time.time()
 peaks = detect_peaks(
     zyx_data,
-    **ls_bead_detection_settings,
+    **epi_bead_detection_settings,
     verbose=True,
 )
 gc.collect()
@@ -171,7 +225,7 @@ with warnings.catch_warnings():
 t2 = time.time()
 print(f'Time to analyze PSFs: {t2-t1}')
 
-# %% Generate HTML report
+# Generate HTML report
 
 psf_analysis_path = data_dir / (dataset + '_psf_analysis')
 generate_report(
