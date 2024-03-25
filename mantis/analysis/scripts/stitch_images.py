@@ -1,4 +1,8 @@
-# %%
+# %% This script creates an stitched image of a multi-position dataset given
+# average column translation and row translation distances.
+
+import os
+
 from pathlib import Path
 
 import napari
@@ -6,6 +10,8 @@ import numpy as np
 
 from iohub import open_ome_zarr
 from skimage.transform import SimilarityTransform, warp
+
+os.environ["DISPLAY"] = ':1005'
 
 
 def stitch_images(
@@ -47,6 +53,8 @@ def stitch_images(
     sizeY, sizeX = position.data.shape[-2:]
     grid_rows = sorted(grid_rows)
     grid_cols = sorted(grid_cols)
+    n_rows = len(grid_rows)
+    n_cols = len(grid_cols)
 
     if percent_overlap is not None:
         assert 0 <= percent_overlap <= 1, "percent_overlap must be between 0 and 1"
@@ -57,8 +65,26 @@ def stitch_images(
     if not isinstance(row_translation, tuple):
         row_translation = (0, row_translation)
 
-    # TODO: calculate the output shape based on col and row translations
-    output_shape = (sizeY * len(grid_rows), sizeX * len(grid_cols))
+    # TODO: test with non-square images and non-square grid
+    global_translation = (
+        np.ceil(np.abs(np.minimum(row_translation[0] * (n_rows - 1), 0))).astype(int),
+        np.ceil(np.abs(np.minimum(col_translation[1] * (n_cols - 1), 0))).astype(int),
+    )
+    output_shape = (
+        np.ceil(
+            sizeY
+            + col_translation[1] * (n_cols - 1)
+            + row_translation[1] * (n_rows - 1)
+            + global_translation[1]
+        ).astype(int),
+        np.ceil(
+            sizeX
+            + col_translation[0] * (n_cols - 1)
+            + row_translation[0] * (n_rows - 1)
+            + global_translation[0]
+        ).astype(int),
+    )
+    # output_shape = (sizeY * len(grid_rows), sizeX * len(grid_cols))
     stitched_array = np.zeros(output_shape, dtype=np.float32)
 
     for row_idx, row_name in enumerate(grid_rows):
@@ -66,8 +92,12 @@ def stitch_images(
             image = dataset[Path(well_name, col_name + row_name)].data[0, 0, 0]
             transform = SimilarityTransform(
                 translation=(
-                    col_translation[0] * col_idx + col_translation[1] * row_idx,
-                    row_translation[0] * col_idx + row_translation[1] * row_idx,
+                    col_translation[0] * col_idx
+                    + row_translation[0] * row_idx
+                    + global_translation[0],
+                    col_translation[1] * col_idx
+                    + row_translation[1] * row_idx
+                    + global_translation[1],
                 )
             )
             # transform = SimilarityTransform(
@@ -89,11 +119,18 @@ dataset = 'grid_test_3.zarr'
 data_path = data_dir / dataset
 
 # stitched_array = stitch_images(data_path, percent_overlap=0.05)
+# stitched_array = stitch_images(
+#     data_path, col_translation=(964, 7.00), row_translation=(-6.73, 966)
+# )
+# stitched_array = stitch_images(
+#     data_path, col_translation=(964, -6.73), row_translation=(7.00, 966)
+# )
 stitched_array = stitch_images(
-    data_path, col_translation=(964, 7.00), row_translation=(-6.73, 966)
+    data_path, col_translation=(967.9, -7.45), row_translation=(7.78, 969)
 )
 
 # %%
 viewer = napari.Viewer()
+viewer.add_image(stitched_array == 0)
 viewer.add_image(stitched_array)
 # %%
