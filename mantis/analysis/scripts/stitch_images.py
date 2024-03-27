@@ -5,6 +5,7 @@ import os
 
 from pathlib import Path
 
+import click
 import numpy as np
 
 from iohub import open_ome_zarr
@@ -104,9 +105,44 @@ def stitch_images(
     return stitched_array
 
 
+@click.command()
+@click.option(
+    "--input_data_path",
+    "-i",
+    type=click.Path(exists=True),
+    required=True,
+    help="The path to the input Zarr store.",
+)
+@click.option(
+    "--output_data_path",
+    "-o",
+    type=click.Path(),
+    required=True,
+    help="The path to the output Zarr store. Channels will be appended is the store already exists.",
+)
+@click.option(
+    "--col_translation",
+    type=(float, float),
+    default=(967.9, -7.45),
+    required=False,
+    help="The translation distance in pixels in the column direction.",
+)
+@click.option(
+    "--row_translation",
+    type=(float, float),
+    default=(7.78, 969),
+    required=False,
+    help="The translation distance in pixels in the row direction.",
+)
+@click.option(
+    "--channels",
+    "-c",
+    multiple=True,
+    help="List of channels to stitch. If not provided all channels will be stitched.",
+)
 def stitch_zarr_store(
-    input_data_path: Path,
-    output_data_path: Path,
+    input_data_path: str,
+    output_data_path: str,
     col_translation: float | tuple[float, float],
     row_translation: float | tuple[float, float],
     channels: list[str] = None,
@@ -156,7 +192,7 @@ def stitch_zarr_store(
         n_rows, n_cols, sizeY, sizeX, col_translation, row_translation
     )
 
-    if not output_data_path.exists():
+    if not Path(output_data_path).exists():
         output_dataset = open_ome_zarr(
             output_data_path,
             layout='hcs',
@@ -200,24 +236,28 @@ def stitch_zarr_store(
     output_dataset.close()
 
 
+if __name__ == '__main__':
+    stitch_zarr_store()
+
+
 # %%
-input_data_dir = Path(
-    '/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/live/1-reconstruct'
-)
-output_data_dir = Path(
-    '/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/live/3-stitch'
-)
+# input_data_dir = Path(
+#     '/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/live/1-reconstruct'
+# )
+# output_data_dir = Path(
+#     '/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/live/3-stitch'
+# )
 
-dataset = 'A3_600k_38x38_1.zarr'
-stitch_channels = ['Phase3D']
+# dataset = 'A3_600k_38x38_1.zarr'
+# stitch_channels = ['Phase3D']
 
-stitch_zarr_store(
-    input_data_dir / dataset,
-    output_data_dir / dataset,
-    channels=stitch_channels,
-    col_translation=(967.9, -7.45),
-    row_translation=(7.78, 969),
-)
+# stitch_zarr_store(
+#     input_data_dir / dataset,
+#     output_data_dir / dataset,
+#     channels=stitch_channels,
+#     col_translation=(967.9, -7.45),
+#     row_translation=(7.78, 969),
+# )
 
 # %%
 # import napari
