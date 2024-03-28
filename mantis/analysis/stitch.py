@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import click
 import numpy as np
 import scipy.ndimage as ndi
 
@@ -133,3 +134,33 @@ def stitch_images(
             stitched_array[overlap] /= 2  # average blending in the overlapping region
 
     return stitched_array
+
+
+def stitch_shifted_store(input_data_path, output_data_path, verbose=True):
+    click.echo(f'Stitching zarr store: {input_data_path}')
+    with open_ome_zarr(input_data_path, mode="r") as input_dataset:
+        well_name, _ = next(input_dataset.wells())
+        _, sample_position = next(input_dataset.positions())
+        array_shape = sample_position.data.shape
+        channels = input_dataset.channel_names
+
+        stitched_array = np.zeros(array_shape, dtype=np.float32)
+        denominator = np.zeros(array_shape, dtype=np.uint8)
+
+        j = 0
+        for _, position in input_dataset.positions():
+            if verbose:
+                click.echo(f'Processing position {j}')
+            stitched_array += position.data
+            denominator += np.bool_(position.data)
+            j += 1
+
+    denominator[denominator == 0] = 1
+    stitched_array /= denominator
+
+    click.echo(f'Saving stitched array in :{output_data_path}')
+    with open_ome_zarr(
+        output_data_path, layout='hcs', channel_names=channels, mode="w-"
+    ) as output_dataset:
+        position = output_dataset.create_position(*Path(well_name, '0').parts)
+        position.create_image('0', stitched_array, chunks=(1, 1, 1, 4096, 4096))
