@@ -5,7 +5,7 @@ import numpy as np
 
 from iohub import open_ome_zarr
 
-from mantis.analysis.stitch import get_stitch_output_shape, stitch_images
+from mantis.analysis.stitch import get_grid_rows_cols, get_stitch_output_shape, stitch_images
 
 
 @click.command()
@@ -70,6 +70,11 @@ def stitch_zarr_store(
 
     input_dataset = open_ome_zarr(input_data_path)
     input_dataset_channels = input_dataset.channel_names
+    well_name, _ = next(input_dataset.wells())
+    _, sample_position = next(input_dataset.positions())
+    sizeT, sizeC, sizeZ, sizeY, sizeX = sample_position.data.shape
+    dtype = sample_position.data.dtype
+
     if channels is None:
         channels = input_dataset_channels
 
@@ -77,17 +82,7 @@ def stitch_zarr_store(
         channel in input_dataset_channels for channel in channels
     ), "Invalid channel(s) provided."
 
-    grid_rows = set()
-    grid_cols = set()
-    well_name, well = next(input_dataset.wells())
-    for position_name, input_position in well.positions():
-        fov_name = Path(position_name).parts[-1]
-        grid_rows.add(fov_name[3:])  # 1-Pos<COL>_<ROW> syntax
-        grid_cols.add(fov_name[:3])
-    sizeT, sizeC, sizeZ, sizeY, sizeX = input_position.data.shape
-    dtype = input_position.data.dtype
-    grid_rows = sorted(grid_rows)
-    grid_cols = sorted(grid_cols)
+    grid_rows, grid_cols = get_grid_rows_cols(input_data_path)
     n_rows = len(grid_rows)
     n_cols = len(grid_cols)
 
