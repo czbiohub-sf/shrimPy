@@ -1,10 +1,14 @@
 # %%
+import click
 from pathlib import Path
 import numpy as np
 from iohub import open_ome_zarr
 
-input_data_path = "/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/fixed/test-register/small_stitch_test.zarr"
-output_data_path = "/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/fixed/test-register/small_stitch_test_stitched.zarr"
+dataset = 'A3_600k_38x38_1'
+input_data_path = f"/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/live/3-stitch/TEMP_{dataset}.zarr"
+output_data_path = f"/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/live/3-stitch/{dataset}.zarr"
+
+verbose = True
 
 # %%
 with open_ome_zarr(input_data_path, mode="r") as input_dataset:
@@ -16,13 +20,19 @@ with open_ome_zarr(input_data_path, mode="r") as input_dataset:
     stitched_array = np.zeros(array_shape, dtype=np.float32)
     denominator = np.zeros(array_shape, dtype=np.uint8)
 
+    j = 0
     for position_name, position in input_dataset.positions():
+        if verbose:
+            click.echo(f'Processing position {j}')
         stitched_array += position.data
         denominator += np.bool_(position.data)
+        j += 1
 
 denominator[denominator == 0] = 1
 stitched_array /= denominator
 
+if verbose:
+    click.echo('Saving stitched array')
 with open_ome_zarr(
     output_data_path,
     layout='hcs',

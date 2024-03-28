@@ -2,6 +2,7 @@ import datetime
 import glob
 
 from pathlib import Path
+import click
 
 import numpy as np
 
@@ -20,13 +21,14 @@ col_translation = (967.9, -7.45)
 row_translation = (7.78, 969)
 
 # io parameters
-# input_paths = "/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/fixed/2-virtual-stain/fcmae-2d/mean_projection/A3_20x_38x38_1.zarr/*/*/*"
-# output_data_path = "/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/fixed/test-register/large_stitch_test.zarr"
-# channels = ['Nucleus_prediction']
+dataset = 'A3_600k_38x38_1'
+channels = ['Nucleus_prediction']
+input_paths = f"/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/live/2-virtual-stain/fcmae-2d/mean_projection/{dataset}.zarr/*/*/*"
+output_data_path = f"/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/live/3-stitch/TEMP_{dataset}.zarr"
 
-input_paths = "/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/fixed/0-convert/grid_test_3.zarr/*/*/*"
-output_data_path = "/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/fixed/test-register/small_stitch_test.zarr"
-channels = ['Default']
+# input_paths = "/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/fixed/0-convert/grid_test_3.zarr/*/*/*"
+# output_data_path = "/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/fixed/test-register/small_stitch_test.zarr"
+# channels = ['Default']
 
 # sbatch and resource parameters
 cpus_per_task = 1
@@ -54,6 +56,7 @@ output_shape, global_translation = get_stitch_output_shape(
 
 # Create the output zarr mirroring input positions
 # Takes a while
+click.echo('Creating output zarr store')
 create_empty_hcs_zarr(
     store_path=output_data_path,
     position_keys=[p.parts[-3:] for p in input_paths],
@@ -90,6 +93,7 @@ params = SlurmParams(
 slurm_func = slurm_function(process_single_position_v2)
 
 # generate an array of jobs by passing the in_path and out_path to slurm wrapped function
+click.echo('Submitting SLURM jobs')
 for in_path in input_paths:
     col_idx, row_idx = (int(in_path.name[:3]), int(in_path.name[3:]))
     shift = calculate_shift(

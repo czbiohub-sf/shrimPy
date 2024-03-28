@@ -51,7 +51,8 @@ def stitch_zarr_store(
     channels: list[str] = None,
 ) -> None:
     """
-    Stitch a Zarr store of multi-position data.
+    Stitch a Zarr store of multi-position data. Works well on grids with ~10 positions, but is rather slow
+    on grids with ~1000 positions.
 
     Args:
         input_data_path (Path):
