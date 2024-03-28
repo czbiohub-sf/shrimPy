@@ -8,8 +8,10 @@ from pathlib import Path
 import click
 import numpy as np
 
+# from skimage.transform import SimilarityTransform, warp
+import scipy.ndimage as ndi
+
 from iohub import open_ome_zarr
-from skimage.transform import SimilarityTransform, warp
 
 os.environ["DISPLAY"] = ':1005'
 
@@ -81,26 +83,38 @@ def stitch_images(
         n_rows, n_cols, sizeY, sizeX, col_translation, row_translation
     )
     stitched_array = np.zeros(xy_output_shape, dtype=np.float32)
+    input_image = np.zeros(xy_output_shape, dtype=np.float32)
 
     for row_idx in range(n_rows):
         for col_idx in range(n_cols):
             image = data_array[row_idx, col_idx]
-            transform = SimilarityTransform(
-                translation=(
-                    col_translation[0] * col_idx
-                    + row_translation[0] * row_idx
-                    + global_translation[0],
-                    col_translation[1] * col_idx
-                    + row_translation[1] * row_idx
-                    + global_translation[1],
-                )
+            # #v1 - doesn't work as well with very large arrays
+            # transform = SimilarityTransform(
+            #     translation=(
+            #         col_translation[0] * col_idx
+            #         + row_translation[0] * row_idx
+            #         + global_translation[0],
+            #         col_translation[1] * col_idx
+            #         + row_translation[1] * row_idx
+            #         + global_translation[1],
+            #     )
+            # )
+            # warped_image = warp(
+            #     image, transform.inverse, output_shape=xy_output_shape, order=0
+            # )
+            shift = (
+                col_translation[1] * col_idx
+                + row_translation[1] * row_idx
+                + global_translation[1],
+                col_translation[0] * col_idx
+                + row_translation[0] * row_idx
+                + global_translation[0],
             )
-            warped_image = warp(
-                image, transform.inverse, output_shape=xy_output_shape, order=0
-            )
+            input_image[:sizeY, :sizeX] = image
+            warped_image = ndi.shift(input_image, shift, order=0)
             overlap = np.logical_and(stitched_array, warped_image)
-            stitched_array[..., :, :] += warped_image
-            stitched_array[..., overlap] /= 2  # average blending in the overlapping region
+            stitched_array[:, :] += warped_image
+            stitched_array[overlap] /= 2  # average blending in the overlapping region
 
     return stitched_array
 
@@ -202,7 +216,7 @@ def stitch_zarr_store(
         output_position = output_dataset.create_position(*well_name.split('/'), '0')
         output_position.create_zeros(
             name="0",
-            shape=(sizeT, sizeC, sizeZ) + output_shape,
+            shape=(sizeT, len(channels), sizeZ) + output_shape,
             dtype=np.float32,
             chunks=(1, 1, 1, 4096, 4096),
         )
@@ -230,7 +244,7 @@ def stitch_zarr_store(
                     col_translation=col_translation,
                     row_translation=row_translation,
                 )
-                output_position['0'][t_idx, output_c_idx, z_idx] = stitched_array
+                output_position.data[t_idx, output_c_idx, z_idx] = stitched_array
 
     input_dataset.close()
     output_dataset.close()
