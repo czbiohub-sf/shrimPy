@@ -21,7 +21,7 @@ col_translation = (967.9, -7.45)
 row_translation = (7.78, 969)
 
 # io parameters
-dataset = 'A3_600k_38x38_1'
+dataset = 'B3_600k_20x20_timelapse_1'
 channels = ['Nucleus_prediction']
 input_paths = f"/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/live/2-virtual-stain/fcmae-2d/mean_projection/{dataset}.zarr/*/*/*"
 output_data_path = f"/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/live/3-stitch/TEMP_{dataset}.zarr"
@@ -31,7 +31,7 @@ output_data_path = f"/hpc/projects/intracellular_dashboard/ops/2024_03_05_regist
 # channels = ['Default']
 
 # sbatch and resource parameters
-cpus_per_task = 1
+cpus_per_task = 5
 mem_per_cpu = "16G"
 time = 10  # minutes
 partition = 'cpu'
@@ -70,6 +70,7 @@ create_empty_hcs_zarr(
 # debug
 # process_single_position_v2(
 #     shift_image,
+#     time_indices='all',
 #     input_data_path=input_paths[0],
 #     output_path=output_path,
 #     input_channel_idx=[dataset_channel_names.index(ch) for ch in channels],
@@ -102,6 +103,7 @@ for in_path in input_paths:
 
     func = slurm_func(
         shift_image,
+        time_indices='all',
         input_channel_idx=[dataset_channel_names.index(ch) for ch in channels],
         output_channel_idx=list(range(len(channels))),
         num_processes=cpus_per_task,

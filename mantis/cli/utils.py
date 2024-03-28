@@ -376,7 +376,7 @@ def process_single_position_v2(
         )
     else:
         # If C is empty, use only the range for time_indices
-        iterable = itertools.product(time_indices)
+        iterable = time_indices
         partial_apply_transform_to_zyx_and_save = partial(
             apply_transform_to_zyx_and_save_v2,
             func,
@@ -390,7 +390,7 @@ def process_single_position_v2(
 
         click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
         with mp.Pool(num_processes) as p:
-            p.starmap(
+            p.map(
                 partial_apply_transform_to_zyx_and_save,
                 iterable,
             )
