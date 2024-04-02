@@ -140,6 +140,7 @@ def create_empty_hcs_zarr(
     output_plate = open_ome_zarr(
         str(store_path), layout="hcs", mode="a", channel_names=channel_names
     )
+    transform = [TransformationMeta(type="scale", scale=scale)]
 
     # Create positions
     for position_key in position_keys:
@@ -152,7 +153,7 @@ def create_empty_hcs_zarr(
                 shape=shape,
                 chunks=chunks,
                 dtype=dtype,
-                transform=[TransformationMeta(type="scale", scale=scale)],
+                transform=transform,
             )
         else:
             position = output_plate[position_key_string]

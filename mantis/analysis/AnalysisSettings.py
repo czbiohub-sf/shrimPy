@@ -10,6 +10,11 @@ class MyBaseModel(BaseModel, extra=Extra.forbid):
     pass
 
 
+class ProcessingSettings(MyBaseModel):
+    fliplr: Optional[bool] = False
+    flipud: Optional[bool] = False
+
+
 class DeskewSettings(MyBaseModel):
     pixel_size_um: PositiveFloat
     ls_angle_deg: PositiveFloat
@@ -67,3 +72,11 @@ class RegistrationSettings(MyBaseModel):
             raise ValueError("The array must contain valid numerical values.")
 
         return v
+
+
+class StitchSettings(MyBaseModel):
+    column_translation: tuple[float, float]
+    row_translation: tuple[float, float]
+    channels: Optional[list[str]] = None
+    preprocessing: Optional[ProcessingSettings] = None
+    postprocessing: Optional[ProcessingSettings] = None
