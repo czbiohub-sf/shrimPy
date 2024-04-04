@@ -267,7 +267,7 @@ def find_lir(registered_zyx: np.ndarray, plot: bool = False) -> Tuple:
     # Find the lir Z
     zyx_shape = registered_zyx.shape
     registered_zx_bool = registered_zyx.transpose((2, 0, 1)) > 0
-    registered_zx_bool = registered_zx_bool[zyx_shape[0] // 2].copy()
+    registered_zx_bool = registered_zx_bool[zyx_shape[2] // 2].copy()
     rectangle_coords_zx = lir.lir(registered_zx_bool)
     x = rectangle_coords_zx[0]
     z = rectangle_coords_zx[1]
