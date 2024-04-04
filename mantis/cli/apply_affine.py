@@ -108,7 +108,8 @@ def apply_affine(
         )
         # Overwrite the previous target shape
         Z_target, Y_target, X_target = cropped_target_shape_zyx[-3:]
-        click.echo(f'Shape of cropped output dataset: {target_shape_zyx}\n')
+        cropped_target_shape_zyx = Z_target, Y_target, X_target
+        click.echo(f'Shape of cropped output dataset: {cropped_target_shape_zyx}\n')
     else:
         Z_slice, Y_slice, X_slice = (
             slice(0, Z_target),
