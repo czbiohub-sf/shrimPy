@@ -2,8 +2,8 @@ column_translation: [967.9, -7.45]  # translation distance in (x, y) in pixels w
 row_translation: [7.78, 969]  # translation distance in (x, y) in pixels when moving across rows
 channels: [Default]  # may be null in which case all channels will be stitched
 preprocessing:
-- fliplr: true
-- flipud: true
+  fliplr: true
+  flipud: true
 postprocessing:
-- fliplr: false
-- flipud: false
+  fliplr: false
+  flipud: false
