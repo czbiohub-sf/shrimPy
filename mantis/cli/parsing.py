@@ -25,6 +25,19 @@ def _str_to_path(ctx: click.Context, opt: click.Option, value: str) -> Path:
     return Path(value)
 
 
+def input_zarr_path() -> Callable:
+    def decorator(f: Callable) -> Callable:
+        return click.option(
+            "--input-zarr-path",
+            "-i",
+            required=True,
+            type=click.Path(exists=True),
+            help='Paths to input zarr store, for example: "input.zarr"',
+        )(f)
+
+    return decorator
+
+
 def input_position_dirpaths() -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.option(

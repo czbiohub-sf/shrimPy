@@ -11,7 +11,7 @@ from natsort import natsorted
 from slurmkit import SlurmParams, slurm_function, submit_function
 
 from mantis.analysis.stitch import (
-    get_stitch_output_shape, calculate_shift, get_grid_rows_cols
+    get_stitch_output_shape, get_image_shift, get_grid_rows_cols
 )
 
 from mantis.cli.stitch import (
@@ -117,7 +117,7 @@ click.echo('Submitting SLURM jobs')
 jobs = []
 for in_path in input_paths:
     col_idx, row_idx = (int(in_path.name[:3]), int(in_path.name[3:]))
-    shift = calculate_shift(
+    shift = get_image_shift(
         col_idx, row_idx, settings.column_translation, settings.row_translation, global_translation
     )
 

@@ -1,9 +1,38 @@
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import scipy.ndimage as ndi
 
 from iohub import open_ome_zarr
+from skimage.registration import phase_cross_correlation
+
+
+def estimate_shift(
+    im0: np.ndarray, im1: np.ndarray, percent_overlap: float, direction: Literal["row", "col"]
+):
+    assert 0 <= percent_overlap <= 1, "percent_overlap must be between 0 and 1"
+    assert direction in ["row", "col"], "direction must be either 'row' or 'col'"
+    assert im0.shape == im1.shape, "Images must have the same shape"
+
+    sizeY, sizeX = im0.shape[-2:]
+
+    # TODO: there may be a one pixel error in the estimated shift
+    if direction == "row":
+        y_roi = int(sizeY * np.minimum(percent_overlap + 0.05, 1))
+        shift, _, _ = phase_cross_correlation(
+            im0[-y_roi:, :], im1[:y_roi, :], upsample_factor=10
+        )
+        shift[0] += sizeX - y_roi
+    elif direction == "col":
+        x_roi = int(sizeX * np.minimum(percent_overlap + 0.05, 1))
+        shift, _, _ = phase_cross_correlation(
+            im0[:, -x_roi:], im1[:, :x_roi], upsample_factor=10
+        )
+        shift[1] += sizeY - x_roi
+
+    # TODO: we shouldn't need to flip the order
+    return shift[::-1]
 
 
 def get_grid_rows_cols(dataset_path: str):
@@ -44,7 +73,7 @@ def get_stitch_output_shape(n_rows, n_cols, sizeY, sizeX, col_translation, row_t
     return xy_output_shape, global_translation
 
 
-def calculate_shift(col_idx, row_idx, col_translation, row_translation, global_translation):
+def get_image_shift(col_idx, row_idx, col_translation, row_translation, global_translation):
     return (
         col_translation[1] * col_idx + row_translation[1] * row_idx + global_translation[1],
         col_translation[0] * col_idx + row_translation[0] * row_idx + global_translation[0],
@@ -122,7 +151,7 @@ def stitch_images(
         for col_idx in range(n_cols):
             image = data_array[row_idx, col_idx]
 
-            shift = calculate_shift(
+            shift = get_image_shift(
                 col_idx, row_idx, col_translation, row_translation, global_translation
             )
 

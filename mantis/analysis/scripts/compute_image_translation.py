@@ -8,19 +8,18 @@ from pathlib import Path
 import numpy as np
 
 from iohub import open_ome_zarr
-from skimage.registration import phase_cross_correlation
+
+from mantis.analysis.stitch import estimate_shift
 
 os.environ["DISPLAY"] = ':1005'
 
 # %%
-data_dir = Path(
-    '/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/kidney_tissue/0-convert/dragonfly/'
-)
-dataset = 'kidney_grid_test_1.zarr'
+data_dir = Path('/hpc/projects/intracellular_dashboard/ops/2024_04_11_Manual_HELA/0-convert/')
+dataset = 'round4_20x0.80_XCite-50Percent_BSI_MultiRound_1.zarr'
 data_path = data_dir / dataset
 
-fliplr = True
-flipud = False
+fliplr = False
+flipud = True
 
 rows_limit = 3
 cols_limit = 3
@@ -63,12 +62,9 @@ for i in range(len(grid_rows) - 1):
         img0 = fetch_image(dataset, well_name, col_name, grid_rows[i])
         img1 = fetch_image(dataset, well_name, col_name, grid_rows[i + 1])
 
-        shift, _, _ = phase_cross_correlation(
-            img0[-y_roi:, :], img1[:y_roi, :], upsample_factor=10
-        )
-        shift[0] += sizeX - y_roi
+        shift = estimate_shift(img0, img1, percent_overlap, direction='row')
         row_shifts.append(shift)
-row_translation = np.median(row_shifts, axis=0)[::-1]
+row_translation = np.median(row_shifts, axis=0)
 
 col_shifts = []
 for j in range(len(grid_cols) - 1):
@@ -76,13 +72,11 @@ for j in range(len(grid_cols) - 1):
         img0 = fetch_image(dataset, well_name, grid_cols[j], row_name)
         img1 = fetch_image(dataset, well_name, grid_cols[j + 1], row_name)
 
-        shift, _, _ = phase_cross_correlation(
-            img0[:, -y_roi:], img1[:, :y_roi], upsample_factor=10
-        )
-        shift[1] += sizeY - y_roi
+        shift = estimate_shift(img0, img1, percent_overlap, direction='col')
         col_shifts.append(shift)
 
-col_translation = np.median(col_shifts, axis=0)[::-1]
+col_translation = np.median(col_shifts, axis=0)
+
+print(f'Column translation: {col_translation}, row translation: {row_translation}')
 
 # %%
-print(f'Column translation: {col_translation}, row translation: {row_translation}')
