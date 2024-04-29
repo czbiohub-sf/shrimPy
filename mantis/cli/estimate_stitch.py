@@ -11,11 +11,10 @@ import pandas as pd
 from iohub import open_ome_zarr
 from slurmkit import SlurmParams, slurm_function, submit_function
 
-# from mantis.analysis.AnalysisSettings import StitchSettings
+from mantis.analysis.AnalysisSettings import ProcessingSettings, StitchSettings
 from mantis.analysis.stitch import estimate_shift, get_grid_rows_cols
 from mantis.cli.parsing import input_zarr_path, output_filepath
-
-# from mantis.cli.utils import yaml_to_model
+from mantis.cli.utils import model_to_yaml
 
 
 def estimate_zarr_fov_shifts(
@@ -181,7 +180,7 @@ def estimate_stitch(
             dependencies=row_jobs + col_jobs,
         )
 
-        # wait for csv_filepath to be created
+        # wait for csv_filepath to be created, capped at 5 min
         t_start = time.time()
         while not csv_filepath.exists() and time.time() - t_start < 300:
             time.sleep(1)
@@ -210,6 +209,27 @@ def estimate_stitch(
         df.to_csv(csv_filepath, index=False)
 
     cleanup_shifts(csv_filepath)
+
+    write_config_file(output_filepath, fliplr, flipud, csv_filepath)
+
+
+def write_config_file(output_filepath, fliplr, flipud, csv_filepath):
+    df = pd.read_csv(csv_filepath, dtype={'fov0': str, 'fov1': str})
+    _df = df.loc[df['direction'] == 'row']
+    row_translation = {
+        fov: [x, y] for fov, x, y in zip(_df['fov1'], _df['shift-x'], _df['shift-y'])
+    }
+    _df = df.loc[df['direction'] == 'col']
+    col_translation = {
+        fov: [x, y] for fov, x, y in zip(_df['fov1'], _df['shift-x'], _df['shift-y'])
+    }
+
+    settings = StitchSettings(
+        row_translation=row_translation,
+        column_translation=col_translation,
+        preprocessing=ProcessingSettings(fliplr=fliplr, flipud=flipud),
+    )
+    model_to_yaml(settings, output_filepath)
 
 
 if __name__ == "__main__":

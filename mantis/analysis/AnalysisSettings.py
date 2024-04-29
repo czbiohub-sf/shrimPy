@@ -75,8 +75,8 @@ class RegistrationSettings(MyBaseModel):
 
 
 class StitchSettings(MyBaseModel):
-    column_translation: tuple[float, float]
-    row_translation: tuple[float, float]
+    column_translation: Union[list[float, float], dict[str, list[float, float]]]
+    row_translation: Union[list[float, float], dict[str, list[float, float]]]
     channels: Optional[list[str]] = None
     preprocessing: Optional[ProcessingSettings] = None
     postprocessing: Optional[ProcessingSettings] = None
