@@ -90,6 +90,25 @@ def cleanup_shifts(
     df.to_csv(csv_filepath, index=False)
 
 
+def write_config_file(csv_filepath, output_filepath, fliplr, flipud):
+    df = pd.read_csv(csv_filepath, dtype={'fov0': str, 'fov1': str})
+    _df = df.loc[df['direction'] == 'row']
+    row_translation = {
+        fov: [x, y] for fov, x, y in zip(_df['fov1'], _df['shift-x'], _df['shift-y'])
+    }
+    _df = df.loc[df['direction'] == 'col']
+    col_translation = {
+        fov: [x, y] for fov, x, y in zip(_df['fov1'], _df['shift-x'], _df['shift-y'])
+    }
+
+    settings = StitchSettings(
+        row_translation=row_translation,
+        column_translation=col_translation,
+        preprocessing=ProcessingSettings(fliplr=fliplr, flipud=flipud),
+    )
+    model_to_yaml(settings, output_filepath)
+
+
 @click.command()
 @input_zarr_path()
 @output_filepath()
@@ -209,27 +228,7 @@ def estimate_stitch(
         df.to_csv(csv_filepath, index=False)
 
     cleanup_shifts(csv_filepath)
-
-    write_config_file(output_filepath, fliplr, flipud, csv_filepath)
-
-
-def write_config_file(output_filepath, fliplr, flipud, csv_filepath):
-    df = pd.read_csv(csv_filepath, dtype={'fov0': str, 'fov1': str})
-    _df = df.loc[df['direction'] == 'row']
-    row_translation = {
-        fov: [x, y] for fov, x, y in zip(_df['fov1'], _df['shift-x'], _df['shift-y'])
-    }
-    _df = df.loc[df['direction'] == 'col']
-    col_translation = {
-        fov: [x, y] for fov, x, y in zip(_df['fov1'], _df['shift-x'], _df['shift-y'])
-    }
-
-    settings = StitchSettings(
-        row_translation=row_translation,
-        column_translation=col_translation,
-        preprocessing=ProcessingSettings(fliplr=fliplr, flipud=flipud),
-    )
-    model_to_yaml(settings, output_filepath)
+    write_config_file(csv_filepath, output_filepath, fliplr, flipud)
 
 
 if __name__ == "__main__":
