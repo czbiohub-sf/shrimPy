@@ -1032,6 +1032,7 @@ def process_single_position_v2(
     input_data_path: Path,
     output_path: Path,
     time_indices: list = [0],
+    time_indices_out: list = [0],
     input_channel_idx: list = [],
     output_channel_idx: list = [],
     num_processes: int = mp.cpu_count(),
@@ -1055,7 +1056,6 @@ def process_single_position_v2(
         time_indices = range(input_dataset.data.shape[0])
         time_indices_out = time_indices
     elif isinstance(time_indices, list):
-        time_indices = time_indices
         time_indices_out = range(len(time_indices))
 
     # Check for invalid times
@@ -1090,7 +1090,12 @@ def process_single_position_v2(
     if input_channel_idx is None or len(input_channel_idx) == 0:
         # If C is not empty, use itertools.product with both ranges
         _, C, _, _, _ = input_dataset.data.shape
-        iterable = itertools.product(time_indices, time_indices_out, range(C))
+        iterable = [
+            (time_idx, time_idx_out, c)
+            for (time_idx, time_idx_out), c in itertools.product(
+                zip(time_indices, time_indices_out), range(C)
+            )
+        ]
         partial_apply_transform_to_zyx_and_save = partial(
             apply_transform_to_zyx_and_save_v2,
             func,
@@ -1101,7 +1106,7 @@ def process_single_position_v2(
         )
     else:
         # If C is empty, use only the range for time_indices
-        iterable = itertools.product(time_indices, time_indices_out)
+        iterable = list(zip(time_indices, time_indices_out))
         partial_apply_transform_to_zyx_and_save = partial(
             apply_transform_to_zyx_and_save_v2,
             func,
