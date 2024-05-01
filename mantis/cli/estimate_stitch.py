@@ -94,13 +94,16 @@ def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
     df['row'] = df['fov1'].str[-3:].astype(int)
     df['col'] = df['fov1'].str[:3].astype(int)
     df.set_index('fov1', inplace=True)
+    df.sort_index(inplace=True)
 
     col_shifts = df[df['direction'] == 'col'].groupby('row')[['shift-x', 'shift-y']].cumsum()
     row_shifts = df[df['direction'] == 'row'].groupby('col')[['shift-x', 'shift-y']].cumsum()
-
     total_shift = col_shifts.add(row_shifts, fill_value=0)
-    total_shift.loc['000000'] = [0, 0]
-    total_shift.sort_index(inplace=True)
+
+    # add row 000000
+    total_shift = pd.concat(
+        [pd.DataFrame({'shift-x': 0, 'shift-y': 0}, index=['000000']), total_shift]
+    )
 
     # add global offset to remove negative values
     total_shift['shift-x'] += -np.minimum(total_shift['shift-x'].min(), 0)

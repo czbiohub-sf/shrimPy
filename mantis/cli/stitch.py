@@ -2,6 +2,7 @@ from pathlib import Path
 
 import click
 import numpy as np
+import pandas as pd
 
 from iohub import open_ome_zarr
 
@@ -122,9 +123,18 @@ def stitch_zarr_store(
     n_rows = len(grid_rows)
     n_cols = len(grid_cols)
 
-    output_shape, _ = get_stitch_output_shape(
-        n_rows, n_cols, sizeY, sizeX, settings.column_translation, settings.row_translation
-    )
+    if settings.total_translation is None:
+        output_shape, _ = get_stitch_output_shape(
+            n_rows, n_cols, sizeY, sizeX, settings.column_translation, settings.row_translation
+        )
+    else:
+        df = pd.DataFrame.from_dict(
+            settings.total_translation, orient="index", columns=["shift-y", "shift-x"]
+        )
+        output_shape = (
+            np.ceil(df["shift-y"].max() + sizeY).astype(int),
+            np.ceil(df["shift-x"].max() + sizeX).astype(int),
+        )
 
     if not Path(output_dirpath).exists():
         output_dataset = open_ome_zarr(
@@ -163,6 +173,7 @@ def stitch_zarr_store(
                 data_array = process_dataset(data_array, settings.preprocessing)
                 stitched_array = stitch_images(
                     data_array,
+                    total_translation=settings.total_translation,
                     col_translation=settings.column_translation,
                     row_translation=settings.row_translation,
                 )
