@@ -127,7 +127,7 @@ for in_path in input_paths:
         input_channel_idx=[input_dataset_channels.index(ch) for ch in settings.channels],
         output_channel_idx=list(range(len(settings.channels))),
         num_processes=cpus_per_task,
-        settings=settings,
+        settings=settings.preprocessing,
         output_shape=output_shape,
         shift=shift,
         verbose=True,
@@ -143,7 +143,7 @@ for in_path in input_paths:
     )
 
 submit_function(
-    slurm_function(_stitch_shifted_store)(temp_path, output_path, settings, verbose),
+    slurm_function(_stitch_shifted_store)(temp_path, output_path, settings.postprocessing, verbose),
     slurm_params=SlurmParams(
         partition=partition,
         cpus_per_task=8,
