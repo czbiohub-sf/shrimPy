@@ -32,6 +32,7 @@ def estimate_zarr_fov_shifts(
     fov0 = fov0_zarr_path.name
     fov1 = fov1_zarr_path.name
 
+    # TODO: hardocded image coords
     im0 = open_ome_zarr(fov0_zarr_path).data[0, 0, 0]
     im1 = open_ome_zarr(fov1_zarr_path).data[0, 0, 0]
 
@@ -74,9 +75,7 @@ def consolidate_zarr_fov_shifts(
     df.to_csv(output_filepath, index=False)
 
 
-def cleanup_shifts(
-    csv_filepath: str,
-):
+def cleanup_shifts(csv_filepath: str):
     df = pd.read_csv(csv_filepath, dtype={'fov0': str, 'fov1': str})
     df['shift-x-raw'] = df['shift-x']
     df['shift-y-raw'] = df['shift-y']
@@ -90,20 +89,33 @@ def cleanup_shifts(
     df.to_csv(csv_filepath, index=False)
 
 
-def write_config_file(csv_filepath, output_filepath, fliplr, flipud):
+def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
     df = pd.read_csv(csv_filepath, dtype={'fov0': str, 'fov1': str})
-    _df = df.loc[df['direction'] == 'row']
-    row_translation = {
-        fov: [x, y] for fov, x, y in zip(_df['fov1'], _df['shift-x'], _df['shift-y'])
-    }
-    _df = df.loc[df['direction'] == 'col']
-    col_translation = {
-        fov: [x, y] for fov, x, y in zip(_df['fov1'], _df['shift-x'], _df['shift-y'])
-    }
+    df['row'] = df['fov1'].str[-3:].astype(int)
+    df['col'] = df['fov1'].str[:3].astype(int)
+    df.set_index('fov1', inplace=True)
+
+    col_shifts = df[df['direction'] == 'col'].groupby('row')[['shift-x', 'shift-y']].cumsum()
+    row_shifts = df[df['direction'] == 'row'].groupby('col')[['shift-x', 'shift-y']].cumsum()
+
+    total_shift = col_shifts.add(row_shifts, fill_value=0)
+    total_shift.loc['000000'] = [0, 0]
+    total_shift.sort_index(inplace=True)
+
+    # add global offset to remove negative values
+    total_shift['shift-x'] += -np.minimum(total_shift['shift-x'].min(), 0)
+    total_shift['shift-y'] += -np.minimum(total_shift['shift-y'].min(), 0)
+
+    return total_shift
+
+
+def write_config_file(shifts: pd.DataFrame, output_filepath: str, fliplr: bool, flipud: bool):
+    total_translation_dict = shifts.apply(
+        lambda row: [float(row['shift-y'].round(2)), float(row['shift-x'].round(2))], axis=1
+    ).to_dict()
 
     settings = StitchSettings(
-        row_translation=row_translation,
-        column_translation=col_translation,
+        total_translation=total_translation_dict,
         preprocessing=ProcessingSettings(fliplr=fliplr, flipud=flipud),
     )
     model_to_yaml(settings, output_filepath)
@@ -129,17 +141,9 @@ def estimate_stitch(
     assert 0 <= percent_overlap <= 1, "Percent overlap must be between 0 and 1"
     csv_filepath = Path(output_filepath).parent / "stitch_shifts.csv"
 
-    rows_limit = 3
-    cols_limit = 3
-
     dataset = open_ome_zarr(input_zarr_path)
     well_name, _ = next(dataset.wells())
-
     grid_rows, grid_cols = get_grid_rows_cols(input_zarr_path)
-    if rows_limit:
-        grid_rows = grid_rows[:rows_limit]
-    if cols_limit:
-        grid_cols = grid_cols[:cols_limit]
 
     row_fov0 = [col + row for row in grid_rows[:-1] for col in grid_cols]
     row_fov1 = [col + row for row in grid_rows[1:] for col in grid_cols]
@@ -228,7 +232,8 @@ def estimate_stitch(
         df.to_csv(csv_filepath, index=False)
 
     cleanup_shifts(csv_filepath)
-    write_config_file(csv_filepath, output_filepath, fliplr, flipud)
+    shifts = compute_total_translation(csv_filepath)
+    write_config_file(shifts, output_filepath, fliplr, flipud)
 
 
 if __name__ == "__main__":
