@@ -3,15 +3,15 @@ from click.testing import CliRunner
 from mantis.cli.main import cli
 
 
-def test_estimate_stabilization_affine_list(tmp_path, example_plate):
+def test_estimate_stabilization(tmp_path, example_plate):
     plate_path, _ = example_plate
-    output_path = tmp_path / "config.yaml"
+    output_path = tmp_path / "config.yml"
 
     runner = CliRunner()
     result = runner.invoke(
         cli,
         [
-            "estimate-stabilization-affine",
+            "estimate-stabilization",
             "-i",
             str(plate_path) + "/A/1/0",
             "-o",
@@ -30,10 +30,12 @@ def test_estimate_stabilization_affine_list(tmp_path, example_plate):
     )
 
     # Weak test
-    assert "Getting dataset info" in result.output
+    assert "Estimating z stabilization parameters" in result.output
+    assert output_path.exists()
+    assert result.exit_code == 0
 
 
-def test_stabilize_timelapse(tmp_path, example_plate, example_stabilize_timelapse_settings):
+def test_apply_stabilization(tmp_path, example_plate, example_stabilize_timelapse_settings):
     plate_path, _ = example_plate
     config_path, _ = example_stabilize_timelapse_settings
     output_path = tmp_path / "output.zarr"
@@ -42,7 +44,7 @@ def test_stabilize_timelapse(tmp_path, example_plate, example_stabilize_timelaps
     result = runner.invoke(
         cli,
         [
-            "stabilize-timelapse",
+            "apply-stabilization",
             "-i",
             str(plate_path) + "/A/1/0",
             "-o",
@@ -55,4 +57,5 @@ def test_stabilize_timelapse(tmp_path, example_plate, example_stabilize_timelaps
     )
 
     # Weak test
-    assert "Getting dataset info" in result.output
+    assert output_path.exists()
+    assert result.exit_code == 0

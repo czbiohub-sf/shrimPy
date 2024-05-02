@@ -260,10 +260,10 @@ def estimate_xy_stabilization(
 @click.option(
     "--process-channels-idx",
     "-p",
-    help="Channel indeces to processes. Default is all channels.",
+    help="Channel indeces to processes. Default is all channels. Usage: -p 1 -p 2 ",
     multiple=True,
     type=int,
-    default=[]
+    default=[],
 )
 def estimate_stabilization(
     input_position_dirpaths,
@@ -292,7 +292,9 @@ def estimate_stabilization(
         stabilize_xy or stabilize_z
     ), "At least one of 'stabilize_xy' or 'stabilize_z' must be selected"
 
-    assert output_filepath.suffix == ".yml", "Output file must be a yaml file"
+    assert (
+        output_filepath.suffix == ".yml" or output_filepath.suffix == ".yaml"
+    ), "Output file must be a yaml file"
 
     output_dirpath = output_filepath.parent
     output_dirpath.mkdir(parents=True, exist_ok=True)
@@ -311,7 +313,9 @@ def estimate_stabilization(
         # Check the channel indeces are valid
         for c_idx in process_channels_idx:
             if c_idx not in range(len(channel_names)):
-                raise ValueError(f"Channel index {c_idx} is not valid. Please provide channel indeces from 0 to {len(channel_names)-1}")
+                raise ValueError(
+                    f"Channel index {c_idx} is not valid. Please provide channel indeces from 0 to {len(channel_names)-1}"
+                )
             else:
                 process_channels_names.append(channel_names[c_idx])
 
@@ -360,7 +364,7 @@ def estimate_stabilization(
         focus_finding_channel=channel_names[channel_index],
         processing_channels=process_channels_names,
         affine_transform_zyx_list=combined_mats.tolist(),
-        time_indices="all"
+        time_indices="all",
     )
     model_to_yaml(model, output_filepath)
 

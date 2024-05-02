@@ -1,2 +1,5 @@
-focus_finding_channel_index: 0
+focus_finding_channel: 0
+stabilization_type: "zyx"
+processing_channels: ["GFP"]
 affine_transform_zyx_list: [[[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0],[0.0, 0.0, 0.0,1.0]],[[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0],[0.0, 0.0, 0.0,1.0]],[[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0],[0.0, 0.0, 0.0,1.0]]]
+time_indices: 'all'
