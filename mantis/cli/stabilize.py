@@ -10,12 +10,14 @@ from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_
 from mantis.cli.utils import (
     copy_n_paste_czyx,
     create_empty_hcs_zarr,
-    yaml_to_model,
     process_single_position_v2,
+    yaml_to_model,
 )
 
 
-def apply_stabilization_transform(zyx_data : np.ndarray, list_of_shifts : list[np.ndarray], t_idx : int, **kwargs):
+def apply_stabilization_transform(
+    zyx_data: np.ndarray, list_of_shifts: list[np.ndarray], t_idx: int, **kwargs
+):
     """Apply stabilization to a single zyx"""
     click.echo(f'shifting matrix with t_idx:{t_idx} \n{list_of_shifts[t_idx]}')
     Z, Y, X = zyx_data.shape[-3:]
@@ -26,12 +28,16 @@ def apply_stabilization_transform(zyx_data : np.ndarray, list_of_shifts : list[n
     if zyx_data.ndim == 4:
         stabilized_czyx = np.zeros((zyx_data.shape[0], Z, Y, X), dtype=np.float32)
         for c in range(zyx_data.shape[0]):
-            stabilized_czyx[c] = apply_stabilization_transform(zyx_data[c], list_of_shifts, t_idx)
+            stabilized_czyx[c] = apply_stabilization_transform(
+                zyx_data[c], list_of_shifts, t_idx
+            )
         return stabilized_czyx
     else:
         zyx_data = np.nan_to_num(zyx_data, nan=0)
         zyx_data_ants = ants.from_numpy(zyx_data.astype(np.float32))
-        stabilized_zyx = tx_shifts.apply_to_image(zyx_data_ants, reference=zyx_data_ants).numpy()
+        stabilized_zyx = tx_shifts.apply_to_image(
+            zyx_data_ants, reference=zyx_data_ants
+        ).numpy()
 
     return stabilized_zyx
 
@@ -48,9 +54,7 @@ def apply_stabilization_transform(zyx_data : np.ndarray, list_of_shifts : list[n
     required=False,
     type=int,
 )
-def apply_stabilization(
-    input_position_dirpaths, output_dirpath, config_filepath, num_processes
-):
+def stabilize(input_position_dirpaths, output_dirpath, config_filepath, num_processes):
     """
     Stabilize the timelapse input based on single position and channel.
 
@@ -69,15 +73,15 @@ def apply_stabilization(
 
     combined_mats = settings.affine_transform_zyx_list
     combined_mats = np.array(combined_mats)
-    processing_channels = settings.processing_channels
+    stabilization_channels = settings.stabilization_channels
 
     with open_ome_zarr(input_position_dirpaths[0]) as dataset:
         T, C, Z, Y, X = dataset.data.shape
         channel_names = dataset.channel_names
-        for channel in processing_channels:
+        for channel in stabilization_channels:
             if channel not in channel_names:
                 raise ValueError(f"Channel <{channel}> not found in the input data")
-        
+
         # NOTE: these can be modified to crop the output
         Z_slice, Y_slice, X_slice = (
             slice(0, Z),
@@ -117,7 +121,7 @@ def apply_stabilization(
     # apply stabilization to channels in the chosen channels and else copy the rest
     for input_position_path in input_position_dirpaths:
         for channel_name in channel_names:
-            if channel_name in processing_channels:
+            if channel_name in stabilization_channels:
                 process_single_position_v2(
                     apply_stabilization_transform,
                     input_data_path=input_position_path,  # source store
@@ -142,4 +146,4 @@ def apply_stabilization(
 
 
 if __name__ == "__main__":
-    apply_stabilization()
+    stabilize()

@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 
 from iohub.ngff import open_ome_zarr
-from pandas import DataFrame
 from pystackreg import StackReg
 from waveorder.focus import focus_from_transverse_band
 
@@ -28,7 +27,7 @@ def estimate_position_focus(
     input_channel_indices: Tuple[int, ...],
     crop_size_xy: list[int, int],
 ):
-    position_idx, time_min, channel, channel_idx, focal_idx = [], [], [], [], []
+    position, time_idx, channel, focus_idx = [], [], [], []
 
     with open_ome_zarr(input_data_path) as dataset:
         channel_names = dataset.channel_names
@@ -53,47 +52,42 @@ def estimate_position_focus(
                     pixel_size=X_scale,
                 )
 
-            pos_idx = '/'.join(input_data_path.parts[-3:]).replace('/', '_')
-            position_idx.append(pos_idx)
-            time_min.append(tc_idx[0] * T_scale)
+            position.append(str(Path(*input_data_path.parts[-3:])))
+            time_idx.append(tc_idx[0])
             channel.append(channel_names[tc_idx[1]])
-            channel_idx.append(tc_idx[1])
-            focal_idx.append(focal_plane)
+            focus_idx.append(focal_plane)
 
     position_stats_stabilized = {
-        "position_idx": position_idx,
-        "time_min": time_min,
+        "position": position,
+        "time_idx": time_idx,
         "channel": channel,
-        "channel_idx": channel_idx,
-        "focal_idx": focal_idx,
+        "focus_idx": focus_idx,
     }
     return position_stats_stabilized
 
 
-def get_mean_z_positions(
-    input_dataframe: DataFrame, z_drift_channel_idx: int = 0, verbose: bool = False
-) -> None:
+def get_mean_z_positions(dataframe_path: Path, verbose: bool = False) -> None:
     import matplotlib.pyplot as plt
 
-    z_drift_df = pd.read_csv(input_dataframe)
+    df = pd.read_csv(dataframe_path)
 
-    # Filter the DataFrame for 'channel A'
-    phase_3D_df = z_drift_df[z_drift_df["channel_idx"] == z_drift_channel_idx]
-    # Sort the DataFrame based on 'time_min'
-    phase_3D_df = phase_3D_df.sort_values("time_min")
+    # Sort the DataFrame based on 'time_idx'
+    df = df.sort_values("time_idx")
 
     # TODO: this is a hack to deal with the fact that the focus finding function returns 0 if it fails
-    phase_3D_df["focal_idx"] = phase_3D_df["focal_idx"].replace(0, method="ffill")
-    # phase_3D_df["focal_idx"] = phase_3D_df["focal_idx"].replace(0,np.nan)
+    df["focus_idx"] = df["focus_idx"].replace(0, method="ffill")
+    # phase_3D_df["focus_idx"] = phase_3D_df["focus_idx"].replace(0,np.nan)
 
     # Get the mean of positions for each time point
-    average_focal_idx = phase_3D_df.groupby("time_min")["focal_idx"].mean().reset_index()
+    average_focus_idx = df.groupby("time_idx")["focus_idx"].mean().reset_index()
     if verbose:
-        # Get the moving average of the focal_idx
-        plt.plot(average_focal_idx["focal_idx"], linestyle="--", label="mean of all positions")
+        # Get the moving average of the focus_idx
+        plt.plot(average_focus_idx["focus_idx"], linestyle="--", label="mean of all positions")
+        plt.xlabel('Time index')
+        plt.ylabel('Focus index')
         plt.legend()
-        plt.savefig("./z_drift.png")
-    return average_focal_idx["focal_idx"].values
+        plt.savefig(dataframe_path.parent / "z_drift.png")
+    return average_focus_idx["focus_idx"].values
 
 
 def estimate_z_stabilization(
@@ -121,7 +115,6 @@ def estimate_z_stabilization(
     # Calculate and save the output file
     z_drift_offsets = get_mean_z_positions(
         output_folder_path / 'positions_focus.csv',
-        z_drift_channel_idx=z_drift_channel_idx,
         verbose=verbose,
     )
 
@@ -150,7 +143,8 @@ def estimate_xy_stabilization(
     crop_size_xy: list[int, int] = (400, 400),
     verbose: bool = False,
 ) -> np.ndarray:
-    input_position = open_ome_zarr(input_data_paths[0])
+    input_data_path = input_data_paths[0]
+    input_position = open_ome_zarr(input_data_path)
     output_folder_path = Path(output_folder_path)
     output_folder_path.mkdir(parents=True, exist_ok=True)
 
@@ -162,33 +156,43 @@ def estimate_xy_stabilization(
 
     # Get metadata
     T, C, Z, Y, X = input_position.data.shape
-    X_slice = slice(X // 2 - crop_size_xy[0] // 2, X // 2 + crop_size_xy[0] // 2)
-    Y_slice = slice(Y // 2 - crop_size_xy[1] // 2, Y // 2 + crop_size_xy[1] // 2)
+    x_idx = slice(X // 2 - crop_size_xy[0] // 2, X // 2 + crop_size_xy[0] // 2)
+    y_idx = slice(Y // 2 - crop_size_xy[1] // 2, Y // 2 + crop_size_xy[1] // 2)
 
-    z_idx = focus_from_transverse_band(
-        input_position[0][
-            0,
-            c_idx,
-            :,
-            Y_slice,
-            X_slice,
-        ],
-        **focus_params,
+    if (output_folder_path / "positions_focus.csv").exists():
+        df = pd.read_csv(output_folder_path / "positions_focus.csv")
+        pos_idx = str(Path(*input_data_path.parts[-3:]))
+        z_idx = list(df[df["position"] == pos_idx]["focus_idx"].replace(0, method="ffill"))
+    else:
+        z_idx = [
+            focus_from_transverse_band(
+                input_position[0][
+                    0,
+                    c_idx,
+                    :,
+                    y_idx,
+                    x_idx,
+                ],
+                **focus_params,
+            )
+        ] * T
+        if verbose:
+            click.echo(f"Estimated in-focus slice: {z_idx}")
+
+    # Load timelapse and ensure negative values are not present
+    tyx_data = np.stack(
+        [
+            input_position[0][_t_idx, c_idx, _z_idx, y_idx, x_idx]
+            for _t_idx, _z_idx in zip(range(T), z_idx)
+        ]
     )
-    if verbose:
-        click.echo(f"Estimated in-focus slice: {z_idx}")
-
-    # Load timelapse
-    xy_timelapse = input_position[0][:T, c_idx, z_idx, Y_slice, X_slice]
-    minimum = xy_timelapse.min()
-
-    xy_timelapse = xy_timelapse + minimum  # Ensure negative values are not present
+    tyx_data = np.clip(tyx_data, a_min=0, a_max=None)
 
     # register each frame to the previous (already registered) one
     # this is what the original StackReg ImageJ plugin uses
     sr = StackReg(StackReg.TRANSLATION)
 
-    T_stackreg = sr.register_stack(xy_timelapse, reference="previous", axis=0)
+    T_stackreg = sr.register_stack(tyx_data, reference="previous", axis=0)
 
     # Swap values in the array since stackreg is xy and we need yx
     for subarray in T_stackreg:
@@ -231,13 +235,13 @@ def estimate_xy_stabilization(
     type=int,
 )
 @click.option(
-    "--stabilize_xy",
+    "--stabilize-xy",
     "-y",
     is_flag=True,
     help="Estimate yx drift and apply to the input data. Default is False.",
 )
 @click.option(
-    "--stabilize_z",
+    "--stabilize-z",
     "-z",
     is_flag=True,
     help="Estimate z drift and apply to the input data. Default is False.",
@@ -251,16 +255,14 @@ def estimate_xy_stabilization(
 )
 @click.option(
     "--crop-size-xy",
-    "-s",
     nargs=2,
     type=int,
     default=[300, 300],
     help="Crop size in xy. Enter two integers. Default is 300 300.",
 )
 @click.option(
-    "--process-channels-idx",
-    "-p",
-    help="Channel indeces to processes. Default is all channels. Usage: -p 1 -p 2 ",
+    "--stabilization-channel-indices",
+    help="Indices of channels which will be stabilized. Default is all channels.",
     multiple=True,
     type=int,
     default=[],
@@ -274,7 +276,7 @@ def estimate_stabilization(
     stabilize_z,
     verbose,
     crop_size_xy,
-    process_channels_idx,
+    stabilization_channel_indices,
 ):
     """
     Estimate the Z and/or XY timelapse stabilization matrices.
@@ -284,7 +286,7 @@ def estimate_stabilization(
     The size of the crop in xy can be specified with the crop-size-xy option.
 
     Example usage:
-    mantis stabilization -i ./timelapse.zarr/0/0/0 -o ./stabilization.yml -y -z -v -s 300 300
+    mantis stabilization -i ./timelapse.zarr/0/0/0 -o ./stabilization.yml -y -z -v --crop-size-xy 300 300
 
     Note: the verbose output will be saved at the same level as the output zarr.
     """
@@ -300,24 +302,24 @@ def estimate_stabilization(
     output_dirpath.mkdir(parents=True, exist_ok=True)
 
     # Channel names to process
-    process_channels_names = []
+    stabilization_channel_names = []
     with open_ome_zarr(input_position_dirpaths[0]) as dataset:
         channel_names = dataset.channel_names
-    if len(process_channels_idx) < 1:
-        process_channels_idx = range(len(channel_names))
-        process_channels_names = channel_names
+    if len(stabilization_channel_indices) < 1:
+        stabilization_channel_indices = range(len(channel_names))
+        stabilization_channel_names = channel_names
     else:
         # Make the input a list
-        process_channels_idx = list(process_channels_idx)
-        process_channels_names = []
+        stabilization_channel_indices = list(stabilization_channel_indices)
+        stabilization_channel_names = []
         # Check the channel indeces are valid
-        for c_idx in process_channels_idx:
+        for c_idx in stabilization_channel_indices:
             if c_idx not in range(len(channel_names)):
                 raise ValueError(
                     f"Channel index {c_idx} is not valid. Please provide channel indeces from 0 to {len(channel_names)-1}"
                 )
             else:
-                process_channels_names.append(channel_names[c_idx])
+                stabilization_channel_names.append(channel_names[c_idx])
 
     # Estimate z drift
     if stabilize_z:
@@ -350,7 +352,7 @@ def estimate_stabilization(
                 "The number of translation matrices and z drift matrices must be the same"
             )
         combined_mats = np.array([a @ b for a, b in zip(T_translation_mats, T_z_drift_mats)])
-        stabilization_type = "zyx"
+        stabilization_type = "xyz"
 
     # NOTE: we've checked that one of the two conditions below is true
     elif stabilize_z:
@@ -361,8 +363,8 @@ def estimate_stabilization(
     # Save the combined matrices
     model = StabilizationSettings(
         stabilization_type=stabilization_type,
-        focus_finding_channel=channel_names[channel_index],
-        processing_channels=process_channels_names,
+        stabilization_estimation_channel=channel_names[channel_index],
+        stabilization_channels=stabilization_channel_names,
         affine_transform_zyx_list=combined_mats.tolist(),
         time_indices="all",
     )

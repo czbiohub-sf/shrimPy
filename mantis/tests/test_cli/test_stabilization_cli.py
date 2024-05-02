@@ -23,9 +23,11 @@ def test_estimate_stabilization(tmp_path, example_plate):
             "-y",
             "-z",
             "-v",
-            "-s",
+            "--crop-size-xy",
             "200",
             "200",
+            '--stabilization-channel-indices',
+            '0',
         ],
     )
 
@@ -44,7 +46,7 @@ def test_apply_stabilization(tmp_path, example_plate, example_stabilize_timelaps
     result = runner.invoke(
         cli,
         [
-            "apply-stabilization",
+            "stabilize",
             "-i",
             str(plate_path) + "/A/1/0",
             "-o",
