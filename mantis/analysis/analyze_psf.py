@@ -144,7 +144,8 @@ def generate_report(
 
 
 def extract_beads(zyx_data: ArrayLike, points: ArrayLike, scale: tuple):
-    patch_size = (scale[0] * 15, scale[1] * 18, scale[2] * 18)
+    patch_size = (scale[0] * 90, scale[1] * 90, scale[2] * 90)
+    print(patch_size) 
 
     # extract bead patches
     bead_extractor = BeadExtractor(
