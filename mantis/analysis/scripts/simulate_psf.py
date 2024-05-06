@@ -21,7 +21,7 @@ def _apply_centered_affine(zyx_array, M):
     ----------
     zyx_array : NDArray with ndim == 3
         3D input array
-    M : NDArry with shape = (3, 3)
+    M : NDArray with shape = (3, 3)
         3x3 transformation matrix, the translation-free part of an affine matrix
         Can model reflection, scaling, rotation, and shear.
 
@@ -132,7 +132,3 @@ v.add_image(
     name="deskewed total",
     scale=psf_stc_ss_scale,
 )
-
-import pdb
-
-pdb.set_trace()
