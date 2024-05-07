@@ -10,6 +10,7 @@ from mantis.analysis.deskew import _deskew_matrix
 from mantis.analysis.scripts.simulate_psf import _apply_centered_affine
 from iohub import read_micromanager
 from waveorder import optics
+from waveorder.models.isotropic_fluorescent_thick_3d import apply_inverse_transfer_function
 
 # %% Load beads (from ndtiff for now)
 data_dir = (
@@ -132,7 +133,7 @@ def generate_psf(numerical_aperture_detection, ls_angle_deg, coma_strength):
     deskew_matrix = _deskew_matrix(px_to_scan_ratio, ct)
     skew_matrix = np.linalg.inv(deskew_matrix)
 
-    zyx_scale = np.array([st * stc_scale[0], stc_scale[1], stc_scale[2]])
+    zyx_scale = np.array([st * stc_scale[1], stc_scale[1], stc_scale[1]])
     detection_otf_zyx = calculate_transfer_function(
         stc_shape,
         zyx_scale[1],
@@ -154,7 +155,7 @@ def generate_psf(numerical_aperture_detection, ls_angle_deg, coma_strength):
 
 
 # Define grid search
-na_det_list = np.array([0.95, 1.15, 1.35])
+na_det_list = np.array([0.95, 1.05, 1.15, 1.25, 1.35])
 ls_angle_deg_list = np.array([30])
 coma_strength_list = np.array([-0.2, -0.1, 0, 0.1, 0.2])
 params = np.stack(
@@ -186,4 +187,33 @@ print(min_idx)
 print(params[min_idx])
 
 
-# %% Use PSF fit to deconvolve
+# %% Crop data for prototyping deconvolution
+stc_data = stc_data[:200, :200, :500]
+
+# %% 
+
+# Simple background subtraction and normalization
+average_psf -= np.min(average_psf)
+average_psf /= np.max(average_psf)
+
+# %%
+zyx_padding = np.array(stc_data.shape) - np.array(average_psf.shape)
+pad_width = [(x // 2, x // 2) if x % 2 == 0 else (x // 2, x // 2 + 1) for x in zyx_padding]
+padded_average_psf = np.pad(average_psf, pad_width=pad_width, mode="constant", constant_values=0)
+transfer_function = np.abs(np.fft.fftn(padded_average_psf))
+transfer_function /= np.max(transfer_function)
+print(transfer_function.shape)
+
+# %%
+
+# %%
+stc_data_deconvolved = apply_inverse_transfer_function(torch.tensor(stc_data), torch.tensor(transfer_function), 0, regularization_strength=1e-3)
+
+v = napari.Viewer()
+v.add_image(padded_average_psf)
+v.add_image(stc_data)
+v.add_image(stc_data_deconvolved.numpy())
+
+
+
+# %%
