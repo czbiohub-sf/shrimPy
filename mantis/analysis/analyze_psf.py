@@ -107,8 +107,12 @@ def generate_report(
     fwhm_pc_mean = [
         df_gaussian_fit[col].mean() for col in ('zyx_pc3_fwhm', 'zyx_pc2_fwhm', 'zyx_pc1_fwhm')
     ]
-    fwhm_1d_mean = [df_1d_peak_width[col].mean() for col in ('1d_z_fwhm', '1d_y_fwhm', '1d_x_fwhm')]
-    fwhm_1d_std = [df_1d_peak_width[col].std() for col in ('1d_z_fwhm', '1d_y_fwhm', '1d_x_fwhm')]
+    fwhm_1d_mean = [
+        df_1d_peak_width[col].mean() for col in ('1d_z_fwhm', '1d_y_fwhm', '1d_x_fwhm')
+    ]
+    fwhm_1d_std = [
+        df_1d_peak_width[col].std() for col in ('1d_z_fwhm', '1d_y_fwhm', '1d_x_fwhm')
+    ]
 
     # generate html report
     html_report = _generate_html(
@@ -143,9 +147,10 @@ def generate_report(
     webbrowser.open('file://' + str(html_file_path))
 
 
-def extract_beads(zyx_data: ArrayLike, points: ArrayLike, scale: tuple):
-    patch_size = (scale[0] * 90, scale[1] * 90, scale[2] * 90)
-    print(patch_size) 
+def extract_beads(
+    zyx_data: ArrayLike, points: ArrayLike, scale: tuple, patch_size_voxels: tuple = None
+):
+    patch_size = (scale[0] * patch_size_voxels[0], scale[1] * patch_size_voxels[1], scale[2] * patch_size_voxels[2])
 
     # extract bead patches
     bead_extractor = BeadExtractor(
