@@ -67,3 +67,13 @@ class RegistrationSettings(MyBaseModel):
             raise ValueError("The array must contain valid numerical values.")
 
         return v
+
+
+class PsfFromBeadsSettings(MyBaseModel):
+    axis0_patch_size: PositiveInt = 101
+    axis1_patch_size: PositiveInt = 101
+    axis2_patch_size: PositiveInt = 101
+
+
+class DeconvolveSettings(MyBaseModel):
+    regularization_strength: PositiveFloat = 0.001
