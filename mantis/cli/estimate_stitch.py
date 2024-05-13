@@ -57,7 +57,10 @@ def estimate_zarr_fov_shifts(
         index=[0],
     )
     if output_dirname:
-        df.to_csv(Path(output_dirname, well_name, f"{fov0}_{fov1}_shift.csv"), index=False)
+        df.to_csv(
+            Path(output_dirname, f"{'_'.join(well_name.parts + (fov0, fov1))}_shift.csv"),
+            index=False,
+        )
     else:
         return df
 
@@ -82,7 +85,8 @@ def cleanup_shifts(csv_filepath: str):
 
     # replace row shifts with median value calculated across all columns
     _df = df[df['direction'] == 'row']
-    groupby = _df.groupby(_df['fov0'].str[-3:])
+    # group by well and last three characters of fov0
+    groupby = _df.groupby(['well', _df['fov0'].str[-3:]])
     df.loc[df['direction'] == 'row', 'shift-x'] = groupby['shift-x-raw'].transform('median')
     df.loc[df['direction'] == 'row', 'shift-y'] = groupby['shift-y-raw'].transform('median')
 
@@ -91,25 +95,32 @@ def cleanup_shifts(csv_filepath: str):
 
 def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
     df = pd.read_csv(csv_filepath, dtype={'fov0': str, 'fov1': str})
+
     df['row'] = df['fov1'].str[-3:].astype(int)
     df['col'] = df['fov1'].str[:3].astype(int)
     df.set_index('fov1', inplace=True)
     df.sort_index(inplace=True)
 
-    col_shifts = df[df['direction'] == 'col'].groupby('row')[['shift-x', 'shift-y']].cumsum()
-    row_shifts = df[df['direction'] == 'row'].groupby('col')[['shift-x', 'shift-y']].cumsum()
-    total_shift = col_shifts.add(row_shifts, fill_value=0)
+    total_shift = []
+    for well in df['well'].unique():
+        _df = df[(df['direction'] == 'col') & (df['well'] == well)]
+        col_shifts = _df.groupby('row')[['shift-x', 'shift-y']].cumsum()
+        _df = df[(df['direction'] == 'row') & (df['well'] == well)]
+        row_shifts = _df.groupby('col')[['shift-x', 'shift-y']].cumsum()
+        _total_shift = col_shifts.add(row_shifts, fill_value=0)
 
-    # add row 000000
-    total_shift = pd.concat(
-        [pd.DataFrame({'shift-x': 0, 'shift-y': 0}, index=['000000']), total_shift]
-    )
+        # add row 000000
+        _total_shift = pd.concat(
+            [pd.DataFrame({'shift-x': 0, 'shift-y': 0}, index=['000000']), _total_shift]
+        )
 
-    # add global offset to remove negative values
-    total_shift['shift-x'] += -np.minimum(total_shift['shift-x'].min(), 0)
-    total_shift['shift-y'] += -np.minimum(total_shift['shift-y'].min(), 0)
+        # add global offset to remove negative values
+        _total_shift['shift-x'] += -np.minimum(_total_shift['shift-x'].min(), 0)
+        _total_shift['shift-y'] += -np.minimum(_total_shift['shift-y'].min(), 0)
+        _total_shift.set_index(well + '/' + _total_shift.index, inplace=True)
+        total_shift.append(_total_shift)
 
-    return total_shift
+    return pd.concat(total_shift)
 
 
 def write_config_file(shifts: pd.DataFrame, output_filepath: str, fliplr: bool, flipud: bool):
@@ -145,9 +156,9 @@ def estimate_stitch(
     csv_filepath = Path(output_filepath).parent / "stitch_shifts.csv"
 
     dataset = open_ome_zarr(input_zarr_path)
-    well_name, _ = next(dataset.wells())
-    grid_rows, grid_cols = get_grid_rows_cols(input_zarr_path)
 
+    # here we assume that all wells have the same fov grid
+    grid_rows, grid_cols = get_grid_rows_cols(input_zarr_path)
     row_fov0 = [col + row for row in grid_rows[:-1] for col in grid_cols]
     row_fov1 = [col + row for row in grid_rows[1:] for col in grid_cols]
     col_fov0 = [col + row for col in grid_cols[:-1] for row in grid_rows]
@@ -157,9 +168,12 @@ def estimate_stitch(
         "fliplr": fliplr,
         "flipud": flipud,
     }
+
+    # define slurm paramters
     if slurm:
         slurm_out_path = Path(output_filepath).parent / "slurm_output" / "shift-%j.out"
         csv_dirpath = Path(output_filepath).parent / "raw_shifts"
+        csv_dirpath.mkdir(parents=True, exist_ok=False)
         params = SlurmParams(
             partition="cpu",
             cpus_per_task=1,
@@ -167,43 +181,48 @@ def estimate_stitch(
             time=datetime.timedelta(minutes=10),
             output=slurm_out_path,
         )
-        (csv_dirpath / well_name).mkdir(parents=True, exist_ok=True)
-
-        row_jobs = [
-            submit_function(
-                slurm_function(estimate_zarr_fov_shifts)(
-                    direction="row",
-                    output_dirname=csv_dirpath,
-                    **estimate_shift_params,
-                ),
-                slurm_params=params,
-                fov0_zarr_path=Path(input_zarr_path, well_name, fov0),
-                fov1_zarr_path=Path(input_zarr_path, well_name, fov1),
+        slurm_func = {
+            direction: slurm_function(estimate_zarr_fov_shifts)(
+                direction=direction,
+                output_dirname=csv_dirpath,
+                **estimate_shift_params,
             )
-            for fov0, fov1 in zip(row_fov0, row_fov1)
-        ]
+            for direction in ("row", "col")
+        }
 
-        col_jobs = [
-            submit_function(
-                slurm_function(estimate_zarr_fov_shifts)(
-                    direction="col",
-                    output_dirname=csv_dirpath,
-                    **estimate_shift_params,
-                ),
-                slurm_params=params,
-                fov0_zarr_path=Path(input_zarr_path, well_name, fov0),
-                fov1_zarr_path=Path(input_zarr_path, well_name, fov1),
-            )
-            for fov0, fov1 in zip(col_fov0, col_fov1)
-        ]
+    shifts, jobs = [], []
+    for well_name, _ in dataset.wells():
+        for direction, fovs in zip(
+            ("row", "col"), (zip(row_fov0, row_fov1), zip(col_fov0, col_fov1))
+        ):
+            for fov0, fov1 in fovs:
+                fov0_zarr_path = Path(input_zarr_path, well_name, fov0)
+                fov1_zarr_path = Path(input_zarr_path, well_name, fov1)
+                if slurm:
+                    job_id = submit_function(
+                        slurm_func[direction],
+                        slurm_params=params,
+                        fov0_zarr_path=fov0_zarr_path,
+                        fov1_zarr_path=fov1_zarr_path,
+                    )
+                    jobs.append(job_id)
+                else:
+                    shift_params = estimate_zarr_fov_shifts(
+                        fov0_zarr_path=fov0_zarr_path,
+                        fov1_zarr_path=fov1_zarr_path,
+                        direction=direction,
+                        **estimate_shift_params,
+                    )
+                    shifts.append(shift_params)
 
+    if slurm:
         submit_function(
             slurm_function(consolidate_zarr_fov_shifts)(
                 input_dirname=csv_dirpath,
                 output_filepath=csv_filepath,
             ),
             slurm_params=params,
-            dependencies=row_jobs + col_jobs,
+            dependencies=jobs,
         )
 
         # wait for csv_filepath to be created, capped at 5 min
@@ -211,27 +230,7 @@ def estimate_stitch(
         while not csv_filepath.exists() and time.time() - t_start < 300:
             time.sleep(1)
     else:
-        row_shifts = []
-        for fov0, fov1 in zip(row_fov0, row_fov1):
-            shift_params = estimate_zarr_fov_shifts(
-                Path(input_zarr_path, well_name, fov0),
-                Path(input_zarr_path, well_name, fov1),
-                direction="row",
-                **estimate_shift_params,
-            )
-            row_shifts.append(shift_params)
-
-        col_shifts = []
-        for fov0, fov1 in zip(col_fov0, col_fov1):
-            shift_params = estimate_zarr_fov_shifts(
-                Path(input_zarr_path, well_name, fov0),
-                Path(input_zarr_path, well_name, fov1),
-                direction="col",
-                **estimate_shift_params,
-            )
-            col_shifts.append(shift_params)
-
-        df = pd.concat(row_shifts + col_shifts, ignore_index=True)
+        df = pd.concat(shifts, ignore_index=True)
         df.to_csv(csv_filepath, index=False)
 
     cleanup_shifts(csv_filepath)

@@ -36,9 +36,11 @@ def process_dataset(
 
 
 def _preprocess_and_shift(
-    image, settings: ProcessingSettings, output_shape, shift, verbose=True
+    image, settings: ProcessingSettings, output_shape, shift_x, shift_y, verbose=True
 ):
-    return shift_image(process_dataset(image, settings, verbose), output_shape, shift, verbose)
+    return shift_image(
+        process_dataset(image, settings, verbose), output_shape, [shift_y, shift_x], verbose
+    )
 
 
 def _stitch_shifted_store(

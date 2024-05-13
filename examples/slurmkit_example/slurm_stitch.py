@@ -5,6 +5,7 @@ from pathlib import Path
 import click
 
 import numpy as np
+import pandas as pd
 
 from iohub import open_ome_zarr
 from natsort import natsorted
@@ -37,12 +38,18 @@ verbose = True
 # output_path = Path(f"/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/live/3-stitch/{dataset}.zarr")
 # config_filepath = Path("/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/live/3-stitch/stitch_settings.yml")
 
-dataset = 'kidney_grid_test_1'
+# dataset = 'kidney_grid_test_1'
 
-input_paths = f"/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/kidney_tissue/0-convert/dragonfly/{dataset}.zarr/*/*/*"
+# input_paths = f"/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/kidney_tissue/0-convert/dragonfly/{dataset}.zarr/*/*/*"
+# temp_path = Path(f"/hpc/scratch/group.comp.micro/TEMP_{dataset}.zarr")
+# output_path = Path(f"/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/kidney_tissue/1-stitch/dragonfly/{dataset}_2.zarr")
+# config_filepath = Path("/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/kidney_tissue/1-stitch/dragonfly/stitch_settings.yml")
+
+dataset = "round4_20x0.80_XCite-50Percent_BSI_MultiRound_1"
+input_paths = f"/hpc/projects/intracellular_dashboard/ops/2024_04_11_Manual_HELA/0-convert/{dataset}.zarr/*/*/*"
 temp_path = Path(f"/hpc/scratch/group.comp.micro/TEMP_{dataset}.zarr")
-output_path = Path(f"/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/kidney_tissue/1-stitch/dragonfly/{dataset}_2.zarr")
-config_filepath = Path("/hpc/projects/intracellular_dashboard/ops/2024_03_05_registration_test/kidney_tissue/1-stitch/dragonfly/stitch_settings.yml")
+output_path = Path("/hpc/projects/intracellular_dashboard/ops/2024_04_11_Manual_HELA/1-stitch/round4_test2.zarr")
+config_filepath = Path("/hpc/projects/intracellular_dashboard/ops/2024_04_11_Manual_HELA/1-stitch/test_stitch_settings.yml")
 
 # sbatch and resource parameters
 cpus_per_task = 1
@@ -68,9 +75,18 @@ grid_rows, grid_cols = get_grid_rows_cols(Path(*input_paths[0].parts[:-3]))
 n_rows = len(grid_rows)
 n_cols = len(grid_cols)
 
-output_shape, global_translation = get_stitch_output_shape(
-    n_rows, n_cols, Y, X, settings.column_translation, settings.row_translation
-)
+if settings.total_translation is None:
+    output_shape, global_translation = get_stitch_output_shape(
+        n_rows, n_cols, Y, X, settings.column_translation, settings.row_translation
+    )
+else:
+    df = pd.DataFrame.from_dict(
+        settings.total_translation, orient="index", columns=["shift-y", "shift-x"]
+    )
+    output_shape = (
+        np.ceil(df["shift-y"].max() + Y).astype(int),
+        np.ceil(df["shift-x"].max() + X).astype(int),
+    )
 
 # Create the output zarr mirroring input positions
 # Takes a while, 10 minutes ?!
@@ -110,33 +126,35 @@ params = SlurmParams(
 )
 
 # wrap our deskew_single_position() function with slurmkit
-slurm_func = slurm_function(process_single_position_v2)
+slurm_func = slurm_function(process_single_position_v2)(
+    func=_preprocess_and_shift,
+    time_indices='all',
+    input_channel_idx=[input_dataset_channels.index(ch) for ch in settings.channels],
+    output_channel_idx=list(range(len(settings.channels))),
+    num_processes=cpus_per_task,
+    settings=settings.preprocessing,
+    output_shape=output_shape,
+    verbose=True,
+)
 
 # generate an array of jobs by passing the in_path and out_path to slurm wrapped function
 click.echo('Submitting SLURM jobs')
 jobs = []
 for in_path in input_paths:
     col_idx, row_idx = (int(in_path.name[:3]), int(in_path.name[3:]))
-    shift = get_image_shift(
-        col_idx, row_idx, settings.column_translation, settings.row_translation, global_translation
-    )
-
-    func = slurm_func(
-        _preprocess_and_shift,
-        time_indices='all',
-        input_channel_idx=[input_dataset_channels.index(ch) for ch in settings.channels],
-        output_channel_idx=list(range(len(settings.channels))),
-        num_processes=cpus_per_task,
-        settings=settings.preprocessing,
-        output_shape=output_shape,
-        shift=shift,
-        verbose=True,
-    )
+    if settings.total_translation is None:
+        shift = get_image_shift(
+            col_idx, row_idx, settings.column_translation, settings.row_translation, global_translation
+        )
+    else:
+        shift = settings.total_translation[f"{col_idx:03d}{row_idx:03d}"]
 
     jobs.append(
         submit_function(
-            func,
+            slurm_func,
             slurm_params=params,
+            shift_x=shift[-1],
+            shift_y=shift[-2],
             input_data_path=in_path,
             output_path=temp_path,
         )
@@ -148,7 +166,7 @@ submit_function(
         partition=partition,
         cpus_per_task=8,
         mem_per_cpu='16G',
-        time=datetime.timedelta(hours=12),
+        time=datetime.timedelta(hours=1),
         output=slurm_out_path,
     ),
     dependencies=jobs,
