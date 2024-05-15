@@ -143,8 +143,9 @@ def generate_report(
     webbrowser.open('file://' + str(html_file_path))
 
 
-def extract_beads(zyx_data: ArrayLike, points: ArrayLike, scale: tuple):
-    patch_size = (scale[0] * 15, scale[1] * 18, scale[2] * 18)
+def extract_beads(zyx_data: ArrayLike, points: ArrayLike, scale: tuple, patch_size: tuple = None):
+    if patch_size is None:
+        patch_size = (scale[0] * 15, scale[1] * 18, scale[2] * 18)
 
     # extract bead patches
     bead_extractor = BeadExtractor(
