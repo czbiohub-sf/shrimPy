@@ -782,8 +782,8 @@ class MantisAcquisition(object):
         # Define O3 z range
         # 1 step is approx 20 nm, 15 steps are 300 nm which is sub-Nyquist sampling
         # The stack starts away from O2 and moves closer
-        o3_z_start = -105
-        o3_z_end = 105
+        o3_z_start = -165
+        o3_z_end = 165
         o3_z_step = 15
         o3_z_range = np.arange(o3_z_start, o3_z_end + o3_z_step, o3_z_step)
 
