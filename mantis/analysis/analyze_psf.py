@@ -12,6 +12,8 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
+import mantis.acquisition.scripts
+import importlib.resources as pkg_resources
 
 from napari_psf_analysis.psf_analysis.extract.BeadExtractor import BeadExtractor
 from napari_psf_analysis.psf_analysis.image import Calibrated3DImage
@@ -138,7 +140,8 @@ def generate_report(
     df_gaussian_fit.to_csv(output_path / 'psf_gaussian_fit.csv', index=False)
     df_1d_peak_width.to_csv(output_path / 'psf_1d_peak_width.csv', index=False)
 
-    shutil.copy('github-markdown.css', output_path)
+    with pkg_resources.path(mantis.acquisition.scripts, 'github-markdown.css') as css_path:
+        shutil.copy(css_path, output_path)
     html_file_path = output_path / ('psf_analysis_report.html')
     with open(html_file_path, 'w') as file:
         file.write(html_report)
