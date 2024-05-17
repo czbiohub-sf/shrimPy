@@ -10,6 +10,7 @@ from mantis.cli.run_acquisition import run_acquisition
 from mantis.cli.update_scale_metadata import update_scale_metadata
 from mantis.cli.psf_from_beads import psf_from_beads
 from mantis.cli.deconvolve import deconvolve
+from mantis.cli.characterize import characterize
 
 CONTEXT = {"help_option_names": ["-h", "--help"]}
 
@@ -35,3 +36,4 @@ cli.add_command(apply_affine)
 cli.add_command(update_scale_metadata)
 cli.add_command(psf_from_beads)
 cli.add_command(deconvolve)
+cli.add_command(characterize)

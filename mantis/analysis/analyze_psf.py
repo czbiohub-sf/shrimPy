@@ -150,7 +150,14 @@ def generate_report(
 def extract_beads(
     zyx_data: ArrayLike, points: ArrayLike, scale: tuple, patch_size_voxels: tuple = None
 ):
-    patch_size = (scale[0] * patch_size_voxels[0], scale[1] * patch_size_voxels[1], scale[2] * patch_size_voxels[2])
+    if patch_size_voxels is None:
+        patch_size = (scale[0] * 15, scale[1] * 18, scale[2] * 18)
+    else:
+        patch_size = (
+            scale[0] * patch_size_voxels[0],
+            scale[1] * patch_size_voxels[1],
+            scale[2] * patch_size_voxels[2],
+        )
 
     # extract bead patches
     bead_extractor = BeadExtractor(

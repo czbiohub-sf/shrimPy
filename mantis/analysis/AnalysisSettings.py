@@ -1,6 +1,7 @@
 from typing import Literal, Optional, Union
 
 import numpy as np
+import torch
 
 from pydantic import BaseModel, Extra, NonNegativeInt, PositiveFloat, PositiveInt, validator
 
@@ -77,3 +78,18 @@ class PsfFromBeadsSettings(MyBaseModel):
 
 class DeconvolveSettings(MyBaseModel):
     regularization_strength: PositiveFloat = 0.001
+
+
+class CharacterizeSettings(MyBaseModel):
+    block_size: list[NonNegativeInt] = (64, 64, 32)
+    blur_kernel_size: NonNegativeInt = 3
+    nms_distance: NonNegativeInt = 32
+    min_distance: NonNegativeInt = 50
+    threshold_abs: PositiveFloat = 200.0
+    max_num_peaks: NonNegativeInt = 2000
+    exclude_border: list[NonNegativeInt] = (5, 10, 5)
+    device: str = "cuda"
+
+    @validator("device")
+    def check_device(cls, v):
+        return "cuda" if torch.cuda.is_available() else "cpu"
