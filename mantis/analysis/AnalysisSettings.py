@@ -75,8 +75,19 @@ class RegistrationSettings(MyBaseModel):
 
 
 class StitchSettings(MyBaseModel):
-    column_translation: tuple[float, float]
-    row_translation: tuple[float, float]
     channels: Optional[list[str]] = None
     preprocessing: Optional[ProcessingSettings] = None
     postprocessing: Optional[ProcessingSettings] = None
+    column_translation: Optional[list[float, float]] = None
+    row_translation: Optional[list[float, float]] = None
+    total_translation: Optional[dict[str, list[float, float]]] = None
+
+    def __init__(self, **data):
+        if data.get("total_translation") is None:
+            if any(
+                (data.get("column_translation") is None, data.get("row_translation") is None)
+            ):
+                raise ValueError(
+                    "If total_translation is not provided, both column_translation and row_translation must be provided"
+                )
+        super().__init__(**data)

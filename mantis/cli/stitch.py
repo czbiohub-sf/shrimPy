@@ -2,10 +2,11 @@ from pathlib import Path
 
 import click
 import numpy as np
+import pandas as pd
 
 from iohub import open_ome_zarr
 
-from mantis.analysis.AnalysisSettings import StitchSettings
+from mantis.analysis.AnalysisSettings import ProcessingSettings, StitchSettings
 from mantis.analysis.stitch import (
     get_grid_rows_cols,
     get_stitch_output_shape,
@@ -16,17 +17,17 @@ from mantis.cli.parsing import config_filepath, output_dirpath
 from mantis.cli.utils import yaml_to_model
 
 
-def preprocess_dataset(
+def process_dataset(
     data_array: np.ndarray,
-    settings: StitchSettings,
+    settings: ProcessingSettings,
     verbose: bool = True,
 ) -> np.ndarray:
-    if settings.preprocessing:
-        if settings.preprocessing.flipud:
+    if settings:
+        if settings.flipud:
             if verbose:
                 click.echo("Flipping data array up-down")
             data_array = np.flip(data_array, axis=-2)
-        if settings.preprocessing.fliplr:
+        if settings.fliplr:
             if verbose:
                 click.echo("Flipping data array left-right")
             data_array = np.flip(data_array, axis=-1)
@@ -34,31 +35,17 @@ def preprocess_dataset(
     return data_array
 
 
-def postprocess_dataset(
-    data_array: np.ndarray,
-    settings: StitchSettings,
-    verbose: bool = True,
-) -> np.ndarray:
-    if settings.postprocessing:
-        if settings.postprocessing.flipud:
-            if verbose:
-                click.echo("Flipping data array up-down")
-            data_array = np.flip(data_array, axis=-2)
-        if settings.postprocessing.fliplr:
-            if verbose:
-                click.echo("Flipping data array left-right")
-            data_array = np.flip(data_array, axis=-1)
-
-    return data_array
-
-
-def _preprocess_and_shift(image, settings, output_shape, shift, verbose=True):
+def _preprocess_and_shift(
+    image, settings: ProcessingSettings, output_shape, shift_x, shift_y, verbose=True
+):
     return shift_image(
-        preprocess_dataset(image, settings, verbose), output_shape, shift, verbose
+        process_dataset(image, settings, verbose), output_shape, [shift_y, shift_x], verbose
     )
 
 
-def _stitch_shifted_store(input_data_path, output_data_path, settings, verbose=True):
+def _stitch_shifted_store(
+    input_data_path, output_data_path, settings: ProcessingSettings, verbose=True
+):
     click.echo(f'Stitching zarr store: {input_data_path}')
     with open_ome_zarr(input_data_path, mode="r") as input_dataset:
         well_name, _ = next(input_dataset.wells())
@@ -80,7 +67,7 @@ def _stitch_shifted_store(input_data_path, output_data_path, settings, verbose=T
     denominator[denominator == 0] = 1
     stitched_array /= denominator
 
-    stitched_array = postprocess_dataset(stitched_array, settings, verbose)
+    stitched_array = process_dataset(stitched_array, settings, verbose)
 
     click.echo(f'Saving stitched array in :{output_data_path}')
     with open_ome_zarr(
@@ -138,9 +125,18 @@ def stitch_zarr_store(
     n_rows = len(grid_rows)
     n_cols = len(grid_cols)
 
-    output_shape, _ = get_stitch_output_shape(
-        n_rows, n_cols, sizeY, sizeX, settings.column_translation, settings.row_translation
-    )
+    if settings.total_translation is None:
+        output_shape, _ = get_stitch_output_shape(
+            n_rows, n_cols, sizeY, sizeX, settings.column_translation, settings.row_translation
+        )
+    else:
+        df = pd.DataFrame.from_dict(
+            settings.total_translation, orient="index", columns=["shift-y", "shift-x"]
+        )
+        output_shape = (
+            np.ceil(df["shift-y"].max() + sizeY).astype(int),
+            np.ceil(df["shift-x"].max() + sizeX).astype(int),
+        )
 
     if not Path(output_dirpath).exists():
         output_dataset = open_ome_zarr(
@@ -176,13 +172,14 @@ def stitch_zarr_store(
                             Path(well_name, col_name + row_name)
                         ].data[t_idx, input_c_idx, z_idx]
 
-                data_array = preprocess_dataset(data_array, settings)
+                data_array = process_dataset(data_array, settings.preprocessing)
                 stitched_array = stitch_images(
                     data_array,
+                    total_translation=settings.total_translation,
                     col_translation=settings.column_translation,
                     row_translation=settings.row_translation,
                 )
-                stitched_array = postprocess_dataset(stitched_array, settings)
+                stitched_array = process_dataset(stitched_array, settings.postprocessing)
 
                 output_position.data[t_idx, output_c_idx, z_idx] = stitched_array
 
