@@ -147,7 +147,8 @@ def generate_report(
         file.write(html_report)
 
     # display html report
-    webbrowser.open('file://' + str(html_file_path))
+    html_file_path = Path(html_file_path).absolute()
+    webbrowser.open(html_file_path.as_uri())
 
 
 def extract_beads(
