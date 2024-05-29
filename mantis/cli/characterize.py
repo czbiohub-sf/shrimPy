@@ -9,7 +9,12 @@ from typing import List
 from mantis.analysis.AnalysisSettings import CharacterizeSettings
 from mantis.cli.parsing import input_position_dirpaths, output_dirpath, config_filepath
 from mantis.cli.utils import yaml_to_model
-from mantis.analysis.analyze_psf import detect_peaks, extract_beads, analyze_psf, generate_report
+from mantis.analysis.analyze_psf import (
+    detect_peaks,
+    extract_beads,
+    analyze_psf,
+    generate_report,
+)
 
 
 @click.command()
@@ -34,12 +39,14 @@ def characterize(
 
     # Read settings
     settings = yaml_to_model(config_filepath, CharacterizeSettings)
-    
+    settings_dict = settings.dict()
+    axis_labels = settings_dict.pop("axis_labels")
+
     click.echo(f"Detecting peaks...")
     t1 = time.time()
     peaks = detect_peaks(
         zyx_data,
-        **settings.dict(),
+        **settings_dict,
         verbose=True,
     )
     gc.collect()
@@ -75,5 +82,5 @@ def characterize(
         df_gaussian_fit,
         df_1d_peak_width,
         zyx_scale,
-        ["AXIS 0", "AXIS 1", "AXIS 2"],
+        axis_labels,
     )

@@ -89,6 +89,7 @@ class CharacterizeSettings(MyBaseModel):
     max_num_peaks: NonNegativeInt = 2000
     exclude_border: list[NonNegativeInt] = (5, 10, 5)
     device: str = "cuda"
+    axis_labels: list[str] = ["AXIS0", "AXIS1", "AXIS2"]
 
     @validator("device")
     def check_device(cls, v):
