@@ -29,7 +29,6 @@ dependencies = [
   "natsort",
   "ndtiff>=2.0",
   "nidaqmx",
-  "napari-psf-analyis",
   "numpy",
   "markdown",
   "pycromanager==0.28.1",
