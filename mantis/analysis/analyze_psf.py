@@ -165,7 +165,7 @@ def extract_beads(
 
     # extract bead patches
     bead_extractor = BeadExtractor(
-        image=Calibrated3DImage(data=zyx_data.astype(np.uint16), spacing=scale),
+        image=Calibrated3DImage(data=zyx_data.astype(np.int32), spacing=scale),
         patch_size=patch_size,
     )
     beads = bead_extractor.extract_beads(points=points)
@@ -180,7 +180,8 @@ def extract_beads(
 def analyze_psf(zyx_patches: List[ArrayLike], bead_offsets: List[tuple], scale: tuple):
     results = []
     for patch, offset in zip(zyx_patches, bead_offsets):
-        bead = Calibrated3DImage(data=patch.astype(np.uint16), spacing=scale, offset=offset)
+        patch = np.clip(patch, 0, None)
+        bead = Calibrated3DImage(data=patch.astype(np.int32), spacing=scale, offset=offset)
         psf = PSF(image=bead)
         try:
             psf.analyze()
@@ -256,7 +257,11 @@ def plot_psf_slices(
     fig, ax = plt.subplots(1, num_beads)
     for _ax, bead, bead_number in zip(ax, beads, bead_numbers):
         _ax.imshow(
-            bead[shape_Z // 2, :, :], cmap=cmap, origin='lower', aspect=scale_Y / scale_X
+            bead[shape_Z // 2, :, :],
+            cmap=cmap,
+            origin='lower',
+            aspect=scale_Y / scale_X,
+            vmin=0,
         )
         _ax.set_xlabel(axis_labels[-1])
         _ax.set_ylabel(axis_labels[-2])
