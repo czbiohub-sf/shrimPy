@@ -32,12 +32,19 @@ def psf_from_beads(
     output_dirpath = Path(output_dirpath)
     config_filepath = Path(config_filepath)
 
-    # Load the first position (TODO: consider averaging over positions)
+    # Load the first position
     click.echo(f"Loading data...")
-    with open_ome_zarr(str(input_position_dirpaths[0]), mode="r") as input_dataset:
-        T, C, Z, Y, X = input_dataset.data.shape
-        zyx_data = input_dataset["0"][0, 0]
-        zyx_scale = input_dataset.scale[-3:]
+    pzyx_data = []
+    for input_position_dirpath in input_position_dirpaths:
+        with open_ome_zarr(str(input_position_dirpath), mode="r") as input_dataset:
+            T, C, Z, Y, X = input_dataset.data.shape
+            pzyx_data.append(input_dataset["0"][0, 0])
+            zyx_scale = input_dataset.scale[-3:]
+
+    try:
+        pzyx_data = np.array(pzyx_data)
+    except:
+        raise "Concatenating position arrays failed."
 
     # Read settings
     settings = yaml_to_model(config_filepath, PsfFromBeadsSettings)
@@ -59,30 +66,37 @@ def psf_from_beads(
         "device": "cuda" if torch.cuda.is_available() else "cpu",
     }
 
-    # Detect and extract bead patches
-    click.echo(f"Detecting beads...")
-    t1 = time.time()
-    peaks = detect_peaks(
-        zyx_data,
-        **bead_detection_settings,
-        verbose=True,
-    )
-    gc.collect()
+    pbzyx_data = []
+    for zyx_data in pzyx_data:
+        # Detect and extract bead patches
+        click.echo(f"Detecting beads...")
+        t1 = time.time()
+        peaks = detect_peaks(
+            zyx_data,
+            **bead_detection_settings,
+            verbose=True,
+        )
+        gc.collect()
 
-    torch.cuda.empty_cache()
-    t2 = time.time()
-    click.echo(f'Time to detect peaks: {t2-t1}')
+        torch.cuda.empty_cache()
+        t2 = time.time()
+        click.echo(f'Time to detect peaks: {t2-t1}')
 
-    beads, _ = extract_beads(
-        zyx_data=zyx_data,
-        points=peaks,
-        scale=zyx_scale,
-        patch_size_voxels=patch_size,
-    )
+        beads, _ = extract_beads(
+            zyx_data=zyx_data,
+            points=peaks,
+            scale=zyx_scale,
+            patch_size_voxels=patch_size,
+        )
 
-    # Filter PSFs with non-standard shapes
-    filtered_beads = [x for x in beads if x.shape == beads[0].shape]
-    bzyx_data = np.stack(filtered_beads)
+        # Filter PSFs with non-standard shapes
+        filtered_beads = [x for x in beads if x.shape == beads[0].shape]
+        bzyx_data = np.stack(filtered_beads)
+        pbzyx_data.append(bzyx_data)
+
+    bzyx_data = np.concatenate(pbzyx_data)
+    click.echo(f"Total beads: {bzyx_data.shape[0]}")
+
     normalized_bzyx_data = (
         bzyx_data / np.max(bzyx_data, axis=(-3, -2, -1))[:, None, None, None]
     )
