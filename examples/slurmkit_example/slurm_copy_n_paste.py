@@ -1,3 +1,4 @@
+# %%
 import datetime
 import glob
 
@@ -18,8 +19,8 @@ from mantis.cli.utils import (
 )
 
 # io parameters
-input_position_dirpath = '/input_source.zarr/*/*/*'
-output_dirpath = './test_output.zarr'
+input_position_dirpath = '/hpc/projects/comp.micro/zebrafish/2023_02_02_zebrafish_casper/1-reconstruction/intoto_casper_2_combined.zarr/*/*/*'
+output_dirpath = './intoto_casper_2_combined.zarr'
 
 # sbatch and resource parameters
 cpus_per_task = 4
@@ -35,7 +36,7 @@ input_position_dirpath = [Path(path) for path in natsorted(glob.glob(input_posit
 output_dirpath = Path(output_dirpath)
 
 click.echo(f"in_path: {input_position_dirpath[0]}, out_path: {output_dirpath}")
-slurm_out_path = output_dirpath.parent / "slurm_output" / "register-%j.out"
+slurm_out_path = output_dirpath.parent / "slurm_output" / "cp_paste-%j.out"
 
 
 # Calculate the output voxel size from the input scale and affine transform
@@ -45,12 +46,13 @@ with open_ome_zarr(input_position_dirpath[0]) as input_dataset:
     output_voxel_size = input_dataset.data.shape[-3:]
     input_voxel_size = input_dataset.scale[-3:]
 
+# %%
 # Channels to process
-channels_to_process = ['Channel_1', 'Channel_2']
+channels_to_process = ['Orientation', 'Phase3D', 'FITC_Density3D']
 
 # Slicing parameters used for cropping/copy_n_paste
-T_slice = slice(0, T)
-Z_slice = slice(0, Z)
+T_slice = range(0, 2)
+Z_slice = slice(87, 92)
 Y_slice = slice(0, Y)
 X_slice = slice(0, X)
 
@@ -64,7 +66,7 @@ cropped_shape_zyx = (
 # Overwrite the previous target shape
 Z_target, Y_target, X_target = cropped_shape_zyx[-3:]
 time_indices = list(T_slice)
-
+# %%
 # Logic to know what channels to process
 input_channel_idx = []
 output_channel_idx = []
@@ -105,7 +107,7 @@ params = SlurmParams(
     time=datetime.timedelta(minutes=time),
     output=slurm_out_path,
 )
-
+# %%
 # wrap our utils.process_single_position() function with slurmkit
 slurm_process_single_position = slurm_function(process_single_position_v2)
 
@@ -123,4 +125,8 @@ for input_position_path in input_position_dirpath:
         copy_n_paste_func,
         slurm_params=params,
         input_data_path=input_position_path,
+        input_channel_idx=input_channel_idx,
+        output_channel_idx=output_channel_idx,
     )
+
+# %%
