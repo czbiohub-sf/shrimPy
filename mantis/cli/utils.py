@@ -3,6 +3,7 @@ import inspect
 import io
 import itertools
 import multiprocessing as mp
+import os
 
 from functools import partial
 from pathlib import Path
@@ -11,24 +12,16 @@ from typing import Tuple
 import ants
 import click
 import largestinteriorrectangle as lir
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy.ndimage as ndi
+import torch
 import yaml
 
 from iohub.ngff import Position, open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
+from numpy.typing import DTypeLike
 from tqdm import tqdm
-from numpy.typing import DTypeLike
-import torch
-import matplotlib.pyplot as plt
-
-from numpy.typing import DTypeLike
-import torch
-import matplotlib.pyplot as plt
-from natsort import natsorted
-import glob
-from typing import List
-import os
 
 
 # TODO: replace this with recOrder recOrder.cli.utils.create_empty_hcs()
@@ -940,7 +933,7 @@ def nuc_mem_segmentation(czyx_data, **cellpose_kwargs) -> np.ndarray:
     # Get the key/values under this dictionary
     # cellpose_params = cellpose_params.get('cellpose_params', {})
     cellpose_params = cellpose_kwargs["cellpose_kwargs"]
-    Z_center_slice = slice(int(cellpose_params["z_idx"]), int(cellpose_params["z_idx"]) + 1)
+    # TODO: hardcoding the Z_slice segmentation to 7 and MIP
     Z_slice = slice(int(cellpose_params["z_idx"]) - 3, int(cellpose_params["z_idx"]) + 3)
     C, Z, Y, X = czyx_data.shape
 
@@ -962,9 +955,8 @@ def nuc_mem_segmentation(czyx_data, **cellpose_kwargs) -> np.ndarray:
     nuc_model = models.CellposeModel(
         model_type=cellpose_params["nuc_model_path"], device=torch.device(device)
     )
-
-    nuc_masks = nuc_model.eval(cyx_data[0], **nuc_seg_kwargs)[0]
-    mem_masks, _, _, _ = cyto_model.eval(cyx_data[1], **mem_seg_kwargs)
+    nuc_masks = nuc_model.evaluate(cyx_data[0], **nuc_seg_kwargs)[0]
+    mem_masks, _, _, _ = cyto_model.evaluate(cyx_data[1], **mem_seg_kwargs)
 
     # Save
     segmentation_stack = np.zeros_like(czyx_data_mip)
@@ -974,7 +966,6 @@ def nuc_mem_segmentation(czyx_data, **cellpose_kwargs) -> np.ndarray:
     return segmentation_stack
 
 
-## NOTE WIP
 def apply_transform_to_zyx_and_save_v2(
     func,
     position: Position,
@@ -1150,7 +1141,7 @@ def nuc_mem_segmentation_3D(czyx_data, zyx_slicing, **cellpose_kwargs):
             gpu=True,
             device=torch.device(device),
         )
-        nuc_segmentation, _, _ = model_nucleus_3D.eval(czyx_data, **nuc_seg_kwargs)
+        nuc_segmentation, _, _ = model_nucleus_3D.evaluate(czyx_data, **nuc_seg_kwargs)
         segmentation_stack[c_idx] = nuc_segmentation.astype(np.uint16)
         c_idx += 1
     if "membrane_kwargs" in cellpose_params:
@@ -1172,7 +1163,7 @@ def nuc_mem_segmentation_3D(czyx_data, zyx_slicing, **cellpose_kwargs):
             out_range=(np.min(czyx_data[c_idx_mem]), np.max(czyx_data[c_idx_mem])),
         )
 
-        mem_segmentation, _, _ = model_membrane_3D.eval(czyx_data, **mem_seg_kwargs)
+        mem_segmentation, _, _ = model_membrane_3D.evaluate(czyx_data, **mem_seg_kwargs)
         segmentation_stack[c_idx] = mem_segmentation.astype(np.uint16)
 
     return segmentation_stack

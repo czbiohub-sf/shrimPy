@@ -5,8 +5,7 @@ import numpy as np
 
 from iohub import open_ome_zarr
 from iohub.reader import print_info
-from skimage.transform import EuclideanTransform
-from skimage.transform import SimilarityTransform
+from skimage.transform import EuclideanTransform, SimilarityTransform
 from waveorder.focus import focus_from_transverse_band
 
 from mantis.analysis.AnalysisSettings import RegistrationSettings
