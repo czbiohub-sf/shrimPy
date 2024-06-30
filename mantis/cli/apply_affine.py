@@ -75,7 +75,6 @@ def apply_affine(
 
     with open_ome_zarr(target_position_dirpaths[0]) as target_dataset:
         target_channel_names = target_dataset.channel_names
-        Z_target, Y_target, X_target = target_dataset.data.shape[-3:]
         target_shape_zyx = target_dataset.data.shape[-3:]
 
     click.echo('\nREGISTRATION PARAMETERS:')
@@ -101,24 +100,22 @@ def apply_affine(
             source_shape_zyx, target_shape_zyx, matrix
         )
         # TODO: start or stop may be None
-        cropped_target_shape_zyx = (
+        # Overwrite the previous target shape
+        target_shape_zyx = (
             Z_slice.stop - Z_slice.start,
             Y_slice.stop - Y_slice.start,
             X_slice.stop - X_slice.start,
         )
-        # Overwrite the previous target shape
-        Z_target, Y_target, X_target = cropped_target_shape_zyx[-3:]
-        cropped_target_shape_zyx = Z_target, Y_target, X_target
-        click.echo(f'Shape of cropped output dataset: {cropped_target_shape_zyx}\n')
+        click.echo(f'Shape of cropped output dataset: {target_shape_zyx}\n')
     else:
         Z_slice, Y_slice, X_slice = (
-            slice(0, Z_target),
-            slice(0, Y_target),
-            slice(0, X_target),
+            slice(0, target_shape_zyx[-3]),
+            slice(0, target_shape_zyx[-2]),
+            slice(0, target_shape_zyx[-1]),
         )
 
     output_metadata = {
-        "shape": (len(time_indices), len(output_channel_names), Z_target, Y_target, X_target),
+        "shape": (len(time_indices), len(output_channel_names)) + tuple(target_shape_zyx),
         "chunks": None,
         "scale": (1,) * 2 + tuple(output_voxel_size),
         "channel_names": output_channel_names,
