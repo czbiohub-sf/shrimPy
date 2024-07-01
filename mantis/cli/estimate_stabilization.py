@@ -67,8 +67,6 @@ def estimate_position_focus(
 
 
 def get_mean_z_positions(dataframe_path: Path, verbose: bool = False) -> None:
-    import matplotlib.pyplot as plt
-
     df = pd.read_csv(dataframe_path)
 
     # Sort the DataFrame based on 'time_idx'
@@ -79,13 +77,17 @@ def get_mean_z_positions(dataframe_path: Path, verbose: bool = False) -> None:
 
     # Get the mean of positions for each time point
     average_focus_idx = df.groupby("time_idx")["focus_idx"].mean().reset_index()
+
     if verbose:
+        import matplotlib.pyplot as plt
+
         # Get the moving average of the focus_idx
         plt.plot(average_focus_idx["focus_idx"], linestyle="--", label="mean of all positions")
         plt.xlabel('Time index')
         plt.ylabel('Focus index')
         plt.legend()
         plt.savefig(dataframe_path.parent / "z_drift.png")
+
     return average_focus_idx["focus_idx"].values
 
 
