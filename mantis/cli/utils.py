@@ -398,12 +398,12 @@ def process_single_position_v2(
             **func_args,
         )
 
-        click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
-        with mp.Pool(num_processes) as p:
-            p.starmap(
-                partial_apply_transform_to_zyx_and_save,
-                iterable,
-            )
+    click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
+    with mp.Pool(num_processes) as p:
+        p.starmap(
+            partial_apply_transform_to_zyx_and_save,
+            iterable,
+        )
 
 
 def copy_n_paste(zyx_data: np.ndarray, zyx_slicing_params: list) -> np.ndarray:
