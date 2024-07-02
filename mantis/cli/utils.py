@@ -218,6 +218,12 @@ def apply_transform_to_zyx_and_save_v2(
         output_channel_indices = [int(x) for x in output_channel_indices if x.isdigit()]
     click.echo(f"input_channel_indices: {input_channel_indices}")
 
+    # Check if t_idx should be added to the func kwargs
+    # This is needed when a different processing is needed for each time point, for example during stabilization
+    all_func_params = inspect.signature(func).parameters.keys()
+    if "t_idx" in all_func_params:
+        kwargs["t_idx"] = t_idx
+
     # Process CZYX vs ZYX
     if input_channel_indices is not None:
         click.echo(f"Processing t={t_idx}")
@@ -382,6 +388,7 @@ def process_single_position_v2(
             input_dataset,
             output_path / Path(*input_data_path.parts[-3:]),
             input_channel_indices=None,
+            output_channel_indices=None,
             **func_args,
         )
     else:

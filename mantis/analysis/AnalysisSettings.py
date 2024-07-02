@@ -98,3 +98,23 @@ class ConcatenateSettings(MyBaseModel):
         ):
             raise ValueError("Slices must be lists of two non-negative integers.")
         return v
+
+
+class StabilizationSettings(MyBaseModel):
+    stabilization_estimation_channel: str
+    stabilization_type: Literal["z", "xy", "xyz"]
+    stabilization_channels: list
+    affine_transform_zyx_list: list
+    time_indices: Union[NonNegativeInt, list[NonNegativeInt], Literal["all"]] = "all"
+
+    @validator("affine_transform_zyx_list")
+    def check_affine_transform_list(cls, v):
+        if not isinstance(v, list):
+            raise ValueError("affine_transform_list must be a list")
+
+        for arr in v:
+            arr = np.array(arr)
+            if arr.shape != (4, 4):
+                raise ValueError("Each element in affine_transform_list must be a 4x4 ndarray")
+
+        return v
