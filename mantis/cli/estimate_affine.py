@@ -5,7 +5,7 @@ import numpy as np
 
 from iohub import open_ome_zarr
 from iohub.reader import print_info
-from skimage.transform import EuclideanTransform
+from skimage.transform import EuclideanTransform, SimilarityTransform
 from waveorder.focus import focus_from_transverse_band
 
 from mantis.analysis.AnalysisSettings import RegistrationSettings
@@ -33,7 +33,15 @@ FOCUS_SLICE_ROI_WIDTH = 150  # size of central ROI used to find focal slice
 @source_position_dirpaths()
 @target_position_dirpaths()
 @output_filepath()
-def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_filepath):
+@click.option(
+    "--similarity",
+    '-x',
+    is_flag=True,
+    help='Flag to use similarity transform (rotation, translation, scaling) default:Eucledian (rotation, translation)',
+)
+def estimate_affine(
+    source_position_dirpaths, target_position_dirpaths, output_filepath, similarity
+):
     """
     Estimate the affine transform between a source (i.e. moving) and a target (i.e.
     fixed) image by selecting corresponding points in each.
@@ -42,6 +50,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     -s ./acq_name_labelfree_reconstructed.zarr/0/0/0
     -t ./acq_name_lightsheet_deskewed.zarr/0/0/0
     -o ./output.yml
+    -x  flag to use similarity transform (rotation, translation, scaling) default:Eucledian (rotation, translation)
     """
 
     click.echo("\nTarget channel INFO:")
@@ -72,7 +81,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     source_channel_Z, source_channel_Y, source_channel_X = source_channel_volume.shape[-3:]
     target_channel_Z, target_channel_Y, target_channel_X = target_channel_volume.shape[-3:]
 
-    focus_source_channel_idx = focus_from_transverse_band(
+    source_channel_focus_idx = focus_from_transverse_band(
         source_channel_volume[
             :,
             source_channel_Y // 2
@@ -87,7 +96,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         pixel_size=source_channel_voxel_size[-1],
     )
 
-    focus_target_channel_idx = focus_from_transverse_band(
+    target_channel_focus_idx = focus_from_transverse_band(
         target_channel_volume[
             :,
             target_channel_Y // 2
@@ -102,21 +111,20 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         pixel_size=target_channel_voxel_size[-1],
     )
 
-    click.echo()
-    if focus_source_channel_idx not in (0, source_channel_Z - 1):
-        click.echo(f"Best source channel focus slice: {focus_source_channel_idx}")
+    if source_channel_focus_idx not in (0, source_channel_Z - 1):
+        click.echo(f"Best source channel focus slice: {source_channel_focus_idx}")
     else:
-        focus_source_channel_idx = source_channel_Z // 2
+        source_channel_focus_idx = source_channel_Z // 2
         click.echo(
-            f"Could not determine best source channel focus slice, using {focus_source_channel_idx}"
+            f"Could not determine best source channel focus slice, using {source_channel_focus_idx}"
         )
 
-    if focus_target_channel_idx not in (0, target_channel_Z - 1):
-        click.echo(f"Best target channel focus slice: {focus_target_channel_idx}")
+    if target_channel_focus_idx not in (0, target_channel_Z - 1):
+        click.echo(f"Best target channel focus slice: {target_channel_focus_idx}")
     else:
-        focus_target_channel_idx = target_channel_Z // 2
+        target_channel_focus_idx = target_channel_Z // 2
         click.echo(
-            f"Could not determine best target channel focus slice, using {focus_target_channel_idx}"
+            f"Could not determine best target channel focus slice, using {target_channel_focus_idx}"
         )
 
     # Calculate scaling factors for displaying data
@@ -125,9 +133,9 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     click.echo(
         f"Z scaling factor: {scaling_factor_z:.3f}; XY scaling factor: {scaling_factor_yx:.3f}\n"
     )
+
     # Add layers to napari with and transform
     # Rotate the image if needed here
-
     # Convert to ants objects
     source_zyx_ants = ants.from_numpy(source_channel_volume.astype(np.float32))
     target_zyx_ants = ants.from_numpy(target_channel_volume.astype(np.float32))
@@ -168,19 +176,19 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         "magenta",
     ]
 
-    viewer.add_image(target_channel_volume, name=target_channel_name)
+    viewer.add_image(target_channel_volume, name=f"target_{target_channel_name}")
     points_target_channel = viewer.add_points(
-        ndim=3, name=f"pts_{target_channel_name}", size=50, face_color=COLOR_CYCLE[0]
+        ndim=3, name=f"pts_target_{target_channel_name}", size=50, face_color=COLOR_CYCLE[0]
     )
 
-    viewer.add_image(
+    source_layer = viewer.add_image(
         source_zxy_pre_reg.numpy(),
-        name=source_channel_name,
+        name=f"source_{source_channel_name}",
         blending='additive',
         colormap='bop blue',
     )
     points_source_channel = viewer.add_points(
-        ndim=3, name=f"pts_{source_channel_name}", size=50, face_color=COLOR_CYCLE[0]
+        ndim=3, name=f"pts_source_{source_channel_name}", size=50, face_color=COLOR_CYCLE[0]
     )
 
     # setup viewer
@@ -251,7 +259,7 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
                 viewer.dims.current_step = prev_step_source_channel
 
     # Bind the mouse click callback to both point layers
-    in_focus = (focus_source_channel_idx, focus_target_channel_idx)
+    in_focus = (source_channel_focus_idx, target_channel_focus_idx)
 
     def lambda_callback(layer, event):
         return next_on_click(layer=layer, event=event, in_focus=in_focus)
@@ -272,28 +280,34 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     )
 
     # Get the data from the layers
-    pts_source_channel = points_source_channel.data
-    pts_target_channel = points_target_channel.data
+    pts_source_channel_data = points_source_channel.data
+    pts_target_channel_data = points_target_channel.data
 
     # Estimate the affine transform between the points xy to make sure registration is good
-    transform = EuclideanTransform()
-    transform.estimate(pts_source_channel[:, 1:], pts_target_channel[:, 1:])
-    yx_points_transformation_matrix = transform.params
+    if similarity:
+        # Similarity transform (rotation, translation, scaling)
+        transform = SimilarityTransform()
+        transform.estimate(pts_source_channel_data, pts_target_channel_data)
+        manual_estimated_transform = transform.params @ compound_affine
 
-    z_translation = pts_target_channel[0, 0] - pts_source_channel[0, 0]
+    else:
+        # Euclidean transform (rotation, translation) limiting this dataset's scale and just z-translation
+        transform = EuclideanTransform()
+        transform.estimate(pts_source_channel_data[:, 1:], pts_target_channel_data[:, 1:])
+        yx_points_transformation_matrix = transform.params
 
-    z_scale_translate_matrix = np.array([[1, 0, 0, z_translation]])
+        z_translation = pts_target_channel_data[0, 0] - pts_source_channel_data[0, 0]
 
-    # 2D to 3D matrix
-    euclidian_transform = np.vstack(
-        (z_scale_translate_matrix, np.insert(yx_points_transformation_matrix, 0, 0, axis=1))
-    )  # Insert 0 in the third entry of each row
+        z_scale_translate_matrix = np.array([[1, 0, 0, z_translation]])
 
-    scaling_affine = get_3D_rescaling_matrix(
-        (1, target_channel_Y, target_channel_X),
-        (scaling_factor_z, scaling_factor_yx, scaling_factor_yx),
-    )
-    manual_estimated_transform = euclidian_transform @ compound_affine
+        # 2D to 3D matrix
+        euclidian_transform = np.vstack(
+            (
+                z_scale_translate_matrix,
+                np.insert(yx_points_transformation_matrix, 0, 0, axis=1),
+            )
+        )  # Insert 0 in the third entry of each row
+        manual_estimated_transform = euclidian_transform @ compound_affine
 
     # NOTE: these two functions are key to pass the function properly to ANTs
     manual_estimated_transform_ants_style = manual_estimated_transform[:, :-1].ravel()
@@ -316,9 +330,10 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
         colormap="magenta",
         blending='additive',
     )
-    viewer.layers.remove(f"pts_{source_channel_name}")
-    viewer.layers.remove(f"pts_{target_channel_name}")
-    viewer.layers[source_channel_name].visible = False
+    # Cleanup
+    viewer.layers.remove(points_source_channel)
+    viewer.layers.remove(points_target_channel)
+    source_layer.visible = False
 
     # Ants affine transforms
     T_manual_numpy = convert_transform_to_numpy(tx_manual)
@@ -348,6 +363,8 @@ def estimate_affine(source_position_dirpaths, target_position_dirpaths, output_f
     )
     click.echo(f"Writing registration parameters to {output_filepath}")
     model_to_yaml(model, output_filepath)
+
+    input("Press <enter> to close the viewer and exit...")
 
 
 if __name__ == "__main__":
