@@ -187,6 +187,21 @@ def deskew_data(
         cval=cval,
     )
 
+    from monai.transforms.spatial.array import Affine
+
+    print("Computing w/ MONAI...")
+    my_matrix = np.vstack((matrix, np.array([[0, 0, 0, 1]])))
+    my_affine = Affine(
+        affine=my_matrix, mode="bilinear", padding_mode="zeros", image_only=True
+    )
+    deskewed_data2 = my_affine(raw_data[None], spatial_size=output_shape)[0]
+
+    print(deskewed_data)
+    print(deskewed_data2)
+    import pdb
+
+    pdb.set_trace()
+
     # Apply averaging
     averaged_deskewed_data = _average_n_slices(
         deskewed_data, average_window_width=average_n_slices
