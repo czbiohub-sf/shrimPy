@@ -67,3 +67,34 @@ class RegistrationSettings(MyBaseModel):
             raise ValueError("The array must contain valid numerical values.")
 
         return v
+
+
+class ConcatenateSettings(MyBaseModel):
+    concat_data_paths: list[str]
+    time_indices: Union[NonNegativeInt, list[NonNegativeInt], Literal["all"]] = "all"
+    channel_names: list[Union[str, list[str]]]
+    X_slice: list[NonNegativeInt]
+    Y_slice: list[NonNegativeInt]
+    Z_slice: list[NonNegativeInt]
+
+    @validator("concat_data_paths")
+    def check_concat_data_paths(cls, v):
+        if not isinstance(v, list) or not all(isinstance(path, str) for path in v):
+            raise ValueError("concat_data_paths must be a list of positions.")
+        return v
+
+    @validator("channel_names")
+    def check_channel_names(cls, v):
+        if not isinstance(v, list) or not all(isinstance(name, (str, list)) for name in v):
+            raise ValueError("channel_names must be a list of strings or lists of strings.")
+        return v
+
+    @validator("X_slice", "Y_slice", "Z_slice")
+    def check_slices(cls, v):
+        if (
+            not isinstance(v, list)
+            or len(v) != 2
+            or not all(isinstance(i, int) and i >= 0 for i in v)
+        ):
+            raise ValueError("Slices must be lists of two non-negative integers.")
+        return v
