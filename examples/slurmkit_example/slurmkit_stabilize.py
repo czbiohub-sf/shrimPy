@@ -22,7 +22,7 @@ output_dirpath = "/hpc/projects/comp.micro/mantis/2023_11_08_Opencell_infection_
 config_filepath = "/hpc/projects/comp.micro/mantis/2023_11_08_Opencell_infection_redo/3-stabilization/stabilization.yml"
 
 # batch and resource parameters
-partition = 'preempted'
+partition = 'cpu'
 cpus_per_task = 5
 mem_per_cpu = "4G"
 time = 60  # minutes

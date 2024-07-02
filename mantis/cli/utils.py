@@ -381,11 +381,10 @@ def process_single_position_v2(
             func,
             input_dataset,
             output_path / Path(*input_data_path.parts[-3:]),
-            None,
-            None,
+            input_channel_indices=None,
+            output_channel_indices=None,
             **func_args,
         )
-        click.echo('hello')
     else:
         # If C is empty, use only the range for time_indices
         iterable = list(zip(time_indices, time_indices_out))
