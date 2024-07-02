@@ -3,7 +3,11 @@ import pytest
 
 from pydantic import ValidationError
 
-from mantis.analysis.AnalysisSettings import DeskewSettings, RegistrationSettings
+from mantis.analysis.AnalysisSettings import (
+    DeskewSettings,
+    RegistrationSettings,
+    StabilizationSettings,
+)
 
 
 def test_deskew_settings():
@@ -64,3 +68,8 @@ def test_apply_affine_settings():
 def test_example_apply_affine_settings(example_apply_affine_settings):
     _, settings = example_apply_affine_settings
     RegistrationSettings(**settings)
+
+
+def test_example_stabilize_timelapse_settings(example_stabilize_timelapse_settings):
+    _, settings = example_stabilize_timelapse_settings
+    StabilizationSettings(**settings)
