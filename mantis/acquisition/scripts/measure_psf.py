@@ -73,10 +73,20 @@ def check_acquisition_directory(root_dir: Path, acq_name: str, suffix='', idx=1)
 
 mmc = Core()
 
+# mmc.set_property('Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter')
+# mmc.set_property('Oryx2', 'Line Selector', 'Line5')
+# mmc.update_system_state_cache()
+# mmc.set_property('Oryx2', 'Line Mode', 'Output')
+# mmc.set_property('Oryx2', 'Line Source', 'ExposureActive')
+
 # %%
-data_dir = Path(r'D:\2024_03_18_mantis_alignment')
-dataset = '2024_03_18_RR_Straight_O3_scan_Blackfly_smaller_z_step'
-# dataset = '2024_03_18_epi_O1_benchmark'
+data_dir = Path(r'E:\2024_05_10_A594_CAAX_DRAQ5')
+date = '2024_05_07'
+# dataset = f'{date}_RR_Straight_O3_scan'
+# dataset = f'{date}_epi_O1_benchmark'
+# dataset = f'{date}_LS_Oryx_epi_illum'
+# dataset =  f'{date}_LS_Oryx_LS_illum'
+dataset =  f'{date}_LS_benchmark'
 
 # epi settings
 # z_stage = 'PiezoStage:Q:35'
@@ -94,29 +104,35 @@ dataset = '2024_03_18_RR_Straight_O3_scan_Blackfly_smaller_z_step'
 # axis_labels = ("SCAN", "TILT", "COVERSLIP")
 
 # epi illumination rr detection settings
-# z_stage = 'AP Galvo'
+z_stage = 'AP Galvo'
 # z_step = 0.205  # in um
-# z_range = (-100, 85)  # in um
+# z_range = (-85, 85)  # in um
+z_step = 0.1  # in um, reduced range and smaller step size
+z_range = (-31, 49)  # in um
 # pixel_size = 0.116  # in um
-# axis_labels = ("SCAN", "TILT", "COVERSLIP")
+pixel_size = 6.5 / 40 / 1.4  # in um, no binning
+axis_labels = ("SCAN", "TILT", "COVERSLIP")
 
 # ls straight  settings
-z_stage = setup_kim101_stage('74000291')
-step_per_um = 35  # matches ~30 nm per step quoted in PIA13 specs
-z_start = 0 / step_per_um  # in um
-z_end = 1000 / step_per_um
-z_step = 5 / step_per_um
-z_range = np.arange(z_start, z_end + z_step, z_step)  # in um
-z_step /= 1.4 # count in 1.4x remote volume magnification
-pixel_size = 3.45 / 40 / 1.4  # in um, counting the 1.4x remote volume magnification
-axis_labels = ("Z", "Y", "X")
+# z_stage = setup_kim101_stage('74000291')
+# step_per_um = 35  # matches ~30 nm per step quoted in PIA13 specs
+# z_start = 0 / step_per_um  # in um
+# z_end = 1000 / step_per_um
+# z_step = 5 / step_per_um
+# # z_end = 500 / step_per_um
+# # z_step = 20 / step_per_um
+# z_range = np.arange(z_start, z_end + z_step, z_step)  # in um
+# z_step /= 1.4 # count in 1.4x remote volume magnification
+# pixel_size = 3.45 / 40 / 1.4  # in um, counting the 1.4x remote volume magnification
+# axis_labels = ("Z", "Y", "X")
 
 
 deskew = True
-view = True
+view = False
 scale = (z_step, pixel_size, pixel_size)
 data_path = data_dir / dataset
 
+camera = mmc.get_camera_device()
 if isinstance(z_stage, str):
     mmc.set_property('Core', 'Focus', z_stage)
     z_pos = mmc.get_position(z_stage)
@@ -126,9 +142,7 @@ if isinstance(z_stage, str):
         z_step=z_step,
     )
 
-    camera = mmc.get_camera_device()
-    if camera == 'Prime BSI Express' and z_stage == 'AP Galvo':
-        mmc.set_property('Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter')
+    if camera in ('Prime BSI Express', 'Oryx2') and z_stage == 'AP Galvo':
         mmc.set_property('TS2_TTL1-8', 'Blanking', 'On')
         mmc.set_property('TS2_DAC03', 'Sequence', 'On')
 
@@ -144,8 +158,9 @@ if isinstance(z_stage, str):
     mmc.set_auto_shutter(True)
     mmc.set_position(z_stage, z_pos)
 
-    if camera == 'Prime BSI Express' and z_stage == 'AP Galvo':
+    if camera in ('Prime BSI Express', 'Oryx2') and z_stage == 'AP Galvo':
         mmc.set_property('TS2_TTL1-8', 'Blanking', 'Off')
+        mmc.set_property('TS2_DAC03', 'Sequence', 'Off')
 
     ds = acq.get_dataset()
     zyx_data = np.asarray(ds.as_array())
@@ -189,7 +204,8 @@ if axis_labels == ("SCAN", "TILT", "COVERSLIP"):
 t1 = time.time()
 peaks = detect_peaks(
     zyx_data,
-    **epi_bead_detection_settings,
+    # **epi_bead_detection_settings,
+    **ls_bead_detection_settings,
     verbose=True,
 )
 gc.collect()
@@ -209,10 +225,15 @@ if view:
 # %% Extract and analyze bead patches
 
 t1 = time.time()
+if raw:
+    patch_size = (scale[0] * 30, scale[1] * 36, scale[2] * 18)
+else:
+    patch_size = (scale[0] * 15, scale[1] * 18, scale[2] * 18)
 beads, offsets = extract_beads(
     zyx_data=zyx_data,
     points=peaks,
     scale=scale,
+    patch_size=patch_size,
 )
 
 with warnings.catch_warnings():
@@ -244,7 +265,7 @@ generate_report(
 
 if raw and deskew:
     # deskew
-    num_chunks = 2
+    num_chunks = 4
     chunked_data = np.split(zyx_data, num_chunks, axis=-1)
     chunk_shape = chunked_data[0].shape
 

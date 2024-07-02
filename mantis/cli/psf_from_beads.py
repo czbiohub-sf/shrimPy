@@ -1,16 +1,19 @@
 import gc
+import time
+
+from pathlib import Path
+from typing import List
+
 import click
 import numpy as np
 import torch
-import time
 
 from iohub.ngff import open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
-from pathlib import Path
-from typing import List
+
 from mantis.analysis.AnalysisSettings import PsfFromBeadsSettings
 from mantis.analysis.analyze_psf import detect_peaks, extract_beads
-from mantis.cli.parsing import input_position_dirpaths, output_dirpath, config_filepath
+from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
 from mantis.cli.utils import yaml_to_model
 
 
@@ -33,7 +36,7 @@ def psf_from_beads(
     config_filepath = Path(config_filepath)
 
     # Load the first position
-    click.echo(f"Loading data...")
+    click.echo("Loading data...")
     pzyx_data = []
     for input_position_dirpath in input_position_dirpaths:
         with open_ome_zarr(str(input_position_dirpath), mode="r") as input_dataset:
@@ -43,7 +46,7 @@ def psf_from_beads(
 
     try:
         pzyx_data = np.array(pzyx_data)
-    except:
+    except Exception:
         raise "Concatenating position arrays failed."
 
     # Read settings
@@ -69,7 +72,7 @@ def psf_from_beads(
     pbzyx_data = []
     for zyx_data in pzyx_data:
         # Detect and extract bead patches
-        click.echo(f"Detecting beads...")
+        click.echo("Detecting beads...")
         t1 = time.time()
         peaks = detect_peaks(
             zyx_data,
@@ -86,7 +89,7 @@ def psf_from_beads(
             zyx_data=zyx_data,
             points=peaks,
             scale=zyx_scale,
-            patch_size_voxels=patch_size,
+            patch_size=tuple([a * b for a, b in zip(patch_size, zyx_scale)]),
         )
 
         # Filter PSFs with non-standard shapes

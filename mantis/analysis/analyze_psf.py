@@ -1,4 +1,5 @@
 import datetime
+import importlib.resources as pkg_resources
 import pickle
 import shutil
 import webbrowser
@@ -12,14 +13,14 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-import mantis.acquisition.scripts
-import importlib.resources as pkg_resources
 
 from napari_psf_analysis.psf_analysis.extract.BeadExtractor import BeadExtractor
 from napari_psf_analysis.psf_analysis.image import Calibrated3DImage
 from napari_psf_analysis.psf_analysis.psf import PSF
 from numpy.typing import ArrayLike
 from scipy.signal import peak_widths
+
+import mantis.acquisition.scripts
 
 
 def _make_plots(
@@ -152,16 +153,10 @@ def generate_report(
 
 
 def extract_beads(
-    zyx_data: ArrayLike, points: ArrayLike, scale: tuple, patch_size_voxels: tuple = None
+    zyx_data: ArrayLike, points: ArrayLike, scale: tuple, patch_size: tuple = None
 ):
-    if patch_size_voxels is None:
+    if patch_size is None:
         patch_size = (scale[0] * 15, scale[1] * 18, scale[2] * 18)
-    else:
-        patch_size = (
-            scale[0] * patch_size_voxels[0],
-            scale[1] * patch_size_voxels[1],
-            scale[2] * patch_size_voxels[2],
-        )
 
     # extract bead patches
     bead_extractor = BeadExtractor(
