@@ -218,6 +218,11 @@ def apply_transform_to_zyx_and_save_v2(
         output_channel_indices = [int(x) for x in output_channel_indices if x.isdigit()]
     click.echo(f"input_channel_indices: {input_channel_indices}")
 
+    # Check if t_idx should be added to kwargs to have different transformations for different timepoints
+    all_func_params = inspect.signature(func).parameters.keys()
+    if "t_idx" in all_func_params:
+        kwargs["t_idx"] = t_idx
+
     # Process CZYX vs ZYX
     if input_channel_indices is not None:
         click.echo(f"Processing t={t_idx}")
