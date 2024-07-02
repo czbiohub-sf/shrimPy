@@ -71,7 +71,7 @@ class RegistrationSettings(MyBaseModel):
 
 class ConcatenateSettings(MyBaseModel):
     concat_data_paths: list[str]
-    time_indices: Union[NonNegativeInt, list[NonNegativeInt], Literal["all"]] = "all"
+    time_indices: Union[int, list[int], Literal["all"]] = "all"
     channel_names: list[Union[str, list[str]]]
     X_slice: list[NonNegativeInt]
     Y_slice: list[NonNegativeInt]
