@@ -22,14 +22,13 @@ def apply_deconvolve_single_position(
     """
     Apply deconvolution to a single position
     """
-    # Load the data
-    with open_ome_zarr(input_position_dirpath, mode="r") as input_dataset:
-        T, C, Z, Y, X = input_dataset.data.shape
-        zyx_data = input_dataset["0"][0, 0]
-        zyx_scale = input_dataset.scale[-3:]
-
     # Read settings
     settings = yaml_to_model(Path(config_filepath), DeconvolveSettings)
+
+    # Load the data
+    input_dataset = open_ome_zarr(input_position_dirpath, mode="r")
+    output_dataset = open_ome_zarr(output_dirpath, mode="a")
+    T, C, Z, Y, X = input_dataset.data.shape
 
     # Load the PSF
     with open_ome_zarr(psf_dirpath, mode="r") as psf_dataset:
@@ -37,16 +36,8 @@ def apply_deconvolve_single_position(
         psf_data = position["0"][0, 0]
         psf_scale = position.scale[-3:]
 
-    # Check if scales match
-    if psf_scale != zyx_scale:
-        click.echo(
-            f"Warning: PSF scale {psf_scale} does not match data scale {zyx_scale}. "
-            "Consider resampling the PSF."
-        )
-
-    # Apply deconvolution
     click.echo("Padding PSF...")
-    zyx_padding = np.array(zyx_data.shape) - np.array(psf_data.shape)
+    zyx_padding = np.array((Z, Y, X)) - np.array(psf_data.shape)
     pad_width = [(x // 2, x // 2) if x % 2 == 0 else (x // 2, x // 2 + 1) for x in zyx_padding]
     padded_average_psf = np.pad(
         psf_data, pad_width=pad_width, mode="constant", constant_values=0
@@ -56,18 +47,32 @@ def apply_deconvolve_single_position(
     transfer_function = torch.abs(torch.fft.fftn(torch.tensor(padded_average_psf)))
     transfer_function /= torch.max(transfer_function)
 
-    click.echo("Deconvolving...")
-    zyx_data_deconvolved = apply_inverse_transfer_function(
-        torch.tensor(zyx_data),
-        torch.tensor(transfer_function),
-        0,
-        regularization_strength=settings.regularization_strength,
-    )
+    zyx_scale = input_dataset.scale[-3:]
 
-    # Save to output dirpath
-    click.echo("Saving to output...")
-    with open_ome_zarr(output_dirpath, mode="a") as output_dataset:
-        output_dataset["0"][0, 0] = zyx_data_deconvolved.numpy()
+    # Check if scales match
+    if psf_scale != zyx_scale:
+        click.echo(
+            f"Warning: PSF scale {psf_scale} does not match data scale {zyx_scale}. "
+            "Consider resampling the PSF."
+        )
+
+    for t in range(1):#T):
+        for c in range(C):
+            zyx_data = input_dataset["0"][t, c]
+
+            # Apply deconvolution
+            click.echo(f"Deconvolving channel {c}/{C-1}, time {t}/{T-1}")
+            zyx_data_deconvolved = apply_inverse_transfer_function(
+                torch.tensor(zyx_data),
+                torch.tensor(transfer_function),
+                0,
+                regularization_strength=settings.regularization_strength,
+            )
+            click.echo("Saving to output...")
+            output_dataset["0"][t, c] = zyx_data_deconvolved.numpy()
+
+    input_dataset.close()
+    output_dataset.close()
 
 
 @click.command()
