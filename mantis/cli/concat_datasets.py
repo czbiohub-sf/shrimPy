@@ -113,9 +113,9 @@ def concatenate_datasets(config_filepath: str, output_dirpath: str, num_processe
     X_slice = slice(*settings.X_slice)
 
     cropped_shape_zyx = (
-        Z_slice.stop - Z_slice.start,
-        Y_slice.stop - Y_slice.start,
-        X_slice.stop - X_slice.start,
+        abs(Z_slice.stop - Z_slice.start),
+        abs(Y_slice.stop - Y_slice.start),
+        abs(X_slice.stop - X_slice.start),
     )
 
     # Ensure that the cropped shape is within the bounds of the original shape
