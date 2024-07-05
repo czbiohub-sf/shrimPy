@@ -1,7 +1,7 @@
 
 # Data format
 
-This document defines the standard for organizing data acquired by the shrimpy microscope.
+This document defines the standard for organizing data acquired by the mantis microscope.
 
 ## Raw directory organization
 

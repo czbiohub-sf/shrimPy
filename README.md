@@ -1,7 +1,7 @@
 # shrimPy: Smart High-throughput Robust Imaging & Measurement in Python
 ![acquisition and reconstruction schematic](docs/figure_3a.png)
 
-shrimPy (pronounced: ʃrɪm-pai) is a pythonic framework for high-throughput smart microscopy and high-performance analysis. The current alpha version of the framework is specific to the shrimpy microscope, described in our [preprint](https://www.biorxiv.org/content/10.1101/2023.12.19.572435v1), but extensible to a high throughput microscope that is controlled with [Micro-Manager](https://micro-manager.org/).
+shrimPy (pronounced: ʃrɪm-pai) is a pythonic framework for high-throughput smart microscopy and high-performance analysis. The current alpha version of the framework is specific to the mantis microscope, described in our [preprint](https://www.biorxiv.org/content/10.1101/2023.12.19.572435v1), but extensible to a high throughput microscope that is controlled with [Micro-Manager](https://micro-manager.org/).
 
 The acquisition engine synchronizes data collection using hardware triggering and carries out smart microscopy tasks such as autofocus and autoexposure.
 
@@ -24,10 +24,10 @@ conda activate shrimpy
 pip install .
 ```
 
-## Setting up the shrimpy microscope
-The shrimpy microscope implements simultaneous label-free and light-sheet imaging as described in [Ivanov et al.](https://www.biorxiv.org/content/10.1101/2023.12.19.572435v1) The two imaging modalities are acquired on two independent arms of the microscope running separate instances of [Micro-Manager](https://micro-manager.org/) and [pycromanager](https://pycro-manager.readthedocs.io/). shrimPy was developed to enable robust long-term imaging with shrimpy and efficient analysis of resulting TB-scale datasets.
+## Setting up the mantis microscope
+The mantis microscope implements simultaneous label-free and light-sheet imaging as described in [Ivanov et al.](https://www.biorxiv.org/content/10.1101/2023.12.19.572435v1) The two imaging modalities are acquired on two independent arms of the microscope running separate instances of [Micro-Manager](https://micro-manager.org/) and [pycromanager](https://pycro-manager.readthedocs.io/). shrimPy was developed to enable robust long-term imaging with shrimpy and efficient analysis of resulting TB-scale datasets.
 
-The [Setup Guide](docs/setup_guide.md) outlines how the shrimpy microscope is configured.
+The [Setup Guide](docs/setup_guide.md) outlines how the mantis microscope is configured.
 
 
 ## Data acquisition with shrimpy
@@ -47,7 +47,7 @@ shrimpy run-acquisition --help
 
 The shrimpy acquisition is configured using a YAML file. An example of a configuration file can be found [here](shrimpy/acquisition/settings/example_acquisition_settings.yaml).
 
-This is an example of a command which will start an acquisition on the shrimpy microscope:
+This is an example of a command which will start an acquisition on the mantis microscope:
 
 ```pwsh
 shrimpy run-acquisition \

@@ -3,7 +3,7 @@ requires = ["setuptools >= 61", "setuptools_scm[toml]>=3.4", "wheel"]
 
 [project]
 name = "shrimpy"
-description = "Acquisition engine for collecting data on the shrimpy microscope"
+description = "Acquisition engine for collecting data on the mantis microscope"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10, <4.0"

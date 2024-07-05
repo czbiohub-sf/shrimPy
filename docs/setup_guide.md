@@ -1,6 +1,6 @@
 # Overview
 
-This guide provides instructions on how to setup control software on the shrimpy microscope.
+This guide provides instructions on how to setup control software on the mantis microscope.
 
 ## Install Ti2 Control
 
@@ -16,11 +16,11 @@ CellDrive provides control of the [Meadowlark Optics](https://www.meadowlark.com
 
 ## Update TriggerScope Firmware
 
-The [TriggerScope](https://advancedresearch-consulting.com/product/triggerscope-4/) is used to generate electrical signals which synchronize the acquisition on the shrimpy microscope. Firmware for the TriggerScope is available on the [micro-manager/TriggerScopeMM](https://github.com/micro-manager/TriggerScopeMM) GitHub repo. Different versions of the TriggerScope board are available - for example V3, V4, V4B. Be sure to follow the installation instruction and install the right firmware version for a given TriggerScope board. To track the version of the firmware that is currently installed, write the 7 digit Git hash of the last commit.
+The [TriggerScope](https://advancedresearch-consulting.com/product/triggerscope-4/) is used to generate electrical signals which synchronize the acquisition on the mantis microscope. Firmware for the TriggerScope is available on the [micro-manager/TriggerScopeMM](https://github.com/micro-manager/TriggerScopeMM) GitHub repo. Different versions of the TriggerScope board are available - for example V3, V4, V4B. Be sure to follow the installation instruction and install the right firmware version for a given TriggerScope board. To track the version of the firmware that is currently installed, write the 7 digit Git hash of the last commit.
 
 ## Install Vortran Stradus
 
-The [Vortran](https://www.vortranlaser.com/) lasers on the shrimpy microscope are controlled using the Stradus GUI application. Install the latest version of the software which can be obtained from our Vortran representative or on ESS at `software\StradusV4_0_0`. We currently use software version 4.0.0. The shrimpy acquisition engine uses [coPylot](https://github.com/czbiohub-sf/coPylot) to control the lasers during acquisition.
+The [Vortran](https://www.vortranlaser.com/) lasers on the mantis microscope are controlled using the Stradus GUI application. Install the latest version of the software which can be obtained from our Vortran representative or on ESS at `software\StradusV4_0_0`. We currently use software version 4.0.0. The shrimpy acquisition engine uses [coPylot](https://github.com/czbiohub-sf/coPylot) to control the lasers during acquisition.
 
 TODO: Update setup instructions to reflect requirements for coPylot control.
 

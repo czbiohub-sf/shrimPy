@@ -1,5 +1,5 @@
 # This is an example settings file for combined label-free and light--sheet
-# acquisition on the shrimpy microscope.
+# acquisition on the mantis microscope.
 
 # Here we define variables (YAML anchors) which will be used later, for
 # convenience

@@ -279,7 +279,7 @@ class BaseChannelSliceAcquisition(object):
 class shrimpyAcquisition(object):
     """
     Acquisition class for simultaneous label-free and light-sheet acquisition on
-    the shrimpy microscope.
+    the mantis microscope.
 
     Parameters
     ----------

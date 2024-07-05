@@ -119,11 +119,11 @@ def deskew_data(
     order: int = 1,
     cval: float = None,
 ):
-    """Deskews fluorescence data from the shrimpy microscope
+    """Deskews fluorescence data from the mantis microscope
     Parameters
     ----------
     raw_data : NDArray with ndim == 3
-        raw data from the shrimpy microscope
+        raw data from the mantis microscope
         - axis 0 corresponds to the scanning axis
         - axis 1 corresponds to the "tilted" axis
         - axis 2 corresponds to the axis in the plane of the coverslip
