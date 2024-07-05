@@ -42,7 +42,6 @@ dependencies = [
   "largestinteriorrectangle",
   "antspyx",
   "pystackreg",
-
 ]
 
 
