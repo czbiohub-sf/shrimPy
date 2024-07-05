@@ -142,11 +142,6 @@ def deskew_data(
         If false, only compute the deskewed volume within a cuboid region.
     average_n_slices : int, optional
         after deskewing, averages every n slices (default = 1 applies no averaging)
-    order : int, optional
-        interpolation order (default 1 is linear interpolation)
-    cval : float, optional
-        fill value area outside of the measured volume (default None fills
-        with the minimum value of the input array)
     Returns
     -------
     deskewed_data : NDArray with ndim == 3
@@ -154,9 +149,6 @@ def deskew_data(
         axis 1 is the Y axis, input axis 2 in the plane of the coverslip
         axis 2 is the X axis, the scanning axis
     """
-    if cval is None:
-        cval = np.min(np.ravel(raw_data))
-
     # Prepare transforms
     Z, Y, X = raw_data.shape
 
@@ -184,7 +176,7 @@ def deskew_data(
         raw_data = transforms.ToDevice("cuda")(torch.tensor(raw_data))
 
     # Returns callable
-    affine_func = Affine(affine=matrix, mode=order, padding_mode="zeros", image_only=True)
+    affine_func = Affine(affine=matrix, padding_mode="zeros", image_only=True)
 
     # affine_func accepts CZYX array, so for ZYX input we need [None] and for ZYX output we need [0]
     deskewed_data = affine_func(raw_data[None], mode="bilinear", spatial_size=output_shape)[0]
