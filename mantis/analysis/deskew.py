@@ -1,5 +1,7 @@
 import numpy as np
-import scipy
+from monai.transforms.spatial.array import Affine
+from monai import transforms
+import torch
 
 
 def _average_n_slices(data, average_window_width=1):
@@ -158,9 +160,6 @@ def deskew_data(
     Z, Y, X = raw_data.shape
 
     ct = np.cos(ls_angle_deg * np.pi / 180)
-    Z_shift = 0
-    if not keep_overhang:
-        Z_shift = int(np.floor(Y * ct * px_to_scan_ratio))
 
     matrix = np.array(
         [
@@ -168,40 +167,34 @@ def deskew_data(
                 -px_to_scan_ratio * ct,
                 0,
                 px_to_scan_ratio,
-                Z_shift,
+                0,
             ],
-            [-1, 0, 0, Y - 1],
-            [0, -1, 0, X - 1],
+            [-1, 0, 0, 0],
+            [0, -1, 0, 0],
+            [0, 0, 0, 1],
         ]
     )
     output_shape, _ = get_deskewed_data_shape(
         raw_data.shape, ls_angle_deg, px_to_scan_ratio, keep_overhang
     )
 
-    # Apply transforms
-    deskewed_data = scipy.ndimage.affine_transform(
-        raw_data,
-        matrix,
-        output_shape=output_shape,
-        order=order,
-        cval=cval,
-    )
+    import time 
+    start = time.time()
 
-    from monai.transforms.spatial.array import Affine
+    # to tensor on GPU
+    if torch.cuda.is_available():
+        raw_data = transforms.ToDevice("cuda")(torch.tensor(raw_data))
 
-    print("Computing w/ MONAI...")
-    my_matrix = np.vstack((matrix, np.array([[0, 0, 0, 1]])))
-    my_affine = Affine(
-        affine=my_matrix, mode="bilinear", padding_mode="zeros", image_only=True
-    )
-    deskewed_data2 = my_affine(raw_data[None], spatial_size=output_shape)[0]
+    # Returns callable
+    affine_func = Affine(affine=matrix, mode=order, padding_mode="zeros", image_only=True)
 
-    print(deskewed_data)
-    print(deskewed_data2)
-    import pdb
+    # affine_func accepts CZYX array, so for ZYX input we need [None] and for ZYX output we need [0]
+    deskewed_data = affine_func(raw_data[None], mode="bilinear", spatial_size=output_shape)[0]
 
-    pdb.set_trace()
+    # to numpy array on CPU
+    deskewed_data = deskewed_data.cpu().numpy()
 
+    print(f"Elapsed: {time.time() - start:.2f}")
     # Apply averaging
     averaged_deskewed_data = _average_n_slices(
         deskewed_data, average_window_width=average_n_slices

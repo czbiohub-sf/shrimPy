@@ -13,6 +13,12 @@ from mantis.cli import utils
 from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
 from mantis.cli.utils import yaml_to_model
 
+# Needed for multiprocessing with GPUs
+# https://github.com/pytorch/pytorch/issues/40403#issuecomment-1422625325
+import torch
+
+torch.multiprocessing.set_start_method('spawn', force=True)
+
 
 @click.command()
 @input_position_dirpaths()
