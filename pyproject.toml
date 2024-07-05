@@ -58,6 +58,7 @@ build = ["build", "twine"]
 
 [project.scripts]
 shrimpy = "shrimpy.cli.main:cli"
+shrimPy = "shrimpy.cli.main:cli"
 
 [tool.setuptools]
 # explicitly specify the package name
