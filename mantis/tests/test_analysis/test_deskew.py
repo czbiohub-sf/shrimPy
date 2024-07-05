@@ -26,7 +26,7 @@ def test_average_n_slices():
 
 
 def test_deskew_data():
-    raw_data = np.arange(24).reshape((2, 3, 4))
+    raw_data = np.random.random((2, 3, 4))
     px_to_scan_ratio = 0.386
     pixel_size_um = 1.0
     ls_angle_deg = 36
