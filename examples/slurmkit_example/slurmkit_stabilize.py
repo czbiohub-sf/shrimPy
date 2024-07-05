@@ -5,21 +5,21 @@ from slurmkit import SlurmParams, slurm_function, submit_function
 from natsort import natsorted
 from iohub import open_ome_zarr
 from pathlib import Path
-from mantis.cli.utils import (
+from shrimpy.cli.utils import (
     yaml_to_model,
     create_empty_hcs_zarr,
     process_single_position_v2,
 )
-from mantis.cli.stabilize import apply_stabilization_transform
+from shrimpy.cli.stabilize import apply_stabilization_transform
 import numpy as np
-from mantis.analysis.AnalysisSettings import StabilizationSettings
+from shrimpy.analysis.AnalysisSettings import StabilizationSettings
 
 # NOTE: this pipeline uses the focus found on well one for all. Perhaps this should be done per FOV(?)
 
 # io parameters
-input_position_dirpaths = "/hpc/projects/comp.micro/mantis/2023_11_08_Opencell_infection_redo/1-recon/OC43_infection_timelapse_3.zarr/*/*/*"
-output_dirpath = "/hpc/projects/comp.micro/mantis/2023_11_08_Opencell_infection_redo/3-stabilization/OC43_infection_timelapse_3.zarr"
-config_filepath = "/hpc/projects/comp.micro/mantis/2023_11_08_Opencell_infection_redo/3-stabilization/stabilization.yml"
+input_position_dirpaths = "/hpc/projects/comp.micro/shrimpy/2023_11_08_Opencell_infection_redo/1-recon/OC43_infection_timelapse_3.zarr/*/*/*"
+output_dirpath = "/hpc/projects/comp.micro/shrimpy/2023_11_08_Opencell_infection_redo/3-stabilization/OC43_infection_timelapse_3.zarr"
+config_filepath = "/hpc/projects/comp.micro/shrimpy/2023_11_08_Opencell_infection_redo/3-stabilization/stabilization.yml"
 
 # batch and resource parameters
 partition = 'cpu'

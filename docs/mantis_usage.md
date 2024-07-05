@@ -1,5 +1,5 @@
 ## Overview - unofficial
-Mantis microscope is a fast multimodal microscope capable of acquiring label-free and fluorescence measurments simultaneously via two remote-refocus based arms that quickly acquire volumetric information. 
+shrimpy microscope is a fast multimodal microscope capable of acquiring label-free and fluorescence measurments simultaneously via two remote-refocus based arms that quickly acquire volumetric information. 
 
 ---
 ## Table of contents
@@ -12,7 +12,7 @@ Mantis microscope is a fast multimodal microscope capable of acquiring label-fre
         - [Temperature probe](#temperature-probe)
 - [Sample Preparation](#sample-preparation)
   - [Apply silicone oil to the plate/slide](#apply-silicone-oil-to-the-plateslide)
-- [Setting up the acquisition using `Mantis Acquisition Engine`](#setting-up-the-acquisition-using-mantis-acquisition-engine)
+- [Setting up the acquisition using `shrimpy Acquisition Engine`](#setting-up-the-acquisition-using-shrimpy-acquisition-engine)
       - [Micromanager with Label-free configuration](#micromanager-with-label-free-configuration)
       - [Micromanager with Light-sheet configuration](#micromanager-with-light-sheet-configuration)
   - [Setup autofocus](#setup-autofocus)
@@ -48,10 +48,10 @@ Mantis microscope is a fast multimodal microscope capable of acquiring label-fre
 **Note: This layer should have minimal number of bubbles and enough oil for autofocus to engage. Make sure to wear gloves and discard them before touching any other microscope or computer part. Handling the oil can be messy and we want to keep things clean. 
 
 ---
-## Setting up the acquisition using `Mantis Acquisition Engine`
+## Setting up the acquisition using `shrimpy Acquisition Engine`
 1. Initialize two instances of micromanager to prepare both arms for acquisition. 
-   1. Micromanager *230312* version with  `mantis-LF.cfg` configuration.
-   2. Micromanager *230312 Nightly Build* version with `mantis-LS.cfg` configuration.
+   1. Micromanager *230312* version with  `shrimpy-LF.cfg` configuration.
+   2. Micromanager *230312 Nightly Build* version with `shrimpy-LS.cfg` configuration.
 ##### Micromanager with Label-free configuration
 2. Using the micromanager with the `label-free` configuration, set `Channel LS` property group to `External Control`. This will reset the microscope to the default configurations including the filter cube to position 6. Then, set the `Imaging Path` propety group to `Epi`. Set the `Channel - LF` property group to `BF`. 
 3. Focus the sample and check the focus is ~4700um.
@@ -81,7 +81,7 @@ Check the LED on the microscope body and find the PFS button on the microscope f
 ** Note: when it autofocus engages, the beep can be easily missed. 
 
 ### YAML file:
-1. Copy the default [yaml file](../mantis/acquisition/settings/example_acquisition_settings.yaml) or one from a previous acquisition similar to the planned acquisition into the acquisition folder
+1. Copy the default [yaml file](../shrimpy/acquisition/settings/example_acquisition_settings.yaml) or one from a previous acquisition similar to the planned acquisition into the acquisition folder
 2. Go over the YAML file and change the appropriate parameters.
 3. Most likely one will change the parameters for:
    - ROI
@@ -109,11 +109,11 @@ Check the LED on the microscope body and find the PFS button on the microscope f
 ## Run the acquisition
 1. Open powershell
 2. Activate enviroment
-    -`conda activate mantis`
+    -`conda activate shrimpy`
 3. Navigate to the acquisition folder:
     -`cd /path/to/acquisition` 
 4. Run the acquisition engine
-    -`mantis run-acquisition --help` for instructions.
+    -`shrimpy run-acquisition --help` for instructions.
 
 ---
 ## FAQ

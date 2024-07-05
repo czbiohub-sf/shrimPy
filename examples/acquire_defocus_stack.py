@@ -1,7 +1,7 @@
 import numpy as np
 from pycromanager import Core, Studio
-from mantis.acquisition.microscope_operations import (
-    setup_kim101_stage, 
+from shrimpy.acquisition.microscope_operations import (
+    setup_kim101_stage,
     acquire_ls_defocus_stack_and_display,
     set_relative_kim101_position,
 )
@@ -21,9 +21,9 @@ z_range = np.arange(z_start, z_end + z_step, z_step)
 # run 5 times over
 for i in range(5):
     data = acquire_ls_defocus_stack_and_display(
-        mmc, 
-        mmStudio, 
-        z_stage, 
+        mmc,
+        mmStudio,
+        z_stage,
         z_range,
         galvo,
         galvo_range,
@@ -33,7 +33,7 @@ for i in range(5):
     focus_indices = []
     for stack in data:
         idx = focus_from_transverse_band(
-            stack, NA_det=1.35, lambda_ill=0.55, pixel_size=6.5/40/1.4
+            stack, NA_det=1.35, lambda_ill=0.55, pixel_size=6.5 / 40 / 1.4
         )
         focus_indices.append(idx)
 
@@ -45,4 +45,3 @@ for i in range(5):
     print(f'O3 displacement: {o3_displacement} steps')
 
     set_relative_kim101_position(z_stage, o3_displacement)
-

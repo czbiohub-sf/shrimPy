@@ -2,8 +2,8 @@
 requires = ["setuptools >= 61", "setuptools_scm[toml]>=3.4", "wheel"]
 
 [project]
-name = "mantis"
-description = "Acquisition engine for collecting data on the mantis microscope"
+name = "shrimpy"
+description = "Acquisition engine for collecting data on the shrimpy microscope"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10, <4.0"
@@ -57,18 +57,18 @@ dev = [
 build = ["build", "twine"]
 
 [project.scripts]
-mantis = "mantis.cli.main:cli"
+shrimpy = "shrimpy.cli.main:cli"
 
 [tool.setuptools]
 # explicitly specify the package name
 # TODO: is there a better way to do this?
-packages = ["mantis"]
+packages = ["shrimpy"]
 
 # allow use of __file__ to load data files included in the package
 zip-safe = false
 
 [tool.setuptools.dynamic]
-version = { attr = "mantis.__version__" }
+version = { attr = "shrimpy.__version__" }
 
 [tool.black]
 line-length = 95

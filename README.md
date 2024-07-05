@@ -1,7 +1,7 @@
 # shrimPy: Smart High-throughput Robust Imaging & Measurement in Python
 ![acquisition and reconstruction schematic](docs/figure_3a.png)
 
-shrimPy (pronounced: ʃrɪm-pai) is a pythonic framework for high-throughput smart microscopy and high-performance analysis. The current alpha version of the framework is specific to the mantis microscope, described in our [preprint](https://www.biorxiv.org/content/10.1101/2023.12.19.572435v1), but extensible to a high throughput microscope that is controlled with [Micro-Manager](https://micro-manager.org/).
+shrimPy (pronounced: ʃrɪm-pai) is a pythonic framework for high-throughput smart microscopy and high-performance analysis. The current alpha version of the framework is specific to the shrimpy microscope, described in our [preprint](https://www.biorxiv.org/content/10.1101/2023.12.19.572435v1), but extensible to a high throughput microscope that is controlled with [Micro-Manager](https://micro-manager.org/).
 
 The acquisition engine synchronizes data collection using hardware triggering and carries out smart microscopy tasks such as autofocus and autoexposure.
 
@@ -24,15 +24,15 @@ conda activate shrimpy
 pip install .
 ```
 
-## Setting up the mantis microscope
-The mantis microscope implements simultaneous label-free and light-sheet imaging as described in [Ivanov et al.](https://www.biorxiv.org/content/10.1101/2023.12.19.572435v1) The two imaging modalities are acquired on two independent arms of the microscope running separate instances of [Micro-Manager](https://micro-manager.org/) and [pycromanager](https://pycro-manager.readthedocs.io/). shrimPy was developed to enable robust long-term imaging with mantis and efficient analysis of resulting TB-scale datasets.
+## Setting up the shrimpy microscope
+The shrimpy microscope implements simultaneous label-free and light-sheet imaging as described in [Ivanov et al.](https://www.biorxiv.org/content/10.1101/2023.12.19.572435v1) The two imaging modalities are acquired on two independent arms of the microscope running separate instances of [Micro-Manager](https://micro-manager.org/) and [pycromanager](https://pycro-manager.readthedocs.io/). shrimPy was developed to enable robust long-term imaging with shrimpy and efficient analysis of resulting TB-scale datasets.
 
-The [Setup Guide](docs/setup_guide.md) outlines how the mantis microscope is configured.
+The [Setup Guide](docs/setup_guide.md) outlines how the shrimpy microscope is configured.
 
 
-## Data acquisition with mantis
+## Data acquisition with shrimpy
 
-Mantis acquisitions and analyses use a command-line interface.
+shrimpy acquisitions and analyses use a command-line interface.
 
 A list of `shrimpy` commands can be displayed with:
 ```sh
@@ -45,12 +45,12 @@ Data are acquired using `shrimpy run-acquisition`, and a list of arguments can b
 shrimpy run-acquisition --help
 ```
 
-The mantis acquisition is configured using a YAML file. An example of a configuration file can be found [here](mantis/acquisition/settings/example_acquisition_settings.yaml).
+The shrimpy acquisition is configured using a YAML file. An example of a configuration file can be found [here](shrimpy/acquisition/settings/example_acquisition_settings.yaml).
 
-This is an example of a command which will start an acquisition on the mantis microscope:
+This is an example of a command which will start an acquisition on the shrimpy microscope:
 
 ```pwsh
-mantis run-acquisition \
+shrimpy run-acquisition \
     --config-filepath path/to/config.yaml \
     --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name
 ```
@@ -58,7 +58,7 @@ mantis run-acquisition \
 The acquisition may also be run in "demo" mode with the Micro-manager `MMConfig_Demo.cfg` config. This does not require any microscope hardware. A demo run can be started with:
 
 ```pwsh
-mantis run-acquisition \
+shrimpy run-acquisition \
     --config-filepath path/to/config.yaml \
     --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name \
     --mm-config-filepath path/to/MMConfig_Demo.cfg
@@ -81,11 +81,11 @@ iohub convert \
 
 # DESKEW FLUORESCENCE
 # estimate deskew parameters
-mantis estimate-deskew \
+shrimpy estimate-deskew \
     -i ./acq_name_lightsheet.zarr/0/0/0 \
     -o ./deskew.yml
 # apply deskew parameters
-mantis deskew \
+shrimpy deskew \
     -i ./acq_name_lightsheet.zarr/*/*/* \
     -c ./deskew_params.yml \
     -o ./acq_name_lightsheet_deskewed.zarr
@@ -99,18 +99,18 @@ recorder reconstruct \
 # TODO: rename function calls as below
 # REGISTER
 # estimate registration parameters
-mantis estimate-registration \
+shrimpy estimate-registration \
     --input-source ./acq_name_labelfree_reconstructed.zarr/0/0/0 \
     --input-target ./acq_name_lightsheet_deskewed.zarr/0/0/0 \
     -o ./register.yml
 # optimize registration parameters
-mantis optimize-registration \
+shrimpy optimize-registration \
     --input-source ./acq_name_labelfree_reconstructed.zarr/0/0/0 \
     --input-target ./acq_name_lightsheet_deskewed.zarr/0/0/0 \
     -c ./register.yml \
     -o ./register_optimized.yml
 # register data
-mantis register \
+shrimpy register \
     --input-source ./acq_name_labelfree_reconstructed.zarr/*/*/* \
     --input-target ./acq_name_lightsheet_deskewed.zarr/*/*/* \
     -c ./register_optimized.yml \

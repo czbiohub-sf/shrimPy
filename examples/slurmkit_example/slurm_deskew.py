@@ -1,12 +1,12 @@
 import datetime
 import os
 import glob
-from mantis.cli import utils
+from shrimpy.cli import utils
 from slurmkit import SlurmParams, slurm_function, submit_function
 from natsort import natsorted
 import click
-from mantis.analysis.deskew import deskew_data, get_deskewed_data_shape
-from mantis.cli.deskew import deskew_params_from_file
+from shrimpy.analysis.deskew import deskew_data, get_deskewed_data_shape
+from shrimpy.cli.deskew import deskew_params_from_file
 from iohub import open_ome_zarr
 from dataclasses import asdict
 
@@ -15,7 +15,7 @@ from dataclasses import asdict
 deskew_param_path = './deskew_settings.yml'
 
 # io parameters
-input_paths = '/hpc/projects/comp.micro/mantis/2023_05_10_PCNA_RAC1/timelapse_2_3/0-crop-convert-zarr/sample_short.zarr/*/*/*'
+input_paths = '/hpc/projects/comp.micro/shrimpy/2023_05_10_PCNA_RAC1/timelapse_2_3/0-crop-convert-zarr/sample_short.zarr/*/*/*'
 output_data_path = './deskewed.zarr'
 
 # sbatch and resource parameters

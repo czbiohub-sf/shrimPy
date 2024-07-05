@@ -2,7 +2,7 @@ from pycromanager import Core, start_headless
 
 PORT2 = 4927
 mm_app_path = r'C:\\Program Files\\Micro-Manager-nightly'
-config_file = r'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg'
+config_file = r'C:\\CompMicro_MMConfigs\\shrimpy\\shrimpy-LS.cfg'
 
 print('Starting headless mode')
 start_headless(mm_app_path, config_file, port=PORT2)

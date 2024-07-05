@@ -8,13 +8,16 @@
 
 # This calibration procedure works alright, but could be improved
 
-#%%
+# %%
 import numpy as np
 from pycromanager import Core, Studio
 import matplotlib.pyplot as plt
-from mantis.acquisition.microscope_operations import setup_kim101_stage, acquire_ls_defocus_stack_and_display
+from shrimpy.acquisition.microscope_operations import (
+    setup_kim101_stage,
+    acquire_ls_defocus_stack_and_display,
+)
 
-#%%
+# %%
 mmc = Core()
 mmStudio = Studio()
 z_stage = setup_kim101_stage('74000291')
@@ -23,28 +26,19 @@ z_start = 0
 z_end = 105
 z_step = 15
 galvo = 'AP Galvo'
-galvo_range = [0]*5
+galvo_range = [0] * 5
 
 z_range = np.hstack(
-    (
-        np.arange(z_start, z_end + z_step, z_step),
-        np.arange(z_end, z_start - z_step, -z_step)
-    )
-)
-
-#%%
-data = acquire_ls_defocus_stack_and_display(
-    mmc, 
-    mmStudio, 
-    z_stage, 
-    z_range,
-    galvo,
-    galvo_range,
-    close_display = False
+    (np.arange(z_start, z_end + z_step, z_step), np.arange(z_end, z_start - z_step, -z_step))
 )
 
 # %%
-steps_per_direction = len(z_range)//2
+data = acquire_ls_defocus_stack_and_display(
+    mmc, mmStudio, z_stage, z_range, galvo, galvo_range, close_display=False
+)
+
+# %%
+steps_per_direction = len(z_range) // 2
 intensity = data.max(axis=(-1, -2))
 
 pos_int = intensity[:, :steps_per_direction]

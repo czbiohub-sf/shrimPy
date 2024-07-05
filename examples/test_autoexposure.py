@@ -7,18 +7,19 @@ import yaml
 from skimage import data
 from waveorder import visual
 
-from mantis.acquisition.AcquisitionSettings import (
+from shrimpy.acquisition.AcquisitionSettings import (
     AutoexposureSettings,
     ChannelSettings,
     MicroscopeSettings,
     SliceSettings,
 )
 
-from mantis.acquisition.autoexposure import (
+from shrimpy.acquisition.autoexposure import (
     mean_intensity_autoexposure,
     intensity_percentile_autoexposure,
     masked_mean_intensity_autoexposure,
 )
+
 
 def create_autoexposure_test_dataset(img_stack):
     """
@@ -104,18 +105,20 @@ SETTINGS_PATH = (
     / "demo_acquisition_settings.yaml"
 )
 with open(SETTINGS_PATH, "r") as file:
-    mantis_settings = yaml.safe_load(file)
-    print(mantis_settings)
+    shrimpy_settings = yaml.safe_load(file)
+    print(shrimpy_settings)
 
-channel_settings = ChannelSettings(**mantis_settings.get("ls_channel_settings"))
-stack_settings = SliceSettings(**mantis_settings.get("ls_slice_settings"))
-microscope_settings = MicroscopeSettings(**mantis_settings.get("ls_slice_settings"))
-autoexposure_settings = AutoexposureSettings(
-    **mantis_settings.get("autoexposure_settings")
-)
+channel_settings = ChannelSettings(**shrimpy_settings.get("ls_channel_settings"))
+stack_settings = SliceSettings(**shrimpy_settings.get("ls_slice_settings"))
+microscope_settings = MicroscopeSettings(**shrimpy_settings.get("ls_slice_settings"))
+autoexposure_settings = AutoexposureSettings(**shrimpy_settings.get("autoexposure_settings"))
 
 # %%
-methods = [mean_intensity_autoexposure, intensity_percentile_autoexposure, masked_mean_intensity_autoexposure]
+methods = [
+    mean_intensity_autoexposure,
+    intensity_percentile_autoexposure,
+    masked_mean_intensity_autoexposure,
+]
 for autoexposure_method in methods:
     # print(f"Using method: {method}")
     # Underexposure

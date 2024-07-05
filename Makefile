@@ -1,4 +1,4 @@
-PACKAGE_NAME := mantis
+PACKAGE_NAME := shrimpy
 
 .PHONY: setup-develop
 setup-develop:

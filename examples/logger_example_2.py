@@ -1,5 +1,5 @@
 import logging
-from mantis.acquisition.logger import configure_logger
+from shrimpy.acquisition.logger import configure_logger
 
 configure_logger('logfile.txt')
 print(f'{__name__}')

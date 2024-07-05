@@ -1,6 +1,6 @@
 import os
 import csv
-from mantis.acquisition.AcquisitionSettings import PositionSettings
+from shrimpy.acquisition.AcquisitionSettings import PositionSettings
 
 position_settings = PositionSettings(**{})
 
@@ -18,7 +18,7 @@ for i in range(position_settings.num_positions):
         }
     )
 
-path = r'Z:\rawdata\mantis\2023_04_05_mantis_HEK\48wells_1timepoint_4'
+path = r'Z:\rawdata\shrimpy\2023_04_05_shrimpy_HEK\48wells_1timepoint_4'
 with open(os.path.join(path, 'positions.csv'), 'w', newline='') as csvfile:
     fieldnames = list(pos_list[0].keys())
     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
