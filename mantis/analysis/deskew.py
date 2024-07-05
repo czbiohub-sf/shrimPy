@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 
-from monai import transforms
 from monai.transforms.spatial.array import Affine
 
 
@@ -173,7 +172,7 @@ def deskew_data(
 
     # to tensor on GPU
     if torch.cuda.is_available():
-        raw_data = transforms.ToDevice("cuda")(torch.tensor(raw_data))
+        raw_data = torch.tensor(raw_data).to("cuda")
 
     # Returns callable
     affine_func = Affine(affine=matrix, padding_mode="zeros", image_only=True)
