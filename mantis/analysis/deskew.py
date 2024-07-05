@@ -1,7 +1,8 @@
 import numpy as np
-from monai.transforms.spatial.array import Affine
-from monai import transforms
 import torch
+
+from monai import transforms
+from monai.transforms.spatial.array import Affine
 
 
 def _average_n_slices(data, average_window_width=1):
