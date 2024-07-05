@@ -43,7 +43,7 @@ YYYY_MM_DD <experiment_description>
 
 ```
 
-An example dataset is provided in: `//ESS/comp_micro/rawdata/shrimpy/2023_02_21_shrimpy_dataset_standard/`. (TODO: this example is now outdates)
+An example dataset is provided in: `/hpc/instruments/cm.mantis/2023_02_21_mantis_dataset_standard/`. (TODO: this example is now outdates)
 
 Each acquisition will contain a PTCZYX dataset; some dimensions may be singleton.
 

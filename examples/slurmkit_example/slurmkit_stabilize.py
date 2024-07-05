@@ -17,9 +17,9 @@ from shrimpy.analysis.AnalysisSettings import StabilizationSettings
 # NOTE: this pipeline uses the focus found on well one for all. Perhaps this should be done per FOV(?)
 
 # io parameters
-input_position_dirpaths = "/hpc/projects/comp.micro/shrimpy/2023_11_08_Opencell_infection_redo/1-recon/OC43_infection_timelapse_3.zarr/*/*/*"
-output_dirpath = "/hpc/projects/comp.micro/shrimpy/2023_11_08_Opencell_infection_redo/3-stabilization/OC43_infection_timelapse_3.zarr"
-config_filepath = "/hpc/projects/comp.micro/shrimpy/2023_11_08_Opencell_infection_redo/3-stabilization/stabilization.yml"
+input_position_dirpaths = "/hpc/projects/comp.micro/mantis/2023_11_08_Opencell_infection_redo/1-recon/OC43_infection_timelapse_3.zarr/*/*/*"
+output_dirpath = "/hpc/projects/comp.micro/mantis/2023_11_08_Opencell_infection_redo/3-stabilization/OC43_infection_timelapse_3.zarr"
+config_filepath = "/hpc/projects/comp.micro/mantis/2023_11_08_Opencell_infection_redo/3-stabilization/stabilization.yml"
 
 # batch and resource parameters
 partition = 'cpu'

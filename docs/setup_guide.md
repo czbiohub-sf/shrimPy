@@ -32,7 +32,7 @@ TODO: Update the setup instructions to reflect requirements for coPylot control.
 
 ## Install Micro-manager
 
-The Micro-manager nightly build tested and recommended for the shrimpy acquisition engine is declared in [`shrimpy/__init__.py`](../shrimpy/__init__.py) and can be obtained with:
+The Micro-manager nightly build tested and recommended for the shrimpy acquisition engine is declared in [`shrimpy/__init__.py`](../shrimPy/__init__.py) and can be obtained with:
 
 ```python
 import shrimpy

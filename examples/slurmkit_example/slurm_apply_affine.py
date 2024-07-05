@@ -24,7 +24,7 @@ from shrimpy.cli.utils import (
 # io parameters
 source_position_dirpaths = '/input_source.zarr/*/*/*'
 target_position_dirpaths = '/input_target.zarr/*/*/*'
-config_filepath = '../shrimpy/analysis/settings/example_apply_affine_settings.yml'
+config_filepath = '../shrimPy/analysis/settings/example_apply_affine_settings.yml'
 output_dirpath = './test_output.zarr'
 
 # sbatch and resource parameters

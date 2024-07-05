@@ -81,7 +81,7 @@ Check the LED on the microscope body and find the PFS button on the microscope f
 ** Note: when it autofocus engages, the beep can be easily missed. 
 
 ### YAML file:
-1. Copy the default [yaml file](../shrimpy/acquisition/settings/example_acquisition_settings.yaml) or one from a previous acquisition similar to the planned acquisition into the acquisition folder
+1. Copy the default [yaml file](../shrimPy/acquisition/settings/example_acquisition_settings.yaml) or one from a previous acquisition similar to the planned acquisition into the acquisition folder
 2. Go over the YAML file and change the appropriate parameters.
 3. Most likely one will change the parameters for:
    - ROI

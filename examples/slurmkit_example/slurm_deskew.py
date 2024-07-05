@@ -15,7 +15,7 @@ from dataclasses import asdict
 deskew_param_path = './deskew_settings.yml'
 
 # io parameters
-input_paths = '/hpc/projects/comp.micro/shrimpy/2023_05_10_PCNA_RAC1/timelapse_2_3/0-crop-convert-zarr/sample_short.zarr/*/*/*'
+input_paths = '/hpc/projects/comp.micro/mantis/2023_05_10_PCNA_RAC1/timelapse_2_3/0-crop-convert-zarr/sample_short.zarr/*/*/*'
 output_data_path = './deskewed.zarr'
 
 # sbatch and resource parameters

@@ -11,7 +11,7 @@ from iohub.ngff import open_ome_zarr
 
 @pytest.fixture(scope="function")
 def demo_acquisition_settings():
-    settings_path = "./shrimpy/acquisition/settings/demo_acquisition_settings.yaml"
+    settings_path = "./shrimPy/acquisition/settings/demo_acquisition_settings.yaml"
     with open(settings_path) as file:
         settings = yaml.safe_load(file)
     yield settings_path, settings
@@ -19,7 +19,7 @@ def demo_acquisition_settings():
 
 @pytest.fixture(scope="function")
 def example_acquisition_settings():
-    settings_path = "./shrimpy/acquisition/settings/example_acquisition_settings.yaml"
+    settings_path = "./shrimPy/acquisition/settings/example_acquisition_settings.yaml"
     with open(settings_path) as file:
         settings = yaml.safe_load(file)
     yield settings_path, settings
@@ -27,7 +27,7 @@ def example_acquisition_settings():
 
 @pytest.fixture(scope="function")
 def example_deskew_settings():
-    settings_path = "./shrimpy/analysis/settings/example_deskew_settings.yml"
+    settings_path = "./shrimPy/analysis/settings/example_deskew_settings.yml"
     with open(settings_path) as file:
         settings = yaml.safe_load(file)
     yield settings_path, settings
@@ -35,7 +35,7 @@ def example_deskew_settings():
 
 @pytest.fixture(scope="function")
 def example_apply_affine_settings():
-    settings_path = "./shrimpy/analysis/settings/example_apply_affine_settings.yml"
+    settings_path = "./shrimPy/analysis/settings/example_apply_affine_settings.yml"
     with open(settings_path) as file:
         settings = yaml.safe_load(file)
     yield settings_path, settings
@@ -43,7 +43,7 @@ def example_apply_affine_settings():
 
 @pytest.fixture(scope="function")
 def example_stabilize_timelapse_settings():
-    settings_path = "./shrimpy/analysis/settings/example_stabilize_timelapse_settings.yml"
+    settings_path = "./shrimPy/analysis/settings/example_stabilize_timelapse_settings.yml"
     with open(settings_path) as file:
         settings = yaml.safe_load(file)
     yield settings_path, settings
