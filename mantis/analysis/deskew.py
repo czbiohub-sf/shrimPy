@@ -178,9 +178,6 @@ def deskew_data(
         raw_data.shape, ls_angle_deg, px_to_scan_ratio, keep_overhang
     )
 
-    import time 
-    start = time.time()
-
     # to tensor on GPU
     if torch.cuda.is_available():
         raw_data = transforms.ToDevice("cuda")(torch.tensor(raw_data))
@@ -194,7 +191,6 @@ def deskew_data(
     # to numpy array on CPU
     deskewed_data = deskewed_data.cpu().numpy()
 
-    print(f"Elapsed: {time.time() - start:.2f}")
     # Apply averaging
     averaged_deskewed_data = _average_n_slices(
         deskewed_data, average_window_width=average_n_slices
