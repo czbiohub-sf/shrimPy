@@ -118,8 +118,7 @@ def deskew_data(
     px_to_scan_ratio: float,
     keep_overhang: bool,
     average_n_slices: int = 1,
-    order: int = 1,
-    cval: float = None,
+    device='cpu'
 ):
     """Deskews fluorescence data from the mantis microscope
     Parameters
@@ -129,18 +128,20 @@ def deskew_data(
         - axis 0 corresponds to the scanning axis
         - axis 1 corresponds to the "tilted" axis
         - axis 2 corresponds to the axis in the plane of the coverslip
+    ls_angle_deg : float
+        angle of light sheet with respect to the optical axis in degrees
     px_to_scan_ratio : float
         (pixel spacing / scan spacing) in object space
         e.g. if camera pixels = 6.5 um and mag = 1.4*40, then the pixel spacing
         is 6.5/(1.4*40) = 0.116 um. If the scan spacing is 0.3 um, then
         px_to_scan_ratio = 0.116 / 0.3 = 0.386
-    ls_angle_deg : float
-        angle of light sheet with respect to the optical axis in degrees
     keep_overhang : bool
         If true, compute the whole volume within the tilted parallelepiped.
         If false, only compute the deskewed volume within a cuboid region.
     average_n_slices : int, optional
         after deskewing, averages every n slices (default = 1 applies no averaging)
+    device : str, optional
+        torch device to use for computation. Default is 'cpu'.
     Returns
     -------
     deskewed_data : NDArray with ndim == 3
@@ -149,10 +150,7 @@ def deskew_data(
         axis 2 is the X axis, the scanning axis
     """
     # Prepare transforms
-    Z, Y, X = raw_data.shape
-
     ct = np.cos(ls_angle_deg * np.pi / 180)
-
     matrix = np.array(
         [
             [
@@ -170,15 +168,17 @@ def deskew_data(
         raw_data.shape, ls_angle_deg, px_to_scan_ratio, keep_overhang
     )
 
-    # to tensor on GPU
-    if torch.cuda.is_available():
-        raw_data = torch.tensor(raw_data).to("cuda")
+    # convert to tensor on GPU
+    # convert raw_data to int32 if it is uint16
+    if raw_data.dtype == np.uint16:
+        raw_data = raw_data.astype(np.int32)
+    raw_data_tensor = torch.as_tensor(raw_data, device=device)
 
     # Returns callable
     affine_func = Affine(affine=matrix, padding_mode="zeros", image_only=True)
 
     # affine_func accepts CZYX array, so for ZYX input we need [None] and for ZYX output we need [0]
-    deskewed_data = affine_func(raw_data[None], mode="bilinear", spatial_size=output_shape)[0]
+    deskewed_data = affine_func(raw_data_tensor[None], mode="bilinear", spatial_size=output_shape)[0]
 
     # to numpy array on CPU
     deskewed_data = deskewed_data.cpu().numpy()

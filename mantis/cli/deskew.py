@@ -93,3 +93,6 @@ def deskew(
             num_processes=num_processes,
             **deskew_args,
         )
+
+if __name__ == "__main__":
+    deskew()
