@@ -63,6 +63,10 @@ def get_channel_combiner_metadata(
     return all_data_paths, all_channel_names, input_channel_idx, output_channel_idx
 
 
+def get_slice(slice_param, max_value):
+    return slice(0, max_value) if slice_param == 'all' else slice(*slice_param)
+
+
 @click.command()
 @config_filepath()
 @output_dirpath()
@@ -78,7 +82,7 @@ def concatenate_datasets(config_filepath: str, output_dirpath: str, num_processe
     """
     Concatenate datasets
 
-    >> mantis concat_datasets -c ./concat.yml -o ./output_concat.zarr -j 8
+    >> mantis concatenate-datasets -c ./concat.yml -o ./output_concat.zarr -j 8
     """
     # Convert to Path objects
     config_filepath = Path(config_filepath)
@@ -108,9 +112,9 @@ def concatenate_datasets(config_filepath: str, output_dirpath: str, num_processe
         time_indices = [settings.time_indices]
 
     # Crop the data
-    Z_slice = slice(*settings.Z_slice)
-    Y_slice = slice(*settings.Y_slice)
-    X_slice = slice(*settings.X_slice)
+    Z_slice = get_slice(settings.Z_slice, Z)
+    Y_slice = get_slice(settings.Y_slice, Y)
+    X_slice = get_slice(settings.X_slice, X)
 
     cropped_shape_zyx = (
         abs(Z_slice.stop - Z_slice.start),

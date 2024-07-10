@@ -73,9 +73,9 @@ class ConcatenateSettings(MyBaseModel):
     concat_data_paths: list[str]
     time_indices: Union[int, list[int], Literal["all"]] = "all"
     channel_names: list[Union[str, list[str]]]
-    X_slice: list[int]
-    Y_slice: list[int]
-    Z_slice: list[int]
+    X_slice: Union[list[int], Literal["all"]] = 'all'
+    Y_slice: Union[list[int], Literal["all"]] = 'all'
+    Z_slice: Union[list[int], Literal["all"]] = 'all'
 
     @validator("concat_data_paths")
     def check_concat_data_paths(cls, v):
@@ -91,12 +91,12 @@ class ConcatenateSettings(MyBaseModel):
 
     @validator("X_slice", "Y_slice", "Z_slice")
     def check_slices(cls, v):
-        if (
+        if v != 'all' and (
             not isinstance(v, list)
             or len(v) != 2
             or not all(isinstance(i, int) and i >= 0 for i in v)
         ):
-            raise ValueError("Slices must be lists of two non-negative integers.")
+            raise ValueError("Slices must be 'all' or lists of two non-negative integers.")
         return v
 
 

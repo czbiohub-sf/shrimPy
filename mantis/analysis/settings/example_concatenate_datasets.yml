@@ -1,6 +1,6 @@
 concat_data_paths: ["/path/to/data.zarr/*/*/*","/path/to/data2.zarr/*/*/*"]
 time_indices: all
 channel_names: [all,all]
-X_slice: [0, 100]
+X_slice: 'all'
 Y_slice: [0, 100]
 Z_slice: [0, 100]
