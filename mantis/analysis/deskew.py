@@ -118,7 +118,7 @@ def deskew_data(
     px_to_scan_ratio: float,
     keep_overhang: bool,
     average_n_slices: int = 1,
-    device='cpu'
+    device='cpu',
 ):
     """Deskews fluorescence data from the mantis microscope
     Parameters
@@ -178,7 +178,9 @@ def deskew_data(
     affine_func = Affine(affine=matrix, padding_mode="zeros", image_only=True)
 
     # affine_func accepts CZYX array, so for ZYX input we need [None] and for ZYX output we need [0]
-    deskewed_data = affine_func(raw_data_tensor[None], mode="bilinear", spatial_size=output_shape)[0]
+    deskewed_data = affine_func(
+        raw_data_tensor[None], mode="bilinear", spatial_size=output_shape
+    )[0]
 
     # to numpy array on CPU
     deskewed_data = deskewed_data.cpu().numpy()
