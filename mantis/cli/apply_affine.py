@@ -49,7 +49,7 @@ def apply_affine(
     """
     Apply an affine transformation to a single position across T and C axes based on a registration config file
 
-    >> mantis apply_affine -i ./acq_name_lightsheet_deskewed.zarr/*/*/* -c ./register.yml -o ./acq_name_registerred.zarr
+    >> mantis apply-affine -s source.zarr/*/*/* -t target.zarr/*/*/* -c config.yaml -o ./acq_name_registerred.zarr
     """
 
     # Convert string paths to Path objects
