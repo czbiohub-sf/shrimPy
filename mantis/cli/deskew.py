@@ -1,5 +1,3 @@
-import multiprocessing as mp
-
 from pathlib import Path
 from typing import List
 
@@ -21,7 +19,7 @@ from mantis.cli.utils import yaml_to_model
 @click.option(
     "--num-processes",
     "-j",
-    default=mp.cpu_count(),
+    default=1,
     help="Number of cores",
     required=False,
     type=int,
