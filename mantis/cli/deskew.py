@@ -1,5 +1,3 @@
-import multiprocessing as mp
-
 from pathlib import Path
 from typing import List
 
@@ -26,7 +24,7 @@ torch.multiprocessing.set_start_method('spawn', force=True)
 @click.option(
     "--num-processes",
     "-j",
-    default=mp.cpu_count(),
+    default=1,
     help="Number of cores",
     required=False,
     type=int,
