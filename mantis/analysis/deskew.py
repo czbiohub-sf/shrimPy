@@ -170,9 +170,7 @@ def deskew_data(
 
     # convert to tensor on GPU
     # convert raw_data to int32 if it is uint16
-    if raw_data.dtype == np.uint16:
-        raw_data = raw_data.astype(np.int32)
-    raw_data_tensor = torch.as_tensor(raw_data, device=device)
+    raw_data_tensor = torch.from_numpy(raw_data.astype(np.float32)).to(device)
 
     # Returns callable
     affine_func = Affine(affine=matrix, padding_mode="zeros", image_only=True)
