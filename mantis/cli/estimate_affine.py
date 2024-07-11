@@ -46,6 +46,8 @@ def estimate_affine(
     Estimate the affine transform between a source (i.e. moving) and a target (i.e.
     fixed) image by selecting corresponding points in each.
 
+    The output configuration file is an input for `optimize-affine` and `apply-affine`.
+
     mantis estimate-affine
     -s ./acq_name_labelfree_reconstructed.zarr/0/0/0
     -t ./acq_name_lightsheet_deskewed.zarr/0/0/0

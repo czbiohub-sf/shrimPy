@@ -1,3 +1,4 @@
+# Typical workflows use `estimate-affine` to generate these config files. 
 source_channel_names: [Phase3D, Orientation, Retardance, Birefringence]
 target_channel_name: GFP # Single target channel. All others channels in target store are copied.
 affine_transform_zyx: # in pixel units, i.e. not scaled

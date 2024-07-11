@@ -47,7 +47,9 @@ def apply_affine(
     num_processes: int,
 ):
     """
-    Apply an affine transformation to a single position across T and C axes based on a registration config file
+    Apply an affine transformation to a single position across T and C axes based on a registration config file.
+
+    Start by generating an initial affine transform with `estimate-affine`. Optionally, refine this transform with `optimize-affine`. Finally, use `apply-affine`.
 
     >> mantis apply-affine -s source.zarr/*/*/* -t target.zarr/*/*/* -c config.yaml -o ./acq_name_registerred.zarr
     """
