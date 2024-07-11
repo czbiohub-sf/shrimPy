@@ -29,7 +29,7 @@ dependencies = [
   "natsort",
   "ndtiff>=2.0",
   "nidaqmx",
-  "numpy",
+  "numpy<2",
   "monai",
   "pandas~=2.1",
   "pycromanager==0.28.1",
