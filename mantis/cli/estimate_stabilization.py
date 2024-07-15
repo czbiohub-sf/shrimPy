@@ -163,7 +163,11 @@ def estimate_xy_stabilization(
     if (output_folder_path / "positions_focus.csv").exists():
         df = pd.read_csv(output_folder_path / "positions_focus.csv")
         pos_idx = str(Path(*input_data_path.parts[-3:]))
-        z_idx = list(df[df["position"] == pos_idx]["focus_idx"].replace(0, np.nan).ffill())
+        focus_idx = df[df["position"] == pos_idx]["focus_idx"]
+        # forward fill 0 values, when replace remaining NaN with the mean
+        focus_idx = focus_idx.replace(0, np.nan).ffill()
+        focus_idx = focus_idx.fillna(focus_idx.mean())
+        z_idx = focus_idx.astype(int).to_list()
     else:
         z_idx = [
             focus_from_transverse_band(
