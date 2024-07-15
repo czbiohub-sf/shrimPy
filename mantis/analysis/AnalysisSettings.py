@@ -73,9 +73,9 @@ class ConcatenateSettings(MyBaseModel):
     concat_data_paths: list[str]
     time_indices: Union[int, list[int], Literal["all"]] = "all"
     channel_names: list[Union[str, list[str]]]
-    X_slice: Union[list[int], Literal["all"]] = 'all'
-    Y_slice: Union[list[int], Literal["all"]] = 'all'
-    Z_slice: Union[list[int], Literal["all"]] = 'all'
+    X_slice: Union[list[int], Literal["all"]] = "all"
+    Y_slice: Union[list[int], Literal["all"]] = "all"
+    Z_slice: Union[list[int], Literal["all"]] = "all"
 
     @validator("concat_data_paths")
     def check_concat_data_paths(cls, v):
