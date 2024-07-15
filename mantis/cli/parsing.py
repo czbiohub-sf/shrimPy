@@ -118,6 +118,7 @@ def output_filepath() -> Callable:
             "-o",
             required=True,
             type=click.Path(exists=False, file_okay=True, dir_okay=False),
+            callback=_str_to_path,
             help="Path to output file",
         )(f)
 

@@ -199,7 +199,6 @@ def apply_function_to_zyx_and_save(
         click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
 
 
-# NOTE WIP
 def apply_transform_to_zyx_and_save_v2(
     func,
     position: Position,
@@ -207,33 +206,41 @@ def apply_transform_to_zyx_and_save_v2(
     input_channel_indices: list[int],
     output_channel_indices: list[int],
     t_idx: int,
+    t_idx_out: int,
     c_idx: int = None,
     **kwargs,
 ) -> None:
     """Load a zyx array from a Position object, apply a transformation to CZYX or ZYX and save the result to file"""
-    click.echo(f"Processing c={c_idx}, t={t_idx}")
 
     # TODO: temporary fix to slumkit issue
     if _is_nested(input_channel_indices):
-        # print(f'input_channel_indices: {input_channel_indices}')
         input_channel_indices = [int(x) for x in input_channel_indices if x.isdigit()]
     if _is_nested(output_channel_indices):
-        # print(f'input_channel_indices: {output_channel_indices}')
         output_channel_indices = [int(x) for x in output_channel_indices if x.isdigit()]
-    click.echo(f'input_channel_indices: {input_channel_indices}')
+    click.echo(f"input_channel_indices: {input_channel_indices}")
+
+    # Check if t_idx should be added to the func kwargs
+    # This is needed when a different processing is needed for each time point, for example during stabilization
+    all_func_params = inspect.signature(func).parameters.keys()
+    if "t_idx" in all_func_params:
+        kwargs["t_idx"] = t_idx
 
     # Process CZYX vs ZYX
     if input_channel_indices is not None:
+        click.echo(f"Processing t={t_idx}")
+
         czyx_data = position.data.oindex[t_idx, input_channel_indices]
         if not _check_nan_n_zeros(czyx_data):
             transformed_czyx = func(czyx_data, **kwargs)
             # Write to file
             with open_ome_zarr(output_path, mode="r+") as output_dataset:
-                output_dataset[0].oindex[t_idx, output_channel_indices] = transformed_czyx
+                output_dataset[0].oindex[t_idx_out, output_channel_indices] = transformed_czyx
             click.echo(f"Finished Writing.. t={t_idx}")
         else:
             click.echo(f"Skipping t={t_idx} due to all zeros or nans")
     else:
+        click.echo(f"Processing c={c_idx}, t={t_idx}")
+
         zyx_data = position.data.oindex[t_idx, c_idx]
         # Checking if nans or zeros and skip processing
         if not _check_nan_n_zeros(zyx_data):
@@ -242,7 +249,7 @@ def apply_transform_to_zyx_and_save_v2(
 
             # Write to file
             with open_ome_zarr(output_path, mode="r+") as output_dataset:
-                output_dataset[0][t_idx, c_idx] = transformed_zyx
+                output_dataset[0][t_idx_out, c_idx] = transformed_zyx
 
             click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
         else:
@@ -312,6 +319,7 @@ def process_single_position_v2(
     input_data_path: Path,
     output_path: Path,
     time_indices: list = [0],
+    time_indices_out: list = [0],
     input_channel_idx: list = [],
     output_channel_idx: list = [],
     num_processes: int = mp.cpu_count(),
@@ -333,8 +341,9 @@ def process_single_position_v2(
     # Find time indices
     if time_indices == "all":
         time_indices = range(input_dataset.data.shape[0])
+        time_indices_out = time_indices
     elif isinstance(time_indices, list):
-        time_indices = time_indices
+        time_indices_out = range(len(time_indices))
 
     # Check for invalid times
     time_ubound = input_dataset.data.shape[0] - 1
@@ -363,21 +372,29 @@ def process_single_position_v2(
                 output_dataset.zattrs['extra_metadata'] = non_func_args['extra_metadata']
 
     # Loop through (T, C), deskewing and writing as we go
+    click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
+
     if input_channel_idx is None or len(input_channel_idx) == 0:
         # If C is not empty, use itertools.product with both ranges
         _, C, _, _, _ = input_dataset.data.shape
-        iterable = itertools.product(time_indices, range(C))
+        iterable = [
+            (time_idx, time_idx_out, c)
+            for (time_idx, time_idx_out), c in itertools.product(
+                zip(time_indices, time_indices_out), range(C)
+            )
+        ]
         partial_apply_transform_to_zyx_and_save = partial(
             apply_transform_to_zyx_and_save_v2,
             func,
             input_dataset,
             output_path / Path(*input_data_path.parts[-3:]),
             input_channel_indices=None,
+            output_channel_indices=None,
             **func_args,
         )
     else:
         # If C is empty, use only the range for time_indices
-        iterable = time_indices
+        iterable = list(zip(time_indices, time_indices_out))
         partial_apply_transform_to_zyx_and_save = partial(
             apply_transform_to_zyx_and_save_v2,
             func,
@@ -389,12 +406,12 @@ def process_single_position_v2(
             **func_args,
         )
 
-        click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
-        with mp.Pool(num_processes) as p:
-            p.map(
-                partial_apply_transform_to_zyx_and_save,
-                iterable,
-            )
+    click.echo(f"\nStarting multiprocess pool with {num_processes} processes")
+    with mp.Pool(num_processes) as p:
+        p.starmap(
+            partial_apply_transform_to_zyx_and_save,
+            iterable,
+        )
 
 
 def copy_n_paste(zyx_data: np.ndarray, zyx_slicing_params: list) -> np.ndarray:
@@ -465,9 +482,9 @@ def append_channels(input_data_path: Path, target_data_path: Path) -> None:
         num_channels = len(target_data_channel_names) - 1
         print(f"channels in target {target_data_channel_names}")
         print(f"adding channels {appending_channel_names}")
-        for name, position in tqdm(dataset.positions(), desc='Positions'):
+        for name, position in tqdm(dataset.positions(), desc="Positions"):
             for i, appending_channel_idx in enumerate(
-                tqdm(appending_channel_names, desc='Channel', leave=False)
+                tqdm(appending_channel_names, desc="Channel", leave=False)
             ):
                 position.append_channel(appending_channel_idx)
                 position["0"][:, num_channels + i + 1] = appending_dataset[str(name)][0][:, i]

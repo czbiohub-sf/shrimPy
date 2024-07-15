@@ -143,6 +143,20 @@ class BaseChannelSliceAcquisition(object):
         else:
             logger.info(f'{self.type.capitalize()} acquisition is not enabled')
 
+    def _check_num_sequenced_events(self):
+        num_sequenced_events = 1
+        if self.slice_settings.use_sequencing:
+            num_sequenced_events *= self.slice_settings.num_slices
+        if self.channel_settings.use_sequencing:
+            num_sequenced_events *= self.channel_settings.num_channels
+        if num_sequenced_events > 1200:
+            raise ValueError(
+                f'The number of sequenced events: {num_sequenced_events} exceeds the maximum allowed limit of 1200. '
+                'Please reduce the number of slices and channels or disable channel sequencing. '
+                'This limitation can be overcome by increasing the length of hardware sequences supported by the '
+                'TriggerScope firmware (see NR_DAC_STATES and NR_DO_STATES).'
+            )
+
     @property
     def channel_settings(self):
         return self._channel_settings
@@ -165,6 +179,7 @@ class BaseChannelSliceAcquisition(object):
             f'{self.type.capitalize()} acquisition will have the following settings: {asdict(settings)}'
         )
         self._channel_settings = settings
+        self._check_num_sequenced_events()
 
     @slice_settings.setter
     def slice_settings(self, settings: SliceSettings):
@@ -173,6 +188,7 @@ class BaseChannelSliceAcquisition(object):
             f'{self.type.capitalize()} acquisition will have the following settings: {settings_dict}'
         )
         self._slice_settings = settings
+        self._check_num_sequenced_events()
 
     @microscope_settings.setter
     def microscope_settings(self, settings: MicroscopeSettings):
@@ -254,9 +270,10 @@ class BaseChannelSliceAcquisition(object):
                 )
 
             # Reset z stage to initial position
-            microscope_operations.set_z_position(
-                self.mmc, self.slice_settings.z_stage_name, self._z0
-            )
+            if self._z0 is not None:
+                microscope_operations.set_z_position(
+                    self.mmc, self.slice_settings.z_stage_name, self._z0
+                )
 
 
 class MantisAcquisition(object):
@@ -782,8 +799,8 @@ class MantisAcquisition(object):
         # Define O3 z range
         # 1 step is approx 20 nm, 15 steps are 300 nm which is sub-Nyquist sampling
         # The stack starts away from O2 and moves closer
-        o3_z_start = -105
-        o3_z_end = 105
+        o3_z_start = -165
+        o3_z_end = 165
         o3_z_step = 15
         o3_z_range = np.arange(o3_z_start, o3_z_end + o3_z_step, o3_z_step)
 
