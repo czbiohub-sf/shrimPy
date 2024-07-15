@@ -32,7 +32,7 @@ def estimate_zarr_fov_shifts(
     fov0 = fov0_zarr_path.name
     fov1 = fov1_zarr_path.name
 
-    # TODO: hardocded image coords
+    # TODO: hardcoded image coords
     im0 = open_ome_zarr(fov0_zarr_path).data[0, 0, 0]
     im1 = open_ome_zarr(fov1_zarr_path).data[0, 0, 0]
 
@@ -153,7 +153,13 @@ def estimate_stitch(
     slurm: bool,
 ):
     assert 0 <= percent_overlap <= 1, "Percent overlap must be between 0 and 1"
-    csv_filepath = Path(output_filepath).parent / "stitch_shifts.csv"
+
+    input_zarr_path = Path(input_zarr_path)
+    output_filepath = Path(output_filepath)
+    csv_filepath = (
+        output_filepath.parent
+        / f"stitch_shifts_{input_zarr_path.name.replace('.zarr', '.csv')}"
+    )
 
     dataset = open_ome_zarr(input_zarr_path)
 
@@ -171,8 +177,10 @@ def estimate_stitch(
 
     # define slurm paramters
     if slurm:
-        slurm_out_path = Path(output_filepath).parent / "slurm_output" / "shift-%j.out"
-        csv_dirpath = Path(output_filepath).parent / "raw_shifts"
+        slurm_out_path = output_filepath.parent / "slurm_output" / "shift-%j.out"
+        csv_dirpath = (
+            output_filepath.parent / 'raw_shifts' / input_zarr_path.name.replace('.zarr', '')
+        )
         csv_dirpath.mkdir(parents=True, exist_ok=False)
         params = SlurmParams(
             partition="cpu",
