@@ -1,12 +1,16 @@
 from pathlib import Path
 from typing import Literal
 
+import click
+import dask.array as da
 import numpy as np
 import pandas as pd
 import scipy.ndimage as ndi
 
 from iohub import open_ome_zarr
 from skimage.registration import phase_cross_correlation
+
+from mantis.analysis.AnalysisSettings import ProcessingSettings
 
 
 def estimate_shift(
@@ -176,3 +180,61 @@ def stitch_images(
             stitched_array[overlap] /= 2  # average blending in the overlapping region
 
     return stitched_array
+
+
+def process_dataset(
+    data_array: np.ndarray | da.Array,
+    settings: ProcessingSettings,
+    verbose: bool = True,
+) -> np.ndarray:
+    if settings:
+        if settings.flipud:
+            if verbose:
+                click.echo("Flipping data array up-down")
+            if isinstance(data_array, np.ndarray):
+                data_array = np.flip(data_array, axis=-2)
+            elif isinstance(data_array, da.Array):
+                data_array = da.flip(data_array, axis=-2)
+        if settings.fliplr:
+            if verbose:
+                click.echo("Flipping data array left-right")
+            if isinstance(data_array, np.ndarray):
+                data_array = np.flip(data_array, axis=-1)
+            elif isinstance(data_array, da.Array):
+                data_array = da.flip(data_array, axis=-1)
+
+    return data_array
+
+
+def _preprocess_and_shift(
+    image, settings: ProcessingSettings, output_shape, shift_x, shift_y, verbose=True
+):
+    return shift_image(
+        process_dataset(image, settings, verbose), output_shape, [shift_y, shift_x], verbose
+    )
+
+
+def _stitch_shifted_store(
+    input_data_path, output_data_path, settings: ProcessingSettings, verbose=True
+):
+    click.echo(f'Stitching zarr store: {input_data_path}')
+    with open_ome_zarr(input_data_path, mode="r") as input_dataset:
+        for well_name, well in input_dataset.wells():
+            if verbose:
+                click.echo(f'Processing well {well_name}')
+            dask_array = da.stack([da.from_zarr(pos.data) for _, pos in well.positions()])
+
+            # Average blending
+            array_sum = dask_array.sum(axis=0)
+            array_bool_sum = (dask_array != 0).sum(axis=0)
+            array_bool_sum[array_bool_sum == 0] = 1
+            stitched_array = array_sum / array_bool_sum
+
+            # Postprocessing
+            stitched_array = process_dataset(stitched_array, settings, verbose)
+
+            # Save stitched array
+            with open_ome_zarr(
+                Path(output_data_path, well_name, '0'), mode="a"
+            ) as output_image:
+                da.to_zarr(stitched_array, output_image['0'])

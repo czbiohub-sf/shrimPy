@@ -12,11 +12,11 @@ from natsort import natsorted
 from slurmkit import SlurmParams, slurm_function, submit_function
 
 from mantis.analysis.stitch import (
-    get_stitch_output_shape, get_image_shift, get_grid_rows_cols
+    _preprocess_and_shift, get_stitch_output_shape, get_image_shift, get_grid_rows_cols
 )
 
-from mantis.cli.stitch import (
-    _preprocess_and_shift, _stitch_shifted_store
+from mantis.analysis.stitch import (
+    _stitch_shifted_store
 )
 
 from mantis.cli.utils import (

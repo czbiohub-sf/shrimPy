@@ -1,3 +1,6 @@
+import datetime
+import glob
+
 from pathlib import Path
 
 import click
@@ -5,114 +8,70 @@ import numpy as np
 import pandas as pd
 
 from iohub import open_ome_zarr
+from iohub.ngff_meta import TransformationMeta
+from natsort import natsorted
+from slurmkit import SlurmParams, slurm_function, submit_function
 
-from mantis.analysis.AnalysisSettings import ProcessingSettings, StitchSettings
+from mantis.analysis.AnalysisSettings import StitchSettings
 from mantis.analysis.stitch import (
+    _preprocess_and_shift,
+    _stitch_shifted_store,
     get_grid_rows_cols,
+    get_image_shift,
     get_stitch_output_shape,
-    shift_image,
-    stitch_images,
 )
-from mantis.cli.parsing import config_filepath, output_dirpath
-from mantis.cli.utils import yaml_to_model
+from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
+from mantis.cli.utils import create_empty_hcs_zarr, process_single_position_v2, yaml_to_model
 
-
-def process_dataset(
-    data_array: np.ndarray,
-    settings: ProcessingSettings,
-    verbose: bool = True,
-) -> np.ndarray:
-    if settings:
-        if settings.flipud:
-            if verbose:
-                click.echo("Flipping data array up-down")
-            data_array = np.flip(data_array, axis=-2)
-        if settings.fliplr:
-            if verbose:
-                click.echo("Flipping data array left-right")
-            data_array = np.flip(data_array, axis=-1)
-
-    return data_array
-
-
-def _preprocess_and_shift(
-    image, settings: ProcessingSettings, output_shape, shift_x, shift_y, verbose=True
-):
-    return shift_image(
-        process_dataset(image, settings, verbose), output_shape, [shift_y, shift_x], verbose
-    )
-
-
-def _stitch_shifted_store(
-    input_data_path, output_data_path, settings: ProcessingSettings, verbose=True
-):
-    click.echo(f'Stitching zarr store: {input_data_path}')
-    with open_ome_zarr(input_data_path, mode="r") as input_dataset:
-        well_name, _ = next(input_dataset.wells())
-        _, sample_position = next(input_dataset.positions())
-        array_shape = sample_position.data.shape
-        channels = input_dataset.channel_names
-
-        stitched_array = np.zeros(array_shape, dtype=np.float32)
-        denominator = np.zeros(array_shape, dtype=np.uint8)
-
-        j = 0
-        for _, position in input_dataset.positions():
-            if verbose:
-                click.echo(f'Processing position {j}')
-            stitched_array += position.data
-            denominator += np.bool_(position.data)
-            j += 1
-
-    denominator[denominator == 0] = 1
-    stitched_array /= denominator
-
-    stitched_array = process_dataset(stitched_array, settings, verbose)
-
-    click.echo(f'Saving stitched array in :{output_data_path}')
-    with open_ome_zarr(
-        output_data_path, layout='hcs', channel_names=channels, mode="w-"
-    ) as output_dataset:
-        position = output_dataset.create_position(*Path(well_name, '0').parts)
-        position.create_image('0', stitched_array, chunks=(1, 1, 1, 4096, 4096))
+TEMP_PATH = '/hpc/scratch/group.comp.micro/'
 
 
 @click.command()
-@click.option(
-    "--input_dirpath",
-    "-i",
-    type=click.Path(exists=True),
-    required=True,
-    help="The path to the input Zarr store.",
-)
+@input_position_dirpaths()
 @output_dirpath()
 @config_filepath()
+@click.option("--slurm", "-s", is_flag=True, help="Run stitching on SLURM")
 def stitch_zarr_store(
-    input_dirpath: str,
+    input_position_dirpaths: list[str],
     output_dirpath: str,
     config_filepath: str,
+    slurm: bool,
 ) -> None:
     """
     Stitch a Zarr store of multi-position data. Works well on grids with ~10 positions, but is rather slow
     on grids with ~1000 positions.
 
     Args:
-        input_dirpath (str):
+        input_position_dirpaths (str):
             The path to the input Zarr store.
         output_dirpath (str):
             The path to the output Zarr store. Channels will be appended is the store already exists.
         config_filepath (str):
             The path to the YAML file containing the stitching settings.
+        slurm (bool):
+            Run stitching on SLURM.
     """
+    if not slurm:
+        raise NotImplementedError("Only SLURM mode is supported.")
 
-    input_dataset = open_ome_zarr(input_dirpath)
-    input_dataset_channels = input_dataset.channel_names
-    well_name, _ = next(input_dataset.wells())
-    _, sample_position = next(input_dataset.positions())
-    sizeT, sizeC, sizeZ, sizeY, sizeX = sample_position.data.shape
-    dtype = sample_position.data.dtype
+    # HARDCODED
+    input_position_dirpaths = [
+        Path(path)
+        for path in natsorted(
+            glob.glob(
+                "/hpc/projects/intracellular_dashboard/ops/2024_04_11_Manual_HELA/0-convert/round4_20x0.80_XCite-50Percent_BSI_MultiRound_1.zarr/*/*/*"
+            )
+        )
+    ]
 
+    slurm_out_path = Path(output_dirpath).parent / "slurm_output" / "stitch-%j.out"
+    shifted_store_path = Path(TEMP_PATH, f"TEMP_{input_position_dirpaths[0].parts[-4]}")
     settings = yaml_to_model(config_filepath, StitchSettings)
+
+    with open_ome_zarr(str(input_position_dirpaths[0]), mode="r") as input_dataset:
+        input_dataset_channels = input_dataset.channel_names
+        T, C, Z, Y, X = input_dataset.data.shape
+        scale = tuple(input_dataset.scale)
 
     if settings.channels is None:
         settings.channels = input_dataset_channels
@@ -121,71 +80,108 @@ def stitch_zarr_store(
         channel in input_dataset_channels for channel in settings.channels
     ), "Invalid channel(s) provided."
 
-    grid_rows, grid_cols = get_grid_rows_cols(input_dirpath)
+    wells = list(set([Path(*p.parts[-3:-1]) for p in input_position_dirpaths]))
+    grid_rows, grid_cols = get_grid_rows_cols(Path(*input_position_dirpaths[0].parts[:-3]))
     n_rows = len(grid_rows)
     n_cols = len(grid_cols)
 
     if settings.total_translation is None:
-        output_shape, _ = get_stitch_output_shape(
-            n_rows, n_cols, sizeY, sizeX, settings.column_translation, settings.row_translation
+        output_shape, global_translation = get_stitch_output_shape(
+            n_rows, n_cols, Y, X, settings.column_translation, settings.row_translation
         )
     else:
         df = pd.DataFrame.from_dict(
             settings.total_translation, orient="index", columns=["shift-y", "shift-x"]
         )
         output_shape = (
-            np.ceil(df["shift-y"].max() + sizeY).astype(int),
-            np.ceil(df["shift-x"].max() + sizeX).astype(int),
+            np.ceil(df["shift-y"].max() + Y).astype(int),
+            np.ceil(df["shift-x"].max() + X).astype(int),
         )
 
-    if not Path(output_dirpath).exists():
-        output_dataset = open_ome_zarr(
-            output_dirpath,
-            layout='hcs',
-            mode='w-',
-            channel_names=settings.channels,
+    # create temp zarr store
+    create_empty_hcs_zarr(
+        store_path=shifted_store_path,
+        position_keys=[p.parts[-3:] for p in input_position_dirpaths],
+        shape=(T, len(settings.channels), Z) + output_shape,
+        chunks=(1, 1, 1, 4096, 4096),
+        channel_names=settings.channels,
+        dtype=np.float32,
+    )
+
+    # prepare slurm parameters
+    params = SlurmParams(
+        partition='preempted',
+        cpus_per_task=6,
+        mem_per_cpu='12G',
+        time=datetime.timedelta(minutes=10),
+        output=slurm_out_path,
+    )
+
+    # wrap our deskew_single_position() function with slurmkit
+    slurm_func = slurm_function(process_single_position_v2)(
+        _preprocess_and_shift,
+        num_processes=6,
+        settings=settings.preprocessing,
+        output_shape=output_shape,
+        verbose=True,
+    )
+
+    click.echo('Submitting SLURM jobs')
+    jobs = []
+    for in_path in input_position_dirpaths:
+        well = Path(*in_path.parts[-3:-1])
+        col, row = (in_path.name[:3], in_path.name[3:])
+
+        if settings.total_translation is None:
+            shift = get_image_shift(
+                int(col),
+                int(row),
+                settings.column_translation,
+                settings.row_translation,
+                global_translation,
+            )
+        else:
+            # COL+ROW order here is important
+            shift = settings.total_translation[str(well / (col + row))]
+
+        jobs.append(
+            submit_function(
+                slurm_func,
+                slurm_params=params,
+                shift_x=shift[-1],
+                shift_y=shift[-2],
+                input_data_path=in_path,
+                output_path=shifted_store_path,
+            )
         )
-        output_position = output_dataset.create_position(*well_name.split('/'), '0')
-        output_position.create_zeros(
-            name="0",
-            shape=(sizeT, len(settings.channels), sizeZ) + output_shape,
-            dtype=np.float32,
-            chunks=(1, 1, 1, 4096, 4096),
-        )
-        num_existing_output_channels = 0
-    else:
-        output_dataset = open_ome_zarr(output_dirpath, mode='r+')
-        num_existing_output_channels = len(output_dataset.channel_names)
-        _, output_position = next(output_dataset.positions())
-        for channel_name in settings.channels:
-            output_position.append_channel(channel_name)
 
-    for t_idx in range(sizeT):
-        for _c_idx, channel_name in enumerate(settings.channels):
-            input_c_idx = input_dataset_channels.index(channel_name)
-            output_c_idx = num_existing_output_channels + _c_idx
-            for z_idx in range(sizeZ):
-                data_array = np.zeros((n_rows, n_cols, sizeY, sizeX), dtype=dtype)
-                for row_idx, row_name in enumerate(grid_rows):
-                    for col_idx, col_name in enumerate(grid_cols):
-                        data_array[row_idx, col_idx] = input_dataset[
-                            Path(well_name, col_name + row_name)
-                        ].data[t_idx, input_c_idx, z_idx]
+    # create output zarr store
+    with open_ome_zarr(
+        output_dirpath, layout='hcs', mode="w-", channel_names=settings.channels
+    ) as output_dataset:
+        for well in wells:
+            pos = output_dataset.create_position(*Path(well, '0').parts)
+            pos.create_zeros(
+                name='0',
+                shape=(T, len(settings.channels), Z) + output_shape,
+                dtype=np.float32,
+                chunks=(1, 1, 1, 4096, 4096),
+                transform=[TransformationMeta(type="scale", scale=scale)],
+            )
 
-                data_array = process_dataset(data_array, settings.preprocessing)
-                stitched_array = stitch_images(
-                    data_array,
-                    total_translation=settings.total_translation,
-                    col_translation=settings.column_translation,
-                    row_translation=settings.row_translation,
-                )
-                stitched_array = process_dataset(stitched_array, settings.postprocessing)
-
-                output_position.data[t_idx, output_c_idx, z_idx] = stitched_array
-
-    input_dataset.close()
-    output_dataset.zgroup.attrs.update({'stitching': settings.dict()})
-    output_dataset.close()
+    submit_function(
+        slurm_function(_stitch_shifted_store)(
+            shifted_store_path, output_dirpath, settings.postprocessing, verbose=True
+        ),
+        slurm_params=SlurmParams(
+            partition='preempted',
+            cpus_per_task=16,
+            mem_per_cpu='12G',
+            time=datetime.timedelta(hours=1),
+            output=slurm_out_path,
+        ),
+        dependencies=jobs,
+    )
 
 
 if __name__ == '__main__':

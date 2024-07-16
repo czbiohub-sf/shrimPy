@@ -1,3 +1,5 @@
+import warnings
+
 from typing import Literal, Optional, Union
 
 import numpy as np
@@ -109,5 +111,10 @@ class StitchSettings(MyBaseModel):
             ):
                 raise ValueError(
                     "If total_translation is not provided, both column_translation and row_translation must be provided"
+                )
+            else:
+                warnings.warn(
+                    "column_translation and row_translation are deprecated. Use total_translation instead.",
+                    DeprecationWarning,
                 )
         super().__init__(**data)
