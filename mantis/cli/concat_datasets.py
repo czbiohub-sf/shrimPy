@@ -26,7 +26,7 @@ def get_channel_combiner_metadata(
     input_channel_idx = []
     output_channel_idx = []
     out_chan_idx_counter = 0
-    for (paths, per_datapath_channels) in zip(data_paths_list, processing_channel_names):
+    for paths, per_datapath_channels in zip(data_paths_list, processing_channel_names):
         # Parse the data paths
         parsed_paths = [Path(path) for path in natsorted(glob.glob(paths))]
         all_data_paths.extend(parsed_paths)
