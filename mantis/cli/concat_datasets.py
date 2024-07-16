@@ -78,11 +78,11 @@ def get_slice(slice_param, max_value):
     required=False,
     type=int,
 )
-def concatenate_datasets(config_filepath: str, output_dirpath: str, num_processes: int):
+def concatenate(config_filepath: str, output_dirpath: str, num_processes: int):
     """
-    Concatenate datasets
+    Concatenate datasets (with optional cropping)
 
-    >> mantis concatenate-datasets -c ./concat.yml -o ./output_concat.zarr -j 8
+    >> mantis concatenate -c ./concat.yml -o ./output_concat.zarr -j 8
     """
     # Convert to Path objects
     config_filepath = Path(config_filepath)
@@ -162,4 +162,4 @@ def concatenate_datasets(config_filepath: str, output_dirpath: str, num_processe
 
 
 if __name__ == "__main__":
-    concatenate_datasets()
+    concatenate()
