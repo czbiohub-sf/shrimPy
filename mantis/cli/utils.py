@@ -216,7 +216,6 @@ def apply_transform_to_zyx_and_save_v2(
         input_channel_indices = [int(x) for x in input_channel_indices if x.isdigit()]
     if _is_nested(output_channel_indices):
         output_channel_indices = [int(x) for x in output_channel_indices if x.isdigit()]
-    click.echo(f"input_channel_indices: {input_channel_indices}")
 
     # Check if t_idx should be added to the func kwargs
     # This is needed when a different processing is needed for each time point, for example during stabilization
