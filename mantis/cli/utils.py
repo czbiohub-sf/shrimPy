@@ -226,7 +226,7 @@ def apply_transform_to_zyx_and_save_v2(
         kwargs["t_idx"] = t_idx
 
     # Process CZYX vs ZYX
-    if input_channel_indices is not None:
+    if input_channel_indices is not None and len(input_channel_indices) > 0:
         click.echo(f"Processing t={t_idx}")
 
         czyx_data = position.data.oindex[t_idx, input_channel_indices]
@@ -241,15 +241,15 @@ def apply_transform_to_zyx_and_save_v2(
     else:
         click.echo(f"Processing c={c_idx}, t={t_idx}")
 
-        zyx_data = position.data.oindex[t_idx, c_idx]
+        czyx_data = position.data.oindex[t_idx, c_idx : c_idx + 1]
         # Checking if nans or zeros and skip processing
-        if not _check_nan_n_zeros(zyx_data):
+        if not _check_nan_n_zeros(czyx_data):
             # Apply transformation
-            transformed_zyx = func(zyx_data, **kwargs)
+            transformed_czyx = func(czyx_data, **kwargs)
 
             # Write to file
             with open_ome_zarr(output_path, mode="r+") as output_dataset:
-                output_dataset[0][t_idx_out, c_idx] = transformed_zyx
+                output_dataset[0][t_idx_out, c_idx : c_idx + 1] = transformed_czyx
 
             click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
         else:
@@ -388,8 +388,8 @@ def process_single_position_v2(
             func,
             input_dataset,
             output_path / Path(*input_data_path.parts[-3:]),
-            input_channel_indices=None,
-            output_channel_indices=None,
+            input_channel_idx,
+            output_channel_idx,
             **func_args,
         )
     else:
