@@ -1,7 +1,7 @@
 import click
 
 from mantis.cli.apply_affine import apply_affine
-from mantis.cli.concat_datasets import concatenate_datasets
+from mantis.cli.concat_datasets import concatenate
 from mantis.cli.deskew import deskew
 from mantis.cli.estimate_affine import estimate_affine
 from mantis.cli.estimate_bleaching import estimate_bleaching
@@ -34,6 +34,6 @@ cli.add_command(estimate_affine)
 cli.add_command(optimize_affine)
 cli.add_command(apply_affine)
 cli.add_command(update_scale_metadata)
-cli.add_command(concatenate_datasets)
+cli.add_command(concatenate)
 cli.add_command(estimate_stabilization)
 cli.add_command(stabilize)
