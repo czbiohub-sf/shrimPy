@@ -39,17 +39,20 @@ def stitch(
     slurm: bool,
 ) -> None:
     """
-    Stitch a Zarr store of multi-position data.
+    Stitch a Zarr store of multi-position data. All positions in a well will be stitched.
+    Position names must follow the naming format XXXYYY, e.g. 000000, 000001, 001000, etc.
+    as created by the Micro-manager Tile Creator: https://micro-manager.org/Micro-Manager_User's_Guide#positioning
 
     Args:
         input_position_dirpaths (str):
-            The path to the input Zarr store.
+            The path to the input Zarr store. The store may contain multiple wells.
         output_dirpath (str):
-            The path to the output Zarr store. Channels will be appended is the store already exists.
+            The path to the output Zarr store. Must not exist.
         config_filepath (str):
             The path to the YAML file containing the stitching settings.
         temp_path (str):
             Path to temporary directory, ideally with fast read/write speeds.
+            By default '/hpc/scratch/group.comp.micro/'.
         slurm (bool):
             Run stitching on SLURM.
     """
@@ -93,11 +96,13 @@ def stitch(
 
     # create temp zarr store
     click.echo(f'Creating temporary zarr store at {shifted_store_path}')
+    stitched_shape = (T, len(settings.channels), Z) + output_shape
+    stitched_chunks = chunks[:3] + (4096, 4096)
     create_empty_hcs_zarr(
         store_path=shifted_store_path,
         position_keys=[p.parts[-3:] for p in input_position_dirpaths],
-        shape=(T, len(settings.channels), Z) + output_shape,
-        chunks=chunks[:3] + (4096, 4096),
+        shape=stitched_shape,
+        chunks=stitched_chunks,
         channel_names=settings.channels,
         dtype=np.float32,
     )
@@ -111,7 +116,7 @@ def stitch(
         output=slurm_out_path,
     )
 
-    # wrap our deskew_single_position() function with slurmkit
+    # Shift each FOV to its final position in the stitched image
     slurm_func = slurm_function(process_single_position_v2)(
         preprocess_and_shift,
         input_channel_idx=[input_dataset_channels.index(ch) for ch in settings.channels],
@@ -159,15 +164,20 @@ def stitch(
             pos = output_dataset.create_position(*Path(well, '0').parts)
             pos.create_zeros(
                 name='0',
-                shape=(T, len(settings.channels), Z) + output_shape,
+                shape=stitched_shape,
                 dtype=np.float32,
-                chunks=(1, 1, 1, 4096, 4096),
+                chunks=stitched_chunks,
                 transform=[TransformationMeta(type="scale", scale=scale)],
             )
 
+    # Stitch pre-shifted images
     stitch_job = submit_function(
         slurm_function(stitch_shifted_store)(
-            shifted_store_path, output_dirpath, settings.postprocessing, verbose=True
+            shifted_store_path,
+            output_dirpath,
+            settings.postprocessing,
+            blending='average',
+            verbose=True,
         ),
         slurm_params=SlurmParams(
             partition='cpu',
@@ -179,6 +189,7 @@ def stitch(
         dependencies=shift_jobs,
     )
 
+    # Delete temporary store
     submit_function(
         slurm_function(shutil.rmtree)(shifted_store_path),
         slurm_params=SlurmParams(

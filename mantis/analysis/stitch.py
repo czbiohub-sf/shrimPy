@@ -56,6 +56,9 @@ def get_grid_rows_cols(dataset_path: str):
 
 
 def get_stitch_output_shape(n_rows, n_cols, sizeY, sizeX, col_translation, row_translation):
+    """
+    Compute the output shape of the stitched image and the global translation when only col and row translation are given
+    """
     # TODO: test with non-square images and non-square grid
     global_translation = (
         np.ceil(np.abs(np.minimum(row_translation[0] * (n_rows - 1), 0))).astype(int),
@@ -79,10 +82,15 @@ def get_stitch_output_shape(n_rows, n_cols, sizeY, sizeX, col_translation, row_t
 
 
 def get_image_shift(col_idx, row_idx, col_translation, row_translation, global_translation):
-    return (
+    """
+    Compute total translation when only col and row translation are given
+    """
+    total_translation = (
         col_translation[1] * col_idx + row_translation[1] * row_idx + global_translation[1],
         col_translation[0] * col_idx + row_translation[0] * row_idx + global_translation[0],
     )
+
+    return total_translation
 
 
 def shift_image(
@@ -214,21 +222,65 @@ def preprocess_and_shift(
     )
 
 
+def blend(array: da.Array, method: Literal["average"] = "average"):
+    """
+    Blend array of pre-shifted images stacked across axis=0
+
+    Args:
+        array (da.Array): Input dask array
+        method (str, optional): Blending method. Defaults to "average".
+
+    Raises:
+        NotImplementedError: Raise error is blending method is not implemented.
+
+    Returns:
+        da.Array: Stitched array
+    """
+    if method == "average":
+        # Sum up all images
+        array_sum = array.sum(axis=0)
+        # Count how many images contribute to each pixel in the stitched image
+        array_bool_sum = (array != 0).sum(axis=0)
+        # Replace 0s with 1s to avoid division by zero
+        array_bool_sum[array_bool_sum == 0] = 1
+        # Divide the sum of images by the number of images contributing to each pixel
+        stitched_array = array_sum / array_bool_sum
+    else:
+        raise NotImplementedError(f"Blending method {method} is not implemented")
+
+    return stitched_array
+
+
 def stitch_shifted_store(
-    input_data_path, output_data_path, settings: ProcessingSettings, verbose=True
+    input_data_path: str,
+    output_data_path: str,
+    settings: ProcessingSettings,
+    blending="average",
+    verbose=True,
 ):
+    """
+    Stitch a zarr store of pre-shifted images.
+
+    Args:
+        input_data_path (str): Path to the input zarr store
+        output_data_path (str): Path to the output zarr store
+        settings (ProcessingSettings): Postprocessing settings
+        blending (str, optional): Blending method. Defaults to "average".
+        verbose (bool, optional): Defaults to True.
+    """
     click.echo(f'Stitching zarr store: {input_data_path}')
     with open_ome_zarr(input_data_path, mode="r") as input_dataset:
         for well_name, well in input_dataset.wells():
             if verbose:
                 click.echo(f'Processing well {well_name}')
-            dask_array = da.stack([da.from_zarr(pos.data) for _, pos in well.positions()])
 
-            # Average blending
-            array_sum = dask_array.sum(axis=0)
-            array_bool_sum = (dask_array != 0).sum(axis=0)
-            array_bool_sum[array_bool_sum == 0] = 1
-            stitched_array = array_sum / array_bool_sum
+            # Stack images along axis=0
+            dask_array = da.stack(
+                [da.from_zarr(pos.data) for _, pos in well.positions()], axis=0
+            )
+
+            # Blend images
+            stitched_array = blend(dask_array, method=blending)
 
             # Postprocessing
             stitched_array = process_dataset(stitched_array, settings, verbose)
