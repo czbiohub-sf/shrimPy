@@ -64,6 +64,7 @@ def stitch(
         input_dataset_channels = input_dataset.channel_names
         T, C, Z, Y, X = input_dataset.data.shape
         scale = tuple(input_dataset.scale)
+        chunks = input_dataset.data.chunks
 
     if settings.channels is None:
         settings.channels = input_dataset_channels
@@ -96,7 +97,7 @@ def stitch(
         store_path=shifted_store_path,
         position_keys=[p.parts[-3:] for p in input_position_dirpaths],
         shape=(T, len(settings.channels), Z) + output_shape,
-        chunks=(1, 1, 1, 4096, 4096),
+        chunks=chunks[:3] + (4096, 4096),
         channel_names=settings.channels,
         dtype=np.float32,
     )
