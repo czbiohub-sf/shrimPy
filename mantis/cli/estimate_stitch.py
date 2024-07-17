@@ -20,6 +20,7 @@ from mantis.cli.utils import model_to_yaml
 def estimate_zarr_fov_shifts(
     fov0_zarr_path: str,
     fov1_zarr_path: str,
+    tcz_index: tuple[int, int, int],
     percent_overlap: float,
     fliplr: bool,
     flipud: bool,
@@ -31,10 +32,11 @@ def estimate_zarr_fov_shifts(
     well_name = Path(*fov0_zarr_path.parts[-3:-1])
     fov0 = fov0_zarr_path.name
     fov1 = fov1_zarr_path.name
+    click.echo(f'Estimating shift between FOVs {fov0} and {fov1} in well {well_name}...')
 
-    # TODO: hardcoded image coords
-    im0 = open_ome_zarr(fov0_zarr_path).data[0, 0, 0]
-    im1 = open_ome_zarr(fov1_zarr_path).data[0, 0, 0]
+    T, C, Z = tcz_index
+    im0 = open_ome_zarr(fov0_zarr_path).data[T, C, Z]
+    im1 = open_ome_zarr(fov1_zarr_path).data[T, C, Z]
 
     if fliplr:
         im0 = np.fliplr(im0)
@@ -56,6 +58,8 @@ def estimate_zarr_fov_shifts(
         },
         index=[0],
     )
+    click.echo(f'Estimated shift:\n {df.to_string(index=False)}')
+
     if output_dirname:
         df.to_csv(
             Path(output_dirname, f"{'_'.join(well_name.parts + (fov0, fov1))}_shift.csv"),
@@ -123,14 +127,18 @@ def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
     return pd.concat(total_shift)
 
 
-def write_config_file(shifts: pd.DataFrame, output_filepath: str, fliplr: bool, flipud: bool):
+def write_config_file(
+    shifts: pd.DataFrame, output_filepath: str, channel: str, fliplr: bool, flipud: bool
+):
     total_translation_dict = shifts.apply(
         lambda row: [float(row['shift-y'].round(2)), float(row['shift-x'].round(2))], axis=1
     ).to_dict()
 
     settings = StitchSettings(
-        total_translation=total_translation_dict,
+        channels=[channel],
         preprocessing=ProcessingSettings(fliplr=fliplr, flipud=flipud),
+        postprocessing=ProcessingSettings(),
+        total_translation=total_translation_dict,
     )
     model_to_yaml(settings, output_filepath)
 
@@ -138,6 +146,12 @@ def write_config_file(shifts: pd.DataFrame, output_filepath: str, fliplr: bool, 
 @click.command()
 @input_zarr_path()
 @output_filepath()
+@click.option(
+    "--channel",
+    required=True,
+    type=str,
+    help="Channel to use for estimating stitch parameters",
+)
 @click.option(
     "--percent-overlap", "-p", required=True, type=float, help="Percent overlap between images"
 )
@@ -147,6 +161,7 @@ def write_config_file(shifts: pd.DataFrame, output_filepath: str, fliplr: bool, 
 def estimate_stitch(
     input_zarr_path: str,
     output_filepath: str,
+    channel: str,
     percent_overlap: float,
     fliplr: bool,
     flipud: bool,
@@ -162,20 +177,25 @@ def estimate_stitch(
     )
 
     dataset = open_ome_zarr(input_zarr_path)
+    _, sample_position = next(dataset.positions())
+    assert channel in dataset.channel_names, f"Channel {channel} not found in input zarr store"
+    tcz_idx = (0, dataset.channel_names.index(channel), sample_position.data.shape[-3] // 2)
 
     # here we assume that all wells have the same fov grid
+    click.echo('Indexing input zarr store')
     grid_rows, grid_cols = get_grid_rows_cols(input_zarr_path)
     row_fov0 = [col + row for row in grid_rows[:-1] for col in grid_cols]
     row_fov1 = [col + row for row in grid_rows[1:] for col in grid_cols]
     col_fov0 = [col + row for col in grid_cols[:-1] for row in grid_rows]
     col_fov1 = [col + row for col in grid_cols[1:] for row in grid_rows]
     estimate_shift_params = {
+        "tcz_index": tcz_idx,
         "percent_overlap": percent_overlap,
         "fliplr": fliplr,
         "flipud": flipud,
     }
 
-    # define slurm paramters
+    # define slurm parameters
     if slurm:
         slurm_out_path = output_filepath.parent / "slurm_output" / "shift-%j.out"
         csv_dirpath = (
@@ -183,7 +203,7 @@ def estimate_stitch(
         )
         csv_dirpath.mkdir(parents=True, exist_ok=False)
         params = SlurmParams(
-            partition="cpu",
+            partition="preempted",
             cpus_per_task=1,
             mem_per_cpu='8G',
             time=datetime.timedelta(minutes=10),
@@ -198,6 +218,7 @@ def estimate_stitch(
             for direction in ("row", "col")
         }
 
+    click.echo('Estimating FOV shifts...')
     shifts, jobs = [], []
     for well_name, _ in dataset.wells():
         for direction, fovs in zip(
@@ -223,6 +244,7 @@ def estimate_stitch(
                     )
                     shifts.append(shift_params)
 
+    click.echo('Consolidating FOV shifts...')
     if slurm:
         submit_function(
             slurm_function(consolidate_zarr_fov_shifts)(
@@ -243,7 +265,7 @@ def estimate_stitch(
 
     cleanup_shifts(csv_filepath)
     shifts = compute_total_translation(csv_filepath)
-    write_config_file(shifts, output_filepath, fliplr, flipud)
+    write_config_file(shifts, output_filepath, channel, fliplr, flipud)
 
 
 if __name__ == "__main__":

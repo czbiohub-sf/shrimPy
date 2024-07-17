@@ -1,5 +1,5 @@
 import datetime
-import glob
+import shutil
 
 from pathlib import Path
 
@@ -9,7 +9,6 @@ import pandas as pd
 
 from iohub import open_ome_zarr
 from iohub.ngff_meta import TransformationMeta
-from natsort import natsorted
 from slurmkit import SlurmParams, slurm_function, submit_function
 
 from mantis.analysis.AnalysisSettings import StitchSettings
@@ -23,23 +22,24 @@ from mantis.analysis.stitch import (
 from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
 from mantis.cli.utils import create_empty_hcs_zarr, process_single_position_v2, yaml_to_model
 
-TEMP_PATH = '/hpc/scratch/group.comp.micro/'
-
 
 @click.command()
 @input_position_dirpaths()
 @output_dirpath()
 @config_filepath()
+@click.option(
+    "--temp-path", default='/hpc/scratch/group.comp.micro/', help="Path to temporary directory"
+)
 @click.option("--slurm", "-s", is_flag=True, help="Run stitching on SLURM")
-def stitch_zarr_store(
+def stitch(
     input_position_dirpaths: list[str],
     output_dirpath: str,
     config_filepath: str,
+    temp_path: str,
     slurm: bool,
 ) -> None:
     """
-    Stitch a Zarr store of multi-position data. Works well on grids with ~10 positions, but is rather slow
-    on grids with ~1000 positions.
+    Stitch a Zarr store of multi-position data.
 
     Args:
         input_position_dirpaths (str):
@@ -48,24 +48,16 @@ def stitch_zarr_store(
             The path to the output Zarr store. Channels will be appended is the store already exists.
         config_filepath (str):
             The path to the YAML file containing the stitching settings.
+        temp_path (str):
+            Path to temporary directory, ideally with fast read/write speeds.
         slurm (bool):
             Run stitching on SLURM.
     """
     if not slurm:
         raise NotImplementedError("Only SLURM mode is supported.")
 
-    # HARDCODED
-    input_position_dirpaths = [
-        Path(path)
-        for path in natsorted(
-            glob.glob(
-                "/hpc/projects/intracellular_dashboard/ops/2024_04_11_Manual_HELA/0-convert/round4_20x0.80_XCite-50Percent_BSI_MultiRound_1.zarr/*/*/*"
-            )
-        )
-    ]
-
     slurm_out_path = Path(output_dirpath).parent / "slurm_output" / "stitch-%j.out"
-    shifted_store_path = Path(TEMP_PATH, f"TEMP_{input_position_dirpaths[0].parts[-4]}")
+    shifted_store_path = Path(temp_path, f"TEMP_{input_position_dirpaths[0].parts[-4]}")
     settings = yaml_to_model(config_filepath, StitchSettings)
 
     with open_ome_zarr(str(input_position_dirpaths[0]), mode="r") as input_dataset:
@@ -99,6 +91,7 @@ def stitch_zarr_store(
         )
 
     # create temp zarr store
+    click.echo(f'Creating temporary zarr store at {shifted_store_path}')
     create_empty_hcs_zarr(
         store_path=shifted_store_path,
         position_keys=[p.parts[-3:] for p in input_position_dirpaths],
@@ -112,7 +105,7 @@ def stitch_zarr_store(
     params = SlurmParams(
         partition='preempted',
         cpus_per_task=6,
-        mem_per_cpu='12G',
+        mem_per_cpu='24G',
         time=datetime.timedelta(minutes=10),
         output=slurm_out_path,
     )
@@ -120,6 +113,8 @@ def stitch_zarr_store(
     # wrap our deskew_single_position() function with slurmkit
     slurm_func = slurm_function(process_single_position_v2)(
         _preprocess_and_shift,
+        input_channel_idx=[input_dataset_channels.index(ch) for ch in settings.channels],
+        output_channel_idx=list(range(len(settings.channels))),
         num_processes=6,
         settings=settings.preprocessing,
         output_shape=output_shape,
@@ -127,7 +122,7 @@ def stitch_zarr_store(
     )
 
     click.echo('Submitting SLURM jobs')
-    jobs = []
+    shift_jobs = []
     for in_path in input_position_dirpaths:
         well = Path(*in_path.parts[-3:-1])
         col, row = (in_path.name[:3], in_path.name[3:])
@@ -144,7 +139,7 @@ def stitch_zarr_store(
             # COL+ROW order here is important
             shift = settings.total_translation[str(well / (col + row))]
 
-        jobs.append(
+        shift_jobs.append(
             submit_function(
                 slurm_func,
                 slurm_params=params,
@@ -169,20 +164,33 @@ def stitch_zarr_store(
                 transform=[TransformationMeta(type="scale", scale=scale)],
             )
 
-    submit_function(
+    stitch_job = submit_function(
         slurm_function(_stitch_shifted_store)(
             shifted_store_path, output_dirpath, settings.postprocessing, verbose=True
         ),
         slurm_params=SlurmParams(
-            partition='preempted',
-            cpus_per_task=16,
+            partition='cpu',
+            cpus_per_task=32,
+            mem_per_cpu='8G',
+            time=datetime.timedelta(hours=12),
+            output=slurm_out_path,
+        ),
+        dependencies=shift_jobs,
+    )
+
+    click.echo(f'Removing temporary zarr store at {shifted_store_path}')
+    submit_function(
+        slurm_function(shutil.rmtree)(shifted_store_path),
+        slurm_params=SlurmParams(
+            partition='cpu',
+            cpus_per_task=1,
             mem_per_cpu='12G',
             time=datetime.timedelta(hours=1),
             output=slurm_out_path,
         ),
-        dependencies=jobs,
+        dependencies=stitch_job,
     )
 
 
 if __name__ == '__main__':
-    stitch_zarr_store()
+    stitch()

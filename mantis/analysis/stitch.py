@@ -28,13 +28,13 @@ def estimate_shift(
         shift, _, _ = phase_cross_correlation(
             im0[-y_roi:, :], im1[:y_roi, :], upsample_factor=10
         )
-        shift[0] += sizeX - y_roi
+        shift[0] += sizeY - y_roi
     elif direction == "col":
         x_roi = int(sizeX * np.minimum(percent_overlap + 0.05, 1))
         shift, _, _ = phase_cross_correlation(
             im0[:, -x_roi:], im1[:, :x_roi], upsample_factor=10
         )
-        shift[1] += sizeY - x_roi
+        shift[1] += sizeX - x_roi
 
     # TODO: we shouldn't need to flip the order
     return shift[::-1]
@@ -86,25 +86,21 @@ def get_image_shift(col_idx, row_idx, col_translation, row_translation, global_t
 
 
 def shift_image(
-    image: np.ndarray,
-    output_shape: tuple[float, float],
-    shift: tuple[float, float],
+    czyx_data: np.ndarray,
+    yx_output_shape: tuple[float, float],
+    yx_shift: tuple[float, float],
     verbose: bool = False,
 ) -> np.ndarray:
-    ndims = image.ndim
-    sizeY, sizeX = image.shape[-2:]
+    assert czyx_data.ndim == 4, "Input data must be a CZYX array"
+    C, Z, Y, X = czyx_data.shape
 
     if verbose:
-        print(f"Shifting image by {shift}")
-    output = np.zeros(output_shape, dtype=np.float32)
-    output[:sizeY, :sizeX] = np.squeeze(image)
-    output = ndi.shift(output, shift, order=0)
+        print(f"Shifting image by {yx_shift}")
+    # Create array of output_shape and put input data at (0, 0)
+    output = np.zeros((C, Z) + yx_output_shape, dtype=np.float32)
+    output[..., :Y, :X] = czyx_data
 
-    if ndims == 2:
-        return output
-    # deal with CZYX arrays in mantis pipeline
-    elif ndims == 4:
-        return output[np.newaxis, np.newaxis, :, :]
+    return ndi.shift(output, (0, 0) + tuple(yx_shift), order=0)
 
 
 def stitch_images(
@@ -187,30 +183,34 @@ def process_dataset(
     settings: ProcessingSettings,
     verbose: bool = True,
 ) -> np.ndarray:
+    flip = np.flip
+    if isinstance(data_array, da.Array):
+        flip = da.flip
+
     if settings:
         if settings.flipud:
             if verbose:
                 click.echo("Flipping data array up-down")
-            if isinstance(data_array, np.ndarray):
-                data_array = np.flip(data_array, axis=-2)
-            elif isinstance(data_array, da.Array):
-                data_array = da.flip(data_array, axis=-2)
+            data_array = flip(data_array, axis=-2)
+
         if settings.fliplr:
             if verbose:
                 click.echo("Flipping data array left-right")
-            if isinstance(data_array, np.ndarray):
-                data_array = np.flip(data_array, axis=-1)
-            elif isinstance(data_array, da.Array):
-                data_array = da.flip(data_array, axis=-1)
+            data_array = flip(data_array, axis=-1)
 
     return data_array
 
 
 def _preprocess_and_shift(
-    image, settings: ProcessingSettings, output_shape, shift_x, shift_y, verbose=True
+    image,
+    settings: ProcessingSettings,
+    output_shape: tuple[int, int],
+    shift_x: float,
+    shift_y: float,
+    verbose=True,
 ):
     return shift_image(
-        process_dataset(image, settings, verbose), output_shape, [shift_y, shift_x], verbose
+        process_dataset(image, settings, verbose), output_shape, (shift_y, shift_x), verbose
     )
 
 
@@ -234,7 +234,9 @@ def _stitch_shifted_store(
             stitched_array = process_dataset(stitched_array, settings, verbose)
 
             # Save stitched array
+            click.echo('Computing and writing data')
             with open_ome_zarr(
                 Path(output_data_path, well_name, '0'), mode="a"
             ) as output_image:
                 da.to_zarr(stitched_array, output_image['0'])
+            click.echo(f'Finishing writing data for well {well_name}')
