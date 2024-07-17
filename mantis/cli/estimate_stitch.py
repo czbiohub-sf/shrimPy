@@ -17,7 +17,7 @@ from mantis.analysis.stitch import (
     estimate_zarr_fov_shifts,
     get_grid_rows_cols,
 )
-from mantis.cli.parsing import input_zarr_path, output_filepath
+from mantis.cli.parsing import input_position_dirpaths, output_filepath
 from mantis.cli.utils import model_to_yaml
 
 
@@ -38,7 +38,7 @@ def write_config_file(
 
 
 @click.command()
-@input_zarr_path()
+@input_position_dirpaths()
 @output_filepath()
 @click.option(
     "--channel",
@@ -53,7 +53,7 @@ def write_config_file(
 @click.option("--flipud", is_flag=True, help="Flip images up-down before stitching")
 @click.option("--slurm", "-s", is_flag=True, help="Run stitching on SLURM")
 def estimate_stitch(
-    input_zarr_path: str,
+    input_position_dirpaths: list[Path],
     output_filepath: str,
     channel: str,
     percent_overlap: float,
@@ -61,22 +61,32 @@ def estimate_stitch(
     flipud: bool,
     slurm: bool,
 ):
+    """
+    Estimate stitching parameters for positions in wells of a zarr store.
+    Position names must follow the naming format XXXYYY, e.g. 000000, 000001, 001000, etc.
+    as created by the Micro-manager Tile Creator: https://micro-manager.org/Micro-Manager_User's_Guide#positioning
+    Assumes all wells have the save FOV grid layout.
+
+    >>> mantis estimate-stitch -i ./input.zarr/*/*/* -o ./stitch_params.yml --channel DAPI --percent-overlap 0.05 --slurm
+    """
     assert 0 <= percent_overlap <= 1, "Percent overlap must be between 0 and 1"
 
-    input_zarr_path = Path(input_zarr_path)
+    input_zarr_path = Path(*input_position_dirpaths[0].parts[:-3])
     output_filepath = Path(output_filepath)
     csv_filepath = (
         output_filepath.parent
         / f"stitch_shifts_{input_zarr_path.name.replace('.zarr', '.csv')}"
     )
 
-    dataset = open_ome_zarr(input_zarr_path)
-    _, sample_position = next(dataset.positions())
-    assert channel in dataset.channel_names, f"Channel {channel} not found in input zarr store"
-    tcz_idx = (0, dataset.channel_names.index(channel), sample_position.data.shape[-3] // 2)
+    with open_ome_zarr(input_position_dirpaths[0]) as dataset:
+        assert (
+            channel in dataset.channel_names
+        ), f"Channel {channel} not found in input zarr store"
+        tcz_idx = (0, dataset.channel_names.index(channel), dataset.data.shape[-3] // 2)
 
     # here we assume that all wells have the same fov grid
     click.echo('Indexing input zarr store')
+    wells = list(set([Path(*p.parts[-3:-1]) for p in input_position_dirpaths]))
     grid_rows, grid_cols = get_grid_rows_cols(input_zarr_path)
     row_fov0 = [col + row for row in grid_rows[:-1] for col in grid_cols]
     row_fov1 = [col + row for row in grid_rows[1:] for col in grid_cols]
@@ -114,7 +124,7 @@ def estimate_stitch(
 
     click.echo('Estimating FOV shifts...')
     shifts, jobs = [], []
-    for well_name, _ in dataset.wells():
+    for well_name in wells:
         for direction, fovs in zip(
             ("row", "col"), (zip(row_fov0, row_fov1), zip(col_fov0, col_fov1))
         ):
