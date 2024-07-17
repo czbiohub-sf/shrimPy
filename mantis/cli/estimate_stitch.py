@@ -2,129 +2,23 @@ import datetime
 import time
 
 from pathlib import Path
-from typing import Literal
 
 import click
-import numpy as np
 import pandas as pd
 
 from iohub import open_ome_zarr
 from slurmkit import SlurmParams, slurm_function, submit_function
 
 from mantis.analysis.AnalysisSettings import ProcessingSettings, StitchSettings
-from mantis.analysis.stitch import estimate_shift, get_grid_rows_cols
+from mantis.analysis.stitch import (
+    cleanup_shifts,
+    compute_total_translation,
+    consolidate_zarr_fov_shifts,
+    estimate_zarr_fov_shifts,
+    get_grid_rows_cols,
+)
 from mantis.cli.parsing import input_zarr_path, output_filepath
 from mantis.cli.utils import model_to_yaml
-
-
-def estimate_zarr_fov_shifts(
-    fov0_zarr_path: str,
-    fov1_zarr_path: str,
-    tcz_index: tuple[int, int, int],
-    percent_overlap: float,
-    fliplr: bool,
-    flipud: bool,
-    direction: Literal["row", "col"],
-    output_dirname: str = None,
-):
-    fov0_zarr_path = Path(fov0_zarr_path)
-    fov1_zarr_path = Path(fov1_zarr_path)
-    well_name = Path(*fov0_zarr_path.parts[-3:-1])
-    fov0 = fov0_zarr_path.name
-    fov1 = fov1_zarr_path.name
-    click.echo(f'Estimating shift between FOVs {fov0} and {fov1} in well {well_name}...')
-
-    T, C, Z = tcz_index
-    im0 = open_ome_zarr(fov0_zarr_path).data[T, C, Z]
-    im1 = open_ome_zarr(fov1_zarr_path).data[T, C, Z]
-
-    if fliplr:
-        im0 = np.fliplr(im0)
-        im1 = np.fliplr(im1)
-    if flipud:
-        im0 = np.flipud(im0)
-        im1 = np.flipud(im1)
-
-    shift = estimate_shift(im0, im1, percent_overlap, direction)
-
-    df = pd.DataFrame(
-        {
-            "well": str(well_name),
-            "fov0": fov0,
-            "fov1": fov1,
-            "shift-x": shift[0],
-            "shift-y": shift[1],
-            "direction": direction,
-        },
-        index=[0],
-    )
-    click.echo(f'Estimated shift:\n {df.to_string(index=False)}')
-
-    if output_dirname:
-        df.to_csv(
-            Path(output_dirname, f"{'_'.join(well_name.parts + (fov0, fov1))}_shift.csv"),
-            index=False,
-        )
-    else:
-        return df
-
-
-def consolidate_zarr_fov_shifts(
-    input_dirname: str,
-    output_filepath: str,
-):
-    # read all csv files in input_dirname and combine into a single dataframe
-    csv_files = Path(input_dirname).rglob("*_shift.csv")
-    df = pd.concat(
-        [pd.read_csv(csv_file, dtype={'fov0': str, 'fov1': str}) for csv_file in csv_files],
-        ignore_index=True,
-    )
-    df.to_csv(output_filepath, index=False)
-
-
-def cleanup_shifts(csv_filepath: str):
-    df = pd.read_csv(csv_filepath, dtype={'fov0': str, 'fov1': str})
-    df['shift-x-raw'] = df['shift-x']
-    df['shift-y-raw'] = df['shift-y']
-
-    # replace row shifts with median value calculated across all columns
-    _df = df[df['direction'] == 'row']
-    # group by well and last three characters of fov0
-    groupby = _df.groupby(['well', _df['fov0'].str[-3:]])
-    df.loc[df['direction'] == 'row', 'shift-x'] = groupby['shift-x-raw'].transform('median')
-    df.loc[df['direction'] == 'row', 'shift-y'] = groupby['shift-y-raw'].transform('median')
-
-    df.to_csv(csv_filepath, index=False)
-
-
-def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
-    df = pd.read_csv(csv_filepath, dtype={'fov0': str, 'fov1': str})
-
-    df['row'] = df['fov1'].str[-3:].astype(int)
-    df['col'] = df['fov1'].str[:3].astype(int)
-    df.set_index('fov1', inplace=True)
-    df.sort_index(inplace=True)
-
-    total_shift = []
-    for well in df['well'].unique():
-        _df = df[(df['direction'] == 'col') & (df['well'] == well)]
-        col_shifts = _df.groupby('row')[['shift-x', 'shift-y']].cumsum()
-        _df = df[(df['direction'] == 'row') & (df['well'] == well)]
-        row_shifts = _df.groupby('col')[['shift-x', 'shift-y']].cumsum()
-        _total_shift = col_shifts.add(row_shifts, fill_value=0)
-
-        # add row 000000
-        _total_shift = pd.concat(
-            [pd.DataFrame({'shift-x': 0, 'shift-y': 0}, index=['000000']), _total_shift]
-        )
-
-        # add global offset to remove negative values
-        _total_shift['shift-x'] += -np.minimum(_total_shift['shift-x'].min(), 0)
-        _total_shift['shift-y'] += -np.minimum(_total_shift['shift-y'].min(), 0)
-        _total_shift.set_index(well + '/' + _total_shift.index, inplace=True)
-        total_shift.append(_total_shift)
-
-    return pd.concat(total_shift)
 
 
 def write_config_file(
