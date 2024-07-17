@@ -16,6 +16,32 @@ from mantis.analysis.AnalysisSettings import ProcessingSettings
 def estimate_shift(
     im0: np.ndarray, im1: np.ndarray, percent_overlap: float, direction: Literal["row", "col"]
 ):
+    """
+    Estimate the shift between two images based on a given percentage overlap and direction.
+
+    Parameters
+    ----------
+    im0 : np.ndarray
+        The first image.
+    im1 : np.ndarray
+        The second image.
+    percent_overlap : float
+        The percentage of overlap between the two images. Must be between 0 and 1.
+    direction : Literal["row", "col"]
+        The direction of the shift. Can be either "row" or "col". See estimate_zarr_fov_shifts
+
+    Returns
+    -------
+    np.ndarray
+        The estimated shift between the two images.
+
+    Raises
+    ------
+    AssertionError
+        If percent_overlap is not between 0 and 1.
+        If direction is not "row" or "col".
+        If the shape of im0 and im1 are not the same.
+    """
     assert 0 <= percent_overlap <= 1, "percent_overlap must be between 0 and 1"
     assert direction in ["row", "col"], "direction must be either 'row' or 'col'"
     assert im0.shape == im1.shape, "Images must have the same shape"
@@ -118,27 +144,32 @@ def _stitch_images(
     row_translation: float | tuple[float, float] = None,
 ) -> np.ndarray:
     """
-    Deprecated method to stitch an array of 2D images together to create a larger composite image.
+    Stitch an array of 2D images together to create a larger composite image.
 
-    Args:
-        data_array (np.ndarray):
-            The data array to with shape (ROWS, COLS, Y, X) that will be stitched. Call this function multiple
-            times to stitch multiple channels, slices, or time points.
-        total_translation (dict[str: tuple[float, float]], optional):
-            Shift to be applied to each fov, given as {fov: (y_shift, x_shift)}. Defaults to None.
-        percent_overlap (float, optional):
-            The percentage of overlap between adjacent images. Must be between 0 and 1. Defaults to None.
-        col_translation (float | tuple[float, float], optional):
-            The translation distance in pixels in the column direction. Can be a single value or a tuple
-            of (x_translation, y_translation) when moving across columns. Defaults to None.
-        row_translation (float | tuple[float, float], optional):
-            See col_translation. Defaults to None.
+    Parameters
+    ----------
+    data_array : np.ndarray
+        The data array to with shape (ROWS, COLS, Y, X) that will be stitched. Call this function multiple
+        times to stitch multiple channels, slices, or time points.
+    total_translation : dict[str: tuple[float, float]], optional
+        Shift to be applied to each fov, given as {fov: (y_shift, x_shift)}. Defaults to None.
+    percent_overlap : float, optional
+        The percentage of overlap between adjacent images. Must be between 0 and 1. Defaults to None.
+    col_translation : float | tuple[float, float], optional
+        The translation distance in pixels in the column direction. Can be a single value or a tuple
+        of (x_translation, y_translation) when moving across columns. Defaults to None.
+    row_translation : float | tuple[float, float], optional
+        See col_translation. Defaults to None.
 
-    Returns:
-        np.ndarray: The stitched composite 2D image
+    Returns
+    -------
+    np.ndarray
+        The stitched composite 2D image
 
-    Raises:
-        AssertionError: If percent_overlap is not between 0 and 1.
+    Raises
+    ------
+    AssertionError
+        If percent_overlap is not between 0 and 1.
 
     """
 
@@ -225,15 +256,22 @@ def blend(array: da.Array, method: Literal["average"] = "average"):
     """
     Blend array of pre-shifted images stacked across axis=0
 
-    Args:
-        array (da.Array): Input dask array
-        method (str, optional): Blending method. Defaults to "average".
+    Parameters
+    ----------
+    array : da.Array
+        Input dask array
+    method : str, optional
+        Blending method. Defaults to "average".
 
-    Raises:
-        NotImplementedError: Raise error is blending method is not implemented.
+    Raises
+    ------
+    NotImplementedError
+        Raise error is blending method is not implemented.
 
-    Returns:
-        da.Array: Stitched array
+    Returns
+    -------
+    da.Array
+        Stitched array
     """
     if method == "average":
         # Sum up all images
@@ -260,12 +298,18 @@ def stitch_shifted_store(
     """
     Stitch a zarr store of pre-shifted images.
 
-    Args:
-        input_data_path (str): Path to the input zarr store
-        output_data_path (str): Path to the output zarr store
-        settings (ProcessingSettings): Postprocessing settings
-        blending (str, optional): Blending method. Defaults to "average".
-        verbose (bool, optional): Defaults to True.
+    Parameters
+    ----------
+    input_data_path : str
+        Path to the input zarr store.
+    output_data_path : str
+        Path to the output zarr store.
+    settings : ProcessingSettings
+        Postprocessing settings.
+    blending : str, optional
+        Blending method. Defaults to "average".
+    verbose : bool, optional
+        Whether to print verbose output. Defaults to True.
     """
     click.echo(f'Stitching zarr store: {input_data_path}')
     with open_ome_zarr(input_data_path, mode="r") as input_dataset:
@@ -303,6 +347,37 @@ def estimate_zarr_fov_shifts(
     direction: Literal["row", "col"],
     output_dirname: str = None,
 ):
+    """
+    Estimate shift between two zarr FOVs using phase cross-correlation.Apply flips (fliplr, flipud) as preprocessing step.
+    Phase cross-correlation is computed only across an ROI defined by (percent_overlap + 0.05) for the given direction.
+
+    Parameters
+    ----------
+    fov0_zarr_path : str
+        Path to the first zarr FOV.
+    fov1_zarr_path : str
+        Path to the second zarr FOV.
+    tcz_index : tuple[int, int, int]
+        Index of the time, channel, and z-slice to use for the shift estimation.
+    percent_overlap : float
+        The percentage of overlap between the two FOVs. Can be approximate.
+    fliplr : bool
+        Flag indicating whether to flip the FOVs horizontally before estimating shift.
+    flipud : bool
+        Flag indicating whether to flip the FOVs vertically before estimating shift.
+    direction : Literal["row", "col"]
+        The direction in which to compute the shift.
+        "row" computes vertical overlap with fov1 below fov0.
+        "col" computes horizontal overlap with fov1 to the right of fov0.
+    output_dirname : str, optional
+        The directory to save the output csv file.
+        If None, the function returns a DataFrame with the estimated shift.
+
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame containing the estimated shift between the two FOVs.
+    """
     fov0_zarr_path = Path(fov0_zarr_path)
     fov1_zarr_path = Path(fov1_zarr_path)
     well_name = Path(*fov0_zarr_path.parts[-3:-1])
@@ -349,6 +424,16 @@ def consolidate_zarr_fov_shifts(
     input_dirname: str,
     output_filepath: str,
 ):
+    """
+    Consolidate all csv files in input_dirname into a single csv file.
+
+    Parameters
+    ----------
+    input_dirname : str
+        Directory containing "*_shift.csv" files
+    output_filepath : str
+        Path to output .csv file
+    """
     # read all csv files in input_dirname and combine into a single dataframe
     csv_files = Path(input_dirname).rglob("*_shift.csv")
     df = pd.concat(
@@ -359,6 +444,18 @@ def consolidate_zarr_fov_shifts(
 
 
 def cleanup_shifts(csv_filepath: str):
+    """
+    Clean up outlier FOV shifts within a larger grid in case the phase cross-correlation
+    between individual FOVs returned spurious results.
+
+    Since FOVs are acquired in snake fashion, FOVs in a given row should share the same vertial shift.
+    Hence, the vertical shift for FOVs in a given row is replaced by the median value of all FOVs in that row.
+
+    Parameters
+    ----------
+    csv_filepath : str
+        Path to .csv file containing FOV shifts
+    """
     df = pd.read_csv(csv_filepath, dtype={'fov0': str, 'fov1': str})
     df['shift-x-raw'] = df['shift-x']
     df['shift-y-raw'] = df['shift-y']
@@ -374,6 +471,19 @@ def cleanup_shifts(csv_filepath: str):
 
 
 def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
+    """
+    Compute the total translation for each FOV based on the estimated row and col translation shifts.
+
+    Parameters
+    ----------
+    csv_filepath : str
+        Path to .csv file containing FOV shifts
+
+    Returns
+    -------
+    pd.DataFrame
+        Dataframe with total translation shift per FOV
+    """
     df = pd.read_csv(csv_filepath, dtype={'fov0': str, 'fov1': str})
 
     df['row'] = df['fov1'].str[-3:].astype(int)
