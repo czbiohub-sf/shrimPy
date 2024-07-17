@@ -178,7 +178,6 @@ def stitch(
         dependencies=shift_jobs,
     )
 
-    click.echo(f'Removing temporary zarr store at {shifted_store_path}')
     submit_function(
         slurm_function(shutil.rmtree)(shifted_store_path),
         slurm_params=SlurmParams(
