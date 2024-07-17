@@ -13,11 +13,11 @@ from slurmkit import SlurmParams, slurm_function, submit_function
 
 from mantis.analysis.AnalysisSettings import StitchSettings
 from mantis.analysis.stitch import (
-    _preprocess_and_shift,
-    _stitch_shifted_store,
     get_grid_rows_cols,
     get_image_shift,
     get_stitch_output_shape,
+    preprocess_and_shift,
+    stitch_shifted_store,
 )
 from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
 from mantis.cli.utils import create_empty_hcs_zarr, process_single_position_v2, yaml_to_model
@@ -112,7 +112,7 @@ def stitch(
 
     # wrap our deskew_single_position() function with slurmkit
     slurm_func = slurm_function(process_single_position_v2)(
-        _preprocess_and_shift,
+        preprocess_and_shift,
         input_channel_idx=[input_dataset_channels.index(ch) for ch in settings.channels],
         output_channel_idx=list(range(len(settings.channels))),
         num_processes=6,
@@ -165,7 +165,7 @@ def stitch(
             )
 
     stitch_job = submit_function(
-        slurm_function(_stitch_shifted_store)(
+        slurm_function(stitch_shifted_store)(
             shifted_store_path, output_dirpath, settings.postprocessing, verbose=True
         ),
         slurm_params=SlurmParams(

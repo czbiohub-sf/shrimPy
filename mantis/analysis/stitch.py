@@ -103,7 +103,7 @@ def shift_image(
     return ndi.shift(output, (0, 0) + tuple(yx_shift), order=0)
 
 
-def stitch_images(
+def _stitch_images(
     data_array: np.ndarray,
     total_translation: dict[str : tuple[float, float]] = None,
     percent_overlap: float = None,
@@ -111,7 +111,7 @@ def stitch_images(
     row_translation: float | tuple[float, float] = None,
 ) -> np.ndarray:
     """
-    Stitch an array of 2D images together to create a larger composite image.
+    Deprecated method to stitch an array of 2D images together to create a larger composite image.
 
     Args:
         data_array (np.ndarray):
@@ -201,7 +201,7 @@ def process_dataset(
     return data_array
 
 
-def _preprocess_and_shift(
+def preprocess_and_shift(
     image,
     settings: ProcessingSettings,
     output_shape: tuple[int, int],
@@ -214,7 +214,7 @@ def _preprocess_and_shift(
     )
 
 
-def _stitch_shifted_store(
+def stitch_shifted_store(
     input_data_path, output_data_path, settings: ProcessingSettings, verbose=True
 ):
     click.echo(f'Stitching zarr store: {input_data_path}')
