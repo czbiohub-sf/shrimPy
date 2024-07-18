@@ -98,18 +98,18 @@ recorder reconstruct \
 
 # REGISTER
 # estimate registration parameters
-mantis estimate-affine \
+mantis estimate-registration \
     -s ./acq_name_labelfree_reconstructed.zarr/0/0/0 \
     -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 \
     -o ./register.yml
 # optimize registration parameters
-mantis optimize-affine \
+mantis optimize-registration \
     -s ./acq_name_labelfree_reconstructed.zarr/0/0/0 \
     -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 \
     -c ./register.yml \
     -o ./register_optimized.yml
 # register data
-mantis apply-affine \
+mantis register \
     -s ./acq_name_labelfree_reconstructed.zarr/*/*/* \
     -t ./acq_name_lightsheet_deskewed.zarr/*/*/* \
     -c ./register_optimized.yml \

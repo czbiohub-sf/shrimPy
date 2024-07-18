@@ -36,7 +36,7 @@ T_IDX = 0
     is_flag=True,
     help="Show verbose output of optimizer",
 )
-def optimize_affine(
+def optimize_registration(
     source_position_dirpaths,
     target_position_dirpaths,
     config_filepath,
@@ -47,9 +47,9 @@ def optimize_affine(
     """
     Optimize the affine transform between source and target channels using ANTs library.
 
-    Start by generating an initial affine transform with `estimate-affine`.
+    Start by generating an initial affine transform with `estimate-registration`.
 
-    mantis optimize-affine -s ./acq_name_virtual_staining_reconstructed.zarr/0/0/0 -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 -c ./transform.yml -o ./optimized_transform.yml -d -v
+    mantis optimize-registration -s ./acq_name_virtual_staining_reconstructed.zarr/0/0/0 -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 -c ./transform.yml -o ./optimized_transform.yml -d -v
     """
 
     settings = yaml_to_model(config_filepath, RegistrationSettings)
@@ -137,4 +137,4 @@ def optimize_affine(
 
 
 if __name__ == "__main__":
-    optimize_affine()
+    optimize_registration()

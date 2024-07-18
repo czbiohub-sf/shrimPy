@@ -13,7 +13,7 @@ from slurmkit import SlurmParams, slurm_function, submit_function
 
 from mantis.analysis.AnalysisSettings import RegistrationSettings
 from mantis.analysis.register import apply_affine_transform, find_overlapping_volume
-from mantis.cli.apply_affine import rescale_voxel_size
+from mantis.cli.register import rescale_voxel_size
 from mantis.cli.utils import (
     copy_n_paste_czyx,
     create_empty_hcs_zarr,

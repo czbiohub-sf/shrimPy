@@ -39,7 +39,7 @@ FOCUS_SLICE_ROI_WIDTH = 150  # size of central ROI used to find focal slice
     is_flag=True,
     help='Flag to use similarity transform (rotation, translation, scaling) default:Eucledian (rotation, translation)',
 )
-def estimate_affine(
+def estimate_registration(
     source_position_dirpaths, target_position_dirpaths, output_filepath, similarity
 ):
     """
@@ -48,7 +48,7 @@ def estimate_affine(
 
     The output configuration file is an input for `optimize-affine` and `apply-affine`.
 
-    mantis estimate-affine
+    mantis estimate-registration
     -s ./acq_name_labelfree_reconstructed.zarr/0/0/0
     -t ./acq_name_lightsheet_deskewed.zarr/0/0/0
     -o ./output.yml
@@ -370,4 +370,4 @@ def estimate_affine(
 
 
 if __name__ == "__main__":
-    estimate_affine()
+    estimate_registration()

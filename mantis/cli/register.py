@@ -39,7 +39,7 @@ def rescale_voxel_size(affine_matrix, input_scale):
     required=False,
     type=int,
 )
-def apply_affine(
+def register(
     source_position_dirpaths: List[str],
     target_position_dirpaths: List[str],
     config_filepath: str,
@@ -49,9 +49,9 @@ def apply_affine(
     """
     Apply an affine transformation to a single position across T and C axes based on a registration config file.
 
-    Start by generating an initial affine transform with `estimate-affine`. Optionally, refine this transform with `optimize-affine`. Finally, use `apply-affine`.
+    Start by generating an initial affine transform with `estimate-register`. Optionally, refine this transform with `optimize-register`. Finally, use `register`.
 
-    >> mantis apply-affine -s source.zarr/*/*/* -t target.zarr/*/*/* -c config.yaml -o ./acq_name_registerred.zarr
+    >> mantis register -s source.zarr/*/*/* -t target.zarr/*/*/* -c config.yaml -o ./acq_name_registerred.zarr
     """
 
     # Convert string paths to Path objects
@@ -187,4 +187,4 @@ def apply_affine(
 
 
 if __name__ == "__main__":
-    apply_affine()
+    register()
