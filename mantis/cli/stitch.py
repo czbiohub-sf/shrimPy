@@ -102,7 +102,7 @@ def stitch(
         partition='preempted',
         cpus_per_task=6,
         mem_per_cpu='24G',
-        time=datetime.timedelta(minutes=10),
+        time=datetime.timedelta(minutes=30),
         output=slurm_out_path,
     )
 
