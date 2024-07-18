@@ -443,7 +443,7 @@ def consolidate_zarr_fov_shifts(
     df.to_csv(output_filepath, index=False)
 
 
-def cleanup_shifts(csv_filepath: str):
+def cleanup_shifts(csv_filepath: str, pixel_size_um: float):
     """
     Clean up outlier FOV shifts within a larger grid in case the phase cross-correlation
     between individual FOVs returned spurious results.
@@ -452,13 +452,16 @@ def cleanup_shifts(csv_filepath: str):
     Hence, the vertical shift for FOVs in a given row is replaced by the median value of all FOVs in that row.
 
     FOVs across the grid should have similar horizontal (i.e. column) shifts.
-    Values outside of the (0.05, 0.95) quantile are replaced by the median.
+    Values outside of the median +/- MAX_STAGE_ERROR_UM are replaced by the median.
 
     Parameters
     ----------
     csv_filepath : str
         Path to .csv file containing FOV shifts
     """
+    MAX_STAGE_ERROR_UM = 5
+    max_stage_error_pix = MAX_STAGE_ERROR_UM / pixel_size_um
+
     df = pd.read_csv(csv_filepath, dtype={'fov0': str, 'fov1': str})
     df['shift-x-raw'] = df['shift-x']
     df['shift-y-raw'] = df['shift-y']
@@ -467,19 +470,24 @@ def cleanup_shifts(csv_filepath: str):
     _df = df[df['direction'] == 'row']
     # group by well and last three characters of fov0
     groupby = _df.groupby(['well', _df['fov0'].str[-3:]])
-    df.loc[df['direction'] == 'row', 'shift-x'] = groupby['shift-x-raw'].transform('median')
-    df.loc[df['direction'] == 'row', 'shift-y'] = groupby['shift-y-raw'].transform('median')
+    _df.loc[:, 'shift-x'] = groupby['shift-x-raw'].transform('median')
+    _df.loc[:, 'shift-y'] = groupby['shift-y-raw'].transform('median')
+    df.loc[df['direction'] == 'row', ['shift-x', 'shift-y']] = _df[['shift-x', 'shift-y']]
 
-    # replace col shifts outside of the (0.05, 0.95) quantile with the median value
+    # replace col shifts outside of the median +/- MAX_STAGE_ERROR_UM with the median value
     _df = df[df['direction'] == 'col']
-    x_low, x_hi = _df['shift-x-raw'].quantile(0.05), _df['shift-x-raw'].quantile(0.95)
-    y_low, y_hi = _df['shift-y-raw'].quantile(0.05), _df['shift-y-raw'].quantile(0.95)
+    x_median, y_median = _df['shift-x-raw'].median(), _df['shift-y-raw'].median()
+    x_low, x_hi = x_median - max_stage_error_pix, x_median + max_stage_error_pix
+    y_low, y_hi = y_median - max_stage_error_pix, y_median + max_stage_error_pix
     x_outliers = (_df['shift-x-raw'] <= x_low) | (_df['shift-x-raw'] >= x_hi)
     y_outliers = (_df['shift-y-raw'] <= y_low) | (_df['shift-y-raw'] >= y_hi)
+    outliers = x_outliers | y_outliers
+    num_outliers = sum(outliers)
 
-    _df.loc[x_outliers, 'shift-x'] = _df['shift-x-raw'].median()
-    _df.loc[y_outliers, 'shift-y'] = _df['shift-y-raw'].median()
+    _df.loc[outliers, ['shift-x', 'shift-y']] = (x_median, y_median)
     df.loc[df['direction'] == 'col', ['shift-x', 'shift-y']] = _df[['shift-x', 'shift-y']]
+    if num_outliers > 0:
+        click.echo(f'Replaced {num_outliers} column shift outliers')
 
     df.to_csv(csv_filepath, index=False)
 

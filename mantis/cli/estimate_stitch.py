@@ -83,6 +83,15 @@ def estimate_stitch(
             channel in dataset.channel_names
         ), f"Channel {channel} not found in input zarr store"
         tcz_idx = (0, dataset.channel_names.index(channel), dataset.data.shape[-3] // 2)
+        pixel_size_um = dataset.scale[-1]
+    if pixel_size_um == 1.0:
+        response = input(
+            'The pixel size is equal to the default value of 1.0 um. ',
+            'Inaccurate pixel size will affect stitching outlier removal. ',
+            'Continue? [y/N]: ',
+        )
+        if response.lower() != 'y':
+            return
 
     # here we assume that all wells have the same fov grid
     click.echo('Indexing input zarr store')
@@ -167,7 +176,7 @@ def estimate_stitch(
         df = pd.concat(shifts, ignore_index=True)
         df.to_csv(csv_filepath, index=False)
 
-    cleanup_shifts(csv_filepath)
+    cleanup_shifts(csv_filepath, pixel_size_um)
     shifts = compute_total_translation(csv_filepath)
     write_config_file(shifts, output_filepath, channel, fliplr, flipud)
 
