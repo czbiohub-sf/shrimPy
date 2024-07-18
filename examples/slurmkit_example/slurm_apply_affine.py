@@ -25,7 +25,7 @@ from mantis.cli.utils import (
 source_position_dirpaths = '/input_source.zarr/*/*/*'
 target_position_dirpaths = '/input_target.zarr/*/*/*'
 config_filepath = (
-    '../mantis/analysis/settings/example_apply_affine_settings.yml'
+    '../mantis/analysis/settings/example_register_settings.yml'
 )
 output_dirpath = './test_output.zarr'
 

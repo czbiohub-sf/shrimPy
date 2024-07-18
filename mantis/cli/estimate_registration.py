@@ -46,7 +46,7 @@ def estimate_registration(
     Estimate the affine transform between a source (i.e. moving) and a target (i.e.
     fixed) image by selecting corresponding points in each.
 
-    The output configuration file is an input for `optimize-affine` and `apply-affine`.
+    The output configuration file is an input for `optimize-registration` and `register`.
 
     mantis estimate-registration
     -s ./acq_name_labelfree_reconstructed.zarr/0/0/0
