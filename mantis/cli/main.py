@@ -1,12 +1,12 @@
 import click
 
-from mantis.cli.register import apply_affine
 from mantis.cli.deskew import deskew
-from mantis.cli.estimate_registration import estimate_registration
 from mantis.cli.estimate_bleaching import estimate_bleaching
 from mantis.cli.estimate_deskew import estimate_deskew
+from mantis.cli.estimate_registration import estimate_registration
 from mantis.cli.estimate_stabilization import estimate_stabilization
 from mantis.cli.optimize_registration import optimize_registration
+from mantis.cli.register import apply_affine
 from mantis.cli.run_acquisition import run_acquisition
 from mantis.cli.stabilize import stabilize
 from mantis.cli.update_scale_metadata import update_scale_metadata

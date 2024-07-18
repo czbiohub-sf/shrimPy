@@ -3,13 +3,11 @@ import numpy as np
 from click.testing import CliRunner
 from numpy import testing
 
-from mantis.cli.register import rescale_voxel_size
 from mantis.cli.main import cli
+from mantis.cli.register import rescale_voxel_size
 
 
-def test_register_cli(
-    tmp_path, example_plate, example_plate_2, example_apply_affine_settings
-):
+def test_register_cli(tmp_path, example_plate, example_plate_2, example_apply_affine_settings):
     plate_path, _ = example_plate
     plate_path_2, _ = example_plate_2
     config_path, _ = example_apply_affine_settings
