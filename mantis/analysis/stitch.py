@@ -145,6 +145,7 @@ def _stitch_images(
 ) -> np.ndarray:
     """
     Stitch an array of 2D images together to create a larger composite image.
+    This function is not actively maintained.
 
     Parameters
     ----------
@@ -508,6 +509,7 @@ def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
     """
     df = pd.read_csv(csv_filepath, dtype={'fov0': str, 'fov1': str})
 
+    # create 'row' and 'col' number columns and sort the dataframe by 'fov1'
     df['row'] = df['fov1'].str[-3:].astype(int)
     df['col'] = df['fov1'].str[:3].astype(int)
     df.set_index('fov1', inplace=True)
@@ -515,10 +517,12 @@ def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
 
     total_shift = []
     for well in df['well'].unique():
+        # calculate cumulative shifts for each row and column
         _df = df[(df['direction'] == 'col') & (df['well'] == well)]
         col_shifts = _df.groupby('row')[['shift-x', 'shift-y']].cumsum()
         _df = df[(df['direction'] == 'row') & (df['well'] == well)]
         row_shifts = _df.groupby('col')[['shift-x', 'shift-y']].cumsum()
+        # total shift is the sum of row and column shifts
         _total_shift = col_shifts.add(row_shifts, fill_value=0)
 
         # add row 000000
