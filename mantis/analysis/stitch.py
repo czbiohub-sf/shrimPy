@@ -448,8 +448,11 @@ def cleanup_shifts(csv_filepath: str):
     Clean up outlier FOV shifts within a larger grid in case the phase cross-correlation
     between individual FOVs returned spurious results.
 
-    Since FOVs are acquired in snake fashion, FOVs in a given row should share the same vertial shift.
+    Since FOVs are acquired in snake fashion, FOVs in a given row should share the same vertical (i.e. row) shift.
     Hence, the vertical shift for FOVs in a given row is replaced by the median value of all FOVs in that row.
+
+    FOVs across the grid should have similar horizontal (i.e. column) shifts.
+    Values outside of the (0.05, 0.95) quantile are replaced by the median.
 
     Parameters
     ----------
@@ -466,6 +469,17 @@ def cleanup_shifts(csv_filepath: str):
     groupby = _df.groupby(['well', _df['fov0'].str[-3:]])
     df.loc[df['direction'] == 'row', 'shift-x'] = groupby['shift-x-raw'].transform('median')
     df.loc[df['direction'] == 'row', 'shift-y'] = groupby['shift-y-raw'].transform('median')
+
+    # replace col shifts outside of the (0.05, 0.95) quantile with the median value
+    _df = df[df['direction'] == 'col']
+    x_low, x_hi = _df['shift-x-raw'].quantile(0.05), _df['shift-x-raw'].quantile(0.95)
+    y_low, y_hi = _df['shift-y-raw'].quantile(0.05), _df['shift-y-raw'].quantile(0.95)
+    x_outliers = (_df['shift-x-raw'] <= x_low) | (_df['shift-x-raw'] >= x_hi)
+    y_outliers = (_df['shift-y-raw'] <= y_low) | (_df['shift-y-raw'] >= y_hi)
+
+    _df.loc[x_outliers, 'shift-x'] = _df['shift-x-raw'].median()
+    _df.loc[y_outliers, 'shift-y'] = _df['shift-y-raw'].median()
+    df.loc[df['direction'] == 'col', ['shift-x', 'shift-y']] = _df[['shift-x', 'shift-y']]
 
     df.to_csv(csv_filepath, index=False)
 
