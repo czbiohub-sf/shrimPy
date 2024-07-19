@@ -1,5 +1,6 @@
 import click
 
+from mantis.cli.concatenate import concatenate
 from mantis.cli.deskew import deskew
 from mantis.cli.estimate_bleaching import estimate_bleaching
 from mantis.cli.estimate_deskew import estimate_deskew
@@ -33,5 +34,6 @@ cli.add_command(estimate_registration)
 cli.add_command(optimize_registration)
 cli.add_command(register)
 cli.add_command(update_scale_metadata)
+cli.add_command(concatenate)
 cli.add_command(estimate_stabilization)
 cli.add_command(stabilize)
