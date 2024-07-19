@@ -69,6 +69,37 @@ class RegistrationSettings(MyBaseModel):
         return v
 
 
+class ConcatenateSettings(MyBaseModel):
+    concat_data_paths: list[str]
+    time_indices: Union[int, list[int], Literal["all"]] = "all"
+    channel_names: list[Union[str, list[str]]]
+    X_slice: Union[list[int], Literal["all"]] = "all"
+    Y_slice: Union[list[int], Literal["all"]] = "all"
+    Z_slice: Union[list[int], Literal["all"]] = "all"
+
+    @validator("concat_data_paths")
+    def check_concat_data_paths(cls, v):
+        if not isinstance(v, list) or not all(isinstance(path, str) for path in v):
+            raise ValueError("concat_data_paths must be a list of positions.")
+        return v
+
+    @validator("channel_names")
+    def check_channel_names(cls, v):
+        if not isinstance(v, list) or not all(isinstance(name, (str, list)) for name in v):
+            raise ValueError("channel_names must be a list of strings or lists of strings.")
+        return v
+
+    @validator("X_slice", "Y_slice", "Z_slice")
+    def check_slices(cls, v):
+        if v != 'all' and (
+            not isinstance(v, list)
+            or len(v) != 2
+            or not all(isinstance(i, int) and i >= 0 for i in v)
+        ):
+            raise ValueError("Slices must be 'all' or lists of two non-negative integers.")
+        return v
+
+
 class StabilizationSettings(MyBaseModel):
     stabilization_estimation_channel: str
     stabilization_type: Literal["z", "xy", "xyz"]
