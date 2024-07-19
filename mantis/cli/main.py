@@ -1,7 +1,7 @@
 import click
 
 from mantis.cli.apply_affine import apply_affine
-from mantis.cli.concat_datasets import concatenate
+from mantis.cli.concatenate import concatenate
 from mantis.cli.deskew import deskew
 from mantis.cli.estimate_affine import estimate_affine
 from mantis.cli.estimate_bleaching import estimate_bleaching
