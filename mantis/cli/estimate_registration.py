@@ -48,10 +48,7 @@ def estimate_registration(
 
     The output configuration file is an input for `optimize-registration` and `register`.
 
-    mantis estimate-registration
-    -s ./acq_name_labelfree_reconstructed.zarr/0/0/0
-    -t ./acq_name_lightsheet_deskewed.zarr/0/0/0
-    -o ./output.yml
+    >> mantis estimate-registration -s ./acq_name_labelfree_reconstructed.zarr/0/0/0 -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 -o ./output.yml
     -x  flag to use similarity transform (rotation, translation, scaling) default:Eucledian (rotation, translation)
     """
 
