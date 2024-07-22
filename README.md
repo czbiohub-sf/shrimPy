@@ -96,23 +96,22 @@ recorder reconstruct \
     -c ./recon.yml \
     -o ./acq_name_labelfree_reconstructed.zarr
 
-# TODO: rename function calls as below
 # REGISTER
 # estimate registration parameters
 mantis estimate-registration \
-    --input-source ./acq_name_labelfree_reconstructed.zarr/0/0/0 \
-    --input-target ./acq_name_lightsheet_deskewed.zarr/0/0/0 \
+    -s ./acq_name_labelfree_reconstructed.zarr/0/0/0 \
+    -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 \
     -o ./register.yml
 # optimize registration parameters
 mantis optimize-registration \
-    --input-source ./acq_name_labelfree_reconstructed.zarr/0/0/0 \
-    --input-target ./acq_name_lightsheet_deskewed.zarr/0/0/0 \
+    -s ./acq_name_labelfree_reconstructed.zarr/0/0/0 \
+    -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 \
     -c ./register.yml \
     -o ./register_optimized.yml
 # register data
 mantis register \
-    --input-source ./acq_name_labelfree_reconstructed.zarr/*/*/* \
-    --input-target ./acq_name_lightsheet_deskewed.zarr/*/*/* \
+    -s ./acq_name_labelfree_reconstructed.zarr/*/*/* \
+    -t ./acq_name_lightsheet_deskewed.zarr/*/*/* \
     -c ./register_optimized.yml \
     -o ./acq_name_registered.zarr
 ```
