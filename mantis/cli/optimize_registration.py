@@ -49,7 +49,7 @@ def optimize_registration(
 
     Start by generating an initial affine transform with `estimate-registration`.
 
-    mantis optimize-registration -s ./acq_name_virtual_staining_reconstructed.zarr/0/0/0 -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 -c ./transform.yml -o ./optimized_transform.yml -d -v
+    >> mantis optimize-registration -s ./acq_name_virtual_staining_reconstructed.zarr/0/0/0 -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 -c ./transform.yml -o ./optimized_transform.yml -d -v
     """
 
     settings = yaml_to_model(config_filepath, RegistrationSettings)
