@@ -1,3 +1,5 @@
+import warnings
+
 from typing import Literal, Optional, Union
 
 import numpy as np
@@ -8,6 +10,11 @@ from pydantic import BaseModel, Extra, NonNegativeInt, PositiveFloat, PositiveIn
 # All settings classes inherit from MyBaseModel, which forbids extra parameters to guard against typos
 class MyBaseModel(BaseModel, extra=Extra.forbid):
     pass
+
+
+class ProcessingSettings(MyBaseModel):
+    fliplr: Optional[bool] = False
+    flipud: Optional[bool] = False
 
 
 class DeskewSettings(MyBaseModel):
@@ -118,3 +125,27 @@ class StabilizationSettings(MyBaseModel):
                 raise ValueError("Each element in affine_transform_list must be a 4x4 ndarray")
 
         return v
+
+
+class StitchSettings(MyBaseModel):
+    channels: Optional[list[str]] = None
+    preprocessing: Optional[ProcessingSettings] = None
+    postprocessing: Optional[ProcessingSettings] = None
+    column_translation: Optional[list[float, float]] = None
+    row_translation: Optional[list[float, float]] = None
+    total_translation: Optional[dict[str, list[float, float]]] = None
+
+    def __init__(self, **data):
+        if data.get("total_translation") is None:
+            if any(
+                (data.get("column_translation") is None, data.get("row_translation") is None)
+            ):
+                raise ValueError(
+                    "If total_translation is not provided, both column_translation and row_translation must be provided"
+                )
+            else:
+                warnings.warn(
+                    "column_translation and row_translation are deprecated. Use total_translation instead.",
+                    DeprecationWarning,
+                )
+        super().__init__(**data)
