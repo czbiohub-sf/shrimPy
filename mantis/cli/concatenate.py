@@ -126,10 +126,16 @@ def concatenate(config_filepath: str, output_dirpath: str, num_processes: int):
     if cropped_shape_zyx[0] > Z or cropped_shape_zyx[1] > Y or cropped_shape_zyx[2] > X:
         raise ValueError("The cropped shape is larger than the original shape.")
 
+    # TODO: make assertion for chunk size?
+    if settings.chunks_czyx is not None:
+        chunk_size = [1] + list(settings.chunks_czyx)
+    else:
+        chunk_size = settings.chunks_czyx
+
     # Logic for creation of zarr and metadata
     output_metadata = {
         "shape": (len(time_indices), len(all_channel_names)) + tuple(cropped_shape_zyx),
-        "chunks": None,
+        "chunks": chunk_size,
         "scale": (1,) * 2 + tuple(output_voxel_size),
         "channel_names": all_channel_names,
         "dtype": np.float32,
