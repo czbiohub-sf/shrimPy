@@ -83,6 +83,7 @@ class ConcatenateSettings(MyBaseModel):
     X_slice: Union[list[int], Literal["all"]] = "all"
     Y_slice: Union[list[int], Literal["all"]] = "all"
     Z_slice: Union[list[int], Literal["all"]] = "all"
+    chunks_czyx: Union[Literal[None], list[int]] = None
 
     @validator("concat_data_paths")
     def check_concat_data_paths(cls, v):
@@ -104,6 +105,14 @@ class ConcatenateSettings(MyBaseModel):
             or not all(isinstance(i, int) and i >= 0 for i in v)
         ):
             raise ValueError("Slices must be 'all' or lists of two non-negative integers.")
+        return v
+
+    @validator("chunks_czyx")
+    def check_chunk_size(cls, v):
+        if v is not None and (
+            not isinstance(v, list) or len(v) != 4 or not all(isinstance(i, int) for i in v)
+        ):
+            raise ValueError("chunks_czyx must be a list of 4 integers (C, Z, Y, X)")
         return v
 
 
