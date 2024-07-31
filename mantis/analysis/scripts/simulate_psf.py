@@ -3,12 +3,14 @@
 # otf = optical transfer function
 # psf = point spread function
 
-from waveorder.models.isotropic_fluorescent_thick_3d import calculate_transfer_function
-from mantis.analysis.deskew import _deskew_matrix
-import scipy
-import numpy as np
-import torch
 import napari
+import numpy as np
+import scipy
+import torch
+
+from waveorder.models.isotropic_fluorescent_thick_3d import calculate_transfer_function
+
+from mantis.analysis.deskew import _deskew_matrix
 
 
 def _apply_centered_affine(zyx_array, M):

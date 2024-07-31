@@ -1,6 +1,7 @@
 # %%
 import gc
 import time
+import warnings
 
 from pathlib import Path
 
@@ -8,18 +9,13 @@ import cupy as cp
 import napari
 import numpy as np
 import torch
-import warnings
 
 from cupyx.scipy.ndimage import affine_transform
 from iohub.ngff_meta import TransformationMeta
-from iohub.reader import open_ome_zarr, read_micromanager
-from pycromanager import Acquisition, multi_d_acquisition_events, Core
+from iohub.reader import open_ome_zarr
+from pycromanager import Acquisition, Core, multi_d_acquisition_events
 
-from mantis.acquisition.microscope_operations import (
-    acquire_defocus_stack,
-    setup_kim101_stage
-)
-
+from mantis.acquisition.microscope_operations import acquire_defocus_stack
 from mantis.analysis.AnalysisSettings import DeskewSettings
 from mantis.analysis.analyze_psf import (
     analyze_psf,
@@ -65,11 +61,13 @@ deskew_bead_detection_settings = {
     "device": "cuda" if torch.cuda.is_available() else "cpu",
 }
 
+
 def check_acquisition_directory(root_dir: Path, acq_name: str, suffix='', idx=1) -> Path:
     acq_dir = root_dir / f'{acq_name}_{idx}{suffix}'
     if acq_dir.exists():
         return check_acquisition_directory(root_dir, acq_name, suffix, idx + 1)
     return acq_dir
+
 
 mmc = Core()
 
@@ -86,7 +84,7 @@ date = '2024_05_07'
 # dataset = f'{date}_epi_O1_benchmark'
 # dataset = f'{date}_LS_Oryx_epi_illum'
 # dataset =  f'{date}_LS_Oryx_LS_illum'
-dataset =  f'{date}_LS_benchmark'
+dataset = f'{date}_LS_benchmark'
 
 # epi settings
 # z_stage = 'PiezoStage:Q:35'
@@ -112,8 +110,10 @@ z_range = (-31, 49)  # in um
 # pixel_size = 0.116  # in um
 pixel_size = 6.5 / 40 / 1.4  # in um, no binning
 axis_labels = ("SCAN", "TILT", "COVERSLIP")
+step_per_um = None
 
 # ls straight  settings
+# from mantis.acquisition.microscope_operations import setup_kim101_stage
 # z_stage = setup_kim101_stage('74000291')
 # step_per_um = 35  # matches ~30 nm per step quoted in PIA13 specs
 # z_start = 0 / step_per_um  # in um

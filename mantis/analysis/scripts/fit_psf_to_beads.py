@@ -1,16 +1,18 @@
 # %%
 import gc
+import time
+
 import napari
 import numpy as np
-import time
 import torch
+
+from iohub import read_micromanager
+from waveorder import optics
+from waveorder.models.isotropic_fluorescent_thick_3d import apply_inverse_transfer_function
 
 from mantis.analysis.analyze_psf import detect_peaks, extract_beads
 from mantis.analysis.deskew import _deskew_matrix
 from mantis.analysis.scripts.simulate_psf import _apply_centered_affine
-from iohub import read_micromanager
-from waveorder import optics
-from waveorder.models.isotropic_fluorescent_thick_3d import apply_inverse_transfer_function
 
 # %% Load beads (from ndtiff for now)
 data_dir = (
@@ -63,8 +65,6 @@ normalized_bzyx_data = bzyx_data / np.max(bzyx_data, axis=(-3, -2, -1))[:, None,
 average_psf = np.mean(normalized_bzyx_data, axis=0)
 
 # %% View PSFs
-import napari
-
 v = napari.Viewer()
 v.add_image(normalized_bzyx_data)
 v.add_image(average_psf)
@@ -190,7 +190,7 @@ print(params[min_idx])
 # %% Crop data for prototyping deconvolution
 stc_data = stc_data[:200, :200, :500]
 
-# %% 
+# %%
 
 # Simple background subtraction and normalization
 average_psf -= np.min(average_psf)
@@ -199,7 +199,9 @@ average_psf /= np.max(average_psf)
 # %%
 zyx_padding = np.array(stc_data.shape) - np.array(average_psf.shape)
 pad_width = [(x // 2, x // 2) if x % 2 == 0 else (x // 2, x // 2 + 1) for x in zyx_padding]
-padded_average_psf = np.pad(average_psf, pad_width=pad_width, mode="constant", constant_values=0)
+padded_average_psf = np.pad(
+    average_psf, pad_width=pad_width, mode="constant", constant_values=0
+)
 transfer_function = np.abs(np.fft.fftn(padded_average_psf))
 transfer_function /= np.max(transfer_function)
 print(transfer_function.shape)
@@ -207,13 +209,14 @@ print(transfer_function.shape)
 # %%
 
 # %%
-stc_data_deconvolved = apply_inverse_transfer_function(torch.tensor(stc_data), torch.tensor(transfer_function), 0, regularization_strength=1e-3)
+stc_data_deconvolved = apply_inverse_transfer_function(
+    torch.tensor(stc_data), torch.tensor(transfer_function), 0, regularization_strength=1e-3
+)
 
 v = napari.Viewer()
 v.add_image(padded_average_psf)
 v.add_image(stc_data)
 v.add_image(stc_data_deconvolved.numpy())
-
 
 
 # %%

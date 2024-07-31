@@ -1,19 +1,21 @@
+from pathlib import Path
+from typing import List
+
 import click
 import numpy as np
 import torch
 
-from typing import List
-from mantis.cli.parsing import (
-    input_position_dirpaths,
-    config_filepath,
-    output_dirpath,
-    _str_to_path,
-)
-from mantis.analysis.AnalysisSettings import DeconvolveSettings
-from mantis.cli.utils import yaml_to_model, create_empty_hcs_zarr
 from iohub import open_ome_zarr
-from pathlib import Path
 from waveorder.models.isotropic_fluorescent_thick_3d import apply_inverse_transfer_function
+
+from mantis.analysis.AnalysisSettings import DeconvolveSettings
+from mantis.cli.parsing import (
+    _str_to_path,
+    config_filepath,
+    input_position_dirpaths,
+    output_dirpath,
+)
+from mantis.cli.utils import create_empty_hcs_zarr, yaml_to_model
 
 
 def apply_deconvolve_single_position(
@@ -56,7 +58,7 @@ def apply_deconvolve_single_position(
             "Consider resampling the PSF."
         )
 
-    for t in range(1):#T):
+    for t in range(1):  # T):
         for c in range(C):
             zyx_data = input_dataset["0"][t, c]
 
@@ -103,7 +105,7 @@ def deconvolve(
     config_filepath = Path(config_filepath)
 
     # Create output zarr store
-    click.echo(f"Creating empty output zarr...")
+    click.echo("Creating empty output zarr...")
     with open_ome_zarr(str(input_position_dirpaths[0]), mode="r") as input_dataset:
         create_empty_hcs_zarr(
             store_path=output_dirpath,

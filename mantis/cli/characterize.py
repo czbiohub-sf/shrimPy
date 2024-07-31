@@ -1,20 +1,23 @@
-import click
-import time
 import gc
-import torch
+import time
 import warnings
 
-from iohub.ngff import open_ome_zarr
 from typing import List
+
+import click
+import torch
+
+from iohub.ngff import open_ome_zarr
+
 from mantis.analysis.AnalysisSettings import CharacterizeSettings
-from mantis.cli.parsing import input_position_dirpaths, output_dirpath, config_filepath
-from mantis.cli.utils import yaml_to_model
 from mantis.analysis.analyze_psf import (
+    analyze_psf,
     detect_peaks,
     extract_beads,
-    analyze_psf,
     generate_report,
 )
+from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
+from mantis.cli.utils import yaml_to_model
 
 
 @click.command()
@@ -31,7 +34,7 @@ def characterize(
 
     >> mantis characterize -i ./beads.zarr/*/*/* -c ./characterize_params.yml -o ./
     """
-    click.echo(f"Loading data...")
+    click.echo("Loading data...")
     with open_ome_zarr(str(input_position_dirpaths[0]), mode="r") as input_dataset:
         T, C, Z, Y, X = input_dataset.data.shape
         zyx_data = input_dataset["0"][0, 0]
@@ -42,7 +45,7 @@ def characterize(
     settings_dict = settings.dict()
     axis_labels = settings_dict.pop("axis_labels")
 
-    click.echo(f"Detecting peaks...")
+    click.echo("Detecting peaks...")
     t1 = time.time()
     peaks = detect_peaks(
         zyx_data,
@@ -61,7 +64,7 @@ def characterize(
         scale=zyx_scale,
     )
 
-    click.echo(f"Analyzing PSFs...")
+    click.echo("Analyzing PSFs...")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         df_gaussian_fit, df_1d_peak_width = analyze_psf(

@@ -1,10 +1,13 @@
 # %%
 import warnings
+
 import napari
-import torch
 import numpy as np
+import torch
+
 from waveorder import optics
-from mantis.analysis.analyze_psf import analyze_psf, extract_beads, detect_peaks
+
+from mantis.analysis.analyze_psf import analyze_psf, detect_peaks, extract_beads
 
 
 # %% Generate simulated PSF library

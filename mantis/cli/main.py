@@ -1,16 +1,16 @@
 import click
 
 from mantis.cli.apply_affine import apply_affine
+from mantis.cli.characterize import characterize
+from mantis.cli.deconvolve import deconvolve
 from mantis.cli.deskew import deskew
 from mantis.cli.estimate_affine import estimate_affine
 from mantis.cli.estimate_bleaching import estimate_bleaching
 from mantis.cli.estimate_deskew import estimate_deskew
 from mantis.cli.optimize_affine import optimize_affine
+from mantis.cli.psf_from_beads import psf_from_beads
 from mantis.cli.run_acquisition import run_acquisition
 from mantis.cli.update_scale_metadata import update_scale_metadata
-from mantis.cli.psf_from_beads import psf_from_beads
-from mantis.cli.deconvolve import deconvolve
-from mantis.cli.characterize import characterize
 
 CONTEXT = {"help_option_names": ["-h", "--help"]}
 
