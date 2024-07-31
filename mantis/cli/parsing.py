@@ -9,7 +9,9 @@ from natsort import natsorted
 from mantis.cli.option_eat_all import OptionEatAll
 
 
-def _validate_and_process_paths(ctx: click.Context, opt: click.Option, value: str) -> None:
+def _validate_and_process_paths(
+    ctx: click.Context, opt: click.Option, value: str
+) -> list[Path]:
     # Sort and validate the input paths
     input_paths = [Path(path) for path in natsorted(value)]
     for path in input_paths:
@@ -105,6 +107,7 @@ def output_filepath() -> Callable:
             "-o",
             required=True,
             type=click.Path(exists=False, file_okay=True, dir_okay=False),
+            callback=_str_to_path,
             help="Path to output file",
         )(f)
 

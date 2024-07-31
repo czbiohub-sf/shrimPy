@@ -264,10 +264,12 @@ def find_lir(registered_zyx: np.ndarray, plot: bool = False) -> Tuple:
     X_slice = slice(rectangle_xy.min(axis=0)[0], rectangle_xy.max(axis=0)[0])
     Y_slice = slice(rectangle_xy.min(axis=0)[1], rectangle_xy.max(axis=0)[1])
 
-    # Find the lir Z
+    # NOTE: this method assumes the center of the image is representative of the center of the object to estimate the LIR in Z
+    # Find the lir Z using ZX
     zyx_shape = registered_zyx.shape
-    registered_zx_bool = registered_zyx.transpose((2, 0, 1)) > 0
-    registered_zx_bool = registered_zx_bool[zyx_shape[0] // 2].copy()
+    registered_zxy_bool = registered_zyx.transpose((2, 0, 1)) > 0
+    # Take middle X-slice to find the LIR for Z.
+    registered_zx_bool = registered_zxy_bool[zyx_shape[-1] // 2].copy()
     rectangle_coords_zx = lir.lir(registered_zx_bool)
     x = rectangle_coords_zx[0]
     z = rectangle_coords_zx[1]

@@ -1,0 +1,7 @@
+concat_data_paths: ["/path/to/data.zarr/*/*/*","/path/to/data2.zarr/*/*/*"]
+time_indices: all  # replace "all" with e.g. "[0, 1, 2]"" for cropping
+channel_names: [all,all]  # replace "all" with e.g. "[['Retardance', 'Orientation'], all]" for cropping
+X_slice: all  # replace "all" with e.g. "[0, 100]" for cropping
+Y_slice: all  # replace "all" with e.g. "[0, 100]" for cropping
+Z_slice: all  # replace "all" with e.g. "[0, 100]" for cropping
+chunks_czyx: null  # replace "null" with e.g. "[1, 100, 100, 100]" for desired chunking [C,Z,Y,X]
