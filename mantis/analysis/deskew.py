@@ -187,7 +187,7 @@ def deskew_data(
     keep_overhang: bool,
     average_n_slices: int = 1,
     device='cpu',
-):
+) -> np.ndarray:
     """Deskews fluorescence data from the mantis microscope
     Parameters
     ----------

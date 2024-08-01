@@ -1,27 +1,20 @@
 # %%
-import time
-
 from pathlib import Path
 
-import cupy as cp
 import napari
 import numpy as np
 import torch
 
-from cupyx.scipy.ndimage import affine_transform
 from iohub.ngff_meta import TransformationMeta
 from iohub.reader import open_ome_zarr
 from pycromanager import Acquisition, Core, multi_d_acquisition_events
 
 from mantis.acquisition.microscope_operations import acquire_defocus_stack
-from mantis.analysis.AnalysisSettings import CharacterizeSettings, DeskewSettings
-from mantis.analysis.deskew import (
-    _average_n_slices,
-    _get_transform_matrix,
-    get_deskewed_data_shape,
-)
+from mantis.analysis.AnalysisSettings import CharacterizeSettings
+from mantis.analysis.deskew import deskew_data, get_deskewed_data_shape
 from mantis.cli.characterize import characterize_peaks
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
 epi_bead_detection_settings = {
     "block_size": (8, 8, 8),
     "blur_kernel_size": 3,
@@ -29,7 +22,7 @@ epi_bead_detection_settings = {
     "threshold_abs": 200.0,
     "max_num_peaks": 500,
     "exclude_border": (5, 5, 5),
-    "device": "cuda" if torch.cuda.is_available() else "cpu",
+    "device": device,
 }
 
 ls_bead_detection_settings = {
@@ -40,7 +33,7 @@ ls_bead_detection_settings = {
     "threshold_abs": 200.0,
     "max_num_peaks": 2000,
     "exclude_border": (5, 10, 5),
-    "device": "cuda" if torch.cuda.is_available() else "cpu",
+    "device": device,
 }
 
 deskew_bead_detection_settings = {
@@ -51,7 +44,7 @@ deskew_bead_detection_settings = {
     "threshold_abs": 200.0,
     "max_num_peaks": 500,
     "exclude_border": (5, 5, 5),
-    "device": "cuda" if torch.cuda.is_available() else "cpu",
+    "device": device,
 }
 
 
@@ -220,71 +213,41 @@ if view:
 output_zarr_path = data_dir / (dataset + '_deskewed.zarr')
 
 if raw and deskew:
-    # deskew
+    # chunk data so that it fits in the GPU memory
+    # should not be necessary on the mantis GPU
     num_chunks = 4
     chunked_data = np.split(zyx_data, num_chunks, axis=-1)
-    chunk_shape = chunked_data[0].shape
 
-    settings = DeskewSettings(
+    deskew_settings = {
+        "ls_angle_deg": 30,
+        "px_to_scan_ratio": round(scale[-1] / scale[-3], 3),
+        "keep_overhang": True,
+        "average_n_slices": 3,
+    }
+
+    deskewed_shape, deskewed_voxel_size = get_deskewed_data_shape(
+        raw_data_shape=zyx_data.shape,
         pixel_size_um=scale[-1],
-        ls_angle_deg=30,
-        scan_step_um=scale[-3],
-        keep_overhang=True,
-        average_n_slices=3,
+        **deskew_settings,
     )
 
-    t1 = time.time()
-    deskewed_shape, _ = get_deskewed_data_shape(
-        chunk_shape,
-        settings.ls_angle_deg,
-        settings.px_to_scan_ratio,
-        settings.keep_overhang,
-    )
-
-    matrix = _get_transform_matrix(
-        chunk_shape,
-        settings.ls_angle_deg,
-        settings.px_to_scan_ratio,
-        settings.keep_overhang,
-    )
-
-    matrix_gpu = cp.asarray(matrix)
     deskewed_chunks = []
     for chunk in chunked_data:
-        deskewed_data_gpu = affine_transform(
-            cp.asarray(chunk),
-            matrix_gpu,
-            output_shape=deskewed_shape,
-            order=1,
-            cval=80,
+        deskewed_chunks.append(
+            deskew_data(
+                chunk,
+                device=device,
+                **deskew_settings,
+            )
         )
-        deskewed_chunks.append(cp.asnumpy(deskewed_data_gpu))
-        del deskewed_data_gpu
-    cp._default_memory_pool.free_all_blocks()
 
     # concatenate arrays in reverse order
-    # identical to cpu deskew using ndi.affine_transform
     deskewed_data = np.concatenate(deskewed_chunks[::-1], axis=-2)
-
-    averaged_deskewed_data = _average_n_slices(
-        deskewed_data, average_window_width=settings.average_n_slices
-    )
-
-    deskewed_shape, voxel_size = get_deskewed_data_shape(
-        zyx_data.shape,
-        settings.ls_angle_deg,
-        settings.px_to_scan_ratio,
-        settings.keep_overhang,
-        settings.average_n_slices,
-        settings.pixel_size_um,
-    )
-    t2 = time.time()
-    print(f'Time to deskew: {t2-t1: .2f} seconds')
 
     # Characterize deskewed peaks
     deskewed_peaks = characterize_peaks(
-        zyx_data=averaged_deskewed_data,
-        zyx_scale=voxel_size,
+        zyx_data=deskewed_data,
+        zyx_scale=deskewed_voxel_size,
         settings=CharacterizeSettings(
             **deskew_bead_detection_settings,
             axis_labels=('Z', 'Y', 'X'),
@@ -294,23 +257,23 @@ if raw and deskew:
         input_dataset_name=dataset,
     )
 
+    # deskewed_beads, deskewed_offsets = extract_beads(
+    #     zyx_data=deskewed_data,
+    #     points=deskewed_peaks,
+    #     scale=scale,  ## Looks like there was a bug with the scale here, patch size may need retuning
+    # )
+
     if view:
         viewer2 = napari.Viewer()
-        viewer2.add_image(averaged_deskewed_data)
+        viewer2.add_image(deskewed_data)
         viewer2.add_points(
             deskewed_peaks, name='peaks local max', size=12, symbol='ring', edge_color='yellow'
         )
 
-    # deskewed_beads, deskewed_offsets = extract_beads(
-    #     zyx_data=averaged_deskewed_data,
-    #     points=deskewed_peaks,
-    #     scale=scale,  ## Looks like a bug
-    # )
-
     # Save to zarr store
     transform = TransformationMeta(
         type="scale",
-        scale=2 * (1,) + voxel_size,
+        scale=2 * (1,) + deskewed_voxel_size,
     )
 
     with open_ome_zarr(
@@ -319,7 +282,7 @@ if raw and deskew:
         pos = output_dataset.create_position('0', '0', '0')
         pos.create_image(
             name="0",
-            data=averaged_deskewed_data[None, None, ...],
+            data=deskewed_data[None, None, ...],
             chunks=(1, 1, 50) + deskewed_shape[1:],  # may be bigger than 500 MB
             transform=[transform],
         )
