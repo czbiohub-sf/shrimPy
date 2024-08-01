@@ -96,6 +96,7 @@ class CharacterizeSettings(MyBaseModel):
     max_num_peaks: NonNegativeInt = 2000
     exclude_border: list[NonNegativeInt] = (5, 10, 5)
     device: str = "cuda"
+    patch_size: tuple[PositiveFloat, PositiveFloat, PositiveFloat] | None = None
     axis_labels: list[str] = ["AXIS0", "AXIS1", "AXIS2"]
 
     @validator("device")

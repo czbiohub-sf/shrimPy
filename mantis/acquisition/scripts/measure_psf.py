@@ -1,7 +1,5 @@
 # %%
-import gc
 import time
-import warnings
 
 from pathlib import Path
 
@@ -16,18 +14,13 @@ from iohub.reader import open_ome_zarr
 from pycromanager import Acquisition, Core, multi_d_acquisition_events
 
 from mantis.acquisition.microscope_operations import acquire_defocus_stack
-from mantis.analysis.AnalysisSettings import DeskewSettings
-from mantis.analysis.analyze_psf import (
-    analyze_psf,
-    detect_peaks,
-    extract_beads,
-    generate_report,
-)
+from mantis.analysis.AnalysisSettings import CharacterizeSettings, DeskewSettings
 from mantis.analysis.deskew import (
     _average_n_slices,
     _get_transform_matrix,
     get_deskewed_data_shape,
 )
+from mantis.cli.characterize import characterize_peaks
 
 epi_bead_detection_settings = {
     "block_size": (8, 8, 8),
@@ -196,22 +189,23 @@ else:
     z_stage.close()
 
 raw = False
+patch_size = (scale[0] * 15, scale[1] * 18, scale[2] * 18)
 if axis_labels == ("SCAN", "TILT", "COVERSLIP"):
     raw = True
+    patch_size = (scale[0] * 30, scale[1] * 36, scale[2] * 18)
 
-# %% Detect peaks
+# %% Characterize peaks
 
-t1 = time.time()
-peaks = detect_peaks(
-    zyx_data,
-    # **epi_bead_detection_settings,
-    **ls_bead_detection_settings,
-    verbose=True,
+peaks = characterize_peaks(
+    zyx_data=zyx_data,
+    zyx_scale=scale,
+    settings=CharacterizeSettings(
+        **ls_bead_detection_settings, axis_labels=axis_labels, patch_size=patch_size
+    ),
+    output_report_path=data_dir / (dataset + '_psf_analysis'),
+    input_dataset_path=data_dir,
+    input_dataset_name=dataset,
 )
-gc.collect()
-torch.cuda.empty_cache()
-t2 = time.time()
-print(f'Time to detect peaks: {t2-t1}')
 
 # %% Visualize in napari
 
@@ -222,46 +216,8 @@ if view:
         peaks, name='peaks local max', size=12, symbol='ring', edge_color='yellow'
     )
 
-# %% Extract and analyze bead patches
-
-t1 = time.time()
-if raw:
-    patch_size = (scale[0] * 30, scale[1] * 36, scale[2] * 18)
-else:
-    patch_size = (scale[0] * 15, scale[1] * 18, scale[2] * 18)
-beads, offsets = extract_beads(
-    zyx_data=zyx_data,
-    points=peaks,
-    scale=scale,
-    patch_size=patch_size,
-)
-
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore")
-    df_gaussian_fit, df_1d_peak_width = analyze_psf(
-        zyx_patches=beads,
-        bead_offsets=offsets,
-        scale=scale,
-    )
-t2 = time.time()
-print(f'Time to analyze PSFs: {t2-t1}')
-
-# Generate HTML report
-
-psf_analysis_path = data_dir / (dataset + '_psf_analysis')
-generate_report(
-    psf_analysis_path,
-    data_dir,
-    dataset,
-    beads,
-    peaks,
-    df_gaussian_fit,
-    df_1d_peak_width,
-    scale,
-    axis_labels,
-)
-
 # %% Deskew data and analyze
+output_zarr_path = data_dir / (dataset + '_deskewed.zarr')
 
 if raw and deskew:
     # deskew
@@ -325,17 +281,18 @@ if raw and deskew:
     t2 = time.time()
     print(f'Time to deskew: {t2-t1: .2f} seconds')
 
-    # detect peaks again :(
-    t1 = time.time()
-    deskewed_peaks = detect_peaks(
-        averaged_deskewed_data,
-        **deskew_bead_detection_settings,
-        verbose=True,
+    # Characterize deskewed peaks
+    deskewed_peaks = characterize_peaks(
+        zyx_data=averaged_deskewed_data,
+        zyx_scale=voxel_size,
+        settings=CharacterizeSettings(
+            **deskew_bead_detection_settings,
+            axis_labels=('Z', 'Y', 'X'),
+        ),
+        output_report_path=data_dir / (dataset + '_deskewed_psf_analysis'),
+        input_dataset_path=output_zarr_path,
+        input_dataset_name=dataset,
     )
-    gc.collect()
-    torch.cuda.empty_cache()
-    t2 = time.time()
-    print(f'Time to detect deskewed peaks: {t2-t1: .2f} seconds')
 
     if view:
         viewer2 = napari.Viewer()
@@ -344,36 +301,11 @@ if raw and deskew:
             deskewed_peaks, name='peaks local max', size=12, symbol='ring', edge_color='yellow'
         )
 
-    deskewed_beads, deskewed_offsets = extract_beads(
-        zyx_data=averaged_deskewed_data,
-        points=deskewed_peaks,
-        scale=scale,
-    )
-
-    t1 = time.time()
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        df_deskewed_gaussian_fit, df_deskewed_1d_peak_width = analyze_psf(
-            zyx_patches=deskewed_beads,
-            bead_offsets=deskewed_offsets,
-            scale=voxel_size,
-        )
-    t2 = time.time()
-    print(f'Time to analyze deskewed PSFs: {t2-t1: .2f} seconds')
-
-    output_zarr_path = data_dir / (dataset + '_deskewed.zarr')
-    report_path = data_dir / (dataset + '_deskewed_psf_analysis')
-    generate_report(
-        report_path,
-        output_zarr_path,
-        dataset,
-        deskewed_beads,
-        deskewed_peaks,
-        df_deskewed_gaussian_fit,
-        df_deskewed_1d_peak_width,
-        voxel_size,
-        ('Z', 'Y', 'X'),
-    )
+    # deskewed_beads, deskewed_offsets = extract_beads(
+    #     zyx_data=averaged_deskewed_data,
+    #     points=deskewed_peaks,
+    #     scale=scale,  ## Looks like a bug
+    # )
 
     # Save to zarr store
     transform = TransformationMeta(

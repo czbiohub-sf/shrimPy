@@ -31,6 +31,7 @@ def characterize_peaks(
     input_dataset_name: str,
 ):
     settings_dict = settings.dict()
+    patch_size = settings_dict.pop("patch_size")
     axis_labels = settings_dict.pop("axis_labels")
 
     click.echo("Detecting peaks...")
@@ -50,6 +51,7 @@ def characterize_peaks(
         zyx_data=zyx_data,
         points=peaks,
         scale=zyx_scale,
+        patch_size=patch_size,
     )
 
     click.echo("Analyzing PSFs...")
