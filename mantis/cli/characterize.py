@@ -85,7 +85,7 @@ def characterize_peaks(
 @input_position_dirpaths()
 @config_filepath()
 @output_dirpath()
-def characterize_cli(
+def characterize(
     input_position_dirpaths: List[str],
     config_filepath: str,
     output_dirpath: str,
