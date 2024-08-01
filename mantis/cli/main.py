@@ -1,6 +1,6 @@
 import click
 
-from mantis.cli.characterize import characterize_cli
+from mantis.cli.characterize import characterize
 from mantis.cli.concatenate import concatenate
 from mantis.cli.deconvolve import deconvolve
 from mantis.cli.deskew import deskew
@@ -46,4 +46,4 @@ cli.add_command(estimate_stabilization)
 cli.add_command(stabilize)
 cli.add_command(psf_from_beads)
 cli.add_command(deconvolve)
-cli.add_command(characterize_cli, name='characterize')
+cli.add_command(characterize)

@@ -22,7 +22,7 @@ from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_
 from mantis.cli.utils import yaml_to_model
 
 
-def characterize(
+def characterize_peaks(
     zyx_data: np.ndarray,
     zyx_scale: tuple[float, float, float],
     settings: CharacterizeSettings,
@@ -76,6 +76,8 @@ def characterize(
         axis_labels,
     )
 
+    return peaks
+
 
 @click.command()
 @input_position_dirpaths()
@@ -104,6 +106,6 @@ def characterize_cli(
     settings = yaml_to_model(config_filepath, CharacterizeSettings)
     dataset_name = Path(input_position_dirpaths[0])[-4]
 
-    characterize(
+    _ = characterize_peaks(
         zyx_data, zyx_scale, settings, output_dirpath, input_position_dirpaths[0], dataset_name
     )
