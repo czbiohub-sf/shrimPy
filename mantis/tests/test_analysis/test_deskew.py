@@ -36,6 +36,7 @@ def test_deskew_data():
         raw_data, ls_angle_deg, px_to_scan_ratio, keep_overhang, average_n_slices
     )
     assert deskewed_data.shape[1] == 4
+    assert deskewed_data[0, 0, 0] != 1  # indicates incorrect shifting
 
     assert (
         deskewed_data.shape
