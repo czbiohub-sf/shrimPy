@@ -4,33 +4,6 @@ import torch
 from monai.transforms.spatial.array import Affine
 
 
-def _deskew_matrix(px_to_scan_ratio, ct):
-    """3x3 deskew matrix, relating sampling coordinates to deskewed coordinates
-
-    Parameters
-    ----------
-    px_to_scan_ratio : float
-        Ratio of the pixel size to light sheet scan step
-    ct : float
-        cos(theta), where theta is the light-sheet tilt angle
-
-    Returns
-    -------
-    3x3 array
-    """
-    return np.array(
-        [
-            [
-                -px_to_scan_ratio * ct,
-                0,
-                px_to_scan_ratio,
-            ],
-            [-1, 0, 0],
-            [0, -1, 0],
-        ]
-    )
-
-
 def _average_n_slices(data, average_window_width=1):
     """Average an array over its first axis
 
