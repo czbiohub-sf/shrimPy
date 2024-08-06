@@ -55,9 +55,7 @@ def _get_averaged_shape(deskewed_data_shape: tuple, average_window_width: int) -
     return averaged_shape
 
 
-def _get_transform_matrix(
-    ls_angle_deg: float, px_to_scan_ratio: float
-):
+def _get_transform_matrix(ls_angle_deg: float, px_to_scan_ratio: float):
     """
     Compute affine transformation matrix used to deskew data.
 
@@ -85,7 +83,6 @@ def _get_transform_matrix(
             [-1, 0, 0, 0],
             [0, -1, 0, 0],
             [0, 0, 0, 1],
-
         ]
     )
 
@@ -188,7 +185,8 @@ def deskew_data(
     """
     # Prepare transforms
     matrix = _get_transform_matrix(
-        ls_angle_deg, px_to_scan_ratio,
+        ls_angle_deg,
+        px_to_scan_ratio,
     )
 
     output_shape, _ = get_deskewed_data_shape(
