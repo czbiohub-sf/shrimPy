@@ -4,6 +4,7 @@ from pathlib import Path
 import napari
 import numpy as np
 import torch
+import time
 
 from iohub.ngff_meta import TransformationMeta
 from iohub.reader import open_ome_zarr
@@ -56,6 +57,7 @@ def check_acquisition_directory(root_dir: Path, acq_name: str, suffix='', idx=1)
 
 
 mmc = Core()
+step_per_um = None
 
 # mmc.set_property('Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter')
 # mmc.set_property('Oryx2', 'Line Selector', 'Line5')
@@ -65,7 +67,7 @@ mmc = Core()
 
 # %%
 data_dir = Path(r'E:\2024_08_06_A549_TOMM20_SEC61')
-date = '2024_08_06'
+date = '2024_08_07'
 # dataset = f'{date}_RR_Straight_O3_scan'
 dataset = f'{date}_epi_O1_benchmark'
 # dataset = f'{date}_LS_Oryx_epi_illum'
@@ -79,7 +81,6 @@ z_range = (-2, 50)  # in um
 pixel_size = 2 * 3.45 / 100  # in um
 # pixel_size = 3.45 / 55.7  # in um
 axis_labels = ("Z", "Y", "X")
-step_per_um = None
 
 # ls settings
 # z_stage = 'AP Galvo'
@@ -97,7 +98,6 @@ step_per_um = None
 # # pixel_size = 0.116  # in um
 # pixel_size = 6.5 / 40 / 1.4  # in um, no binning
 # axis_labels = ("SCAN", "TILT", "COVERSLIP")
-# step_per_um = None
 
 # ls straight  settings
 # from mantis.acquisition.microscope_operations import setup_kim101_stage
@@ -232,6 +232,8 @@ if raw and deskew:
         **deskew_settings,
     )
 
+    print('Deskewing data...')
+    t1 = time.time()
     deskewed_chunks = []
     for chunk in chunked_data:
         deskewed_chunks.append(
@@ -244,6 +246,7 @@ if raw and deskew:
 
     # concatenate arrays in reverse order
     deskewed_data = np.concatenate(deskewed_chunks[::-1], axis=-2)
+    print(f'Tike to deskew data: {time.time() - t1}')
 
     # Characterize deskewed peaks
     deskewed_peaks = characterize_peaks(
