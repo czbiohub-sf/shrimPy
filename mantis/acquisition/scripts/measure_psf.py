@@ -1,10 +1,11 @@
 # %%
+import time
+
 from pathlib import Path
 
 import napari
 import numpy as np
 import torch
-import time
 
 from iohub.ngff_meta import TransformationMeta
 from iohub.reader import open_ome_zarr
