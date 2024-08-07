@@ -501,7 +501,7 @@ def detect_peaks(
 
     """
     zyx_shape = zyx_data.shape[-3:]
-    zyx_image = torch.from_numpy(zyx_data.astype(np.float16)[None, None])
+    zyx_image = torch.from_numpy(zyx_data.astype(np.float32)[None, None])
 
     if device != "cpu":
         zyx_image = zyx_image.to(device)
