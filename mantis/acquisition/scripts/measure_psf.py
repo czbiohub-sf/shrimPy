@@ -64,21 +64,22 @@ mmc = Core()
 # mmc.set_property('Oryx2', 'Line Source', 'ExposureActive')
 
 # %%
-data_dir = Path(r'E:\2024_05_10_A594_CAAX_DRAQ5')
-date = '2024_05_07'
+data_dir = Path(r'E:\2024_08_06_A549_TOMM20_SEC61')
+date = '2024_08_06'
 # dataset = f'{date}_RR_Straight_O3_scan'
-# dataset = f'{date}_epi_O1_benchmark'
+dataset = f'{date}_epi_O1_benchmark'
 # dataset = f'{date}_LS_Oryx_epi_illum'
 # dataset =  f'{date}_LS_Oryx_LS_illum'
-dataset = f'{date}_LS_benchmark'
+# dataset = f'{date}_LS_benchmark'
 
 # epi settings
-# z_stage = 'PiezoStage:Q:35'
-# z_step = 0.2  # in um
-# z_range = (-2, 50)  # in um
-# pixel_size = 2 * 3.45 / 100  # in um
-# # pixel_size = 3.45 / 55.7  # in um
-# axis_labels = ("Z", "Y", "X")
+z_stage = 'PiezoStage:Q:35'
+z_step = 0.2  # in um
+z_range = (-2, 50)  # in um
+pixel_size = 2 * 3.45 / 100  # in um
+# pixel_size = 3.45 / 55.7  # in um
+axis_labels = ("Z", "Y", "X")
+step_per_um = None
 
 # ls settings
 # z_stage = 'AP Galvo'
@@ -88,15 +89,15 @@ dataset = f'{date}_LS_benchmark'
 # axis_labels = ("SCAN", "TILT", "COVERSLIP")
 
 # epi illumination rr detection settings
-z_stage = 'AP Galvo'
-# z_step = 0.205  # in um
-# z_range = (-85, 85)  # in um
-z_step = 0.1  # in um, reduced range and smaller step size
-z_range = (-31, 49)  # in um
-# pixel_size = 0.116  # in um
-pixel_size = 6.5 / 40 / 1.4  # in um, no binning
-axis_labels = ("SCAN", "TILT", "COVERSLIP")
-step_per_um = None
+# z_stage = 'AP Galvo'
+# # z_step = 0.205  # in um
+# # z_range = (-85, 85)  # in um
+# z_step = 0.1  # in um, reduced range and smaller step size
+# z_range = (-31, 49)  # in um
+# # pixel_size = 0.116  # in um
+# pixel_size = 6.5 / 40 / 1.4  # in um, no binning
+# axis_labels = ("SCAN", "TILT", "COVERSLIP")
+# step_per_um = None
 
 # ls straight  settings
 # from mantis.acquisition.microscope_operations import setup_kim101_stage
@@ -193,7 +194,7 @@ peaks = characterize_peaks(
     zyx_data=zyx_data,
     zyx_scale=scale,
     settings=CharacterizeSettings(
-        **ls_bead_detection_settings, axis_labels=axis_labels, patch_size=patch_size
+        **epi_bead_detection_settings, axis_labels=axis_labels, patch_size=patch_size
     ),
     output_report_path=data_dir / (dataset + '_psf_analysis'),
     input_dataset_path=data_dir,
