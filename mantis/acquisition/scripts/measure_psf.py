@@ -262,12 +262,6 @@ if raw and deskew:
         input_dataset_name=dataset,
     )
 
-    # deskewed_beads, deskewed_offsets = extract_beads(
-    #     zyx_data=deskewed_data,
-    #     points=deskewed_peaks,
-    #     scale=scale,  ## Looks like there was a bug with the scale here, patch size may need retuning
-    # )
-
     if view:
         viewer2 = napari.Viewer()
         viewer2.add_image(deskewed_data)
