@@ -807,8 +807,8 @@ class MantisAcquisition(object):
         # Define relative travel limits, in steps
         o3_z_stage = self.ls_acq.o3_stage
         target_z_position = o3_z_stage.true_position + o3_z_range
-        max_z_position = 500  # O3 is allowed to travel ~10 um towards O2
-        min_z_position = -1000  # O3 is allowed to travel ~20 um away from O2
+        max_z_position = 750  # O3 is allowed to travel ~15 um towards O2
+        min_z_position = -1500  # O3 is allowed to travel ~30 um away from O2
         if np.any(target_z_position > max_z_position) or np.any(
             target_z_position < min_z_position
         ):

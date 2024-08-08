@@ -55,6 +55,40 @@ def _get_averaged_shape(deskewed_data_shape: tuple, average_window_width: int) -
     return averaged_shape
 
 
+def _get_transform_matrix(ls_angle_deg: float, px_to_scan_ratio: float):
+    """
+    Compute affine transformation matrix used to deskew data.
+
+    Parameters
+    ----------
+    ls_angle_deg : float
+    px_to_scan_ratio : float
+    keep_overhang : bool
+
+    Returns
+    -------
+    matrix : np.array
+        Affine transformation matrix.
+    """
+    ct = np.cos(ls_angle_deg * np.pi / 180)
+
+    matrix = np.array(
+        [
+            [
+                -px_to_scan_ratio * ct,
+                0,
+                px_to_scan_ratio,
+                0,
+            ],
+            [-1, 0, 0, 0],
+            [0, -1, 0, 0],
+            [0, 0, 0, 1],
+        ]
+    )
+
+    return matrix
+
+
 def get_deskewed_data_shape(
     raw_data_shape: tuple,
     ls_angle_deg: float,
@@ -119,7 +153,7 @@ def deskew_data(
     keep_overhang: bool,
     average_n_slices: int = 1,
     device='cpu',
-):
+) -> np.ndarray:
     """Deskews fluorescence data from the mantis microscope
     Parameters
     ----------
@@ -150,20 +184,11 @@ def deskew_data(
         axis 2 is the X axis, the scanning axis
     """
     # Prepare transforms
-    ct = np.cos(ls_angle_deg * np.pi / 180)
-    matrix = np.array(
-        [
-            [
-                -px_to_scan_ratio * ct,
-                0,
-                px_to_scan_ratio,
-                0,
-            ],
-            [-1, 0, 0, 0],
-            [0, -1, 0, 0],
-            [0, 0, 0, 1],
-        ]
+    matrix = _get_transform_matrix(
+        ls_angle_deg,
+        px_to_scan_ratio,
     )
+
     output_shape, _ = get_deskewed_data_shape(
         raw_data.shape, ls_angle_deg, px_to_scan_ratio, keep_overhang
     )

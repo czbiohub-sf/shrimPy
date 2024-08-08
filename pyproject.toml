@@ -30,6 +30,7 @@ dependencies = [
   "ndtiff>=2.0",
   "nidaqmx",
   "numpy<2",
+  "markdown",
   "monai",
   "pandas~=2.1",
   "pycromanager==0.28.1",
@@ -38,10 +39,12 @@ dependencies = [
   "scipy",
   "slurmkit @ git+https://github.com/royerlab/slurmkit",
   "tifffile",
+  "torch>=2.3",
   "waveorder @ git+https://github.com/mehta-lab/waveorder",
   "largestinteriorrectangle",
   "antspyx",
   "pystackreg",
+  "napari-psf-analysis",
 ]
 
 
@@ -73,7 +76,7 @@ version = { attr = "mantis.__version__" }
 
 [tool.black]
 line-length = 95
-target-version = ['py39', 'py310']
+target-version = ['py310']
 include = '\.pyi?$'
 skip-string-normalization = true
 exclude = '''
