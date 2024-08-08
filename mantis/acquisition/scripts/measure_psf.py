@@ -14,7 +14,7 @@ from pycromanager import Acquisition, Core, multi_d_acquisition_events
 from mantis.acquisition.microscope_operations import acquire_defocus_stack
 from mantis.analysis.AnalysisSettings import CharacterizeSettings
 from mantis.analysis.deskew import deskew_data, get_deskewed_data_shape
-from mantis.cli.characterize import characterize_peaks
+from mantis.cli.characterize_psf import _characterize_psf
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 epi_bead_detection_settings = {
@@ -191,7 +191,7 @@ if axis_labels == ("SCAN", "TILT", "COVERSLIP"):
 
 # %% Characterize peaks
 
-peaks = characterize_peaks(
+peaks = _characterize_psf(
     zyx_data=zyx_data,
     zyx_scale=scale,
     settings=CharacterizeSettings(
@@ -250,7 +250,7 @@ if raw and deskew:
     print(f'Tike to deskew data: {time.time() - t1}')
 
     # Characterize deskewed peaks
-    deskewed_peaks = characterize_peaks(
+    deskewed_peaks = _characterize_psf(
         zyx_data=deskewed_data,
         zyx_scale=deskewed_voxel_size,
         settings=CharacterizeSettings(

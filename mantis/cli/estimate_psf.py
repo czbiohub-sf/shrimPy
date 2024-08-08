@@ -21,7 +21,7 @@ from mantis.cli.utils import yaml_to_model
 @input_position_dirpaths()
 @config_filepath()
 @output_dirpath()
-def psf_from_beads(
+def estimate_psf(
     input_position_dirpaths: List[str],
     config_filepath: str,
     output_dirpath: str,

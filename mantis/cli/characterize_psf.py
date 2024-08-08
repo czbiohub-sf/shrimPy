@@ -22,7 +22,7 @@ from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_
 from mantis.cli.utils import yaml_to_model
 
 
-def characterize_peaks(
+def _characterize_psf(
     zyx_data: np.ndarray,
     zyx_scale: tuple[float, float, float],
     settings: CharacterizeSettings,
@@ -85,7 +85,7 @@ def characterize_peaks(
 @input_position_dirpaths()
 @config_filepath()
 @output_dirpath()
-def characterize(
+def characterize_psf(
     input_position_dirpaths: List[str],
     config_filepath: str,
     output_dirpath: str,
@@ -108,6 +108,6 @@ def characterize(
     settings = yaml_to_model(config_filepath, CharacterizeSettings)
     dataset_name = Path(input_position_dirpaths[0])[-4]
 
-    _ = characterize_peaks(
+    _ = _characterize_psf(
         zyx_data, zyx_scale, settings, output_dirpath, input_position_dirpaths[0], dataset_name
     )
