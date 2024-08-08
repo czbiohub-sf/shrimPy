@@ -168,13 +168,13 @@ We have also developed the following CLI utilities to help with data acquisition
 
 ```sh
 # Estimate fluorescence bleaching
-mantis estimate-bleaching
+mantis estimate-bleaching --help
 
 # Update zarr scale metadata
-mantis update-scale-metadata
+mantis update-scale-metadata --help
 
 # Generate an HTML report with PSF measurements
-mantis characterize-psf
+mantis characterize-psf --help
 ```
 
 ## Data and metadata format
