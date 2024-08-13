@@ -53,6 +53,7 @@ def run_acquisition(
         SliceSettings,
         MicroscopeSettings,
         AutoexposureSettings,
+        AutotrackerSettings,
     )
 
     # isort: on
@@ -77,6 +78,14 @@ def run_acquisition(
     ls_autoexposure_settings = AutoexposureSettings(
         **raw_settings.get('ls_autoexposure_settings')
     )
+    # TODO: decide ls or lf autoexposure settings
+    ls_autotracker_settings = None
+    lf_autotracker_settings = None
+    autotracker_settings = AutotrackerSettings(**raw_settings.get('autotracker_settings'))
+    if autotracker_settings.tracking_arm == 'lf':
+        lf_autotracker_settings = autotracker_settings
+    elif autotracker_settings.tracking_arm == 'ls':
+        ls_autotracker_settings = autotracker_settings
 
     with MantisAcquisition(
         acquisition_directory=acq_directory,
@@ -95,6 +104,8 @@ def run_acquisition(
         acq.ls_acq.slice_settings = ls_slice_settings
         acq.ls_acq.microscope_settings = ls_microscope_settings
         acq.ls_acq.autoexposure_settings = ls_autoexposure_settings
+        acq.ls_acq.autotracker_settings = ls_autotracker_settings
+        acq.lf_acq.autotracker_settings = lf_autotracker_settings
 
         acq.setup()
         acq.acquire()

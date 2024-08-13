@@ -193,3 +193,26 @@ class AutoexposureSettings:
             attr_val = getattr(self, attr)
             if attr_val is not None:
                 setattr(self, attr, round(attr_val, 1))
+
+
+@dataclass
+class AutotrackerSettings:
+    tracking_method: Literal['phase_cross_correlation', 'template_matching', 'multi_otsu']
+    device: Optional[str] = 'cpu'
+    tracking_arm: Literal['lf', 'ls'] = 'lf'
+    channel_to_track: Optional[str] = None
+    zyx_dampening_factor: Optional[float, float, float] = None
+    re_run_every_n_timepoints: Optional[int] = None
+    # TODO: maybe do the ROI like in the ls_microscope_settings
+    template_roi_zyx: Optional[Tuple[int, int, int]] = None
+    template_channel: Optional[str] = None
+
+    @validator("autotracker_method")
+    def check_autotracker_methods_options(cls, v):
+        # Check if template matching options are provided and are not None
+        if v == 'template_matching':
+            if not all([cls.template_roi_zyx, cls.template_channel]):
+                raise ValueError(
+                    'template_roi_zyx and template_channel must be provided for template matching'
+                )
+            return v

@@ -31,6 +31,7 @@ from mantis.acquisition.AcquisitionSettings import (
     SliceSettings,
     MicroscopeSettings,
     AutoexposureSettings,
+    AutotrackerSettings,
 )
 from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
     log_preparing_acquisition,
@@ -102,6 +103,7 @@ class BaseChannelSliceAcquisition(object):
         self._slice_settings = SliceSettings()
         self._microscope_settings = MicroscopeSettings()
         self._autoexposure_settings = None
+        self._autotracker_settings = None
         self._z0 = None
         self.headless = False if mm_app_path is None else True
         self.type = 'light-sheet' if self.headless else 'label-free'
@@ -173,6 +175,10 @@ class BaseChannelSliceAcquisition(object):
     def autoexposure_settings(self):
         return self._autoexposure_settings
 
+    @property
+    def autotracker_settings(self):
+        return self._autotracker_settings
+
     @channel_settings.setter
     def channel_settings(self, settings: ChannelSettings):
         logger.debug(
@@ -203,6 +209,13 @@ class BaseChannelSliceAcquisition(object):
             f"{self.type.capitalize()} acquisition will have the following settings:{asdict(settings)}"
         )
         self._autoexposure_settings = settings
+
+    @autotracker_settings.setter
+    def autotracker_settings(self, settings: AutotrackerSettings):
+        logger.debug(
+            f"{self.type.capitalize()} acquisition will have the following settings:{asdict(settings)}"
+        )
+        self._autotracker_settings = settings
 
     def setup(self):
         """
@@ -276,6 +289,7 @@ class BaseChannelSliceAcquisition(object):
                 )
 
 
+# TODO: check the enable_ls_acq and enable_lf_acq work independently
 class MantisAcquisition(object):
     """
     Acquisition class for simultaneous label-free and light-sheet acquisition on
@@ -671,6 +685,22 @@ class MantisAcquisition(object):
                         )
                     )
 
+    def setup_autotracker(self):
+        if self._demo_run:
+            # TODO: implement autotracker in demo mode
+            logger.debug('Autotracker is not supported in demo mode')
+            return
+
+        if self.lf_acq.microscope_settings.use_autotracker:
+            logger.debug('Setting up autotracker')
+            microscope_operations.setup_autotracker(
+                self.lf_acq.mmc,
+                self.lf_acq.microscope_settings.autotracker_channel,
+                self.lf_acq.microscope_settings.autotracker_threshold,
+            )
+        else:
+            logger.debug('Autotracker is not enabled in the microscope settings')
+
     def go_to_position(self, position_index: int):
         # Move slowly for short distances such that autofocus can stay engaged.
         # Autofocus typically fails when moving long distances, so we can move
@@ -938,6 +968,18 @@ class MantisAcquisition(object):
                         f'Autoexposure method {method} is not yet implemented.'
                     )
 
+    def run_autotracker(
+        self,
+        acq: BaseChannelSliceAcquisition,
+        well_id: str,
+        method: str = 'manual',
+    ):
+        logging.debug('running autotracker')
+        if not any(acq.channel_settings.use_autoexposure):
+            return
+        # TODO: implement autotracker
+        microscope_operations.autotracker(acq.mmc, acq.autoexposure_settings)
+
     def setup(self):
         """
         Setup the mantis acquisition. This method sets up the label-free
@@ -964,6 +1006,9 @@ class MantisAcquisition(object):
 
         logger.debug('Setting up autoexposure')
         self.setup_autoexposure()
+
+        logger.debug('Setting up auotracker')
+        self.setup_autotracker()
 
     def acquire(self):
         """
@@ -1089,6 +1134,9 @@ class MantisAcquisition(object):
                             well_id=well_id,
                             method=self.ls_acq.autoexposure_settings.autoexposure_method,
                         )
+                    # TODO: add logic to handle skipping timepoints
+                    if t_idx < 2:
+                        self.run_autotracker(acq=self.lf_acq, well_id=well_id)
                     # Acq rate needs to be updated even if autoexposure was not rerun in this well
                     # Only do that if we are using autoexposure?
                     self.update_ls_acquisition_rates(

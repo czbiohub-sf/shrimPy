@@ -1,10 +1,8 @@
 # %%
-from pathlib import Path
 from typing import Callable, Optional, Tuple, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import skimage
 
 from iohub import open_ome_zarr
@@ -21,6 +19,9 @@ from mantis import logger
 # from dexpv2.crosscorr import phase_cross_corr
 # from dexpv2.utils import center_crop, pad_to_shape, to_cpu
 
+# TODO: Make toy datasets for testing
+# TODO: multiotsu should have an offset variable from the center of the image (X,Y)
+# TODO: Check why PCC is not working
 # TODO: write test functions
 # TODO: consider splitting this file into two
 
@@ -145,8 +146,27 @@ def to_cpu(arr: ArrayLike) -> ArrayLike:
     return arr
 
 
+def _match_shape(img: ArrayLike, shape: Tuple[int, ...]) -> ArrayLike:
+    """
+    Borrowing from Jordao dexpv2.crosscorr https://github.com/royerlab/dexpv2
+    Pad or crop array to match provided shape.
+    """
+
+    if np.any(shape > img.shape):
+        padded_shape = np.maximum(img.shape, shape)
+        img = pad_to_shape(img, padded_shape, mode="reflect")
+
+    if np.any(shape < img.shape):
+        img = center_crop(img, shape)
+
+    return img
+
+
 def center_crop(arr: ArrayLike, shape: Tuple[int, ...]) -> ArrayLike:
-    """Crops the center of `arr`"""
+    """
+    Borrowing from Jordao dexpv2.crosscorr https://github.com/royerlab/dexpv2
+    Crops the center of `arr`
+    """
     assert arr.ndim == len(shape)
 
     starts = tuple((cur_s - s) // 2 for cur_s, s in zip(arr.shape, shape))
@@ -163,7 +183,9 @@ def center_crop(arr: ArrayLike, shape: Tuple[int, ...]) -> ArrayLike:
 
 
 def pad_to_shape(arr: ArrayLike, shape: Tuple[int, ...], mode: str, **kwargs) -> ArrayLike:
-    """Pads array to shape.
+    """
+    Borrowing from Jordao dexpv2.crosscorr https://github.com/royerlab/dexpv2
+    Pads array to shape.
 
     Parameters
     ----------
@@ -189,19 +211,6 @@ def pad_to_shape(arr: ArrayLike, shape: Tuple[int, ...], mode: str, **kwargs) ->
     logger.info(f"padding: input shape {arr.shape}, output shape {shape}, padding {pad_width}")
 
     return np.pad(arr, pad_width=pad_width, mode=mode, **kwargs)
-
-
-def _match_shape(img: ArrayLike, shape: Tuple[int, ...]) -> ArrayLike:
-    """Pad or crop array to match provided shape."""
-
-    if np.any(shape > img.shape):
-        padded_shape = np.maximum(img.shape, shape)
-        img = pad_to_shape(img, padded_shape, mode="reflect")
-
-    if np.any(shape < img.shape):
-        img = center_crop(img, shape)
-
-    return img
 
 
 def phase_cross_corr(
@@ -236,7 +245,7 @@ def phase_cross_corr(
         for s1, s2 in zip(ref_img.shape, mov_img.shape)
     )
 
-    logger.debug(
+    logger.info(
         f"phase cross corr. fft shape of {shape} for arrays of shape {ref_img.shape} and {mov_img.shape} "
         f"with maximum shift of {maximum_shift}"
     )
@@ -269,145 +278,34 @@ def phase_cross_corr(
     peak = np.unravel_index(argmax, corr.shape)
     peak = tuple(s // 2 - p for s, p in zip(corr.shape, peak))
 
-    logger.debug(f"phase cross corr. peak at {peak}")
+    logger.info(f"phase cross corr. peak at {peak}")
 
     return peak
 
 
 # %%
 class Autotracker(object):
-    _TRACKING_METHODS = {
-        'phase_cross_correlation': phase_cross_corr,
-        'template_matching': template_matching,
-        'multi_otsu': multiotsu_centroid,
+    _AUTOFOCUS_METHODS = {
+        'pcc': phase_cross_corr,
+        'tm': template_matching,
+        'multiotsu': multiotsu_centroid,
     }
 
-    def __init__(
-        self,
-        tracking_method: str,
-        scale: ArrayLike[float, float, float],
-        zyx_dampening: ArrayLike[float, float, float] = None,
-        output_shifts_path: Path = './shifts.csv',
-    ):
-        """
-        Autotracker object
+    def __init__(self, autofocus_method: str, xy_dapening: tuple[int] = None):
+        self.autofocus_method = autofocus_method
+        self.xy_dapening = xy_dapening
 
-        Parameters
-        ----------
-        tracking_method : str
-            Method to use for autofocus. Options are 'phase_cross_correlation', 'template_matching', 'multi_otsu'
-        scale : ArrayLike[float, float, float]
-            Scale factor to convert shifts from px to um
-        xy_dampening : tuple[int]
-            Dampening factor for xy shifts
-        """
-        self.tracking_method = tracking_method
-        self.zyx_dampening = zyx_dampening
-        self.scale = scale
-        self.shifts = None
-        self.output_shifts_path = output_shifts_path
-        # TODO: hook to the config logs
-
-    def estimate_shift(self, ref_img: ArrayLike, mov_img: ArrayLike, **kwargs) -> np.ndarray:
-        """
-        Estimates the shift between two images using the specified autofocus method.
-
-        Parameters
-        ----------
-        ref_img : ArrayLike
-            Reference image.
-        mov_img : ArrayLike
-            Image to be aligned with the reference.
-        kwargs : dict
-            Additional keyword arguments to be passed to the autofocus method.
-
-        Returns
-        -------
-        np.ndarray
-            The estimated shift in scale provided by the user (typically um).
-        """
-
-        autofocus_method_func = self._TRACKING_METHODS.get(self.tracking_method)
+    def estimate_shift(
+        self, reference_array: ArrayLike, moving_array: ArrayLike, **kwargs
+    ) -> np.ndarray:
+        autofocus_method_func = self._AUTOFOCUS_METHODS.get(self.autofocus_method)
 
         if not autofocus_method_func:
-            raise ValueError(f'Unknown autofocus method: {self.tracking_method}')
+            raise ValueError(f'Unknown autofocus method: {self.autofocus_method}')
 
-        shifts = autofocus_method_func(ref_img=ref_img, mov_img=mov_img, **kwargs)
+        shifts = autofocus_method_func(**kwargs)
 
-        # Shifts in px to shifts in um
-        self.shifts = np.array(shifts) * self.scale
-
-        if self.zyx_dampening is not None:
-            self.shifts = self.shifts * self.zyx_dampening
-        logger.info(f'Shifts (z,y,x): {self.shifts}')
-
-        return self.shifts
-
-    # Function to log the shifts to a csv file
-    def save_shifts_to_file(
-        output_file: str,
-        shifts: Tuple[int, int, int],
-        position_id: int,
-        timepoint_id: int,
-        overwrite: bool = False,
-    ) -> None:
-        """
-        Saves the computed shifts to a CSV file.
-
-        Parameters
-        ----------
-        output_file : str
-            Path to the output CSV file.
-        shifts : Tuple[int, int, int]
-            The computed shifts (Z, Y, X).
-        position_id : int
-            Identifier for the position.
-        timepoint_id : int
-            Identifier for the timepoint.
-        overwrite : bool
-            If True, the file will be overwritten if it exists.
-        """
-        # Convert output_file to a Path object
-        output_path = Path(output_file)
-        data = {
-            "PositionID": [position_id],
-            "TimepointID": [timepoint_id],
-            "ShiftZ": [shifts[0]],
-            "ShiftY": [shifts[1]],
-            "ShiftX": [shifts[2]],
-        }
-
-        df = pd.DataFrame(data)
-
-        if overwrite or not output_path.exists():
-            # Write the DataFrame to a new file, including the header
-            df.to_csv(output_path, mode='w', index=False)
-        else:
-            # Append the DataFrame to the existing file, without writing the header
-            df.to_csv(output_path, mode='a', header=False, index=False)
-
-    def limit_shifts_zyx(
-        self, shifts: Tuple[int, int, int], limits: Tuple[int, int, int] = (5, 5, 5)
-    ) -> Tuple[int, int, int]:
-        """
-        Limits the shifts to the specified limits.
-
-        Parameters
-        ----------
-        shifts : Tuple[int, int, int]
-            The computed shifts (Z, Y, X).
-        limits : Tuple[int, int, int]
-            The limits for the shifts (Z, Y, X).
-
-        Returns
-        -------
-        Tuple[int, int, int]
-            The limited shifts.
-        """
-        shifts = np.array(shifts)
-        limits = np.array(limits)
-        shifts = np.where(np.abs(shifts) > limits, 0, shifts)
-        return tuple(shifts)
+        return shifts
 
 
 # %%
@@ -429,7 +327,7 @@ def main():
     dataset = open_ome_zarr(input_data_path)
     T, C, Z, Y, X = dataset.data.shape
     # print(channel_names := dataset.channel_names)
-    # tracking_method = 'multiotsu'
+    # autofocus_method = 'multiotsu'
     # xy_dapening = (10, 10)
 
     c_idx = 0
@@ -523,6 +421,7 @@ def main():
         )
 
 
+# %%
 # %%
 if __name__ == "__main__":
     main()

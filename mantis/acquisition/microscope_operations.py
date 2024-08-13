@@ -12,7 +12,7 @@ from nidaqmx.constants import AcquisitionType
 from pycromanager import Core, Studio
 from pylablib.devices.Thorlabs import KinesisPiezoMotor
 
-from mantis.acquisition.AcquisitionSettings import AutoexposureSettings
+from mantis.acquisition.AcquisitionSettings import AutoexposureSettings, AutotrackerSettings
 from mantis.acquisition.autoexposure import manual_autoexposure, mean_intensity_autoexposure
 
 logger = logging.getLogger(__name__)
@@ -670,3 +670,12 @@ def autoexposure(
         )
 
     return suggested_exposure_time, suggested_light_intensity
+
+
+def autotracker(
+    mmc: Core,
+    autotracker_settings: AutotrackerSettings,
+    **kwargs,
+):
+    logging.debug('Autotracker is not implemented yet')
+    pass

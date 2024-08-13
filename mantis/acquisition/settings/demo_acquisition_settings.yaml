@@ -60,3 +60,9 @@ ls_microscope_settings:
 ls_autoexposure_settings:
   autoexposure_method: 'manual'
   rerun_each_timepoint: True
+
+autotracker_settings:
+  tracking_method: 'phase_cross_correlation'
+  tracking_arm: 'lf'
+  channel_to_track: 'Channel-Multiband'
+  device: 'cpu'
