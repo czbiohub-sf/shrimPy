@@ -37,3 +37,4 @@ exclude =
     ignore,
     legacy,
     examples,
+    scripts
