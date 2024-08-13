@@ -29,7 +29,7 @@ def estimate_psf(
     """
     Estimate the point spread function (PSF) from bead images
 
-    >> mantis psf_from_beads -i ./beads.zarr/*/*/* -c ./psf_params.yml -o ./psf.zarr
+    >> mantis estimate-psf -i ./beads.zarr/*/*/* -c ./psf_params.yml -o ./psf.zarr
     """
     # Convert string paths to Path objects
     output_dirpath = Path(output_dirpath)
