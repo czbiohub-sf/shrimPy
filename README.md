@@ -1,7 +1,7 @@
 # shrimPy: Smart High-throughput Robust Imaging & Measurement in Python
 ![acquisition and reconstruction schematic](docs/figure_3a.png)
 
-shrimPy (pronounced: ʃrɪm-pai) is a pythonic framework for high-throughput smart microscopy and high-performance analysis. The current alpha version of the framework is specific to the mantis microscope, described in our [manuscript](https://www.biorxiv.org/content/10.1101/2023.12.19.572435v1), but extensible to a high throughput microscope that is controlled with [Micro-Manager](https://micro-manager.org/).
+shrimPy (pronounced: ʃrɪm-pai) is a pythonic framework for high-throughput smart microscopy and high-performance analysis. The current alpha version of the framework is specific to the mantis microscope, described in our [manuscript](https://doi.org/10.1093/pnasnexus/pgae323), but extensible to a high throughput microscope that is controlled with [Micro-Manager](https://micro-manager.org/).
 
 The acquisition engine synchronizes data collection using hardware triggering and carries out smart microscopy tasks such as autofocus and autoexposure.
 
