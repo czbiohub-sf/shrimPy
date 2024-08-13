@@ -93,7 +93,7 @@ def characterize_psf(
     """
     Characterize the point spread function (PSF) from bead images and output an html report
 
-    >> mantis characterize -i ./beads.zarr/*/*/* -c ./characterize_params.yml -o ./
+    >> mantis characterize-psf -i ./beads.zarr/*/*/* -c ./characterize_params.yml -o ./
     """
     if len(input_position_dirpaths) > 1:
         warnings.warn("Only the first position will be characterized.")
