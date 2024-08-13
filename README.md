@@ -158,8 +158,8 @@ mantis estimate-stitching \
 # stitch fields of view
 mantis stitch \
     -i ./acq_name.zarr/*/*/* \
-    -c  ./stitching.yml \
-    -o./acq_name_stitched.zarr/*/*/*
+    -c ./stitching.yml \
+    -o ./acq_name_stitched.zarr/*/*/*
 ```
 
 ## Additional utilities
