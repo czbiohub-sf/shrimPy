@@ -1,9 +1,12 @@
 import click
 
+from mantis.cli.characterize_psf import characterize_psf
 from mantis.cli.concatenate import concatenate
+from mantis.cli.deconvolve import deconvolve
 from mantis.cli.deskew import deskew
 from mantis.cli.estimate_bleaching import estimate_bleaching
 from mantis.cli.estimate_deskew import estimate_deskew
+from mantis.cli.estimate_psf import estimate_psf
 from mantis.cli.estimate_registration import estimate_registration
 from mantis.cli.estimate_stabilization import estimate_stabilization
 from mantis.cli.estimate_stitch import estimate_stitch
@@ -41,3 +44,6 @@ cli.add_command(update_scale_metadata)
 cli.add_command(concatenate)
 cli.add_command(estimate_stabilization)
 cli.add_command(stabilize)
+cli.add_command(estimate_psf)
+cli.add_command(deconvolve)
+cli.add_command(characterize_psf)
