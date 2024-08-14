@@ -6,7 +6,7 @@ time_settings:
   time_interval_s: 5
 
 lf_channel_settings:
-  default_exposure_times_ms: [10, 10]
+  default_exposure_times_ms: [5, 5]
   channel_group: 'Channel-Multiband'
   channels: ['DAPI', 'FITC']
   use_sequencing: True
@@ -30,6 +30,8 @@ lf_microscope_settings:
   channel_sequencing_settings:
     - ['LED', 'Sequence', 'On']
   use_autofocus: False
+  autotracker_config: ['Channel-Multiband', 'DAPI']
+
 
 ls_channel_settings:
   default_exposure_times_ms: [20, 30]
@@ -37,7 +39,7 @@ ls_channel_settings:
   channel_group: 'Channel'
   channels: ['Rhodamine', 'Cy5']
   use_sequencing: False
-  use_autoexposure: [True, False]
+  use_autoexposure: [False, False]
 
 ls_slice_settings:
   z_stage_name: 'Z'
@@ -63,6 +65,7 @@ ls_autoexposure_settings:
 
 autotracker_settings:
   tracking_method: 'phase_cross_correlation'
-  tracking_arm: 'lf'
-  channel_to_track: 'Channel-Multiband'
+  tracking_interval: 1
+  shift_limit: [30,200,200]
   device: 'cpu'
+  scale_yx: 0.075

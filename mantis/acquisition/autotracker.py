@@ -2,12 +2,10 @@
 from pathlib import Path
 from typing import Callable, Optional, Tuple, cast
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import skimage
 
-from iohub import open_ome_zarr
 from numpy.typing import ArrayLike
 from scipy.fftpack import next_fast_len
 from skimage.exposure import rescale_intensity
@@ -16,6 +14,7 @@ from skimage.filters import gaussian
 from skimage.measure import label, regionprops
 
 from mantis import logger
+from mantis.acquisition.hook_functions import globals
 
 # FIXME fix the dependencies so that we can install and import dexpv2
 # from dexpv2.crosscorr import phase_cross_corr
@@ -285,9 +284,9 @@ class Autotracker(object):
     def __init__(
         self,
         tracking_method: str,
-        scale: ArrayLike[float, float, float],
-        zyx_dampening: ArrayLike[float, float, float] = None,
-        output_shifts_path: Path = './shifts.csv',
+        shift_limit: Tuple[float, float, float],
+        scale: ArrayLike,
+        zyx_dampening_factor: ArrayLike = None,
     ):
         """
         Autotracker object
@@ -302,11 +301,9 @@ class Autotracker(object):
             Dampening factor for xy shifts
         """
         self.tracking_method = tracking_method
-        self.zyx_dampening = zyx_dampening
+        self.zyx_dampening = zyx_dampening_factor
         self.scale = scale
         self.shifts = None
-        self.output_shifts_path = output_shifts_path
-        # TODO: hook to the config logs
 
     def estimate_shift(self, ref_img: ArrayLike, mov_img: ArrayLike, **kwargs) -> np.ndarray:
         """
@@ -345,10 +342,11 @@ class Autotracker(object):
 
     # Function to log the shifts to a csv file
     def save_shifts_to_file(
+        self,
         output_file: str,
-        shifts: Tuple[int, int, int],
         position_id: int,
         timepoint_id: int,
+        shifts: Tuple[int, int, int] = None,
         overwrite: bool = False,
     ) -> None:
         """
@@ -369,12 +367,14 @@ class Autotracker(object):
         """
         # Convert output_file to a Path object
         output_path = Path(output_file)
+        if shifts is None:
+            shifts = self.shifts
         data = {
             "PositionID": [position_id],
             "TimepointID": [timepoint_id],
-            "ShiftZ": [shifts[0]],
-            "ShiftY": [shifts[1]],
-            "ShiftX": [shifts[2]],
+            "ShiftZ": [shifts[-3]],
+            "ShiftY": [shifts[-2]],
+            "ShiftX": [shifts[-1]],
         }
 
         df = pd.DataFrame(data)
@@ -410,119 +410,109 @@ class Autotracker(object):
         return tuple(shifts)
 
 
-# %%
-def main():
-    """
-    Toy dataset
-    translations = [
-        (0, 0, 0),  # Shift for timepoint 0
-        (5, -80, 80),  # Shift for timepoint 1
-        (9, -50, -50),  # Shift for timepoint 2
-        (-5, 30, -60),  # Shift for timepoint 3
-        (0, 30, -80),  # Shift for timepoint 4
-    ]
-    """
-    # %%
-    input_data_path = (
-        '/home/eduardo.hirata/repos/mantis/mantis/tests/x-ed/toy_translate.zarr/0/0/0'
+# TODO: logic for handling which t_idx to grab as reference. If the volume changes
+# Drastically, we may need to grab the previous timepoint as reference
+
+
+def get_volume(dataset, axes):
+    p_idx, t_idx, autotrack_channel, z_range = axes
+    images = []
+    logger.debug(
+        f"Getting Zstack for p:{p_idx},t:{t_idx},c:{autotrack_channel},z_range:{z_range}"
     )
-    dataset = open_ome_zarr(input_data_path)
-    T, C, Z, Y, X = dataset.data.shape
-    # print(channel_names := dataset.channel_names)
-    # tracking_method = 'multiotsu'
-    # xy_dapening = (10, 10)
-
-    c_idx = 0
-    data_t0 = dataset.data[0, c_idx]
-    data_t1 = dataset.data[1, c_idx]
-    data_t2 = dataset.data[2, c_idx]
-    data_t3 = dataset.data[3, c_idx]
-
-    # subplot
-    fig, ax = plt.subplots(1, 3)
-    ax[0].imshow(data_t0[10])
-    ax[1].imshow(data_t1[10])
-    ax[2].imshow(data_t2[10])
-    plt.show()
-    # %%
-    # Testing Multiotsu
-    shift_0 = multiotsu_centroid(data_t0, data_t0)
-    shift_1 = multiotsu_centroid(data_t1, data_t0)
-    shift_2 = multiotsu_centroid(data_t2, data_t0)
-    shift_3 = multiotsu_centroid(data_t3, data_t0)
-
-    shifts = [shift_0, shift_1, shift_2, shift_3]
-
-    translations = [
-        (0, 0, 0),  # Shift for timepoint 0
-        (5, -80, 80),  # Shift for timepoint 1
-        (9, -50, -50),  # Shift for timepoint 2
-        (-5, 30, -60),  # Shift for timepoint 3
-    ]  # Compare shifts with expected translations
-
-    tolerance = (5, 8, 8)  # Define your tolerance level
-    for i, (calculated, expected) in enumerate(zip(shifts, translations)):
-        is_similar = np.allclose(calculated, expected, atol=tolerance)
-        print(
-            f'Timepoint {i+1} shift: {calculated}, Expected: {expected}, Similar: {is_similar}'
+    for z_id in range(z_range):
+        images.append(
+            dataset.read_image(
+                **{'channel': autotrack_channel, 'z': z_id, 'time': t_idx, 'position': p_idx}
+            )
         )
-    # %%
-    # Testing PCC
-    shift_0 = phase_cross_corr(data_t0, data_t0)
-    shift_1 = phase_cross_corr(data_t0, data_t1)
-    shift_2 = phase_cross_corr(data_t0, data_t2)
-    shift_3 = phase_cross_corr(data_t0, data_t3)
-
-    shifts = [shift_0, shift_1, shift_2, shift_3]
-
-    for i, (calculated, expected) in enumerate(zip(shifts, translations)):
-        is_similar = np.allclose(calculated, expected, atol=tolerance)
-        print(
-            f'Timepoint {i+1} shift: {calculated}, Expected: {expected}, Similar: {is_similar}'
-        )
-
-    # %%
-    # Testing template matching
-
-    crop_z = slice(4, 8)
-    crop_y = slice(200, 300)
-    crop_x = slice(200, 300)
-    template = data_t0[crop_z, crop_y, crop_x]
-
-    result = match_template(data_t1, template)
-    zyx = np.unravel_index(np.argmax(result), result.shape)
-
-    print(zyx)
-    fig, ax = plt.subplots(1, 2)
-    ax[0].imshow(template[0])
-    ax[0].set_title('template')
-    ax[1].imshow(data_t1[zyx[0]])
-    rect = plt.Rectangle(
-        (zyx[2], zyx[1]),
-        template.shape[2],
-        template.shape[1],
-        edgecolor='red',
-        facecolor='none',
-    )
-    ax[1].add_patch(rect)
-    ax[1].set_title('template matching result')
-
-    # %%
-    # Calculate the shift, apply and check the result
-    shift_0 = template_matching(data_t0, data_t0, (crop_z, crop_y, crop_x))
-    shift_1 = template_matching(data_t0, data_t1, (crop_z, crop_y, crop_x))
-    shift_2 = template_matching(data_t0, data_t2, (crop_z, crop_y, crop_x))
-    shift_3 = template_matching(data_t0, data_t3, (crop_z, crop_y, crop_x))
-
-    shifts = [shift_0, shift_1, shift_2, shift_3]
-
-    for i, (calculated, expected) in enumerate(zip(shifts, translations)):
-        is_similar = np.allclose(calculated, expected, atol=tolerance)
-        print(
-            f'Timepoint {i+1} shift: {calculated}, Expected: {expected}, Similar: {is_similar}'
-        )
+    return np.stack(images)
 
 
-# %%
-if __name__ == "__main__":
-    main()
+def autotracker_hook_fn(
+    arm,
+    autotracker_settings,
+    channel_config,
+    z_slice_settings,
+    output_shift_path,
+    axes,
+    dataset,
+) -> None:
+    """
+    Pycromanager hook function that is called when an image is saved.
+
+    Parameters
+    ----------
+    axes : Position, Time, Channel, Z_slice
+    dataset: Dataset saved in disk
+    """
+    # TODO: handle the lf acq or ls_a
+    if arm == 'lf':
+        if axes == globals.lf_last_img_idx:
+            globals.lf_acq_finished = True
+    elif arm == 'ls':
+        if axes == globals.ls_last_img_idx:
+            globals.ls_acq_finished = True
+
+    # Get reference to the acquisition engine and it's settings
+    # TODO: This is a placeholder, the actual implementation will be different
+    z_range = z_slice_settings.z_range
+    num_slices = z_slice_settings.num_slices
+    scale = autotracker_settings.scale_yx
+    shift_limit = autotracker_settings.shift_limit
+    tracking_method = autotracker_settings.tracking_method
+    tracking_interval = autotracker_settings.tracking_interval
+    tracking_channel = channel_config.config_name
+    zyx_dampening_factor = autotracker_settings.zyx_dampening_factor
+    output_shift_path = Path(output_shift_path)
+
+    # Get axes info
+    p_idx = axes['position']
+    t_idx = axes['time']
+    channel = axes['channel']
+    z_idx = axes['z']
+
+    # Skip the 1st timepoint
+    if t_idx > 0:
+        if t_idx % tracking_interval != 0:
+            logger.debug('Skipping autotracking t %d', t_idx)
+            return
+        # Get the z_max
+        if channel == tracking_channel and z_idx == (num_slices - 1):
+            logger.debug("WELCOME TO THE FOCUS ZONE")
+            logger.debug('Curr axes :P:%s, T:%d, C:%s, Z:%d', p_idx, t_idx, channel, z_idx)
+
+            # Logic to get the volumes
+            # TODO: This is a placeholder, the actual implementation will be different
+            z_volume = z_range
+            volume_t0_axes = (p_idx, t_idx, tracking_channel, z_volume)
+            volume_t1_axes = (p_idx, t_idx, tracking_channel, z_volume)
+            # Compute the shifts
+            logger.debug('Instantiating autotracker')
+            tracker = Autotracker(
+                tracking_method=tracking_method,
+                scale=scale,
+                shift_limit=shift_limit,
+                zyx_dampening_factor=zyx_dampening_factor,
+            )
+            if globals.demo_run:
+                # Random shifting for demo purposes
+                shifts = np.random.randint(-50, 50, 3)
+                logger.info('Shifts (z,y,x): %f,%f,%f', shifts[0], shifts[1], shifts[2])
+            else:
+                volume_t0 = get_volume(dataset, volume_t0_axes)
+                volume_t1 = get_volume(dataset, volume_t1_axes)
+                # Reference and moving volumes
+                shifts = tracker.estimate_shifts(volume_t0, volume_t1)
+
+            # Save the shifts
+            # TODO: This is a placeholder, the actual implementation will be different
+            position_id = str(axes['position']) + '.csv'
+            shift_coord_output = output_shift_path / position_id
+            tracker.save_shifts_to_file(
+                shift_coord_output, position_id=p_idx, timepoint_id=t_idx, shifts=shifts
+            )
+
+            # Update the event coordinates
+            # TODO: This is a placeholder, the actual implementation will be different
+            # event_coords = {'Z': shifts[0], 'Y': shifts[1], 'X': shifts[2]}

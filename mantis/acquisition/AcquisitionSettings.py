@@ -141,6 +141,7 @@ class MicroscopeSettings:
     use_o3_refocus: bool = False
     o3_refocus_config: Optional[ConfigSettings] = None
     o3_refocus_interval_min: Optional[int] = None
+    autotracker_config: Optional[ConfigSettings] = None
 
 
 @dataclass
@@ -198,17 +199,17 @@ class AutoexposureSettings:
 @dataclass
 class AutotrackerSettings:
     tracking_method: Literal['phase_cross_correlation', 'template_matching', 'multi_otsu']
+    tracking_interval: Optional[int] = 1
+    scale_yx: Optional[float] = 1.0
+    shift_limit: Optional[Union[Tuple[float, float, float], 'None']] = None
     device: Optional[str] = 'cpu'
-    tracking_arm: Literal['lf', 'ls'] = 'lf'
-    channel_to_track: Optional[str] = None
-    zyx_dampening_factor: Optional[float, float, float] = None
-    re_run_every_n_timepoints: Optional[int] = None
+    zyx_dampening_factor: Optional[Union[Tuple[float, float, float], None]] = None
     # TODO: maybe do the ROI like in the ls_microscope_settings
     template_roi_zyx: Optional[Tuple[int, int, int]] = None
     template_channel: Optional[str] = None
 
-    @validator("autotracker_method")
-    def check_autotracker_methods_options(cls, v):
+    @validator("tracking_method")
+    def check_tracking_method_options(cls, v):
         # Check if template matching options are provided and are not None
         if v == 'template_matching':
             if not all([cls.template_roi_zyx, cls.template_channel]):

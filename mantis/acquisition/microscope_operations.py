@@ -677,5 +677,5 @@ def autotracker(
     autotracker_settings: AutotrackerSettings,
     **kwargs,
 ):
-    logging.debug('Autotracker is not implemented yet')
+    logging.debug('microscope operateions autotracker')
     pass

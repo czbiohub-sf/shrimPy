@@ -78,13 +78,19 @@ def run_acquisition(
     ls_autoexposure_settings = AutoexposureSettings(
         **raw_settings.get('ls_autoexposure_settings')
     )
-    # TODO: decide ls or lf autoexposure settings
+    autotracker_settings = AutotrackerSettings(**raw_settings.get('autotracker_settings'))
+
+    # Handle logic if autotracker is active in both arms
     ls_autotracker_settings = None
     lf_autotracker_settings = None
-    autotracker_settings = AutotrackerSettings(**raw_settings.get('autotracker_settings'))
-    if autotracker_settings.tracking_arm == 'lf':
+    if (
+        lf_microscope_settings.autotracker_config is not None
+        and ls_microscope_settings.autotracker_config is not None
+    ):
+        raise ValueError("Autotracker is active in both arms, please specify only one arm")
+    elif lf_microscope_settings.autotracker_config is not None:
         lf_autotracker_settings = autotracker_settings
-    elif autotracker_settings.tracking_arm == 'ls':
+    elif ls_microscope_settings.autotracker_config is not None:
         ls_autotracker_settings = autotracker_settings
 
     with MantisAcquisition(
