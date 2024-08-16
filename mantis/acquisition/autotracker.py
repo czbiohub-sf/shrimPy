@@ -1,5 +1,6 @@
 # %%
 from pathlib import Path
+from time import sleep
 from typing import Callable, Optional, Tuple, cast
 
 import numpy as np
@@ -55,7 +56,7 @@ def multiotsu_centroid(
     mov_img: ArrayLike,
 ) -> list:
     """
-    Computes the translation shifts using a multiotsu threshold approach by finding the centroid of the regions
+    Computes the translation shifts_zyx using a multiotsu threshold approach by finding the centroid of the regions
 
     Parameters
     ----------
@@ -66,8 +67,8 @@ def multiotsu_centroid(
 
     Returns
     -------
-    shifts : list
-        list of shifts in z, y, x order
+    shifts_zyx : list
+        list of shifts_zyx in z, y, x order
     """
     # Process moving image
     mov_img = rescale_intensity(mov_img, in_range='image', out_range=(0, 1.0))
@@ -86,8 +87,8 @@ def multiotsu_centroid(
     moving_center = calc_weighted_center(mov_img)
     target_center = calc_weighted_center(ref_img)
 
-    # Find the shifts
-    shifts = moving_center - target_center
+    # Find the shifts_zyx
+    shifts_zyx = moving_center - target_center
 
     logger.debug(
         'moving_center (z,y,x): %f,%f,%f',
@@ -101,9 +102,9 @@ def multiotsu_centroid(
         target_center[1],
         target_center[2],
     )
-    logger.debug('shifts (z,y,x): %f,%f,%f', shifts[0], shifts[1], shifts[2])
+    logger.debug('shifts_zyx (z,y,x): %f,%f,%f', shifts_zyx[0], shifts_zyx[1], shifts_zyx[2])
 
-    return shifts
+    return shifts_zyx
 
 
 def template_matching(ref_img, moving_img, template_slicing_zyx):
@@ -296,14 +297,14 @@ class Autotracker(object):
         tracking_method : str
             Method to use for autofocus. Options are 'phase_cross_correlation', 'template_matching', 'multi_otsu'
         scale : ArrayLike[float, float, float]
-            Scale factor to convert shifts from px to um
+            Scale factor to convert shifts_zyx from px to um
         xy_dampening : tuple[int]
-            Dampening factor for xy shifts
+            Dampening factor for xy shifts_zyx
         """
         self.tracking_method = tracking_method
         self.zyx_dampening = zyx_dampening_factor
         self.scale = scale
-        self.shifts = None
+        self.shifts_zyx = None
 
     def estimate_shift(self, ref_img: ArrayLike, mov_img: ArrayLike, **kwargs) -> np.ndarray:
         """
@@ -329,35 +330,36 @@ class Autotracker(object):
         if not autofocus_method_func:
             raise ValueError(f'Unknown autofocus method: {self.tracking_method}')
 
-        shifts = autofocus_method_func(ref_img=ref_img, mov_img=mov_img, **kwargs)
+        shifts_zyx = autofocus_method_func(ref_img=ref_img, mov_img=mov_img, **kwargs)
 
-        # Shifts in px to shifts in um
-        self.shifts = np.array(shifts) * self.scale
+        # shifts_zyx in px to shifts_zyx in um
+        self.shifts_zyx = np.array(shifts_zyx) * self.scale
 
         if self.zyx_dampening is not None:
-            self.shifts = self.shifts * self.zyx_dampening
-        logger.info(f'Shifts (z,y,x): {self.shifts}')
+            self.shifts_zyx = self.shifts_zyx * self.zyx_dampening
+        logger.info(f'shifts_zyx (z,y,x): {self.shifts_zyx}')
 
-        return self.shifts
+        return self.shifts_zyx
 
-    # Function to log the shifts to a csv file
+    # Function to log the shifts_zyx to a csv file
     def save_shifts_to_file(
         self,
         output_file: str,
         position_id: int,
         timepoint_id: int,
-        shifts: Tuple[int, int, int] = None,
+        shifts_zyx: Tuple[int, int, int] = None,
+        stage_coords: Tuple[int, int, int] = None,
         overwrite: bool = False,
     ) -> None:
         """
-        Saves the computed shifts to a CSV file.
+        Saves the computed shifts_zyx to a CSV file.
 
         Parameters
         ----------
         output_file : str
             Path to the output CSV file.
-        shifts : Tuple[int, int, int]
-            The computed shifts (Z, Y, X).
+        shifts_zyx : Tuple[int, int, int]
+            The computed shifts_zyx (Z, Y, X).
         position_id : int
             Identifier for the position.
         timepoint_id : int
@@ -367,14 +369,19 @@ class Autotracker(object):
         """
         # Convert output_file to a Path object
         output_path = Path(output_file)
-        if shifts is None:
-            shifts = self.shifts
+        if shifts_zyx is None:
+            shifts_zyx = self.shifts_zyx
+        if stage_coords is None:
+            stage_coords = (0, 0, 0)
         data = {
             "PositionID": [position_id],
             "TimepointID": [timepoint_id],
-            "ShiftZ": [shifts[-3]],
-            "ShiftY": [shifts[-2]],
-            "ShiftX": [shifts[-1]],
+            "ShiftZ": [shifts_zyx[-3]],
+            "ShiftY": [shifts_zyx[-2]],
+            "ShiftX": [shifts_zyx[-1]],
+            "StageZ": [stage_coords[-3]],
+            "StageY": [stage_coords[-2]],
+            "StageX": [stage_coords[-1]],
         }
 
         df = pd.DataFrame(data)
@@ -387,27 +394,27 @@ class Autotracker(object):
             df.to_csv(output_path, mode='a', header=False, index=False)
 
     def limit_shifts_zyx(
-        self, shifts: Tuple[int, int, int], limits: Tuple[int, int, int] = (5, 5, 5)
+        self, shifts_zyx: Tuple[int, int, int], limits: Tuple[int, int, int] = (5, 5, 5)
     ) -> Tuple[int, int, int]:
         """
-        Limits the shifts to the specified limits.
+        Limits the shifts_zyx to the specified limits.
 
         Parameters
         ----------
-        shifts : Tuple[int, int, int]
-            The computed shifts (Z, Y, X).
+        shifts_zyx : Tuple[int, int, int]
+            The computed shifts_zyx (Z, Y, X).
         limits : Tuple[int, int, int]
-            The limits for the shifts (Z, Y, X).
+            The limits for the shifts_zyx (Z, Y, X).
 
         Returns
         -------
         Tuple[int, int, int]
-            The limited shifts.
+            The limited shifts_zyx.
         """
-        shifts = np.array(shifts)
+        shifts_zyx = np.array(shifts_zyx)
         limits = np.array(limits)
-        shifts = np.where(np.abs(shifts) > limits, 0, shifts)
-        return tuple(shifts)
+        shifts_zyx = np.where(np.abs(shifts_zyx) > limits, 0, shifts_zyx)
+        return tuple(shifts_zyx)
 
 
 # TODO: logic for handling which t_idx to grab as reference. If the volume changes
@@ -432,6 +439,7 @@ def get_volume(dataset, axes):
 def autotracker_hook_fn(
     arm,
     autotracker_settings,
+    position_settings,
     channel_config,
     z_slice_settings,
     output_shift_path,
@@ -446,6 +454,8 @@ def autotracker_hook_fn(
     axes : Position, Time, Channel, Z_slice
     dataset: Dataset saved in disk
     """
+    # logger.info('Autotracker hook function called for axes %s', axes)
+
     # TODO: handle the lf acq or ls_a
     if arm == 'lf':
         if axes == globals.lf_last_img_idx:
@@ -467,52 +477,103 @@ def autotracker_hook_fn(
     output_shift_path = Path(output_shift_path)
 
     # Get axes info
-    p_idx = axes['position']
+    p_label = axes['position']
+    p_idx = position_settings.position_labels.index(p_label)
     t_idx = axes['time']
     channel = axes['channel']
     z_idx = axes['z']
 
-    # Skip the 1st timepoint
-    if t_idx > 0:
-        if t_idx % tracking_interval != 0:
-            logger.debug('Skipping autotracking t %d', t_idx)
-            return
-        # Get the z_max
-        if channel == tracking_channel and z_idx == (num_slices - 1):
+    tracker = Autotracker(
+        tracking_method=tracking_method,
+        scale=scale,
+        shift_limit=shift_limit,
+        zyx_dampening_factor=zyx_dampening_factor,
+    )
+    # Get the z_max
+    if channel == tracking_channel and z_idx == (num_slices - 1):
+        # Skip the 1st timepoint
+        if t_idx > 1:
+            if t_idx % tracking_interval != 0:
+                logger.debug('Skipping autotracking t %d', t_idx)
+                return
             logger.debug("WELCOME TO THE FOCUS ZONE")
-            logger.debug('Curr axes :P:%s, T:%d, C:%s, Z:%d', p_idx, t_idx, channel, z_idx)
+            # logger.debug('Curr axes :P:%s, T:%d, C:%s, Z:%d', p_idx, t_idx, channel, z_idx)
 
             # Logic to get the volumes
-            # TODO: This is a placeholder, the actual implementation will be different
             z_volume = z_range
             volume_t0_axes = (p_idx, t_idx, tracking_channel, z_volume)
             volume_t1_axes = (p_idx, t_idx, tracking_channel, z_volume)
-            # Compute the shifts
+            # Compute the shifts_zyx
             logger.debug('Instantiating autotracker')
-            tracker = Autotracker(
-                tracking_method=tracking_method,
-                scale=scale,
-                shift_limit=shift_limit,
-                zyx_dampening_factor=zyx_dampening_factor,
-            )
             if globals.demo_run:
                 # Random shifting for demo purposes
-                shifts = np.random.randint(-50, 50, 3)
-                logger.info('Shifts (z,y,x): %f,%f,%f', shifts[0], shifts[1], shifts[2])
+                shifts_zyx = np.random.randint(-50, 50, 3)
+                sleep(3)
+                logger.info(
+                    'shifts_zyx (z,y,x): %f,%f,%f', shifts_zyx[0], shifts_zyx[1], shifts_zyx[2]
+                )
             else:
                 volume_t0 = get_volume(dataset, volume_t0_axes)
                 volume_t1 = get_volume(dataset, volume_t1_axes)
                 # Reference and moving volumes
-                shifts = tracker.estimate_shifts(volume_t0, volume_t1)
+                shifts_zyx = tracker.estimate_shifts(volume_t0, volume_t1)
 
-            # Save the shifts
-            # TODO: This is a placeholder, the actual implementation will be different
             position_id = str(axes['position']) + '.csv'
             shift_coord_output = output_shift_path / position_id
-            tracker.save_shifts_to_file(
-                shift_coord_output, position_id=p_idx, timepoint_id=t_idx, shifts=shifts
-            )
 
+            # Read the previous shifts_zyx and coords
+            prev_shifts = pd.read_csv(shift_coord_output)
+            prev_shifts = prev_shifts.iloc[-1]
+
+            # Read the previous shifts_zyx
+            prev_x = position_settings.xyz_positions_shift[p_idx][0]
+            prev_y = position_settings.xyz_positions_shift[p_idx][1]
+            # Update Z shifts_zyx if available
+            if position_settings.xyz_positions_shift[p_idx][2] is not None:
+                prev_z = position_settings.xyz_positions_shift[p_idx][2]
+                logger.info('Previous shifts_zyx: %f,%f,%f', prev_z, prev_y, prev_x)
+            else:
+                prev_z = None
+                logger.info('Previous shifts_yx:,%f,%f', prev_y, prev_x)
             # Update the event coordinates
-            # TODO: This is a placeholder, the actual implementation will be different
-            # event_coords = {'Z': shifts[0], 'Y': shifts[1], 'X': shifts[2]}
+            position_settings.xyz_positions_shift[p_idx][0] = prev_x + shifts_zyx[-1]
+            position_settings.xyz_positions_shift[p_idx][1] = prev_y + shifts_zyx[-2]
+            # Update Z shifts_zyx if available
+            if position_settings.xyz_positions_shift[p_idx][2] is not None:
+                position_settings.xyz_positions_shift[p_idx][2] = prev_z + shifts_zyx[-3]
+                logger.info(
+                    'New positions: %f,%f,%f', *position_settings.xyz_positions_shift[p_idx]
+                )
+            else:
+                logger.info(
+                    'New positions: %f,%f', *position_settings.xyz_positions_shift[p_idx][0:2]
+                )
+            # Save the shifts_zyx
+            tracker.save_shifts_to_file(
+                shift_coord_output,
+                position_id=p_label,
+                timepoint_id=t_idx,
+                shifts_zyx=shifts_zyx,
+                stage_coords=(
+                    position_settings.xyz_positions_shift[p_idx][2],
+                    position_settings.xyz_positions_shift[p_idx][1],
+                    position_settings.xyz_positions_shift[p_idx][0],
+                ),
+            )
+        else:
+            # Save the positions at t=0
+            position_id = str(axes['position']) + '.csv'
+            shift_coord_output = output_shift_path / position_id
+            prev_y = position_settings.xyz_positions_shift[p_idx][1]
+            prev_x = position_settings.xyz_positions_shift[p_idx][0]
+            if position_settings.xyz_positions_shift[p_idx][2] is not None:
+                prev_z = position_settings.xyz_positions_shift[p_idx][2]
+            else:
+                prev_z = None
+            tracker.save_shifts_to_file(
+                shift_coord_output,
+                position_id=p_label,
+                timepoint_id=t_idx,
+                shifts_zyx=(0, 0, 0),
+                stage_coords=(prev_z, prev_y, prev_x),
+            )

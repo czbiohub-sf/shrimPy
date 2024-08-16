@@ -1,3 +1,4 @@
+import copy
 import warnings
 
 from dataclasses import field
@@ -36,10 +37,12 @@ class PositionSettings:
     position_labels: List[str] = field(default_factory=list)
     num_positions: int = field(init=False, default=0)
     well_ids: List[str] = field(init=False, default_factory=list)
+    xyz_positions_shift: list = field(init=False, default_factory=list)
 
     def __post_init__(self):
         assert len(self.xyz_positions) == len(self.position_labels)
         self.num_positions = len(self.xyz_positions)
+        self.xyz_positions_shift = copy.deepcopy(self.xyz_positions)
 
         try:
             # Look for "'A1-Site_0', 'H12-Site_1', ... " format

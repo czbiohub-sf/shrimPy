@@ -472,6 +472,8 @@ class MantisAcquisition(object):
                 xyz_positions=xyz_positions,
                 position_labels=position_labels,
             )
+            self.position_settings.xyz_positions_shift = deepcopy(xyz_positions)
+
         else:
             logger.debug('Position list is already populated and will not be updated')
 
@@ -690,9 +692,11 @@ class MantisAcquisition(object):
                         )
                     )
 
-    def setup_autotracker(self):
-        logger.info('Setting up autotracker')
-        # TODO: probably setup the GPU/CPU settings here
+    def update_position_autotracker(self):
+        # Update the position list from the backup
+        self.position_settings.xyz_positions = deepcopy(
+            self.position_settings.xyz_positions_shift
+        )
 
     def go_to_position(self, position_index: int):
         # Move slowly for short distances such that autofocus can stay engaged.
@@ -1000,9 +1004,6 @@ class MantisAcquisition(object):
         logger.debug('Setting up autoexposure')
         self.setup_autoexposure()
 
-        logger.debug('Setting up autotracker')
-        self.setup_autotracker()
-
     def acquire(self):
         """
         Simultaneously acquire label-free and light-sheet data over multiple
@@ -1029,6 +1030,7 @@ class MantisAcquisition(object):
                 autotracker_hook_fn,
                 'lf',
                 self.lf_acq.autotracker_settings,
+                self._position_settings,
                 self.lf_acq.microscope_settings.autotracker_config,
                 self.lf_acq.slice_settings,
                 self._acq_dir,
@@ -1113,7 +1115,22 @@ class MantisAcquisition(object):
 
                 # move to the given position
                 if p_label != previous_position_label:
+                    # Check if autotracker is on either arm
+                    if (
+                        self.ls_acq.microscope_settings.autotracker_config is not None
+                        or self.lf_acq.microscope_settings.autotracker_config is not None
+                    ):
+                        # TODO: Should we get the corods from the csv file or the modified xyz_positions_shifts
+                        logger.debug('Updating the positions for autotracker')
+                        logger.debug(
+                            'Previous position: %f,%f ',
+                            *self.position_settings.xyz_positions[p_idx][0:2],
+                        )
+                        self.update_position_autotracker()
                     self.go_to_position(p_idx)
+
+                    # TODO get the delta shifts
+                    # read the files here and move separately
 
                 # autofocus
                 if self.lf_acq.microscope_settings.use_autofocus:
