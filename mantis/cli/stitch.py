@@ -21,7 +21,7 @@ from mantis.analysis.stitch import (
     stitch_shifted_store,
 )
 from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
-from mantis.cli.utils import create_empty_hcs_zarr, process_single_position_v2, yaml_to_model
+from mantis.cli.utils import process_single_position_v2, yaml_to_model
 
 
 @click.command()
@@ -50,6 +50,7 @@ def stitch(
             "This function is intended to be used with SLURM. "
             "Running on local machine instead."
         )
+    assert not Path(output_dirpath).exists(), f'Output path: {output_dirpath} already exists'
 
     slurm_out_path = Path(output_dirpath).parent / "slurm_output" / "stitch-%j.out"
     shifted_store_path = Path(temp_path, f"TEMP_{input_position_dirpaths[0].parts[-4]}")
@@ -90,14 +91,17 @@ def stitch(
     click.echo(f'Creating temporary zarr store at {shifted_store_path}')
     stitched_shape = (T, len(settings.channels), Z) + output_shape
     stitched_chunks = chunks[:3] + (4096, 4096)
-    create_empty_hcs_zarr(
-        store_path=shifted_store_path,
-        position_keys=[p.parts[-3:] for p in input_position_dirpaths],
-        shape=stitched_shape,
-        chunks=stitched_chunks,
-        channel_names=settings.channels,
-        dtype=np.float32,
-    )
+    with open_ome_zarr(
+        shifted_store_path, layout='hcs', mode='w', channel_names=settings.channels
+    ) as temp_dataset:
+        for position_path in input_position_dirpaths:
+            position = temp_dataset.create_position(*position_path.parts[-3:])
+            position.create_zeros(
+                name='0',
+                shape=stitched_shape,
+                chunks=stitched_chunks,
+                dtype=np.float32,
+            )
 
     # prepare slurm parameters
     params = SlurmParams(
