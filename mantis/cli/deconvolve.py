@@ -19,7 +19,11 @@ from mantis.cli.utils import create_empty_hcs_zarr, yaml_to_model
 
 
 def apply_deconvolve_single_position(
-    input_position_dirpath: str, psf_dirpath: str, config_filepath: str, output_dirpath: Path
+    input_position_dirpath: str,
+    psf_dirpath: str,
+    config_filepath: str,
+    output_dirpath: Path,
+    device="cpu",
 ):
     """
     Apply deconvolution to a single position
@@ -65,13 +69,13 @@ def apply_deconvolve_single_position(
             # Apply deconvolution
             click.echo(f"Deconvolving channel {c}/{C-1}, time {t}/{T-1}")
             zyx_data_deconvolved = apply_inverse_transfer_function(
-                torch.from_numpy(zyx_data.astype(np.float32)),
-                torch.tensor(transfer_function),
+                torch.from_numpy(zyx_data.astype(np.float32)).to(device),
+                torch.tensor(transfer_function).to(device),
                 0,
                 regularization_strength=settings.regularization_strength,
             )
             click.echo("Saving to output...")
-            output_dataset["0"][t, c] = zyx_data_deconvolved.numpy()
+            output_dataset["0"][t, c] = zyx_data_deconvolved.cpu().numpy()
 
     input_dataset.close()
     output_dataset.close()
@@ -89,11 +93,17 @@ def apply_deconvolve_single_position(
 )
 @config_filepath()
 @output_dirpath()
+@click.option(
+    "--device",
+    default="cpu",
+    help="Device to use for deconvolution. Default is 'cpu'.",
+)
 def deconvolve(
     input_position_dirpaths: List[str],
     psf_dirpath: str,
     config_filepath: str,
     output_dirpath: str,
+    device: str,
 ):
     """
     Deconvolve across T and C axes using a PSF and a configuration file
@@ -122,4 +132,5 @@ def deconvolve(
             psf_dirpath,
             config_filepath,
             output_dirpath / Path(*input_position_dirpath.parts[-3:]),
+            device=device,
         )
