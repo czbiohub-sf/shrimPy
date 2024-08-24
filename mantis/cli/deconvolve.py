@@ -58,14 +58,14 @@ def apply_deconvolve_single_position(
             "Consider resampling the PSF."
         )
 
-    for t in range(1):  # T):
+    for t in range(T):  # T):
         for c in range(C):
             zyx_data = input_dataset["0"][t, c]
 
             # Apply deconvolution
             click.echo(f"Deconvolving channel {c}/{C-1}, time {t}/{T-1}")
             zyx_data_deconvolved = apply_inverse_transfer_function(
-                torch.tensor(zyx_data),
+                torch.from_numpy(zyx_data.astype(np.float32)),
                 torch.tensor(transfer_function),
                 0,
                 regularization_strength=settings.regularization_strength,
