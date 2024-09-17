@@ -21,7 +21,7 @@ classifiers = [
 # list package dependencies here
 dependencies = [
   "copylot @ git+https://github.com/czbiohub-sf/coPylot",
-  "iohub==0.1.0",
+  "iohub @ git+https://github.com/czbiohub-sf/iohub.git",
   "matplotlib",
   "napari; 'arm64' in platform_machine",                 # without Qt5 and skimage
   "napari[all]; 'arm64' not in platform_machine",        # with Qt5 and skimage
@@ -34,7 +34,7 @@ dependencies = [
   "monai",
   "pandas~=2.1",
   "pycromanager==0.28.1",
-  "pydantic",
+  "pydantic>=2.0.0",
   "pylablib==1.4.1",
   "scipy",
   "slurmkit @ git+https://github.com/royerlab/slurmkit",

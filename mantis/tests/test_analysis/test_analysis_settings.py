@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from pydantic import ValidationError
+from pydantic.v1 import ValidationError
 
 from mantis.analysis.AnalysisSettings import (
     DeskewSettings,
