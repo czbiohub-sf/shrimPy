@@ -1,12 +1,20 @@
 import click
 
-from mantis.cli.apply_affine import apply_affine
+from mantis.cli.characterize_psf import characterize_psf
+from mantis.cli.concatenate import concatenate
+from mantis.cli.deconvolve import deconvolve
 from mantis.cli.deskew import deskew
-from mantis.cli.estimate_affine import estimate_affine
 from mantis.cli.estimate_bleaching import estimate_bleaching
 from mantis.cli.estimate_deskew import estimate_deskew
-from mantis.cli.optimize_affine import optimize_affine
+from mantis.cli.estimate_psf import estimate_psf
+from mantis.cli.estimate_registration import estimate_registration
+from mantis.cli.estimate_stabilization import estimate_stabilization
+from mantis.cli.estimate_stitch import estimate_stitch
+from mantis.cli.optimize_registration import optimize_registration
+from mantis.cli.register import register
 from mantis.cli.run_acquisition import run_acquisition
+from mantis.cli.stabilize import stabilize
+from mantis.cli.stitch import stitch
 
 CONTEXT = {"help_option_names": ["-h", "--help"]}
 
@@ -26,6 +34,14 @@ cli.add_command(run_acquisition)
 cli.add_command(estimate_bleaching)
 cli.add_command(estimate_deskew)
 cli.add_command(deskew)
-cli.add_command(estimate_affine)
-cli.add_command(optimize_affine)
-cli.add_command(apply_affine)
+cli.add_command(estimate_registration)
+cli.add_command(optimize_registration)
+cli.add_command(register)
+cli.add_command(estimate_stitch)
+cli.add_command(stitch)
+cli.add_command(concatenate)
+cli.add_command(estimate_stabilization)
+cli.add_command(stabilize)
+cli.add_command(estimate_psf)
+cli.add_command(deconvolve)
+cli.add_command(characterize_psf)

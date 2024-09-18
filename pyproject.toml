@@ -21,7 +21,7 @@ classifiers = [
 # list package dependencies here
 dependencies = [
   "copylot @ git+https://github.com/czbiohub-sf/coPylot",
-  "iohub==0.1.0.dev5",
+  "iohub==0.1.0",
   "matplotlib",
   "napari; 'arm64' in platform_machine",                 # without Qt5 and skimage
   "napari[all]; 'arm64' not in platform_machine",        # with Qt5 and skimage
@@ -29,16 +29,22 @@ dependencies = [
   "natsort",
   "ndtiff>=2.0",
   "nidaqmx",
-  "numpy",
+  "numpy<2",
+  "markdown",
+  "monai",
+  "pandas~=2.1",
   "pycromanager==0.28.1",
   "pydantic",
   "pylablib==1.4.1",
   "scipy",
   "slurmkit @ git+https://github.com/royerlab/slurmkit",
   "tifffile",
+  "torch>=2.3",
   "waveorder @ git+https://github.com/mehta-lab/waveorder",
   "largestinteriorrectangle",
   "antspyx",
+  "pystackreg",
+  "napari-psf-analysis",
 ]
 
 
@@ -70,7 +76,7 @@ version = { attr = "mantis.__version__" }
 
 [tool.black]
 line-length = 95
-target-version = ['py39', 'py310']
+target-version = ['py310']
 include = '\.pyi?$'
 skip-string-normalization = true
 exclude = '''

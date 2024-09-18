@@ -39,7 +39,7 @@ def rescale_voxel_size(affine_matrix, input_scale):
     required=False,
     type=int,
 )
-def apply_affine(
+def register(
     source_position_dirpaths: List[str],
     target_position_dirpaths: List[str],
     config_filepath: str,
@@ -47,9 +47,11 @@ def apply_affine(
     num_processes: int,
 ):
     """
-    Apply an affine transformation to a single position across T and C axes based on a registration config file
+    Apply an affine transformation to a single position across T and C axes based on a registration config file.
 
-    >> mantis apply_affine -i ./acq_name_lightsheet_deskewed.zarr/*/*/* -c ./register.yml -o ./acq_name_registerred.zarr
+    Start by generating an initial affine transform with `estimate-register`. Optionally, refine this transform with `optimize-register`. Finally, use `register`.
+
+    >> mantis register -s source.zarr/*/*/* -t target.zarr/*/*/* -c config.yaml -o ./acq_name_registerred.zarr
     """
 
     # Convert string paths to Path objects
@@ -75,7 +77,6 @@ def apply_affine(
 
     with open_ome_zarr(target_position_dirpaths[0]) as target_dataset:
         target_channel_names = target_dataset.channel_names
-        Z_target, Y_target, X_target = target_dataset.data.shape[-3:]
         target_shape_zyx = target_dataset.data.shape[-3:]
 
     click.echo('\nREGISTRATION PARAMETERS:')
@@ -101,23 +102,23 @@ def apply_affine(
             source_shape_zyx, target_shape_zyx, matrix
         )
         # TODO: start or stop may be None
-        cropped_target_shape_zyx = (
+        # Overwrite the previous target shape
+        cropped_shape_zyx = (
             Z_slice.stop - Z_slice.start,
             Y_slice.stop - Y_slice.start,
             X_slice.stop - X_slice.start,
         )
-        # Overwrite the previous target shape
-        Z_target, Y_target, X_target = cropped_target_shape_zyx[-3:]
-        click.echo(f'Shape of cropped output dataset: {target_shape_zyx}\n')
+        click.echo(f'Shape of cropped output dataset: {cropped_shape_zyx}\n')
     else:
+        cropped_shape_zyx = target_shape_zyx
         Z_slice, Y_slice, X_slice = (
-            slice(0, Z_target),
-            slice(0, Y_target),
-            slice(0, X_target),
+            slice(0, cropped_shape_zyx[-3]),
+            slice(0, cropped_shape_zyx[-2]),
+            slice(0, cropped_shape_zyx[-1]),
         )
 
     output_metadata = {
-        "shape": (len(time_indices), len(output_channel_names), Z_target, Y_target, X_target),
+        "shape": (len(time_indices), len(output_channel_names)) + tuple(cropped_shape_zyx),
         "chunks": None,
         "scale": (1,) * 2 + tuple(output_voxel_size),
         "channel_names": output_channel_names,
@@ -141,7 +142,7 @@ def apply_affine(
 
     affine_transform_args = {
         'matrix': matrix,
-        'output_shape_zyx': target_shape_zyx,  # NOTE: this is the shape of the original target dataset
+        'output_shape_zyx': target_shape_zyx,  # NOTE: this should be the shape of the original target dataset
         'crop_output_slicing': ([Z_slice, Y_slice, X_slice] if not keep_overhang else None),
         'extra_metadata': extra_metadata,
     }
@@ -186,4 +187,4 @@ def apply_affine(
 
 
 if __name__ == "__main__":
-    apply_affine()
+    register()
