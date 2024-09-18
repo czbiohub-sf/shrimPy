@@ -12,11 +12,10 @@ import click
 import numpy as np
 import yaml
 
-from numpy.typing import DTypeLike
-from tqdm import tqdm
-
 from iohub import open_ome_zarr
 from iohub.ngff import Position, TransformationMeta
+from numpy.typing import DTypeLike
+from tqdm import tqdm
 
 
 # TODO: replace this with recOrder recOrder.cli.utils.create_empty_hcs()
