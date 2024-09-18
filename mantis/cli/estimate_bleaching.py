@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from iohub import open_ome_zarr
-from iohub.ngff import channel_display_settings
+from iohub.ngff.display import channel_display_settings
 from scipy.optimize import curve_fit
 from tqdm import tqdm
 
