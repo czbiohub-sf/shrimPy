@@ -1,6 +1,7 @@
 import datetime
 import time
 
+from deprecated import deprecated
 from pathlib import Path
 
 import click
@@ -21,6 +22,7 @@ from mantis.cli.parsing import input_position_dirpaths, output_filepath
 from mantis.cli.utils import model_to_yaml
 
 
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def write_config_file(
     shifts: pd.DataFrame, output_filepath: str, channel: str, fliplr: bool, flipud: bool
 ):
@@ -37,6 +39,7 @@ def write_config_file(
     model_to_yaml(settings, output_filepath)
 
 
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 @click.command()
 @input_position_dirpaths()
 @output_filepath()

@@ -1,6 +1,7 @@
 import ants
 import click
 import numpy as np
+from deprecated import deprecated
 
 from iohub.ngff import open_ome_zarr
 
@@ -14,7 +15,7 @@ from mantis.cli.utils import (
     yaml_to_model,
 )
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def apply_stabilization_transform(
     zyx_data: np.ndarray, list_of_shifts: list[np.ndarray], t_idx: int, **kwargs
 ):
@@ -41,7 +42,7 @@ def apply_stabilization_transform(
 
     return stabilized_zyx
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 @click.command()
 @input_position_dirpaths()
 @output_dirpath()

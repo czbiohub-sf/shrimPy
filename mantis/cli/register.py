@@ -1,3 +1,4 @@
+from deprecated import deprecated
 from pathlib import Path
 from typing import List
 
@@ -21,11 +22,11 @@ from mantis.cli.utils import (
     yaml_to_model,
 )
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def rescale_voxel_size(affine_matrix, input_scale):
     return np.linalg.norm(affine_matrix, axis=1) * input_scale
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 @click.command()
 @source_position_dirpaths()
 @target_position_dirpaths()

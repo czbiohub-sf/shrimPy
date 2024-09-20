@@ -1,3 +1,4 @@
+from deprecated import deprecated
 from pathlib import Path
 from typing import List
 
@@ -17,7 +18,7 @@ from mantis.cli.parsing import (
 )
 from mantis.cli.utils import create_empty_hcs_zarr, yaml_to_model
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def apply_deconvolve_single_position(
     input_position_dirpath: str, psf_dirpath: str, config_filepath: str, output_dirpath: Path
 ):
@@ -76,7 +77,7 @@ def apply_deconvolve_single_position(
     input_dataset.close()
     output_dataset.close()
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 @click.command()
 @input_position_dirpaths()
 @click.option(

@@ -1,5 +1,7 @@
 from dataclasses import asdict
 
+from deprecated import deprecated
+
 import click
 import napari
 import numpy as np
@@ -10,7 +12,7 @@ from iohub.ngff import open_ome_zarr
 from mantis.analysis.AnalysisSettings import DeskewSettings
 from mantis.cli.parsing import input_position_dirpaths, output_filepath
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 @click.command()
 @input_position_dirpaths()
 @output_filepath()

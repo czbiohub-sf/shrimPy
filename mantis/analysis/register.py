@@ -1,3 +1,4 @@
+from deprecated import deprecated
 from typing import Tuple
 
 import ants
@@ -6,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.ndimage
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def get_3D_rescaling_matrix(start_shape_zyx, scaling_factor_zyx=(1, 1, 1), end_shape_zyx=None):
     center_Y_start, center_X_start = np.array(start_shape_zyx)[-2:] / 2
     if end_shape_zyx is None:
@@ -34,7 +35,7 @@ def get_3D_rescaling_matrix(start_shape_zyx, scaling_factor_zyx=(1, 1, 1), end_s
     )
     return scaling_matrix
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def get_3D_rotation_matrix(
     start_shape_zyx: Tuple, angle: float = 0.0, end_shape_zyx: Tuple = None
 ) -> np.ndarray:
@@ -88,7 +89,7 @@ def get_3D_rotation_matrix(
     )
     return rotation_matrix
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def convert_transform_to_ants(T_numpy: np.ndarray):
     """Homogeneous 3D transformation matrix from numpy to ants
 
@@ -134,7 +135,7 @@ def convert_transform_to_ants(T_numpy: np.ndarray):
 
 #     return T_ants
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def convert_transform_to_numpy(T_ants):
     """
     Convert the ants transformation matrix to numpy 3D homogenous transform
@@ -166,7 +167,7 @@ def convert_transform_to_numpy(T_ants):
 
     return T_numpy
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def apply_affine_transform(
     zyx_data: np.ndarray,
     matrix: np.ndarray,
@@ -245,7 +246,7 @@ def apply_affine_transform(
 
     return registered_zyx
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def find_lir(registered_zyx: np.ndarray, plot: bool = False) -> Tuple:
     # Find the lir YX
     registered_yx_bool = registered_zyx[registered_zyx.shape[0] // 2].copy()
@@ -306,7 +307,7 @@ def find_lir(registered_zyx: np.ndarray, plot: bool = False) -> Tuple:
 
     return (Z_slice, Y_slice, X_slice)
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def find_overlapping_volume(
     input_zyx_shape: Tuple,
     target_zyx_shape: Tuple,

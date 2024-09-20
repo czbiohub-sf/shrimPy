@@ -1,3 +1,4 @@
+from deprecated import deprecated
 from pathlib import Path
 from typing import Callable
 
@@ -9,6 +10,7 @@ from natsort import natsorted
 from mantis.cli.option_eat_all import OptionEatAll
 
 
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def _validate_and_process_paths(
     ctx: click.Context, opt: click.Option, value: str
 ) -> list[Path]:
@@ -22,11 +24,11 @@ def _validate_and_process_paths(
                 )
     return input_paths
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def _str_to_path(ctx: click.Context, opt: click.Option, value: str) -> Path:
     return Path(value)
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def input_position_dirpaths() -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.option(
@@ -41,7 +43,7 @@ def input_position_dirpaths() -> Callable:
 
     return decorator
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def source_position_dirpaths() -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.option(
@@ -56,7 +58,7 @@ def source_position_dirpaths() -> Callable:
 
     return decorator
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def target_position_dirpaths() -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.option(
@@ -71,7 +73,7 @@ def target_position_dirpaths() -> Callable:
 
     return decorator
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def config_filepath() -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.option(
@@ -85,7 +87,7 @@ def config_filepath() -> Callable:
 
     return decorator
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def output_dirpath() -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.option(
@@ -99,7 +101,7 @@ def output_dirpath() -> Callable:
 
     return decorator
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def output_filepath() -> Callable:
     def decorator(f: Callable) -> Callable:
         return click.option(

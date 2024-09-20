@@ -2,6 +2,7 @@ import gc
 import time
 import warnings
 
+from deprecated import deprecated
 from pathlib import Path
 from typing import List
 
@@ -21,7 +22,7 @@ from mantis.analysis.analyze_psf import (
 from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
 from mantis.cli.utils import yaml_to_model
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def _characterize_psf(
     zyx_data: np.ndarray,
     zyx_scale: tuple[float, float, float],
@@ -80,7 +81,7 @@ def _characterize_psf(
 
     return peaks
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 @click.command()
 @input_position_dirpaths()
 @config_filepath()

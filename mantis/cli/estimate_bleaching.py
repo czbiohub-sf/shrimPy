@@ -1,6 +1,7 @@
 import os
 import warnings
 
+from deprecated import deprecated
 from pathlib import Path
 
 import click
@@ -17,7 +18,7 @@ from mantis.cli.parsing import input_position_dirpaths, output_dirpath
 
 MSECS_PER_MINUTE = 60000
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def plot_bleaching_curves(times, tczyx_data, channel_names, output_file, title=''):
     """Plots bleaching curves and estimates bleaching lifetimes
 
@@ -101,7 +102,7 @@ def plot_bleaching_curves(times, tczyx_data, channel_names, output_file, title='
     plt.savefig(output_file, bbox_inches='tight')
     plt.close()
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 @click.command()
 @input_position_dirpaths()
 @output_dirpath()

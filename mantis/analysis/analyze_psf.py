@@ -3,7 +3,7 @@ import importlib.resources as pkg_resources
 import pickle
 import shutil
 import webbrowser
-
+from deprecated import deprecated
 from pathlib import Path
 from typing import List
 
@@ -22,7 +22,7 @@ from scipy.signal import peak_widths
 
 import mantis.acquisition.scripts
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def _make_plots(
     output_path: Path,
     beads: List[ArrayLike],
@@ -73,7 +73,7 @@ def _make_plots(
 
     return (bead_psf_slices_paths, fwhm_vs_acq_axes_paths, psf_amp_paths)
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def generate_report(
     output_path: Path,
     data_dir: Path,
@@ -151,7 +151,7 @@ def generate_report(
     html_file_path = Path(html_file_path).absolute()
     webbrowser.open(html_file_path.as_uri())
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def extract_beads(
     zyx_data: ArrayLike, points: ArrayLike, scale: tuple, patch_size: tuple = None
 ):
@@ -171,7 +171,7 @@ def extract_beads(
 
     return beads_data, bead_offset
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def analyze_psf(zyx_patches: List[ArrayLike], bead_offsets: List[tuple], scale: tuple):
     results = []
     for patch, offset in zip(zyx_patches, bead_offsets):
@@ -208,7 +208,7 @@ def analyze_psf(zyx_patches: List[ArrayLike], bead_offsets: List[tuple], scale: 
 
     return df_gaussian_fit, df_1d_peak_width
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def calculate_peak_widths(zyx_data: ArrayLike, zyx_scale: tuple):
     scale_Z, scale_Y, scale_X = zyx_scale
     shape_Z, shape_Y, shape_X = zyx_data.shape
@@ -222,7 +222,7 @@ def calculate_peak_widths(zyx_data: ArrayLike, zyx_scale: tuple):
 
     return z_fwhm * scale_Z, y_fwhm * scale_Y, x_fwhm * scale_X
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def _adjust_fig(fig, ax):
     for _ax in ax.flatten():
         _ax.set_xticks([])
@@ -235,7 +235,7 @@ def _adjust_fig(fig, ax):
     fig.set_figwidth(fig_size[0] * fig_size_scaling)
     fig.set_figheight(fig_size[1] * fig_size_scaling)
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def plot_psf_slices(
     plots_dir: str,
     beads: List[ArrayLike],
@@ -289,7 +289,7 @@ def plot_psf_slices(
 
     return bead_xy_psf_path, bead_xz_psf_path, bead_yz_psf_path
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def plot_fwhm_vs_acq_axes(plots_dir: str, x, y, z, fwhm_x, fwhm_y, fwhm_z, axis_labels: tuple):
     def plot_fwhm_vs_acq_axis(out_dir: str, x, fwhm_x, fwhm_y, fwhm_z, x_axis_label: str):
         fig, ax = plt.subplots(1, 1)
@@ -310,7 +310,7 @@ def plot_fwhm_vs_acq_axes(plots_dir: str, x, y, z, fwhm_x, fwhm_y, fwhm_z, axis_
 
     return out_dirs
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def plot_psf_amp(plots_dir: str, x, y, z, amp, axis_labels: tuple):
     psf_amp_xy_path = plots_dir / 'psf_amp_xy.png'
     fig, ax = plt.subplots(1, 1)
@@ -338,7 +338,7 @@ def plot_psf_amp(plots_dir: str, x, y, z, amp, axis_labels: tuple):
 
     return psf_amp_xy_path, psf_amp_z_path
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def _generate_html(
     dataset_name: str,
     data_path: str,
@@ -445,7 +445,7 @@ def _generate_html(
 
     return formatted_html
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def detect_peaks(
     zyx_data: np.ndarray,
     block_size: int | tuple[int, int, int] = (8, 8, 8),

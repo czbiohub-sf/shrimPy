@@ -1,8 +1,9 @@
 import click
-
+from deprecated import deprecated
 
 # Copied directly from https://stackoverflow.com/a/48394004
 # Enables `-i ./input.zarr/*/*/*`
+@deprecated(reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 class OptionEatAll(click.Option):
     def __init__(self, *args, **kwargs):
         self.save_other_options = kwargs.pop('save_other_options', True)

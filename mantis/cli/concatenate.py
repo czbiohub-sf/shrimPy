@@ -1,5 +1,6 @@
 import glob
 
+from deprecated import deprecated
 from pathlib import Path
 
 import click
@@ -17,7 +18,7 @@ from mantis.cli.utils import (
     yaml_to_model,
 )
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def get_channel_combiner_metadata(
     data_paths_list: list[str], processing_channel_names: list[str]
 ):
@@ -62,11 +63,12 @@ def get_channel_combiner_metadata(
 
     return all_data_paths, all_channel_names, input_channel_idx, output_channel_idx
 
-
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 def get_slice(slice_param, max_value):
     return slice(0, max_value) if slice_param == 'all' else slice(*slice_param)
 
 
+@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
 @click.command()
 @config_filepath()
 @output_dirpath()
