@@ -1,3 +1,4 @@
+import pytest
 import yaml
 
 from click.testing import CliRunner
@@ -26,18 +27,20 @@ def test_concatenate_cli(example_plate, tmp_path, example_concatenate_settings):
 
     output_path = tmp_path / "output.zarr"
 
-    # Test deskew cli
-    runner = CliRunner()
-    result = runner.invoke(
-        cli,
-        [
-            "concatenate",
-            "-c",
-            str(config_path),
-            "-o",
-            str(output_path),
-        ],
-    )
+    with pytest.warns(DeprecationWarning) as record:
+        # Test deskew cli
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "concatenate",
+                "-c",
+                str(config_path),
+                "-o",
+                str(output_path),
+            ],
+        )
 
     assert output_path.exists()
     assert result.exit_code == 0
+    assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
