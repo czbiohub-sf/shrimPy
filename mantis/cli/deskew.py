@@ -1,10 +1,10 @@
-from deprecated import deprecated
 from pathlib import Path
 from typing import List
 
 import click
 import torch
 
+from deprecated import deprecated
 from iohub.ngff import open_ome_zarr
 
 from mantis.analysis.AnalysisSettings import DeskewSettings
@@ -17,7 +17,11 @@ from mantis.cli.utils import yaml_to_model
 # https://github.com/pytorch/pytorch/issues/40403#issuecomment-1422625325
 torch.multiprocessing.set_start_method('spawn', force=True)
 
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 @click.command()
 @input_position_dirpaths()
 @config_filepath()

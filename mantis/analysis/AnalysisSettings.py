@@ -1,24 +1,36 @@
 import warnings
-from deprecated import deprecated
+
 from typing import Literal, Optional, Union
 
 import numpy as np
 import torch
 
+from deprecated import deprecated
 from pydantic.v1 import BaseModel, Extra, NonNegativeInt, PositiveFloat, PositiveInt, validator
 
 
 # All settings classes inherit from MyBaseModel, which forbids extra parameters to guard against typos
-@deprecated(reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+@deprecated(
+    reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 class MyBaseModel(BaseModel, extra=Extra.forbid):
     pass
 
-@deprecated(reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 class ProcessingSettings(MyBaseModel):
     fliplr: Optional[bool] = False
     flipud: Optional[bool] = False
 
-@deprecated(reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 class DeskewSettings(MyBaseModel):
     pixel_size_um: PositiveFloat
     ls_angle_deg: PositiveFloat
@@ -50,7 +62,11 @@ class DeskewSettings(MyBaseModel):
                 )
         super().__init__(**data)
 
-@deprecated(reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 class RegistrationSettings(MyBaseModel):
     source_channel_names: list[str]
     target_channel_name: str
@@ -77,17 +93,29 @@ class RegistrationSettings(MyBaseModel):
 
         return v
 
-@deprecated(reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 class PsfFromBeadsSettings(MyBaseModel):
     axis0_patch_size: PositiveInt = 101
     axis1_patch_size: PositiveInt = 101
     axis2_patch_size: PositiveInt = 101
 
-@deprecated(reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 class DeconvolveSettings(MyBaseModel):
     regularization_strength: PositiveFloat = 0.001
 
-@deprecated(reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 class CharacterizeSettings(MyBaseModel):
     block_size: list[NonNegativeInt] = (64, 64, 32)
     blur_kernel_size: NonNegativeInt = 3
@@ -104,7 +132,11 @@ class CharacterizeSettings(MyBaseModel):
     def check_device(cls, v):
         return "cuda" if torch.cuda.is_available() else "cpu"
 
-@deprecated(reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 class ConcatenateSettings(MyBaseModel):
     concat_data_paths: list[str]
     time_indices: Union[int, list[int], Literal["all"]] = "all"
@@ -144,7 +176,11 @@ class ConcatenateSettings(MyBaseModel):
             raise ValueError("chunks_czyx must be a list of 4 integers (C, Z, Y, X)")
         return v
 
-@deprecated(reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 class StabilizationSettings(MyBaseModel):
     stabilization_estimation_channel: str
     stabilization_type: Literal["z", "xy", "xyz"]
@@ -164,7 +200,11 @@ class StabilizationSettings(MyBaseModel):
 
         return v
 
-@deprecated(reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This class is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 class StitchSettings(MyBaseModel):
     channels: Optional[list[str]] = None
     preprocessing: Optional[ProcessingSettings] = None

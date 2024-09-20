@@ -4,7 +4,6 @@ import napari
 import numpy as np
 
 from deprecated import deprecated
-
 from iohub import open_ome_zarr
 
 from mantis.analysis.AnalysisSettings import RegistrationSettings
@@ -20,7 +19,11 @@ from mantis.cli.utils import model_to_yaml, yaml_to_model
 # TODO: maybe a CLI call?
 T_IDX = 0
 
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 @click.command()
 @source_position_dirpaths()
 @target_position_dirpaths()

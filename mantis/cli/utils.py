@@ -4,7 +4,6 @@ import io
 import itertools
 import multiprocessing as mp
 
-from deprecated import deprecated
 from functools import partial
 from pathlib import Path
 from typing import Tuple
@@ -13,6 +12,7 @@ import click
 import numpy as np
 import yaml
 
+from deprecated import deprecated
 from iohub import open_ome_zarr
 from iohub.ngff import Position, TransformationMeta
 from numpy.typing import DTypeLike
@@ -20,7 +20,10 @@ from tqdm import tqdm
 
 
 # TODO: replace this with recOrder recOrder.cli.utils.create_empty_hcs()
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 def create_empty_zarr(
     position_paths: list[Path],
     output_path: Path,
@@ -90,7 +93,10 @@ def create_empty_zarr(
 
 
 # TODO: convert all code to use this function from now on
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 def create_empty_hcs_zarr(
     store_path: Path,
     position_keys: list[Tuple[str]],
@@ -170,7 +176,11 @@ def create_empty_hcs_zarr(
         if channel_name not in metadata_channel_names:
             position.append_channel(channel_name, resize_arrays=True)
 
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 def get_output_paths(input_paths: list[Path], output_zarr_path: Path) -> list[Path]:
     """Generates a mirrored output path list given an input list of positions"""
     list_output_path = []
@@ -181,7 +191,11 @@ def get_output_paths(input_paths: list[Path], output_zarr_path: Path) -> list[Pa
         list_output_path.append(Path(output_zarr_path, *path_strings))
     return list_output_path
 
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 def apply_function_to_zyx_and_save(
     func, position: Position, output_path: Path, t_idx: int, c_idx: int, **kwargs
 ) -> None:
@@ -201,7 +215,11 @@ def apply_function_to_zyx_and_save(
 
         click.echo(f"Finished Writing.. c={c_idx}, t={t_idx}")
 
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 def apply_transform_to_zyx_and_save_v2(
     func,
     position: Position,
@@ -257,7 +275,11 @@ def apply_transform_to_zyx_and_save_v2(
         else:
             click.echo(f"Skipping c={c_idx}, t={t_idx} due to all zeros or nans")
 
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 def process_single_position(
     func,
     input_data_path: Path,
@@ -316,7 +338,10 @@ def process_single_position(
 
 
 # TODO: modifiy how we get the time and channesl like recOrder (isinstance(input, list) or instance(input,int) or all)
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 def process_single_position_v2(
     func,
     input_data_path: Path,
@@ -416,7 +441,11 @@ def process_single_position_v2(
             iterable,
         )
 
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 def copy_n_paste(zyx_data: np.ndarray, zyx_slicing_params: list) -> np.ndarray:
     """
     Load a zyx array and crop given a list of ZYX slices()
@@ -441,7 +470,11 @@ def copy_n_paste(zyx_data: np.ndarray, zyx_slicing_params: list) -> np.ndarray:
     ]
     return zyx_data_sliced
 
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 def copy_n_paste_czyx(czyx_data: np.ndarray, czyx_slicing_params: list) -> np.ndarray:
     """
     Load a zyx array and crop given a list of ZYX slices()
@@ -466,7 +499,11 @@ def copy_n_paste_czyx(czyx_data: np.ndarray, czyx_slicing_params: list) -> np.nd
     ]
     return czyx_data_sliced
 
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 def append_channels(input_data_path: Path, target_data_path: Path) -> None:
     """
     Append channels to a target zarr store
@@ -494,7 +531,11 @@ def append_channels(input_data_path: Path, target_data_path: Path) -> None:
         dataset.print_tree()
     appending_dataset.close()
 
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 def model_to_yaml(model, yaml_path: Path) -> None:
     """
     Save a model's dictionary representation to a YAML file.
@@ -539,7 +580,11 @@ def model_to_yaml(model, yaml_path: Path) -> None:
     with open(yaml_path, "w+") as f:
         yaml.dump(clean_model_dict, f, default_flow_style=False, sort_keys=False)
 
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 def yaml_to_model(yaml_path: Path, model):
     """
     Load model settings from a YAML file and create a model instance.
@@ -589,11 +634,19 @@ def yaml_to_model(yaml_path: Path, model):
 
     return model(**raw_settings)
 
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 def _is_nested(lst):
     return any(isinstance(i, list) for i in lst) or any(isinstance(i, str) for i in lst)
 
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 def _check_nan_n_zeros(input_array):
     """
     Checks if any of the channels are all zeros or nans and returns true

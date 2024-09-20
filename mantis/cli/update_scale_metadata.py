@@ -1,14 +1,18 @@
-from deprecated import deprecated
 from typing import List
 
 import click
 
+from deprecated import deprecated
 from iohub import open_ome_zarr
 from iohub.ngff import TransformationMeta
 
 from mantis.cli.parsing import input_position_dirpaths
 
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 @click.command()
 @input_position_dirpaths()
 def update_scale_metadata(

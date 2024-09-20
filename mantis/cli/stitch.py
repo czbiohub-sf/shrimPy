@@ -2,13 +2,13 @@ import datetime
 import shutil
 import warnings
 
-from deprecated import deprecated
 from pathlib import Path
 
 import click
 import numpy as np
 import pandas as pd
 
+from deprecated import deprecated
 from iohub import open_ome_zarr
 from iohub.ngff import TransformationMeta
 from slurmkit import HAS_SLURM, SlurmParams, slurm_function, submit_function
@@ -24,7 +24,11 @@ from mantis.analysis.stitch import (
 from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
 from mantis.cli.utils import create_empty_hcs_zarr, process_single_position_v2, yaml_to_model
 
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 @click.command()
 @input_position_dirpaths()
 @output_dirpath()

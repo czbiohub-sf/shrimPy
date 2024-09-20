@@ -4,7 +4,6 @@ import napari
 import numpy as np
 
 from deprecated import deprecated
-
 from iohub import open_ome_zarr
 from iohub.reader import print_info
 from skimage.transform import EuclideanTransform, SimilarityTransform
@@ -30,7 +29,11 @@ WAVELENGTH_EMISSION_SOURCE_CHANNEL = 0.45  # in um
 WAVELENGTH_EMISSION_TARGET_CHANNEL = 0.6  # in um
 FOCUS_SLICE_ROI_WIDTH = 150  # size of central ROI used to find focal slice
 
-@deprecated(reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub", action="always")
+
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 @click.command()
 @source_position_dirpaths()
 @target_position_dirpaths()
