@@ -9,6 +9,7 @@ from mantis.analysis.deskew import (
     get_deskewed_data_shape,
 )
 
+
 def test_average_n_slices():
     data = np.array(
         [[[1, 2], [3, 4]], [[5, 6], [7, 8]], [[9, 10], [11, 12]], [[13, 14], [15, 16]]]
@@ -88,4 +89,3 @@ def test_deskew_data():
 def test_error(function_to_test, parameters):
     with pytest.raises(ValueError):
         function_to_test(**parameters)
-   

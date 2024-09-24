@@ -1,17 +1,16 @@
 import tempfile
 
 from pathlib import Path
-import dask.array as da
+from unittest.mock import patch
+
 import numpy as np
 import pandas as pd
 import pytest
-import zarr
 
 from iohub import open_ome_zarr
 
 from mantis.analysis.AnalysisSettings import ProcessingSettings
 from mantis.analysis.stitch import (
-    _stitch_images,
     blend,
     cleanup_shifts,
     compute_total_translation,
@@ -24,7 +23,6 @@ from mantis.analysis.stitch import (
     preprocess_and_shift,
     process_dataset,
     shift_image,
-    stitch_shifted_store,
 )
 
 
@@ -135,7 +133,6 @@ def test_compute_total_translation():
             compute_total_translation(csv_filepath)
 
     assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
-
 
 
 def test_cleanup_shifts():

@@ -31,4 +31,3 @@ def test_deskew_cli(tmp_path, example_plate, example_deskew_settings):
     assert output_path.exists()
     assert result.exit_code == 0
     assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
-

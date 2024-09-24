@@ -26,4 +26,3 @@ def test_estimate_bleaching_cli(tmp_path, example_plate):
     assert output_path.exists()
     assert result.exit_code == 0
     assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
-

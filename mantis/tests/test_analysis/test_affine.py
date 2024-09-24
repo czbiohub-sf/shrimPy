@@ -59,6 +59,7 @@ def test_3d_translation():
         result[3:10, 0:9, 0:6] == 1
     )  # Test if the shifts where going to the right direction
 
+
 @pytest.mark.parametrize(
     "function_to_test, parameters",
     [
@@ -88,4 +89,3 @@ def test_3d_translation():
 def test_error(function_to_test, parameters):
     with pytest.raises(ValueError):
         function_to_test(**parameters)
-   
