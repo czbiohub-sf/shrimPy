@@ -7,17 +7,12 @@ import numpy as np
 import pandas as pd
 import scipy.ndimage as ndi
 
-from deprecated import deprecated
 from iohub import open_ome_zarr
 from skimage.registration import phase_cross_correlation
 
 from mantis.analysis.AnalysisSettings import ProcessingSettings
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def estimate_shift(
     im0: np.ndarray, im1: np.ndarray, percent_overlap: float, direction: Literal["row", "col"]
 ):
@@ -71,10 +66,6 @@ def estimate_shift(
     return shift[::-1]
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def get_grid_rows_cols(dataset_path: str):
     grid_rows = set()
     grid_cols = set()
@@ -90,10 +81,6 @@ def get_grid_rows_cols(dataset_path: str):
     return sorted(grid_rows), sorted(grid_cols)
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def get_stitch_output_shape(n_rows, n_cols, sizeY, sizeX, col_translation, row_translation):
     """
     Compute the output shape of the stitched image and the global translation when only col and row translation are given
@@ -119,10 +106,6 @@ def get_stitch_output_shape(n_rows, n_cols, sizeY, sizeX, col_translation, row_t
     return xy_output_shape, global_translation
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def get_image_shift(col_idx, row_idx, col_translation, row_translation, global_translation):
     """
     Compute total translation when only col and row translation are given
@@ -135,10 +118,6 @@ def get_image_shift(col_idx, row_idx, col_translation, row_translation, global_t
     return total_translation
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def shift_image(
     czyx_data: np.ndarray,
     yx_output_shape: tuple[float, float],
@@ -157,10 +136,6 @@ def shift_image(
     return ndi.shift(output, (0, 0) + tuple(yx_shift), order=0)
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def _stitch_images(
     data_array: np.ndarray,
     total_translation: dict[str : tuple[float, float]] = None,
@@ -242,10 +217,6 @@ def _stitch_images(
     return stitched_array
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def process_dataset(
     data_array: np.ndarray | da.Array,
     settings: ProcessingSettings,
@@ -269,10 +240,6 @@ def process_dataset(
     return data_array
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def preprocess_and_shift(
     image,
     settings: ProcessingSettings,
@@ -286,10 +253,6 @@ def preprocess_and_shift(
     )
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def blend(array: da.Array, method: Literal["average"] = "average"):
     """
     Blend array of pre-shifted images stacked across axis=0
@@ -326,10 +289,6 @@ def blend(array: da.Array, method: Literal["average"] = "average"):
     return stitched_array
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def stitch_shifted_store(
     input_data_path: str,
     output_data_path: str,
@@ -379,10 +338,6 @@ def stitch_shifted_store(
             click.echo(f'Finishing writing data for well {well_name}')
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def estimate_zarr_fov_shifts(
     fov0_zarr_path: str,
     fov1_zarr_path: str,
@@ -466,10 +421,6 @@ def estimate_zarr_fov_shifts(
         return df
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def consolidate_zarr_fov_shifts(
     input_dirname: str,
     output_filepath: str,
@@ -493,10 +444,6 @@ def consolidate_zarr_fov_shifts(
     df.to_csv(output_filepath, index=False)
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def cleanup_shifts(csv_filepath: str, pixel_size_um: float):
     """
     Clean up outlier FOV shifts within a larger grid in case the phase cross-correlation
@@ -546,10 +493,6 @@ def cleanup_shifts(csv_filepath: str, pixel_size_um: float):
     df.to_csv(csv_filepath, index=False)
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
     """
     Compute the total translation for each FOV based on the estimated row and col translation shifts.

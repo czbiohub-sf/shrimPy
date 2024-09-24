@@ -1,14 +1,9 @@
 import numpy as np
 import torch
 
-from deprecated import deprecated
 from monai.transforms.spatial.array import Affine
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def _average_n_slices(data, average_window_width=1):
     """Average an array over its first axis
 
@@ -37,10 +32,6 @@ def _average_n_slices(data, average_window_width=1):
     return data_averaged
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def _get_averaged_shape(deskewed_data_shape: tuple, average_window_width: int) -> tuple:
     """
     Compute the shape of the data returned from `_average_n_slices` function.
@@ -64,10 +55,6 @@ def _get_averaged_shape(deskewed_data_shape: tuple, average_window_width: int) -
     return averaged_shape
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def _get_transform_matrix(ls_angle_deg: float, px_to_scan_ratio: float):
     """
     Compute affine transformation matrix used to deskew data.
@@ -102,10 +89,6 @@ def _get_transform_matrix(ls_angle_deg: float, px_to_scan_ratio: float):
     return matrix
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def get_deskewed_data_shape(
     raw_data_shape: tuple,
     ls_angle_deg: float,
@@ -163,10 +146,6 @@ def get_deskewed_data_shape(
     return averaged_output_shape, voxel_size
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def deskew_data(
     raw_data: np.ndarray,
     ls_angle_deg: float,
