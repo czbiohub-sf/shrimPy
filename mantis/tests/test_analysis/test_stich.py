@@ -42,17 +42,16 @@ def create_test_csv(path, data, filename):
 def test_estimate_shift(test_data):
     test_data = np.random.rand(10, 10, 10, 10)
 
-    with pytest.warns(DeprecationWarning) as record:
+    with pytest.raises(ValueError):
         estimate_shift(test_data, test_data, 0.5, "row")
-    assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
 
 
 def test_process_dataset():
     test_data = np.random.rand(10, 10, 10, 10)
     processing_settings = ProcessingSettings()
-    with pytest.warns(DeprecationWarning) as record:
+    with pytest.raises(ValueError):
+
         process_dataset(test_data, processing_settings)
-    assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
 
 
 def test_preprocess_and_shift():
@@ -61,16 +60,14 @@ def test_preprocess_and_shift():
     shift = (30, 30)
     scale_x = 0.1
     scale_y = 0.1
-    with pytest.warns(DeprecationWarning) as record:
+    with pytest.raises(ValueError):
         preprocess_and_shift(test_data_int, processing_settings, shift, scale_x, scale_y)
-    assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
 
 
 def test_blend():
     test_data_int = np.random.randint(0, 256, (30, 30, 30, 30), dtype=np.int32)
-    with pytest.warns(DeprecationWarning) as record:
+    with pytest.raises(ValueError):
         blend(test_data_int)
-    assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
 
 
 def test_get_stitch_output_shape():
@@ -84,10 +81,8 @@ def test_get_stitch_output_shape():
     )
     row_translation = (10, 10)
 
-    with pytest.warns(DeprecationWarning) as record:
+    with pytest.raises(ValueError):
         get_stitch_output_shape(n_rows, n_cols, sizeY, sizeX, col_translation, row_translation)
-
-    assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
 
 
 def test_get_image_shift():
@@ -98,10 +93,8 @@ def test_get_image_shift():
     row_translation = (15, 10)
     global_translation = (20, 25)
 
-    with pytest.warns(DeprecationWarning) as record:
+    with pytest.raises(ValueError):
         get_image_shift(col_idx, row_idx, col_translation, row_translation, global_translation)
-
-    assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
 
 
 def test_shift_image():
@@ -109,10 +102,8 @@ def test_shift_image():
     yx_output_shape = (120, 120)
     yx_shift = (10, 15)
 
-    with pytest.warns(DeprecationWarning) as record:
+    with pytest.raises(ValueError):
         shift_image(czyx_data, yx_output_shape, yx_shift, verbose=True)
-
-    assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
 
 
 def test_compute_total_translation():
@@ -129,10 +120,8 @@ def test_compute_total_translation():
     df = pd.DataFrame(mock_data)
 
     with patch('pandas.read_csv', return_value=df) as mock_read_csv:
-        with pytest.warns(DeprecationWarning) as record:
+        with pytest.raises(ValueError):
             compute_total_translation(csv_filepath)
-
-    assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
 
 
 def test_cleanup_shifts():
@@ -151,10 +140,9 @@ def test_cleanup_shifts():
 
     with patch('pandas.read_csv', return_value=df) as mock_read_csv, patch(
         'pandas.DataFrame.to_csv'
-    ) as mock_to_csv, pytest.warns(DeprecationWarning) as record:
-
-        cleanup_shifts(csv_filepath, pixel_size_um)
-    assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
+    ) as mock_to_csv:
+        with pytest.raises(ValueError):
+            cleanup_shifts(csv_filepath, pixel_size_um)
 
 
 def test_estimate_zarr_fov_shifts():
@@ -194,7 +182,8 @@ def test_estimate_zarr_fov_shifts():
         flipud = False
         direction = "col"
 
-        with pytest.warns(DeprecationWarning) as record:
+        with pytest.raises(ValueError):
+
             estimate_zarr_fov_shifts(
                 str(fov0_zarr_path),
                 str(fov1_zarr_path),
@@ -204,8 +193,6 @@ def test_estimate_zarr_fov_shifts():
                 flipud,
                 direction,
             )
-
-        assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
 
 
 def test_consolidate_zarr_fov_shifts():
@@ -221,10 +208,8 @@ def test_consolidate_zarr_fov_shifts():
 
         output_filepath = input_dir / "output.csv"
 
-        with pytest.warns(DeprecationWarning) as record:
+        with pytest.raises(ValueError):
             consolidate_zarr_fov_shifts(str(input_dir), str(output_filepath))
-
-        assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
 
 
 def test_get_grid_rows_cols():
@@ -258,7 +243,6 @@ def test_get_grid_rows_cols():
                     0, np.iinfo(np.uint32).max, size=(T, 1, 1, Y, X), dtype=np.uint32
                 )
 
-        with pytest.warns(DeprecationWarning) as record:
-            get_grid_rows_cols(str(input_data_path))
+        with pytest.raises(ValueError):
 
-        assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
+            get_grid_rows_cols(str(input_data_path))
