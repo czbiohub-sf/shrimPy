@@ -16,10 +16,6 @@ from mantis.cli.utils import (
 )
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def apply_stabilization_transform(
     zyx_data: np.ndarray, list_of_shifts: list[np.ndarray], t_idx: int, **kwargs
 ):

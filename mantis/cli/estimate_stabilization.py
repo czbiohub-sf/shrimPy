@@ -23,10 +23,8 @@ LAMBDA_ILL = 0.500
 
 
 # TODO: Do we need to compute focus fiding on n_number of channels?
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
+
+
 def estimate_position_focus(
     input_data_path: Path,
     input_channel_indices: Tuple[int, ...],
@@ -71,10 +69,6 @@ def estimate_position_focus(
     return position_stats_stabilized
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def get_mean_z_positions(dataframe_path: Path, verbose: bool = False) -> None:
     df = pd.read_csv(dataframe_path)
 
@@ -100,10 +94,6 @@ def get_mean_z_positions(dataframe_path: Path, verbose: bool = False) -> None:
     return average_focus_idx["focus_idx"].values
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def estimate_z_stabilization(
     input_data_paths: Path,
     output_folder_path: Path,
@@ -150,10 +140,6 @@ def estimate_z_stabilization(
     return z_focus_shift
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def estimate_xy_stabilization(
     input_data_paths: Path,
     output_folder_path: Path,

@@ -3,6 +3,8 @@ from pathlib import Path
 import click
 import yaml
 
+from deprecated import deprecated
+
 from mantis import __mm_version__
 from mantis.cli.parsing import config_filepath, output_dirpath
 
@@ -12,6 +14,10 @@ default_mm_app_path = 'C:\\Program Files\\Micro-Manager-2.0_{}_{}_{}_2'.format(
 default_mm_config_filepath = 'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg'
 
 
+@deprecated(
+    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+    action="always",
+)
 @click.command()
 @config_filepath()
 @output_dirpath()
