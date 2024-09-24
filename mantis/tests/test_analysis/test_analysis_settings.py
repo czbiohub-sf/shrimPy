@@ -4,9 +4,16 @@ import pytest
 from pydantic.v1 import ValidationError
 
 from mantis.analysis.AnalysisSettings import (
+    CharacterizeSettings,
+    ConcatenateSettings,
+    DeconvolveSettings,
     DeskewSettings,
+    MyBaseModel,
+    ProcessingSettings,
+    PsfFromBeadsSettings,
     RegistrationSettings,
     StabilizationSettings,
+    StitchSettings,
 )
 
 
@@ -73,20 +80,6 @@ def test_example_register_settings(example_register_settings):
 def test_example_stabilize_timelapse_settings(example_stabilize_timelapse_settings):
     _, settings = example_stabilize_timelapse_settings
     StabilizationSettings(**settings)
-
-
-from mantis.analysis.AnalysisSettings import (
-    CharacterizeSettings,
-    ConcatenateSettings,
-    DeconvolveSettings,
-    DeskewSettings,
-    MyBaseModel,
-    ProcessingSettings,
-    PsfFromBeadsSettings,
-    RegistrationSettings,
-    StabilizationSettings,
-    StitchSettings,
-)
 
 
 @pytest.mark.parametrize(

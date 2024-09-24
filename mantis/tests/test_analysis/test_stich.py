@@ -119,7 +119,7 @@ def test_compute_total_translation():
     }
     df = pd.DataFrame(mock_data)
 
-    with patch('pandas.read_csv', return_value=df) as mock_read_csv:
+    with patch('pandas.read_csv', return_value=df):
         with pytest.raises(ValueError):
             compute_total_translation(csv_filepath)
 
@@ -138,11 +138,10 @@ def test_cleanup_shifts():
     }
     df = pd.DataFrame(mock_data)
 
-    with patch('pandas.read_csv', return_value=df) as mock_read_csv, patch(
-        'pandas.DataFrame.to_csv'
-    ) as mock_to_csv:
-        with pytest.raises(ValueError):
-            cleanup_shifts(csv_filepath, pixel_size_um)
+    with patch('pandas.read_csv', return_value=df):
+        with patch('pandas.DataFrame.to_csv'):
+            with pytest.raises(ValueError):
+                cleanup_shifts(csv_filepath, pixel_size_um)
 
 
 def test_estimate_zarr_fov_shifts():
