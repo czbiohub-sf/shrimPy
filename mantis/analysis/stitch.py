@@ -52,17 +52,17 @@ def estimate_shift(
     if direction == "row":
         y_roi = int(sizeY * np.minimum(percent_overlap + 0.05, 1))
         shift, _, _ = phase_cross_correlation(
-            im0[-y_roi:, :], im1[:y_roi, :], upsample_factor=10
+            im0[..., -y_roi:, :], im1[..., :y_roi, :], upsample_factor=1
         )
-        shift[0] += sizeY - y_roi
+        shift[-2] += sizeY
     elif direction == "col":
         x_roi = int(sizeX * np.minimum(percent_overlap + 0.05, 1))
         shift, _, _ = phase_cross_correlation(
-            im0[:, -x_roi:], im1[:, :x_roi], upsample_factor=10
+            im0[..., :, -x_roi:], im1[..., :, :x_roi], upsample_factor=1
         )
-        shift[1] += sizeX - x_roi
+        shift[-1] += sizeX
 
-    # TODO: we shouldn't need to flip the order
+    # TODO: we shouldn't need to flip the order, will cause problems in 3D
     return shift[::-1]
 
 
