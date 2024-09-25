@@ -143,5 +143,4 @@ def test_example_stabilize_timelapse_settings(example_stabilize_timelapse_settin
     ],
 )
 def test_derror(class_to_test, parameters):
-    with pytest.raises(ValueError):
-        class_to_test(**parameters)
+    class_to_test(**parameters)

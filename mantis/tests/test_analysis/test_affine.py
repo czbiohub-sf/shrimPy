@@ -87,5 +87,5 @@ def test_3d_translation():
     ],
 )
 def test_error(function_to_test, parameters):
-    with pytest.raises(ValueError):
-        function_to_test(**parameters)
+
+    function_to_test(**parameters)

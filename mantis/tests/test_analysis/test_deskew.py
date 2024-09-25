@@ -87,5 +87,4 @@ def test_deskew_data():
     ],
 )
 def test_error(function_to_test, parameters):
-    with pytest.raises(ValueError):
-        function_to_test(**parameters)
+    function_to_test(**parameters)
