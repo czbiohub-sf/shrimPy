@@ -1,5 +1,3 @@
-import warnings
-
 from pathlib import Path
 
 import click
@@ -43,12 +41,6 @@ def run_acquisition(
 
     >> mantis run-acquisition -c path/to/config.yaml -o ./YYYY_MM_DD_experiment_name/acquisition_name
     """
-    # Emitting a deprecation warning
-    warnings.warn(
-        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-        DeprecationWarning,
-        stacklevel=2,
-    )
 
     # These imports are placed here to accelerate CLI help calls
     from mantis.acquisition.acq_engine import MantisAcquisition
