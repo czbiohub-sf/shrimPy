@@ -1,11 +1,11 @@
 import glob
+import warnings
 
 from pathlib import Path
 
 import click
 import numpy as np
 
-from deprecated import deprecated
 from iohub import open_ome_zarr
 from natsort import natsorted
 
@@ -19,10 +19,6 @@ from mantis.cli.utils import (
 )
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def get_channel_combiner_metadata(
     data_paths_list: list[str], processing_channel_names: list[str]
 ):
@@ -68,18 +64,10 @@ def get_channel_combiner_metadata(
     return all_data_paths, all_channel_names, input_channel_idx, output_channel_idx
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def get_slice(slice_param, max_value):
     return slice(0, max_value) if slice_param == 'all' else slice(*slice_param)
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 @click.command()
 @config_filepath()
 @output_dirpath()
@@ -97,6 +85,13 @@ def concatenate(config_filepath: str, output_dirpath: str, num_processes: int):
 
     >> mantis concatenate -c ./concat.yml -o ./output_concat.zarr -j 8
     """
+    # Emitting a deprecation warning
+    warnings.warn(
+        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     # Convert to Path objects
     config_filepath = Path(config_filepath)
     output_dirpath = Path(output_dirpath)

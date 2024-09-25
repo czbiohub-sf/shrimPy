@@ -1,5 +1,6 @@
 import gc
 import time
+import warnings
 
 from pathlib import Path
 from typing import List
@@ -31,6 +32,12 @@ def estimate_psf(
 
     >> mantis estimate-psf -i ./beads.zarr/*/*/* -c ./psf_params.yml -o ./psf.zarr
     """
+    # Emitting a deprecation warning
+    warnings.warn(
+        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     # Convert string paths to Path objects
     output_dirpath = Path(output_dirpath)
     config_filepath = Path(config_filepath)

@@ -1,9 +1,10 @@
+import warnings
+
 import ants
 import click
 import napari
 import numpy as np
 
-from deprecated import deprecated
 from iohub import open_ome_zarr
 from iohub.reader import print_info
 from skimage.transform import EuclideanTransform, SimilarityTransform
@@ -30,10 +31,6 @@ WAVELENGTH_EMISSION_TARGET_CHANNEL = 0.6  # in um
 FOCUS_SLICE_ROI_WIDTH = 150  # size of central ROI used to find focal slice
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 @click.command()
 @source_position_dirpaths()
 @target_position_dirpaths()
@@ -56,7 +53,12 @@ def estimate_registration(
     >> mantis estimate-registration -s ./acq_name_labelfree_reconstructed.zarr/0/0/0 -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 -o ./output.yml
     -x  flag to use similarity transform (rotation, translation, scaling) default:Eucledian (rotation, translation)
     """
-
+    # Emitting a deprecation warning
+    warnings.warn(
+        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     click.echo("\nTarget channel INFO:")
     print_info(target_position_dirpaths[0], verbose=False)
     click.echo("\nSource channel INFO:")

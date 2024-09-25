@@ -8,7 +8,6 @@ import matplotlib.colors
 import matplotlib.pyplot as plt
 import numpy as np
 
-from deprecated import deprecated
 from iohub import open_ome_zarr
 from iohub.ngff.display import channel_display_settings
 from scipy.optimize import curve_fit
@@ -19,10 +18,6 @@ from mantis.cli.parsing import input_position_dirpaths, output_dirpath
 MSECS_PER_MINUTE = 60000
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def plot_bleaching_curves(times, tczyx_data, channel_names, output_file, title=''):
     """Plots bleaching curves and estimates bleaching lifetimes
 
@@ -107,10 +102,6 @@ def plot_bleaching_curves(times, tczyx_data, channel_names, output_file, title='
     plt.close()
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 @click.command()
 @input_position_dirpaths()
 @output_dirpath()
@@ -120,6 +111,12 @@ def estimate_bleaching(input_position_dirpaths, output_dirpath):
 
     >> mantis estimate-bleaching -i ./input.zarr/0/0/0 -o ./bleaching-curves/
     """
+    # Emitting a deprecation warning
+    warnings.warn(
+        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     # Read plate metadata if it exists
     try:

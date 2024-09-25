@@ -1,8 +1,9 @@
+import warnings
+
 import ants
 import click
 import numpy as np
 
-from deprecated import deprecated
 from iohub.ngff import open_ome_zarr
 
 from mantis.analysis.AnalysisSettings import StabilizationSettings
@@ -43,10 +44,6 @@ def apply_stabilization_transform(
     return stabilized_zyx
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 @click.command()
 @input_position_dirpaths()
 @output_dirpath()
@@ -71,6 +68,13 @@ def stabilize(input_position_dirpaths, output_dirpath, config_filepath, num_proc
     mantis stabilize-timelapse -i ./timelapse.zarr/0/0/0 -o ./stabilized_timelapse.zarr -c ./file_w_matrices.yml -v
 
     """
+    # Emitting a deprecation warning
+    warnings.warn(
+        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     assert config_filepath.suffix == ".yml", "Config file must be a yaml file"
 
     # Load the config file

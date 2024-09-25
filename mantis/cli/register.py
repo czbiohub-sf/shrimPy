@@ -1,10 +1,10 @@
+import warnings
+
 from pathlib import Path
 from typing import List
 
 import click
 import numpy as np
-
-from deprecated import deprecated
 
 from iohub import open_ome_zarr
 
@@ -28,10 +28,6 @@ def rescale_voxel_size(affine_matrix, input_scale):
     return np.linalg.norm(affine_matrix, axis=1) * input_scale
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 @click.command()
 @source_position_dirpaths()
 @target_position_dirpaths()
@@ -59,6 +55,11 @@ def register(
 
     >> mantis register -s source.zarr/*/*/* -t target.zarr/*/*/* -c config.yaml -o ./acq_name_registerred.zarr
     """
+    warnings.warn(
+        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     # Convert string paths to Path objects
     output_dirpath = Path(output_dirpath)

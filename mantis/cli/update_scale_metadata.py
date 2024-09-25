@@ -1,23 +1,27 @@
+import warnings
+
 from typing import List
 
 import click
 
-from deprecated import deprecated
 from iohub import open_ome_zarr
 from iohub.ngff import TransformationMeta
 
 from mantis.cli.parsing import input_position_dirpaths
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 @click.command()
 @input_position_dirpaths()
 def update_scale_metadata(
     input_position_dirpaths: List[str],
 ):
+    # Emitting a deprecation warning
+    warnings.warn(
+        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     with open_ome_zarr(input_position_dirpaths[0]) as input_dataset:
         print(
             f"The first dataset in the list you provided has (z, y, x) scale {input_dataset.scale[2:]}"

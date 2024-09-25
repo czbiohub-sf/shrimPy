@@ -1,10 +1,11 @@
+import warnings
+
 from pathlib import Path
 from typing import List
 
 import click
 import torch
 
-from deprecated import deprecated
 from iohub.ngff import open_ome_zarr
 
 from mantis.analysis.AnalysisSettings import DeskewSettings
@@ -18,10 +19,6 @@ from mantis.cli.utils import yaml_to_model
 torch.multiprocessing.set_start_method('spawn', force=True)
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 @click.command()
 @input_position_dirpaths()
 @config_filepath()
@@ -45,6 +42,12 @@ def deskew(
 
     >> mantis deskew -i ./input.zarr/*/*/* -c ./deskew_params.yml -o ./output.zarr
     """
+    # Emitting a deprecation warning
+    warnings.warn(
+        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     # Convert string paths to Path objects
     output_dirpath = Path(output_dirpath)

@@ -1,3 +1,5 @@
+import warnings
+
 import click
 
 
@@ -11,6 +13,12 @@ class OptionEatAll(click.Option):
         super(OptionEatAll, self).__init__(*args, **kwargs)
         self._previous_parser_process = None
         self._eat_all_parser = None
+
+        warnings.warn(
+            "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     def add_to_parser(self, parser, ctx):
         def parser_process(value, state):

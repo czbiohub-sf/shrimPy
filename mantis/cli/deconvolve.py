@@ -1,3 +1,5 @@
+import warnings
+
 from pathlib import Path
 from typing import List
 
@@ -5,7 +7,6 @@ import click
 import numpy as np
 import torch
 
-from deprecated import deprecated
 from iohub import open_ome_zarr
 from waveorder.models.isotropic_fluorescent_thick_3d import apply_inverse_transfer_function
 
@@ -19,10 +20,6 @@ from mantis.cli.parsing import (
 from mantis.cli.utils import create_empty_hcs_zarr, yaml_to_model
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 def apply_deconvolve_single_position(
     input_position_dirpath: str, psf_dirpath: str, config_filepath: str, output_dirpath: Path
 ):
@@ -82,10 +79,6 @@ def apply_deconvolve_single_position(
     output_dataset.close()
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 @click.command()
 @input_position_dirpaths()
 @click.option(
@@ -109,6 +102,13 @@ def deconvolve(
 
     >> mantis deconvolve -i ./input.zarr/*/*/* -p ./psf.zarr -c ./deconvolve_params.yml -o ./output.zarr
     """
+    # Emitting a deprecation warning
+    warnings.warn(
+        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     # Convert string paths to Path objects
     output_dirpath = Path(output_dirpath)
     config_filepath = Path(config_filepath)

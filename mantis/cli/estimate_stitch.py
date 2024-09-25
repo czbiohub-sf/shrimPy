@@ -1,12 +1,12 @@
 import datetime
 import time
+import warnings
 
 from pathlib import Path
 
 import click
 import pandas as pd
 
-from deprecated import deprecated
 from iohub import open_ome_zarr
 from slurmkit import SlurmParams, slurm_function, submit_function
 
@@ -38,10 +38,6 @@ def write_config_file(
     model_to_yaml(settings, output_filepath)
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 @click.command()
 @input_position_dirpaths()
 @output_filepath()
@@ -74,6 +70,13 @@ def estimate_stitch(
 
     >>> mantis estimate-stitch -i ./input.zarr/*/*/* -o ./stitch_params.yml --channel DAPI --percent-overlap 0.05 --slurm
     """
+    # Emitting a deprecation warning
+    warnings.warn(
+        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     assert 0 <= percent_overlap <= 1, "Percent overlap must be between 0 and 1"
 
     input_zarr_path = Path(*input_position_dirpaths[0].parts[:-3])

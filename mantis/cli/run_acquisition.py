@@ -1,9 +1,9 @@
+import warnings
+
 from pathlib import Path
 
 import click
 import yaml
-
-from deprecated import deprecated
 
 from mantis import __mm_version__
 from mantis.cli.parsing import config_filepath, output_dirpath
@@ -14,10 +14,6 @@ default_mm_app_path = 'C:\\Program Files\\Micro-Manager-2.0_{}_{}_{}_2'.format(
 default_mm_config_filepath = 'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg'
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 @click.command()
 @config_filepath()
 @output_dirpath()
@@ -47,6 +43,12 @@ def run_acquisition(
 
     >> mantis run-acquisition -c path/to/config.yaml -o ./YYYY_MM_DD_experiment_name/acquisition_name
     """
+    # Emitting a deprecation warning
+    warnings.warn(
+        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     # These imports are placed here to accelerate CLI help calls
     from mantis.acquisition.acq_engine import MantisAcquisition

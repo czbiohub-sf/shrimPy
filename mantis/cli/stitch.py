@@ -8,7 +8,6 @@ import click
 import numpy as np
 import pandas as pd
 
-from deprecated import deprecated
 from iohub import open_ome_zarr
 from iohub.ngff import TransformationMeta
 from slurmkit import HAS_SLURM, SlurmParams, slurm_function, submit_function
@@ -25,10 +24,6 @@ from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_
 from mantis.cli.utils import create_empty_hcs_zarr, process_single_position_v2, yaml_to_model
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 @click.command()
 @input_position_dirpaths()
 @output_dirpath()
@@ -50,6 +45,13 @@ def stitch(
 
     >>> mantis stitch -i ./input.zarr/*/*/* -c ./stitch_params.yml -o ./output.zarr --temp-path /hpc/scratch/group.comp.micro/
     """
+    # Emitting a deprecation warning
+    warnings.warn(
+        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     if not HAS_SLURM:
         warnings.warn(
             "This function is intended to be used with SLURM. "

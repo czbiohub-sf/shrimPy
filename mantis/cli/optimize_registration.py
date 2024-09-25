@@ -1,9 +1,10 @@
+import warnings
+
 import ants
 import click
 import napari
 import numpy as np
 
-from deprecated import deprecated
 from iohub import open_ome_zarr
 
 from mantis.analysis.AnalysisSettings import RegistrationSettings
@@ -20,10 +21,6 @@ from mantis.cli.utils import model_to_yaml, yaml_to_model
 T_IDX = 0
 
 
-@deprecated(
-    reason="This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-    action="always",
-)
 @click.command()
 @source_position_dirpaths()
 @target_position_dirpaths()
@@ -56,6 +53,12 @@ def optimize_registration(
 
     >> mantis optimize-registration -s ./acq_name_virtual_staining_reconstructed.zarr/0/0/0 -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 -c ./transform.yml -o ./optimized_transform.yml -d -v
     """
+    # Emitting a deprecation warning
+    warnings.warn(
+        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     settings = yaml_to_model(config_filepath, RegistrationSettings)
 
