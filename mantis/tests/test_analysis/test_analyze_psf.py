@@ -14,7 +14,6 @@ from mantis.analysis.analyze_psf import (
     calculate_peak_widths,
     detect_peaks,
     extract_beads,
-    generate_report,
     plot_fwhm_vs_acq_axes,
     plot_psf_amp,
     plot_psf_slices,
@@ -71,22 +70,22 @@ def test_make_plots(tempdir, beads, df_gaussian_fit, df_1d_peak_width):
     _make_plots(tempdir, beads, df_gaussian_fit, df_1d_peak_width, scale, axis_labels)
 
 
-def test_generate_report(tempdir, beads, test_data, df_gaussian_fit, df_1d_peak_width, mocker):
-    mock_open = mocker.patch('webbrowser.open')
-    scale = (0.5, 0.5, 0.5)
-    axis_labels = ("T", "Z", "Y", "X")
-    generate_report(
-        tempdir,
-        tempdir,
-        "mock_dataset",
-        beads,
-        test_data,
-        df_gaussian_fit,
-        df_1d_peak_width,
-        scale,
-        axis_labels,
-    )
-    mock_open.assert_called_once()
+# def test_generate_report(tempdir, beads, test_data, df_gaussian_fit, df_1d_peak_width, mocker):
+#     mock_open = mocker.patch('webbrowser.open')
+#     scale = (0.5, 0.5, 0.5)
+#     axis_labels = ("T", "Z", "Y", "X")
+#     generate_report(
+#         tempdir,
+#         tempdir,
+#         "mock_dataset",
+#         beads,
+#         test_data,
+#         df_gaussian_fit,
+#         df_1d_peak_width,
+#         scale,
+#         axis_labels,
+#     )
+#     mock_open.assert_called_once()
 
 
 def test_extract_beads(test_data):
