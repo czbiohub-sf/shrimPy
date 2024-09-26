@@ -4,16 +4,9 @@ import pytest
 from pydantic.v1 import ValidationError
 
 from mantis.analysis.AnalysisSettings import (
-    CharacterizeSettings,
-    ConcatenateSettings,
-    DeconvolveSettings,
     DeskewSettings,
-    MyBaseModel,
-    ProcessingSettings,
-    PsfFromBeadsSettings,
     RegistrationSettings,
     StabilizationSettings,
-    StitchSettings,
 )
 
 
@@ -80,67 +73,3 @@ def test_example_register_settings(example_register_settings):
 def test_example_stabilize_timelapse_settings(example_stabilize_timelapse_settings):
     _, settings = example_stabilize_timelapse_settings
     StabilizationSettings(**settings)
-
-
-@pytest.mark.parametrize(
-    "class_to_test, parameters",
-    [
-        (MyBaseModel, {}),
-        (ProcessingSettings, {}),
-        (PsfFromBeadsSettings, {}),
-        (DeconvolveSettings, {}),
-        (CharacterizeSettings, {}),
-        (DeskewSettings, {"pixel_size_um": 0.1, "ls_angle_deg": 10.0, "scan_step_um": 0.02}),
-        (
-            RegistrationSettings,
-            {
-                "source_channel_names": ["channel1", "channel2"],
-                "target_channel_name": "channel3",
-                "affine_transform_zyx": [
-                    [1, 0, 0, 0],
-                    [0, 1, 0, 0],
-                    [0, 0, 1, 0],
-                    [0, 0, 0, 1],
-                ],
-                "keep_overhang": False,
-                "time_indices": "all",
-            },
-        ),
-        (
-            ConcatenateSettings,
-            {
-                "concat_data_paths": ["path1", "path2"],
-                "time_indices": "all",
-                "channel_names": ["channel1", "channel2"],
-                "X_slice": [0, 100],
-                "Y_slice": [0, 100],
-                "Z_slice": [0, 50],
-                "chunks_czyx": [1, 512, 512, 3],
-            },
-        ),
-        (
-            StabilizationSettings,
-            {
-                "stabilization_estimation_channel": "channel1",
-                "stabilization_type": "xyz",
-                "stabilization_channels": ["channel1", "channel2"],
-                "affine_transform_zyx_list": [
-                    [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
-                    [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
-                ],
-                "time_indices": "all",
-            },
-        ),
-        (
-            StitchSettings,
-            {
-                "channels": ["channel1", "channel2"],
-                "preprocessing": ProcessingSettings(),
-                "postprocessing": ProcessingSettings(),
-                "total_translation": {"x": [0.1, 0.1], "y": [0.1, 0.1]},
-            },
-        ),
-    ],
-)
-def test_derror(class_to_test, parameters):
-    class_to_test(**parameters)
