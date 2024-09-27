@@ -12,8 +12,8 @@ import click
 import numpy as np
 import yaml
 
-from iohub.ngff import Position, open_ome_zarr
-from iohub.ngff_meta import TransformationMeta
+from iohub import open_ome_zarr
+from iohub.ngff import Position, TransformationMeta
 from numpy.typing import DTypeLike
 from tqdm import tqdm
 

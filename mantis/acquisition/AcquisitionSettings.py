@@ -5,8 +5,8 @@ from typing import Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 
-from pydantic import ConfigDict, NonNegativeFloat, NonNegativeInt, validator
-from pydantic.dataclasses import dataclass
+from pydantic.v1 import ConfigDict, NonNegativeFloat, NonNegativeInt, validator
+from pydantic.v1.dataclasses import dataclass
 
 config = ConfigDict(extra='forbid')
 

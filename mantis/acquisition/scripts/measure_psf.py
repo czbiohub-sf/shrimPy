@@ -7,7 +7,7 @@ import napari
 import numpy as np
 import torch
 
-from iohub.ngff_meta import TransformationMeta
+from iohub.ngff import TransformationMeta
 from iohub.reader import open_ome_zarr
 from pycromanager import Acquisition, Core, multi_d_acquisition_events
 

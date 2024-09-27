@@ -3,7 +3,7 @@ from typing import List
 import click
 
 from iohub import open_ome_zarr
-from iohub.ngff_meta import TransformationMeta
+from iohub.ngff import TransformationMeta
 
 from mantis.cli.parsing import input_position_dirpaths
 

@@ -5,7 +5,7 @@ from typing import Literal, Optional, Union
 import numpy as np
 import torch
 
-from pydantic import BaseModel, Extra, NonNegativeInt, PositiveFloat, PositiveInt, validator
+from pydantic.v1 import BaseModel, Extra, NonNegativeInt, PositiveFloat, PositiveInt, validator
 
 
 # All settings classes inherit from MyBaseModel, which forbids extra parameters to guard against typos

@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from iohub import open_ome_zarr
-from iohub.ngff_meta import TransformationMeta
+from iohub.ngff import TransformationMeta
 from slurmkit import HAS_SLURM, SlurmParams, slurm_function, submit_function
 
 from mantis.analysis.AnalysisSettings import StitchSettings

@@ -8,8 +8,8 @@ import click
 import numpy as np
 import torch
 
-from iohub.ngff import open_ome_zarr
-from iohub.ngff_meta import TransformationMeta
+from iohub import open_ome_zarr
+from iohub.ngff import TransformationMeta
 
 from mantis.analysis.AnalysisSettings import PsfFromBeadsSettings
 from mantis.analysis.analyze_psf import detect_peaks, extract_beads
