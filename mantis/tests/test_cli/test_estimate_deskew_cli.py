@@ -22,3 +22,4 @@ def test_estimate_deskew_cli(tmp_path, example_plate):
 
     # Tough to test hand-drawn things in napari, but at least this tests that it starts and loads data
     assert "Enter image pixel size" in result.output
+    assert 'deprecated' in result.output.lower()

@@ -17,7 +17,7 @@ from mantis.cli.utils import yaml_to_model
 torch.multiprocessing.set_start_method('spawn', force=True)
 
 
-@click.command()
+@click.command(deprecated=True)
 @input_position_dirpaths()
 @config_filepath()
 @output_dirpath()
@@ -40,6 +40,9 @@ def deskew(
 
     >> mantis deskew -i ./input.zarr/*/*/* -c ./deskew_params.yml -o ./output.zarr
     """
+    click.echo(
+        '"This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub"'
+    )
 
     # Convert string paths to Path objects
     output_dirpath = Path(output_dirpath)

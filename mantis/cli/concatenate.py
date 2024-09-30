@@ -67,7 +67,7 @@ def get_slice(slice_param, max_value):
     return slice(0, max_value) if slice_param == 'all' else slice(*slice_param)
 
 
-@click.command()
+@click.command(deprecated=True)
 @config_filepath()
 @output_dirpath()
 @click.option(
@@ -84,6 +84,10 @@ def concatenate(config_filepath: str, output_dirpath: str, num_processes: int):
 
     >> mantis concatenate -c ./concat.yml -o ./output_concat.zarr -j 8
     """
+    click.echo(
+        'This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub'
+    )
+
     # Convert to Path objects
     config_filepath = Path(config_filepath)
     output_dirpath = Path(output_dirpath)

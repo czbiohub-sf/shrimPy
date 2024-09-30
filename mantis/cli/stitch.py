@@ -24,7 +24,7 @@ from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_
 from mantis.cli.utils import create_empty_hcs_zarr, process_single_position_v2, yaml_to_model
 
 
-@click.command()
+@click.command(deprecated=True)
 @input_position_dirpaths()
 @output_dirpath()
 @config_filepath()
@@ -45,6 +45,9 @@ def stitch(
 
     >>> mantis stitch -i ./input.zarr/*/*/* -c ./stitch_params.yml -o ./output.zarr --temp-path /hpc/scratch/group.comp.micro/
     """
+    click.echo(
+        '"This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub"'
+    )
     if not HAS_SLURM:
         warnings.warn(
             "This function is intended to be used with SLURM. "

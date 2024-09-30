@@ -22,6 +22,8 @@ LAMBDA_ILL = 0.500
 
 
 # TODO: Do we need to compute focus fiding on n_number of channels?
+
+
 def estimate_position_focus(
     input_data_path: Path,
     input_channel_indices: Tuple[int, ...],
@@ -220,7 +222,7 @@ def estimate_xy_stabilization(
     return T_zyx_shift
 
 
-@click.command()
+@click.command(deprecated=True)
 @input_position_dirpaths()
 @output_filepath()
 @click.option(
@@ -295,6 +297,9 @@ def estimate_stabilization(
 
     Note: the verbose output will be saved at the same level as the output zarr.
     """
+    click.echo(
+        '"This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub"'
+    )
     assert (
         stabilize_xy or stabilize_z
     ), "At least one of 'stabilize_xy' or 'stabilize_z' must be selected"

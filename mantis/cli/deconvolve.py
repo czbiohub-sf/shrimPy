@@ -77,7 +77,7 @@ def apply_deconvolve_single_position(
     output_dataset.close()
 
 
-@click.command()
+@click.command(deprecated=True)
 @input_position_dirpaths()
 @click.option(
     "--psf-dirpath",
@@ -100,6 +100,9 @@ def deconvolve(
 
     >> mantis deconvolve -i ./input.zarr/*/*/* -p ./psf.zarr -c ./deconvolve_params.yml -o ./output.zarr
     """
+    click.echo(
+        '"This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub"'
+    )
     # Convert string paths to Path objects
     output_dirpath = Path(output_dirpath)
     config_filepath = Path(config_filepath)

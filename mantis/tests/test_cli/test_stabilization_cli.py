@@ -6,7 +6,6 @@ from mantis.cli.main import cli
 def test_estimate_stabilization(tmp_path, example_plate):
     plate_path, _ = example_plate
     output_path = tmp_path / "config.yml"
-
     runner = CliRunner()
     result = runner.invoke(
         cli,
@@ -32,12 +31,18 @@ def test_estimate_stabilization(tmp_path, example_plate):
     )
 
     # Weak test
+
     assert "Estimating z stabilization parameters" in result.output
     assert output_path.exists()
     assert result.exit_code == 0
+    assert 'deprecated' in result.output.lower()
 
 
-def test_apply_stabilization(tmp_path, example_plate, example_stabilize_timelapse_settings):
+def test_apply_stabilization(
+    tmp_path,
+    example_plate,
+    example_stabilize_timelapse_settings,
+):
     plate_path, _ = example_plate
     config_path, _ = example_stabilize_timelapse_settings
     output_path = tmp_path / "output.zarr"
@@ -61,3 +66,4 @@ def test_apply_stabilization(tmp_path, example_plate, example_stabilize_timelaps
     # Weak test
     assert output_path.exists()
     assert result.exit_code == 0
+    assert 'deprecated' in result.output.lower()

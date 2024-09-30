@@ -17,7 +17,7 @@ from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_
 from mantis.cli.utils import yaml_to_model
 
 
-@click.command()
+@click.command(deprecated=True)
 @input_position_dirpaths()
 @config_filepath()
 @output_dirpath()
@@ -31,6 +31,9 @@ def estimate_psf(
 
     >> mantis estimate-psf -i ./beads.zarr/*/*/* -c ./psf_params.yml -o ./psf.zarr
     """
+    click.echo(
+        '"This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub"'
+    )
     # Convert string paths to Path objects
     output_dirpath = Path(output_dirpath)
     config_filepath = Path(config_filepath)

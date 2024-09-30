@@ -29,7 +29,7 @@ WAVELENGTH_EMISSION_TARGET_CHANNEL = 0.6  # in um
 FOCUS_SLICE_ROI_WIDTH = 150  # size of central ROI used to find focal slice
 
 
-@click.command()
+@click.command(deprecated=True)
 @source_position_dirpaths()
 @target_position_dirpaths()
 @output_filepath()
@@ -51,7 +51,9 @@ def estimate_registration(
     >> mantis estimate-registration -s ./acq_name_labelfree_reconstructed.zarr/0/0/0 -t ./acq_name_lightsheet_deskewed.zarr/0/0/0 -o ./output.yml
     -x  flag to use similarity transform (rotation, translation, scaling) default:Eucledian (rotation, translation)
     """
-
+    click.echo(
+        '"This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub"'
+    )
     click.echo("\nTarget channel INFO:")
     print_info(target_position_dirpaths[0], verbose=False)
     click.echo("\nSource channel INFO:")
