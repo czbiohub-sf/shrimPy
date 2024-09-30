@@ -3,7 +3,7 @@ from click.testing import CliRunner
 from mantis.cli.main import cli
 
 
-def test_deskew_cli(tmp_path, example_plate, example_deskew_settings, capfd):
+def test_deskew_cli(tmp_path, example_plate, example_deskew_settings):
     plate_path, _ = example_plate
     config_path, _ = example_deskew_settings
     output_path = tmp_path / "output.zarr"
@@ -24,8 +24,7 @@ def test_deskew_cli(tmp_path, example_plate, example_deskew_settings, capfd):
             str(output_path),
         ],
     )
-    out, err = capfd.readouterr()
 
     assert output_path.exists()
     assert result.exit_code == 0
-    assert "Deprecated" in out
+    assert 'deprecated' in result.output.lower()

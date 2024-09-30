@@ -8,7 +8,10 @@ from mantis.cli.register import rescale_voxel_size
 
 
 def test_register_cli(
-    tmp_path, example_plate, example_plate_2, example_register_settings, capfd
+    tmp_path,
+    example_plate,
+    example_plate_2,
+    example_register_settings,
 ):
     plate_path, _ = example_plate
     plate_path_2, _ = example_plate_2
@@ -31,11 +34,10 @@ def test_register_cli(
         ],
         catch_exceptions=False,
     )
-    out, _ = capfd.readouterr()
 
     assert result.exit_code == 0
     assert output_path.exists()
-    assert "Deprecated" in out
+    assert 'deprecated' in result.output.lower()
 
 
 def test_apply_affine_to_scale():

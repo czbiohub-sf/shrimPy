@@ -3,7 +3,7 @@ from click.testing import CliRunner
 from mantis.cli.main import cli
 
 
-def test_estimate_bleaching_cli(tmp_path, example_plate, capfd):
+def test_estimate_bleaching_cli(tmp_path, example_plate):
     plate_path, _ = example_plate
     output_path = tmp_path / "output/"
 
@@ -20,8 +20,7 @@ def test_estimate_bleaching_cli(tmp_path, example_plate, capfd):
             str(output_path),
         ],
     )
-    out, _ = capfd.readouterr()
 
     assert output_path.exists()
     assert result.exit_code == 0
-    assert "Deprecated" in out
+    assert 'deprecated' in result.output.lower()
