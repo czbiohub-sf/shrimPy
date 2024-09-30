@@ -40,6 +40,9 @@ def deskew(
 
     >> mantis deskew -i ./input.zarr/*/*/* -c ./deskew_params.yml -o ./output.zarr
     """
+    click.echo(
+        '"This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub"'
+    )
 
     # Convert string paths to Path objects
     output_dirpath = Path(output_dirpath)

@@ -20,7 +20,9 @@ def estimate_deskew(input_position_dirpaths, output_filepath):
 
     >> mantis estimate-deskew -i ./input.zarr/0/0/0 -o ./deskew_params.yml
     """
-
+    click.echo(
+        '"This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub"'
+    )
     assert str(output_filepath).endswith(('.yaml', '.yml')), "Output file must be a YAML file."
 
     # Read p, t, c = (0, 0, 0) into an array

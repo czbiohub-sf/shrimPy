@@ -53,7 +53,9 @@ def register(
 
     >> mantis register -s source.zarr/*/*/* -t target.zarr/*/*/* -c config.yaml -o ./acq_name_registerred.zarr
     """
-
+    click.echo(
+        '"This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub"'
+    )
     # Convert string paths to Path objects
     output_dirpath = Path(output_dirpath)
     config_filepath = Path(config_filepath)

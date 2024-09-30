@@ -69,7 +69,9 @@ def estimate_stitch(
 
     >>> mantis estimate-stitch -i ./input.zarr/*/*/* -o ./stitch_params.yml --channel DAPI --percent-overlap 0.05 --slurm
     """
-
+    click.echo(
+        '"This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub"'
+    )
     assert 0 <= percent_overlap <= 1, "Percent overlap must be between 0 and 1"
 
     input_zarr_path = Path(*input_position_dirpaths[0].parts[:-3])

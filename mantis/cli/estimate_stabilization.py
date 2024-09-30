@@ -297,7 +297,9 @@ def estimate_stabilization(
 
     Note: the verbose output will be saved at the same level as the output zarr.
     """
-
+    click.echo(
+        '"This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub"'
+    )
     assert (
         stabilize_xy or stabilize_z
     ), "At least one of 'stabilize_xy' or 'stabilize_z' must be selected"

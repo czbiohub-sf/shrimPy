@@ -45,7 +45,9 @@ def stitch(
 
     >>> mantis stitch -i ./input.zarr/*/*/* -c ./stitch_params.yml -o ./output.zarr --temp-path /hpc/scratch/group.comp.micro/
     """
-
+    click.echo(
+        '"This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub"'
+    )
     if not HAS_SLURM:
         warnings.warn(
             "This function is intended to be used with SLURM. "

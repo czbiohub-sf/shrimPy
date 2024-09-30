@@ -111,6 +111,9 @@ def estimate_bleaching(input_position_dirpaths, output_dirpath):
 
     >> mantis estimate-bleaching -i ./input.zarr/0/0/0 -o ./bleaching-curves/
     """
+    click.echo(
+        '"This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub"'
+    )
 
     # Read plate metadata if it exists
     try:
