@@ -1,5 +1,3 @@
-import warnings
-
 from pathlib import Path
 from typing import List
 
@@ -79,7 +77,7 @@ def apply_deconvolve_single_position(
     output_dataset.close()
 
 
-@click.command()
+@click.command(deprecated=True)
 @input_position_dirpaths()
 @click.option(
     "--psf-dirpath",
@@ -102,12 +100,6 @@ def deconvolve(
 
     >> mantis deconvolve -i ./input.zarr/*/*/* -p ./psf.zarr -c ./deconvolve_params.yml -o ./output.zarr
     """
-    # Emitting a deprecation warning
-    warnings.warn(
-        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-        DeprecationWarning,
-        stacklevel=2,
-    )
 
     # Convert string paths to Path objects
     output_dirpath = Path(output_dirpath)

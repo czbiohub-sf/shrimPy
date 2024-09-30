@@ -1,6 +1,5 @@
 import itertools
 import multiprocessing as mp
-import warnings
 
 from functools import partial
 from pathlib import Path
@@ -223,7 +222,7 @@ def estimate_xy_stabilization(
     return T_zyx_shift
 
 
-@click.command()
+@click.command(deprecated=True)
 @input_position_dirpaths()
 @output_filepath()
 @click.option(
@@ -298,12 +297,7 @@ def estimate_stabilization(
 
     Note: the verbose output will be saved at the same level as the output zarr.
     """
-    # Emitting a deprecation warning
-    warnings.warn(
-        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-        DeprecationWarning,
-        stacklevel=2,
-    )
+
     assert (
         stabilize_xy or stabilize_z
     ), "At least one of 'stabilize_xy' or 'stabilize_z' must be selected"

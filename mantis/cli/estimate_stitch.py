@@ -1,6 +1,5 @@
 import datetime
 import time
-import warnings
 
 from pathlib import Path
 
@@ -38,7 +37,7 @@ def write_config_file(
     model_to_yaml(settings, output_filepath)
 
 
-@click.command()
+@click.command(deprecated=True)
 @input_position_dirpaths()
 @output_filepath()
 @click.option(
@@ -70,12 +69,6 @@ def estimate_stitch(
 
     >>> mantis estimate-stitch -i ./input.zarr/*/*/* -o ./stitch_params.yml --channel DAPI --percent-overlap 0.05 --slurm
     """
-    # Emitting a deprecation warning
-    warnings.warn(
-        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-        DeprecationWarning,
-        stacklevel=2,
-    )
 
     assert 0 <= percent_overlap <= 1, "Percent overlap must be between 0 and 1"
 

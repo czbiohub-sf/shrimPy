@@ -1,5 +1,3 @@
-import warnings
-
 from pathlib import Path
 from typing import List
 
@@ -28,7 +26,7 @@ def rescale_voxel_size(affine_matrix, input_scale):
     return np.linalg.norm(affine_matrix, axis=1) * input_scale
 
 
-@click.command()
+@click.command(deprecated=True)
 @source_position_dirpaths()
 @target_position_dirpaths()
 @config_filepath()
@@ -55,11 +53,6 @@ def register(
 
     >> mantis register -s source.zarr/*/*/* -t target.zarr/*/*/* -c config.yaml -o ./acq_name_registerred.zarr
     """
-    warnings.warn(
-        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-        DeprecationWarning,
-        stacklevel=2,
-    )
 
     # Convert string paths to Path objects
     output_dirpath = Path(output_dirpath)

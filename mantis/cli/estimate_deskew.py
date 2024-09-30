@@ -1,5 +1,3 @@
-import warnings
-
 from dataclasses import asdict
 
 import click
@@ -13,7 +11,7 @@ from mantis.analysis.AnalysisSettings import DeskewSettings
 from mantis.cli.parsing import input_position_dirpaths, output_filepath
 
 
-@click.command()
+@click.command(deprecated=True)
 @input_position_dirpaths()
 @output_filepath()
 def estimate_deskew(input_position_dirpaths, output_filepath):
@@ -22,13 +20,6 @@ def estimate_deskew(input_position_dirpaths, output_filepath):
 
     >> mantis estimate-deskew -i ./input.zarr/0/0/0 -o ./deskew_params.yml
     """
-
-    # Emitting a deprecation warning
-    warnings.warn(
-        "This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub",
-        DeprecationWarning,
-        stacklevel=2,
-    )
 
     assert str(output_filepath).endswith(('.yaml', '.yml')), "Output file must be a YAML file."
 
