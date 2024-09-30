@@ -24,4 +24,4 @@ def test_estimate_deskew_cli(tmp_path, example_plate):
 
     # Tough to test hand-drawn things in napari, but at least this tests that it starts and loads data
     assert "Enter image pixel size" in result.output
-    assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
+    assert "Deprecated" in str(record.list[0].message), "Deprecation warning was not found."

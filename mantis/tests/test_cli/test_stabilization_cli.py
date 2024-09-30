@@ -37,7 +37,7 @@ def test_estimate_stabilization(tmp_path, example_plate):
     assert "Estimating z stabilization parameters" in result.output
     assert output_path.exists()
     assert result.exit_code == 0
-    assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
+    assert "Deprecated" in str(record.list[0].message), "Deprecation warning was not found."
 
 
 def test_apply_stabilization(tmp_path, example_plate, example_stabilize_timelapse_settings):

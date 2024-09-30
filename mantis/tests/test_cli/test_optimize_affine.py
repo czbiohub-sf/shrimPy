@@ -31,4 +31,4 @@ def test_optimize_affine_cli(tmp_path, example_plate, example_register_settings)
     # assert "Getting dataset info" in result.output
     assert result.exit_code == 0
     assert output_path.exists()
-    assert "biahub" in str(record.list[0].message), "Deprecation warning was not found."
+    assert "Deprecated" in str(record.list[0].message), "Deprecation warning was not found."
