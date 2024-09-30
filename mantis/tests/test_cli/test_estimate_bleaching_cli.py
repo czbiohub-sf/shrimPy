@@ -1,28 +1,27 @@
-import pytest
-
 from click.testing import CliRunner
 
 from mantis.cli.main import cli
 
 
-def test_estimate_bleaching_cli(tmp_path, example_plate):
+def test_estimate_bleaching_cli(tmp_path, example_plate, capfd):
     plate_path, _ = example_plate
     output_path = tmp_path / "output/"
-    with pytest.warns(DeprecationWarning) as record:
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            [
-                "estimate-bleaching",
-                "-i",
-                str(plate_path) + "/A/1/0",
-                str(plate_path) + "/B/1/0",
-                str(plate_path) + "/B/2/0",
-                "-o",
-                str(output_path),
-            ],
-        )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "estimate-bleaching",
+            "-i",
+            str(plate_path) + "/A/1/0",
+            str(plate_path) + "/B/1/0",
+            str(plate_path) + "/B/2/0",
+            "-o",
+            str(output_path),
+        ],
+    )
+    out, _ = capfd.readouterr()
 
     assert output_path.exists()
     assert result.exit_code == 0
-    assert "Deprecated" in str(record.list[0].message), "Deprecation warning was not found."
+    assert "Deprecated" in out
