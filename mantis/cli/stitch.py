@@ -72,7 +72,7 @@ def stitch(
     ), "Invalid channel(s) provided."
 
     wells = list(set([Path(*p.parts[-3:-1]) for p in input_position_dirpaths]))
-    grid_rows, grid_cols = get_grid_rows_cols(Path(*input_position_dirpaths[0].parts[:-3]))
+    grid_rows, grid_cols = get_grid_rows_cols(input_position_dirpaths)
     n_rows = len(grid_rows)
     n_cols = len(grid_cols)
 

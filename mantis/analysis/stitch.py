@@ -66,17 +66,14 @@ def estimate_shift(
     return shift[::-1]
 
 
-def get_grid_rows_cols(dataset_path: str):
+def get_grid_rows_cols(input_position_dirpaths: list[Path]):
     grid_rows = set()
     grid_cols = set()
 
-    with open_ome_zarr(dataset_path) as dataset:
-
-        _, well = next(dataset.wells())
-        for position_name, _ in well.positions():
-            fov_name = Path(position_name).parts[-1]
-            grid_rows.add(fov_name[3:])  # 1-Pos<COL>_<ROW> syntax
-            grid_cols.add(fov_name[:3])
+    for position in input_position_dirpaths:
+        fov_name = position.name
+        grid_rows.add(fov_name[3:])  # 1-Pos<COL>_<ROW> syntax
+        grid_cols.add(fov_name[:3])
 
     return sorted(grid_rows), sorted(grid_cols)
 
@@ -526,8 +523,9 @@ def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
         _total_shift = col_shifts.add(row_shifts, fill_value=0)
 
         # add row 000000
+        index0 = f"{df['col'].min():03}{df['row'].min():03}"
         _total_shift = pd.concat(
-            [pd.DataFrame({'shift-x': 0, 'shift-y': 0}, index=['000000']), _total_shift]
+            [pd.DataFrame({'shift-x': 0, 'shift-y': 0}, index=[index0]), _total_shift]
         )
 
         # add global offset to remove negative values

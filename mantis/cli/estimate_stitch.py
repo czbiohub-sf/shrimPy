@@ -96,7 +96,7 @@ def estimate_stitch(
     # here we assume that all wells have the same fov grid
     click.echo('Indexing input zarr store')
     wells = list(set([Path(*p.parts[-3:-1]) for p in input_position_dirpaths]))
-    grid_rows, grid_cols = get_grid_rows_cols(input_zarr_path)
+    grid_rows, grid_cols = get_grid_rows_cols(input_position_dirpaths)
     row_fov0 = [col + row for row in grid_rows[:-1] for col in grid_cols]
     row_fov1 = [col + row for row in grid_rows[1:] for col in grid_cols]
     col_fov0 = [col + row for col in grid_cols[:-1] for row in grid_rows]
