@@ -504,13 +504,110 @@ def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
         Dataframe with total translation shift per FOV
     """
     df = pd.read_csv(csv_filepath, dtype={'fov0': str, 'fov1': str})
-    # anchors = sorted(df['fov0'][~df['fov0'].isin(df['fov1'])].unique())
-
+    anchors = sorted(df['fov0'][~df['fov0'].isin(df['fov1'])].unique())
     # create 'row' and 'col' number columns and sort the dataframe by 'fov1'
     df['row'] = df['fov1'].str[-3:].astype(int)
     df['col'] = df['fov1'].str[:3].astype(int)
     df.set_index('fov1', inplace=True)
-    df.sort_index(inplace=True)
+
+    for well in df['well'].unique():
+        # add anchors
+        df = pd.concat(
+            [
+                pd.DataFrame(
+                    {
+                        'well': well,
+                        # 'fov0': None,
+                        'shift-x': 0,
+                        'shift-y': 0,
+                        'direction': 'col',
+                        # 'shift-x-raw': None,
+                        # 'shift-y-raw': None,
+                        'row': [int(a[3:]) for a in anchors],
+                        'col': [int(a[:3]) for a in anchors],
+                    },
+                    index=anchors,
+                ),
+                df,
+            ]
+        )
+
+        for anchor in anchors[::-1]:
+            _row = int(anchor[3:])
+            idx1 = df[(df['row'] == _row) & (df['direction'] == 'col')].index
+            idx2 = df[(df['row'] == _row) & (df['direction'] == 'row')].index
+            idx_out = idx1[~idx1.isin(idx2)]
+            idx_in = idx1[idx1.isin(idx2)]
+
+            if len(idx_in) > 0:  # will be zero for first row
+                shift_x = df[
+                    (df['direction'] == 'row')
+                    & (df['row'] <= _row)
+                    & (df['col'] == int(idx_in[0][:3]))
+                ]['shift-x'].sum()
+                shift_y = df[
+                    (df['direction'] == 'row')
+                    & (df['row'] <= _row)
+                    & (df['col'] == int(idx_in[0][:3]))
+                ]['shift-y'].sum()
+
+                df = pd.concat(
+                    [
+                        pd.DataFrame(
+                            {
+                                'well': well,
+                                # 'fov0': None,
+                                'shift-x': shift_x,
+                                'shift-y': shift_y,
+                                'direction': 'row',
+                                # 'shift-x-raw': None,
+                                # 'shift-y-raw': None,
+                                'row': _row,
+                                'col': [int(a[:3]) for a in idx_out],
+                            },
+                            index=idx_out,
+                        ),
+                        df,
+                    ]
+                )
+
+        for anchor in anchors:
+            _col = int(anchor[:3])
+
+            idx1 = df[(df['col'] == _col) & (df['direction'] == 'row')].index
+            idx2 = df[
+                (df['col'] == _col) & (df['direction'] == 'col') & (df['shift-x'] != 0)
+            ].index
+            idx_out = idx1[~idx1.isin(idx2)]
+            idx_in = idx1[idx1.isin(idx2)]
+
+            if len(idx_in) > 0:  # will be zero for first col
+                shift_x = (
+                    df[(df['direction'] == 'col') & (df['col'] <= _col)]
+                    .groupby('col')['shift-x']
+                    .median()
+                    .sum()
+                )
+                shift_y = (
+                    df[(df['direction'] == 'col') & (df['col'] <= _col)]
+                    .groupby('col')['shift-y']
+                    .median()
+                    .sum()
+                )
+
+                df_col = df[(df['direction'] == 'col')]
+                df_col.update(
+                    pd.DataFrame(
+                        {
+                            'shift-x': shift_x,
+                            'shift-y': shift_y,
+                        },
+                        index=idx_out,
+                    )
+                )
+                df[(df['direction'] == 'col')] = df_col
+
+    df.sort_index(inplace=True)  # TODO: remember to sort index after any additions
 
     total_shift = []
     for well in df['well'].unique():
@@ -521,12 +618,6 @@ def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
         row_shifts = _df.groupby('col')[['shift-x', 'shift-y']].cumsum()
         # total shift is the sum of row and column shifts
         _total_shift = col_shifts.add(row_shifts, fill_value=0)
-
-        # add row 000000
-        index0 = f"{df['col'].min():03}{df['row'].min():03}"
-        _total_shift = pd.concat(
-            [pd.DataFrame({'shift-x': 0, 'shift-y': 0}, index=[index0]), _total_shift]
-        )
 
         # add global offset to remove negative values
         _total_shift['shift-x'] += -np.minimum(_total_shift['shift-x'].min(), 0)
