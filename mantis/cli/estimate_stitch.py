@@ -97,7 +97,7 @@ def estimate_stitch(
     click.echo('Indexing input zarr store')
     wells = list(set([Path(*p.parts[-3:-1]) for p in input_position_dirpaths]))
     fov_names = set([p.name for p in input_position_dirpaths])
-    grid_rows, grid_cols = get_grid_rows_cols(input_position_dirpaths)
+    grid_rows, grid_cols = get_grid_rows_cols(fov_names)
 
     # account for non-square grids
     row_fov_pairs, col_fov_pairs = [], []

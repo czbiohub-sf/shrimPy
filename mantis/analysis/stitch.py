@@ -66,12 +66,11 @@ def estimate_shift(
     return shift[::-1]
 
 
-def get_grid_rows_cols(input_position_dirpaths: list[Path]):
+def get_grid_rows_cols(fov_names: list[str]):
     grid_rows = set()
     grid_cols = set()
 
-    for position in input_position_dirpaths:
-        fov_name = position.name
+    for fov_name in fov_names:
         grid_rows.add(fov_name[3:])  # 1-Pos<COL>_<ROW> syntax
         grid_cols.add(fov_name[:3])
 
@@ -505,6 +504,7 @@ def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
         Dataframe with total translation shift per FOV
     """
     df = pd.read_csv(csv_filepath, dtype={'fov0': str, 'fov1': str})
+    # anchors = sorted(df['fov0'][~df['fov0'].isin(df['fov1'])].unique())
 
     # create 'row' and 'col' number columns and sort the dataframe by 'fov1'
     df['row'] = df['fov1'].str[-3:].astype(int)

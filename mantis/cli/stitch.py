@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 
 from iohub import open_ome_zarr
-from iohub.ngff_meta import TransformationMeta
 from slurmkit import HAS_SLURM, SlurmParams, slurm_function, submit_function
 
 from mantis.analysis.AnalysisSettings import StitchSettings
@@ -21,7 +20,7 @@ from mantis.analysis.stitch import (
     stitch_shifted_store,
 )
 from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
-from mantis.cli.utils import process_single_position_v2, yaml_to_model
+from mantis.cli.utils import create_empty_hcs_zarr, process_single_position_v2, yaml_to_model
 
 
 @click.command()
@@ -72,7 +71,8 @@ def stitch(
     ), "Invalid channel(s) provided."
 
     wells = list(set([Path(*p.parts[-3:-1]) for p in input_position_dirpaths]))
-    grid_rows, grid_cols = get_grid_rows_cols(input_position_dirpaths)
+    fov_names = set([p.name for p in input_position_dirpaths])
+    grid_rows, grid_cols = get_grid_rows_cols(fov_names)
     n_rows = len(grid_rows)
     n_cols = len(grid_cols)
 
@@ -156,18 +156,14 @@ def stitch(
         )
 
     # create output zarr store
-    with open_ome_zarr(
-        output_dirpath, layout='hcs', mode="w-", channel_names=settings.channels
-    ) as output_dataset:
-        for well in wells:
-            pos = output_dataset.create_position(*Path(well, '0').parts)
-            pos.create_zeros(
-                name='0',
-                shape=stitched_shape,
-                dtype=np.float32,
-                chunks=stitched_chunks,
-                transform=[TransformationMeta(type="scale", scale=scale)],
-            )
+    create_empty_hcs_zarr(
+        store_path=output_dirpath,
+        position_keys=[Path(well, '0').parts for well in wells],
+        channel_names=settings.channels,
+        shape=stitched_shape,
+        chunks=stitched_chunks,
+        scale=scale,
+    )
 
     # Stitch pre-shifted images
     stitch_job = submit_function(
