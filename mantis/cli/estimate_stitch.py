@@ -96,11 +96,24 @@ def estimate_stitch(
     # here we assume that all wells have the same fov grid
     click.echo('Indexing input zarr store')
     wells = list(set([Path(*p.parts[-3:-1]) for p in input_position_dirpaths]))
-    grid_rows, grid_cols = get_grid_rows_cols(input_zarr_path)
-    row_fov0 = [col + row for row in grid_rows[:-1] for col in grid_cols]
-    row_fov1 = [col + row for row in grid_rows[1:] for col in grid_cols]
-    col_fov0 = [col + row for col in grid_cols[:-1] for row in grid_rows]
-    col_fov1 = [col + row for col in grid_cols[1:] for row in grid_rows]
+    fov_names = set([p.name for p in input_position_dirpaths])
+    grid_rows, grid_cols = get_grid_rows_cols(fov_names)
+
+    # account for non-square grids
+    row_fov_pairs, col_fov_pairs = [], []
+    for col in grid_cols:
+        for row0, row1 in zip(grid_rows[:-1], grid_rows[1:]):
+            fov0 = col + row0
+            fov1 = col + row1
+            if fov0 in fov_names and fov1 in fov_names:
+                row_fov_pairs.append((fov0, fov1))
+    for row in grid_rows:
+        for col0, col1 in zip(grid_cols[:-1], grid_cols[1:]):
+            fov0 = col0 + row
+            fov1 = col1 + row
+            if fov0 in fov_names and fov1 in fov_names:
+                col_fov_pairs.append((fov0, fov1))
+
     estimate_shift_params = {
         "tcz_index": tcz_idx,
         "percent_overlap": percent_overlap,
@@ -134,9 +147,7 @@ def estimate_stitch(
     click.echo('Estimating FOV shifts...')
     shifts, jobs = [], []
     for well_name in wells:
-        for direction, fovs in zip(
-            ("row", "col"), (zip(row_fov0, row_fov1), zip(col_fov0, col_fov1))
-        ):
+        for direction, fovs in zip(("row", "col"), (row_fov_pairs, col_fov_pairs)):
             for fov0, fov1 in fovs:
                 fov0_zarr_path = Path(input_zarr_path, well_name, fov0)
                 fov1_zarr_path = Path(input_zarr_path, well_name, fov1)
