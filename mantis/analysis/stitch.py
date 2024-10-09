@@ -508,7 +508,11 @@ def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
     # create 'row' and 'col' number columns and sort the dataframe by 'fov1'
     df['row'] = df['fov1'].str[-3:].astype(int)
     df['col'] = df['fov1'].str[:3].astype(int)
-    anchors = sorted(df['fov0'][~df['fov0'].isin(df['fov1'])].unique())
+    df_row = df[(df['direction'] == 'row')]
+    df_col = df[(df['direction'] == 'col')]
+    row_anchors = sorted(df_row['fov0'][~df_row['fov0'].isin(df_row['fov1'])].unique())
+    col_anchors = sorted(df_col['fov0'][~df_col['fov0'].isin(df_col['fov1'])].unique())
+    row_col_anchors = sorted(set(row_anchors).intersection(col_anchors))
     df['fov0'] = df[['well', 'fov0']].agg('/'.join, axis=1)
     df['fov1'] = df[['well', 'fov1']].agg('/'.join, axis=1)
     df.set_index('fov1', inplace=True)
@@ -516,32 +520,42 @@ def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
     for well in df['well'].unique():
         # add anchors
         df = pd.concat(
-            [
+            (
+                pd.DataFrame(
+                    {
+                        'well': well,
+                        'shift-x': 0,
+                        'shift-y': 0,
+                        'direction': 'row',
+                        'row': [int(a[3:]) for a in row_anchors],
+                        'col': [int(a[:3]) for a in row_anchors],
+                    },
+                    index=['/'.join((well, a)) for a in row_anchors],
+                ),
                 pd.DataFrame(
                     {
                         'well': well,
                         'shift-x': 0,
                         'shift-y': 0,
                         'direction': 'col',
-                        'row': [int(a[3:]) for a in anchors],
-                        'col': [int(a[:3]) for a in anchors],
+                        'row': [int(a[3:]) for a in col_anchors],
+                        'col': [int(a[:3]) for a in col_anchors],
                     },
-                    index=['/'.join((well, a)) for a in anchors],
+                    index=['/'.join((well, a)) for a in col_anchors],
                 ),
                 df,
-            ]
+            )
         )
 
-        df_well = df[df['well'] == well]
-        df_well_col = df_well[df_well['direction'] == 'col']
-        df_well_row = df_well[df_well['direction'] == 'row']
+        for anchor in row_col_anchors[::-1]:
+            df_well = df[df['well'] == well]
+            df_well_col = df_well[df_well['direction'] == 'col']
+            df_well_row = df_well[df_well['direction'] == 'row']
 
-        for anchor in anchors[::-1]:
             _row = int(anchor[3:])
             idx1 = df_well_col[df_well_col['row'] == _row].index
-            idx2 = df_well_row[df_well_row['row'] == _row].index
-            idx_out = idx1[~idx1.isin(idx2)]
-            idx_in = idx1[idx1.isin(idx2)]
+            idx_out = ['/'.join((well, a)) for a in row_anchors if a[3:] == anchor[3:]]
+            idx_in = sorted(idx1[~idx1.isin(idx_out)])
 
             if len(idx_in) > 0:  # will be zero for first row
                 shift_x = df_well_row[
@@ -553,28 +567,11 @@ def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
                     & (df_well_row['col'] == int(idx_in[0][-6:-3]))
                 ]['shift-y'].sum()
 
-                df = pd.concat(
-                    [
-                        pd.DataFrame(
-                            {
-                                'well': well,
-                                'shift-x': shift_x,
-                                'shift-y': shift_y,
-                                'direction': 'row',
-                                'row': _row,
-                                'col': [int(a[-6:-3]) for a in idx_out],
-                            },
-                            index=idx_out,
-                        ),
-                        df,
-                    ]
-                )
+                df_well_row.loc[idx_out, ['shift-x', 'shift-y']] = (shift_x, shift_y)
 
-        df_well = df[df['well'] == well]
-        df_well_col = df_well[df_well['direction'] == 'col']
-        df_well_row = df_well[df_well['direction'] == 'row']
+            df[(df['direction'] == 'row') & (df['well'] == well)] = df_well_row
 
-        for anchor in anchors:
+        for anchor in col_anchors:
             _col = int(anchor[:3])
 
             shift_x = (
