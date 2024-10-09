@@ -23,6 +23,12 @@ from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_
 from mantis.cli.utils import create_empty_hcs_zarr, process_single_position_v2, yaml_to_model
 
 
+def batched(iterable, n=1):
+    length = len(iterable)
+    for ndx in range(0, length, n):
+        yield iterable[ndx : min(ndx + n, length)]
+
+
 @click.command()
 @input_position_dirpaths()
 @output_dirpath()
@@ -127,33 +133,38 @@ def stitch(
     )
 
     click.echo('Submitting SLURM jobs')
+    max_concurrent_jobs = 100
     shift_jobs = []
-    for in_path in input_position_dirpaths:
-        well = Path(*in_path.parts[-3:-1])
-        col, row = (in_path.name[:3], in_path.name[3:])
+    for pos_batch in batched(input_position_dirpaths, max_concurrent_jobs):
+        batch_shift_jobs = []
+        for in_path in pos_batch:
+            well = Path(*in_path.parts[-3:-1])
+            col, row = (in_path.name[:3], in_path.name[3:])
 
-        if settings.total_translation is None:
-            shift = get_image_shift(
-                int(col),
-                int(row),
-                settings.column_translation,
-                settings.row_translation,
-                global_translation,
-            )
-        else:
-            # COL+ROW order here is important
-            shift = settings.total_translation[str(well / (col + row))]
+            if settings.total_translation is None:
+                shift = get_image_shift(
+                    int(col),
+                    int(row),
+                    settings.column_translation,
+                    settings.row_translation,
+                    global_translation,
+                )
+            else:
+                # COL+ROW order here is important
+                shift = settings.total_translation[str(well / (col + row))]
 
-        shift_jobs.append(
-            submit_function(
-                slurm_func,
-                slurm_params=params,
-                shift_x=shift[-1],
-                shift_y=shift[-2],
-                input_data_path=in_path,
-                output_path=shifted_store_path,
+            batch_shift_jobs.append(
+                submit_function(
+                    slurm_func,
+                    slurm_params=params,
+                    shift_x=float(shift[-1]),
+                    shift_y=float(shift[-2]),
+                    input_data_path=in_path,
+                    output_path=shifted_store_path,
+                    dependencies=shift_jobs,
+                )
             )
-        )
+        shift_jobs.extend(batch_shift_jobs)
 
     # create output zarr store
     create_empty_hcs_zarr(
@@ -178,7 +189,7 @@ def stitch(
             partition='cpu',
             cpus_per_task=32,
             mem_per_cpu='8G',
-            time=datetime.timedelta(hours=12),
+            time=datetime.timedelta(hours=23),
             output=slurm_out_path,
         ),
         dependencies=shift_jobs,
