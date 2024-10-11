@@ -14,7 +14,11 @@ from mantis.analysis.AnalysisSettings import ProcessingSettings
 
 
 def estimate_shift(
-    im0: np.ndarray, im1: np.ndarray, percent_overlap: float, direction: Literal["row", "col"]
+    im0: np.ndarray,
+    im1: np.ndarray,
+    percent_overlap: float,
+    direction: Literal["row", "col"],
+    add_offset: bool = False,
 ):
     """
     Estimate the shift between two images based on a given percentage overlap and direction.
@@ -29,6 +33,9 @@ def estimate_shift(
         The percentage of overlap between the two images. Must be between 0 and 1.
     direction : Literal["row", "col"]
         The direction of the shift. Can be either "row" or "col". See estimate_zarr_fov_shifts
+    add_offset : bool
+        Add offsets to shift-x and shift-y when stitching data from ISS microscope.
+        Not clear why we need to do that. By default False
 
     Returns
     -------
@@ -55,28 +62,28 @@ def estimate_shift(
             im0[..., -y_roi:, :], im1[..., :y_roi, :], upsample_factor=1
         )
         shift[-2] += sizeY
+        if add_offset:
+            shift[-2] -= y_roi
     elif direction == "col":
         x_roi = int(sizeX * np.minimum(percent_overlap + 0.05, 1))
         shift, _, _ = phase_cross_correlation(
             im0[..., :, -x_roi:], im1[..., :, :x_roi], upsample_factor=1
         )
         shift[-1] += sizeX
+        if add_offset:
+            shift[-1] -= x_roi
 
     # TODO: we shouldn't need to flip the order, will cause problems in 3D
     return shift[::-1]
 
 
-def get_grid_rows_cols(dataset_path: str):
+def get_grid_rows_cols(fov_names: list[str]):
     grid_rows = set()
     grid_cols = set()
 
-    with open_ome_zarr(dataset_path) as dataset:
-
-        _, well = next(dataset.wells())
-        for position_name, _ in well.positions():
-            fov_name = Path(position_name).parts[-1]
-            grid_rows.add(fov_name[3:])  # 1-Pos<COL>_<ROW> syntax
-            grid_cols.add(fov_name[:3])
+    for fov_name in fov_names:
+        grid_rows.add(fov_name[3:])  # 1-Pos<COL>_<ROW> syntax
+        grid_cols.add(fov_name[:3])
 
     return sorted(grid_rows), sorted(grid_cols)
 
@@ -397,7 +404,7 @@ def estimate_zarr_fov_shifts(
         im0 = np.flipud(im0)
         im1 = np.flipud(im1)
 
-    shift = estimate_shift(im0, im1, percent_overlap, direction)
+    shift = estimate_shift(im0, im1, percent_overlap, direction, add_offset=flipud)
 
     df = pd.DataFrame(
         {
@@ -512,8 +519,93 @@ def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
     # create 'row' and 'col' number columns and sort the dataframe by 'fov1'
     df['row'] = df['fov1'].str[-3:].astype(int)
     df['col'] = df['fov1'].str[:3].astype(int)
+    df_row = df[(df['direction'] == 'row')]
+    df_col = df[(df['direction'] == 'col')]
+    row_anchors = sorted(df_row['fov0'][~df_row['fov0'].isin(df_row['fov1'])].unique())
+    col_anchors = sorted(df_col['fov0'][~df_col['fov0'].isin(df_col['fov1'])].unique())
+    row_col_anchors = sorted(set(row_anchors).intersection(col_anchors))
+    df['fov0'] = df[['well', 'fov0']].agg('/'.join, axis=1)
+    df['fov1'] = df[['well', 'fov1']].agg('/'.join, axis=1)
     df.set_index('fov1', inplace=True)
-    df.sort_index(inplace=True)
+
+    for well in df['well'].unique():
+        # add anchors
+        df = pd.concat(
+            (
+                pd.DataFrame(
+                    {
+                        'well': well,
+                        'shift-x': 0,
+                        'shift-y': 0,
+                        'direction': 'row',
+                        'row': [int(a[3:]) for a in row_anchors],
+                        'col': [int(a[:3]) for a in row_anchors],
+                    },
+                    index=['/'.join((well, a)) for a in row_anchors],
+                ),
+                pd.DataFrame(
+                    {
+                        'well': well,
+                        'shift-x': 0,
+                        'shift-y': 0,
+                        'direction': 'col',
+                        'row': [int(a[3:]) for a in col_anchors],
+                        'col': [int(a[:3]) for a in col_anchors],
+                    },
+                    index=['/'.join((well, a)) for a in col_anchors],
+                ),
+                df,
+            )
+        )
+
+        for anchor in row_col_anchors[::-1]:
+            df_well = df[df['well'] == well]
+            df_well_col = df_well[df_well['direction'] == 'col']
+            df_well_row = df_well[df_well['direction'] == 'row']
+
+            _row = int(anchor[3:])
+            idx1 = df_well_col[df_well_col['row'] == _row].index
+            idx_out = ['/'.join((well, a)) for a in row_anchors if a[3:] == anchor[3:]]
+            idx_in = sorted(idx1[~idx1.isin(idx_out)])
+
+            if len(idx_in) > 0:  # will be zero for first row
+                shift_x = df_well_row[
+                    (df_well_row['row'] <= _row)
+                    & (df_well_row['col'] == int(idx_in[0][-6:-3]))
+                ]['shift-x'].sum()
+                shift_y = df_well_row[
+                    (df_well_row['row'] <= _row)
+                    & (df_well_row['col'] == int(idx_in[0][-6:-3]))
+                ]['shift-y'].sum()
+
+                df_well_row.loc[idx_out, ['shift-x', 'shift-y']] = (shift_x, shift_y)
+
+            df[(df['direction'] == 'row') & (df['well'] == well)] = df_well_row
+
+        for anchor in col_anchors:
+            _col = int(anchor[:3])
+
+            shift_x = (
+                df_well_col[(df_well_col['col'] <= _col) & (df_well_col['shift-x'] != 0)]
+                .groupby('col')['shift-x']
+                .median()
+                .sum()
+            )
+            shift_y = (
+                df_well_col[(df_well_col['col'] <= _col) & (df_well_col['shift-y'] != 0)]
+                .groupby('col')['shift-y']
+                .median()
+                .sum()
+            )
+
+            df_well_col.loc['/'.join((well, anchor)), ['shift-x', 'shift-y']] = (
+                shift_x,
+                shift_y,
+            )
+
+        df[(df['direction'] == 'col') & (df['well'] == well)] = df_well_col
+
+    df.sort_index(inplace=True)  # TODO: remember to sort index after any additions
 
     total_shift = []
     for well in df['well'].unique():
@@ -522,18 +614,11 @@ def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
         col_shifts = _df.groupby('row')[['shift-x', 'shift-y']].cumsum()
         _df = df[(df['direction'] == 'row') & (df['well'] == well)]
         row_shifts = _df.groupby('col')[['shift-x', 'shift-y']].cumsum()
-        # total shift is the sum of row and column shifts
         _total_shift = col_shifts.add(row_shifts, fill_value=0)
-
-        # add row 000000
-        _total_shift = pd.concat(
-            [pd.DataFrame({'shift-x': 0, 'shift-y': 0}, index=['000000']), _total_shift]
-        )
 
         # add global offset to remove negative values
         _total_shift['shift-x'] += -np.minimum(_total_shift['shift-x'].min(), 0)
         _total_shift['shift-y'] += -np.minimum(_total_shift['shift-y'].min(), 0)
-        _total_shift.set_index(well + '/' + _total_shift.index, inplace=True)
         total_shift.append(_total_shift)
 
     return pd.concat(total_shift)

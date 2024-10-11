@@ -1,4 +1,3 @@
-import datetime
 import shutil
 import warnings
 
@@ -7,9 +6,9 @@ from pathlib import Path
 import click
 import numpy as np
 import pandas as pd
+import submitit
 
 from iohub import open_ome_zarr
-from slurmkit import HAS_SLURM, SlurmParams, slurm_function, submit_function
 
 from mantis.analysis.AnalysisSettings import StitchSettings
 from mantis.analysis.stitch import (
@@ -21,6 +20,8 @@ from mantis.analysis.stitch import (
 )
 from mantis.cli.parsing import config_filepath, input_position_dirpaths, output_dirpath
 from mantis.cli.utils import create_empty_hcs_zarr, process_single_position_v2, yaml_to_model
+
+HAS_SLURM = True
 
 
 def batched(iterable, n=1):
@@ -59,7 +60,7 @@ def stitch(
         )
     assert not Path(output_dirpath).exists(), f'Output path: {output_dirpath} already exists'
 
-    slurm_out_path = Path(output_dirpath).parent / "slurm_output" / "stitch-%j.out"
+    slurm_out_path = Path(output_dirpath).parent / "slurm_output"
     shifted_store_path = Path(temp_path, f"TEMP_{input_position_dirpaths[0].parts[-4]}")
     settings = yaml_to_model(config_filepath, StitchSettings)
 
@@ -111,33 +112,23 @@ def stitch(
                 dtype=np.float32,
             )
 
-    # prepare slurm parameters
-    params = SlurmParams(
-        partition='preempted',
-        cpus_per_task=6,
-        mem_per_cpu='24G',
-        time=datetime.timedelta(minutes=30),
-        output=slurm_out_path,
-    )
+    slurm_args = {
+        "slurm_mem_per_cpu": "24G",
+        "slurm_cpus_per_task": 6,
+        "slurm_array_parallelism": 100,  # only 100 jobs can run at the same time
+        "slurm_time": 30,
+        "slurm_job_name": "shift",
+        "slurm_partition": "preempted",
+    }
 
-    # Shift each FOV to its final position in the stitched image
-    slurm_func = slurm_function(process_single_position_v2)(
-        preprocess_and_shift,
-        input_channel_idx=[input_dataset_channels.index(ch) for ch in settings.channels],
-        output_channel_idx=list(range(len(settings.channels))),
-        time_indices='all',
-        num_processes=6,
-        settings=settings.preprocessing,
-        output_shape=output_shape,
-        verbose=True,
-    )
+    executor = submitit.AutoExecutor(folder=slurm_out_path)
+    executor.update_parameters(**slurm_args)
 
     click.echo('Submitting SLURM jobs')
-    max_concurrent_jobs = 100
     shift_jobs = []
-    for pos_batch in batched(input_position_dirpaths, max_concurrent_jobs):
-        batch_shift_jobs = []
-        for in_path in pos_batch:
+
+    with executor.batch():
+        for in_path in input_position_dirpaths:
             well = Path(*in_path.parts[-3:-1])
             col, row = (in_path.name[:3], in_path.name[3:])
 
@@ -153,18 +144,26 @@ def stitch(
                 # COL+ROW order here is important
                 shift = settings.total_translation[str(well / (col + row))]
 
-            batch_shift_jobs.append(
-                submit_function(
-                    slurm_func,
-                    slurm_params=params,
-                    shift_x=float(shift[-1]),
-                    shift_y=float(shift[-2]),
-                    input_data_path=in_path,
-                    output_path=shifted_store_path,
-                    dependencies=shift_jobs,
-                )
+            job = executor.submit(
+                process_single_position_v2,
+                preprocess_and_shift,
+                input_channel_idx=[
+                    input_dataset_channels.index(ch) for ch in settings.channels
+                ],
+                output_channel_idx=list(range(len(settings.channels))),
+                time_indices='all',
+                num_processes=6,
+                settings=settings.preprocessing,
+                output_shape=output_shape,
+                verbose=True,
+                shift_x=float(shift[-1]),
+                shift_y=float(shift[-2]),
+                input_data_path=in_path,
+                output_path=shifted_store_path,
             )
-        shift_jobs.extend(batch_shift_jobs)
+            shift_jobs.append(job)
+
+    shift_job_ids = [job.job_id for job in shift_jobs]
 
     # create output zarr store
     create_empty_hcs_zarr(
@@ -176,38 +175,39 @@ def stitch(
         scale=scale,
     )
 
-    # Stitch pre-shifted images
-    stitch_job = submit_function(
-        slurm_function(stitch_shifted_store)(
-            shifted_store_path,
-            output_dirpath,
-            settings.postprocessing,
-            blending='average',
-            verbose=True,
-        ),
-        slurm_params=SlurmParams(
-            partition='cpu',
-            cpus_per_task=32,
-            mem_per_cpu='8G',
-            time=datetime.timedelta(hours=23),
-            output=slurm_out_path,
-        ),
-        dependencies=shift_jobs,
+    slurm_args = {
+        "slurm_mem_per_cpu": "8G",
+        "slurm_cpus_per_task": 32,
+        "slurm_time": "1-00:00:00",  # in [DD-]HH:MM:SS format
+        "slurm_partition": "cpu",
+        "slurm_job_name": "stitch",
+        "slurm_dependency": f"afterok:{shift_job_ids[0]}:{shift_job_ids[-1]}",
+    }
+
+    executor = submitit.AutoExecutor(folder=slurm_out_path)
+    executor.update_parameters(**slurm_args)
+
+    stitch_job = executor.submit(
+        stitch_shifted_store,
+        shifted_store_path,
+        output_dirpath,
+        settings.postprocessing,
+        blending='average',
+        verbose=True,
     )
 
-    # Delete temporary store
     if not debug:
-        submit_function(
-            slurm_function(shutil.rmtree)(shifted_store_path),
-            slurm_params=SlurmParams(
-                partition='cpu',
-                cpus_per_task=1,
-                mem_per_cpu='12G',
-                time=datetime.timedelta(hours=1),
-                output=slurm_out_path,
-            ),
-            dependencies=stitch_job,
-        )
+        slurm_args = {
+            "slurm_partition": "cpu",
+            "slurm_mem_per_cpu": "12G",
+            "slurm_cpus_per_task": 1,
+            "slurm_time": "0-01:00:00",  # in [DD-]HH:MM:SS format
+            "slurm_job_name": "cleanup",
+            "slurm_dependency": f"afterok:{stitch_job}",
+        }
+        executor = submitit.AutoExecutor(folder=slurm_out_path)
+        executor.update_parameters(**slurm_args)
+        executor.submit(shutil.rmtree, shifted_store_path)
 
 
 if __name__ == '__main__':
