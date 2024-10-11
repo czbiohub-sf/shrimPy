@@ -14,7 +14,11 @@ from mantis.analysis.AnalysisSettings import ProcessingSettings
 
 
 def estimate_shift(
-    im0: np.ndarray, im1: np.ndarray, percent_overlap: float, direction: Literal["row", "col"]
+    im0: np.ndarray,
+    im1: np.ndarray,
+    percent_overlap: float,
+    direction: Literal["row", "col"],
+    add_offset: bool = False,
 ):
     """
     Estimate the shift between two images based on a given percentage overlap and direction.
@@ -29,6 +33,9 @@ def estimate_shift(
         The percentage of overlap between the two images. Must be between 0 and 1.
     direction : Literal["row", "col"]
         The direction of the shift. Can be either "row" or "col". See estimate_zarr_fov_shifts
+    add_offset : bool
+        Add offsets to shift-x and shift-y when stitching data from ISS microscope.
+        Not clear why we need to do that. By default False
 
     Returns
     -------
@@ -55,12 +62,16 @@ def estimate_shift(
             im0[..., -y_roi:, :], im1[..., :y_roi, :], upsample_factor=1
         )
         shift[-2] += sizeY
+        if add_offset:
+            shift[-2] -= y_roi
     elif direction == "col":
         x_roi = int(sizeX * np.minimum(percent_overlap + 0.05, 1))
         shift, _, _ = phase_cross_correlation(
             im0[..., :, -x_roi:], im1[..., :, :x_roi], upsample_factor=1
         )
         shift[-1] += sizeX
+        if add_offset:
+            shift[-1] -= x_roi
 
     # TODO: we shouldn't need to flip the order, will cause problems in 3D
     return shift[::-1]
@@ -393,7 +404,7 @@ def estimate_zarr_fov_shifts(
         im0 = np.flipud(im0)
         im1 = np.flipud(im1)
 
-    shift = estimate_shift(im0, im1, percent_overlap, direction)
+    shift = estimate_shift(im0, im1, percent_overlap, direction, add_offset=flipud)
 
     df = pd.DataFrame(
         {
@@ -575,13 +586,13 @@ def compute_total_translation(csv_filepath: str) -> pd.DataFrame:
             _col = int(anchor[:3])
 
             shift_x = (
-                df_well_col[df_well_col['col'] <= _col]
+                df_well_col[(df_well_col['col'] <= _col) & (df_well_col['shift-x'] != 0)]
                 .groupby('col')['shift-x']
                 .median()
                 .sum()
             )
             shift_y = (
-                df_well_col[df_well_col['col'] <= _col]
+                df_well_col[(df_well_col['col'] <= _col) & (df_well_col['shift-y'] != 0)]
                 .groupby('col')['shift-y']
                 .median()
                 .sum()
