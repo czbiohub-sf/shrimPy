@@ -118,6 +118,8 @@ lf_microscope_settings:
   use_autofocus: True
   autofocus_stage: 'ZDrive'
   autofocus_method: 'PFS'
+  # Autotracker parameters using the label-free channel
+  autotracker_config: ['Channel - LF', 'BF']
 
 # Microscope settings which will be applied when the light-sheet acquisition is
 # initialized
@@ -142,3 +144,10 @@ ls_microscope_settings:
 ls_autoexposure_settings:
   autoexposure_method: 'manual'
   rerun_each_timepoint: True
+
+autotracker_settings:
+  tracking_method: 'phase_cross_correlation'
+  tracking_interval: 1
+  shift_limit: [30,200,200]
+  device: 'cpu'
+  scale_yx: 0.075
