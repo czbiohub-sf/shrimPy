@@ -44,7 +44,7 @@ o3_stage = setup_kim101_stage(LS_KIM101_SN)
 img0 = snap_image(mmc)
 peak0 = np.argmax(smooth(img0.std(axis=-1), window_size=5))
 
-repeats = 10
+repeats = 5
 z_range = np.arange(-165, 165+15, 15)
 data = []
 for _ in range(repeats):
@@ -64,11 +64,10 @@ peaks = []
 for d in data_std:
     peaks.append(np.argmax(smooth(d, window_size=5)))
 n = len(z_range)
-z0_std = peaks[n//2::n]
 
 plt.plot(peaks)
 plt.axhline(y=peak0, color='r', linestyle='--')
-plt.plot(np.arange(n//2, n*repeats, n), z0_std, 'o')
+plt.plot(np.arange(n//2, n*repeats, n), peaks[n//2::n], 'o')
 plt.grid()
 
 # %% Calibrate compensation factor
