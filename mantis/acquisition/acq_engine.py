@@ -804,7 +804,7 @@ class MantisAcquisition(object):
 
         return np.asarray(data)
 
-    def refocus_ls_path(self) -> bool:
+    def refocus_ls_path(self, extend_range:bool = False) -> bool:
         logger.info('Running O3 refocus algorithm on light-sheet arm')
         success = False
 
@@ -814,6 +814,9 @@ class MantisAcquisition(object):
         o3_z_start = -165
         o3_z_end = 165
         o3_z_step = 15
+        if extend_range:
+            o3_z_start -= 6 * o3_z_step
+            o3_z_end += 6 * o3_z_step
         o3_z_range = np.arange(o3_z_start, o3_z_end + o3_z_step, o3_z_step)
 
         # Define relative travel limits, in steps
@@ -1102,6 +1105,10 @@ class MantisAcquisition(object):
                         > self.ls_acq.microscope_settings.o3_refocus_interval_min * 60
                     ):
                         success = self.refocus_ls_path()
+                        # If autofocus fails, try again with extended range
+                        if not success:
+                            success = self.refocus_ls_path(extend_range=True)
+                        # If it failed again, retry at the next position
                         if success:
                             ls_o3_refocus_time = current_time
 
