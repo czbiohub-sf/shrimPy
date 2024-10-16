@@ -61,6 +61,7 @@ LC_CHANGE_TIME = 20  # in ms
 LS_CHANGE_TIME = 200  # time needed to change LS filter wheel, in ms
 LS_KIM101_SN = 74000291
 LF_KIM101_SN = 74000565
+KIM101_BACKLASH = 0  # backlash correction distance, in steps
 VORTRAN_488_COM_PORT = 'COM6'
 VORTRAN_561_COM_PORT = 'COM13'
 VORTRAN_639_COM_PORT = 'COM12'
@@ -732,6 +733,7 @@ class MantisAcquisition(object):
         galvo_range: Iterable,
         config_group: str = None,
         config_name: str = None,
+        exposure_time: float = None,
     ):
         """Acquire defocus stacks at different galvo positions and return image data
 
@@ -758,6 +760,10 @@ class MantisAcquisition(object):
             mmc.set_config(config_group, config_name)
             mmc.wait_for_config(config_group, config_name)
 
+        # Set exposure time
+        if exposure_time is not None:
+            mmc.set_exposure(exposure_time)
+
         # Open shutter
         auto_shutter_state, shutter_state = microscope_operations.get_shutter_state(mmc)
         microscope_operations.open_shutter(mmc)
@@ -777,7 +783,12 @@ class MantisAcquisition(object):
             mmc.set_position(galvo, p0 + p)
 
             # acquire defocus stack
-            z_stack = microscope_operations.acquire_defocus_stack(mmc, z_stage, z_range)
+            z_stack = microscope_operations.acquire_defocus_stack(
+                mmc,
+                z_stage,
+                z_range,
+                backlash_correction_distance=KIM101_BACKLASH
+            )
             data.append(z_stack)
 
         # Reset camera triggering
@@ -793,8 +804,9 @@ class MantisAcquisition(object):
 
         return np.asarray(data)
 
-    def refocus_ls_path(self):
+    def refocus_ls_path(self, extend_range:bool = False) -> bool:
         logger.info('Running O3 refocus algorithm on light-sheet arm')
+        success = False
 
         # Define O3 z range
         # 1 step is approx 20 nm, 15 steps are 300 nm which is sub-Nyquist sampling
@@ -802,13 +814,16 @@ class MantisAcquisition(object):
         o3_z_start = -165
         o3_z_end = 165
         o3_z_step = 15
+        if extend_range:
+            o3_z_start -= 6 * o3_z_step
+            o3_z_end += 6 * o3_z_step
         o3_z_range = np.arange(o3_z_start, o3_z_end + o3_z_step, o3_z_step)
 
         # Define relative travel limits, in steps
         o3_z_stage = self.ls_acq.o3_stage
         target_z_position = o3_z_stage.true_position + o3_z_range
-        max_z_position = 750  # O3 is allowed to travel ~15 um towards O2
-        min_z_position = -1500  # O3 is allowed to travel ~30 um away from O2
+        max_z_position = np.inf  # O3 is allowed to travel ~15 um towards O2
+        min_z_position = -np.inf  # O3 is allowed to travel ~30 um away from O2
         if np.any(target_z_position > max_z_position) or np.any(
             target_z_position < min_z_position
         ):
@@ -826,15 +841,24 @@ class MantisAcquisition(object):
         ]
 
         # Acquire defocus stacks at several galvo positions
+        config_group = self.ls_acq.microscope_settings.o3_refocus_config.config_group
+        config_name = self.ls_acq.microscope_settings.o3_refocus_config.config_name
+        config_idx = self.ls_acq.channel_settings.channels.index(config_name)
+        exposure_time = self.ls_acq.channel_settings.default_exposure_times_ms[config_idx]
+        
         data = self.acquire_ls_defocus_stack(
             mmc=self.ls_acq.mmc,
             z_stage=o3_z_stage,
             z_range=o3_z_range,
             galvo=self.ls_acq.slice_settings.z_stage_name,
             galvo_range=galvo_range,
-            config_group=self.ls_acq.microscope_settings.o3_refocus_config.config_group,
-            config_name=self.ls_acq.microscope_settings.o3_refocus_config.config_name,
+            config_group=config_group,
+            config_name=config_name,
+            exposure_time=exposure_time,
         )
+
+        # Discount O3 backlash compensation from true position count
+        o3_z_stage.true_position -= KIM101_BACKLASH * len(galvo_range)
 
         # Save acquired stacks in logs
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -877,10 +901,13 @@ class MantisAcquisition(object):
             microscope_operations.set_relative_kim101_position(
                 self.ls_acq.o3_stage, o3_displacement
             )
+            success = True
         else:
             logger.error(
                 'Could not determine the correct O3 in-focus position. O3 will not move'
             )
+
+        return success
 
     def run_autoexposure(
         self,
@@ -1077,8 +1104,13 @@ class MantisAcquisition(object):
                         or current_time - ls_o3_refocus_time
                         > self.ls_acq.microscope_settings.o3_refocus_interval_min * 60
                     ):
-                        self.refocus_ls_path()
-                        ls_o3_refocus_time = current_time
+                        success = self.refocus_ls_path()
+                        # If autofocus fails, try again with extended range
+                        if not success:
+                            success = self.refocus_ls_path(extend_range=True)
+                        # If it failed again, retry at the next position
+                        if success:
+                            ls_o3_refocus_time = current_time
 
                 # autoexposure
                 if well_id != previous_well_id:

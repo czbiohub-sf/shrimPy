@@ -17,7 +17,7 @@ from mantis.acquisition.autoexposure import manual_autoexposure, mean_intensity_
 
 logger = logging.getLogger(__name__)
 
-KIM101_COMPENSATION_FACTOR = 1.035
+KIM101_COMPENSATION_FACTOR = 1.0
 
 
 def _try_mmc_call(mmc, mmc_call_name, *mmc_carr_args):
@@ -334,6 +334,7 @@ def acquire_defocus_stack(
     datastore=None,
     channel_ind: int = 0,
     position_ind: int = 0,
+    backlash_correction_distance: int = 0,
 ):
     """Snap image at every z position and put image in a Micro-manager datastore
 
@@ -351,6 +352,8 @@ def acquire_defocus_stack(
         Channel index of acquired images in the Micro-manager datastore, by default 0
     position_ind : int, optional
         Position index of acquired images in the Micro-manager datastore, by default 0
+    backlash_correction: int, optional
+        Distance to add to the homing move of the stage to correct for backlash, by default 0
 
     Returns
     -------
@@ -397,7 +400,7 @@ def acquire_defocus_stack(
             datastore.put_image(image)
 
     # reset z stage
-    move_z(-relative_z_steps.sum())
+    move_z(-relative_z_steps.sum() + backlash_correction_distance)
 
     return np.asarray(data)
 
