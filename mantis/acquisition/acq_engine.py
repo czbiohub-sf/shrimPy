@@ -871,7 +871,7 @@ class MantisAcquisition(object):
         wavelength = 0.55  # in um, approx
         # works well to distinguish between noise and sample when using z_step = 15
         # the idea is that true features in the sample will come in focus slowly
-        threshold_FWHM = 3.0
+        threshold_FWHM = 4.5
 
         focus_indices = []
         for stack_idx, stack in enumerate(data):
