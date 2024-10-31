@@ -61,7 +61,7 @@ LC_CHANGE_TIME = 20  # in ms
 LS_CHANGE_TIME = 200  # time needed to change LS filter wheel, in ms
 LS_KIM101_SN = 74000291
 LF_KIM101_SN = 74000565
-KIM101_BACKLASH = -15  # backlash correction distance, in steps
+KIM101_BACKLASH = -5  # backlash correction distance, in steps
 VORTRAN_488_COM_PORT = 'COM6'
 VORTRAN_561_COM_PORT = 'COM13'
 VORTRAN_639_COM_PORT = 'COM12'
@@ -724,16 +724,10 @@ class MantisAcquisition(object):
                     self.lf_acq.microscope_settings.autofocus_stage,
                 )
 
-    @staticmethod
     def acquire_ls_defocus_stack(
-        mmc: Core,
-        z_stage,
+        self,
         z_range: Iterable,
-        galvo: str,
         galvo_range: Iterable,
-        config_group: str = None,
-        config_name: str = None,
-        exposure_time: float = None,
     ):
         """Acquire defocus stacks at different galvo positions and return image data
 
@@ -754,6 +748,13 @@ class MantisAcquisition(object):
 
         """
         data = []
+        mmc = self.ls_acq.mmc
+        config_group = self.ls_acq.microscope_settings.o3_refocus_config.config_group
+        config_name = self.ls_acq.microscope_settings.o3_refocus_config.config_name
+        config_idx = self.ls_acq.channel_settings.channels.index(config_name)
+        exposure_time = self.ls_acq.channel_settings.default_exposure_times_ms[config_idx]
+        z_stage = self.ls_acq.o3_stage
+        galvo = self.ls_acq.slice_settings.z_stage_name
 
         # Set config
         if config_name is not None:
@@ -844,20 +845,9 @@ class MantisAcquisition(object):
         ]
 
         # Acquire defocus stacks at several galvo positions
-        config_group = self.ls_acq.microscope_settings.o3_refocus_config.config_group
-        config_name = self.ls_acq.microscope_settings.o3_refocus_config.config_name
-        config_idx = self.ls_acq.channel_settings.channels.index(config_name)
-        exposure_time = self.ls_acq.channel_settings.default_exposure_times_ms[config_idx]
-        
         data = self.acquire_ls_defocus_stack(
-            mmc=self.ls_acq.mmc,
-            z_stage=o3_z_stage,
             z_range=o3_z_range,
-            galvo=self.ls_acq.slice_settings.z_stage_name,
             galvo_range=galvo_range,
-            config_group=config_group,
-            config_name=config_name,
-            exposure_time=exposure_time,
         )
 
         # Discount O3 backlash compensation from true position count
