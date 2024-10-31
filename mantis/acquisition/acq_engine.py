@@ -804,7 +804,7 @@ class MantisAcquisition(object):
 
         return np.asarray(data)
 
-    def refocus_ls_path(self, extend_range:bool = False) -> bool:
+    def refocus_ls_path(self, scan_left: bool = False, scan_right: bool = False) -> tuple[bool, bool, bool]:
         logger.info('Running O3 refocus algorithm on light-sheet arm')
         success = False
 
@@ -814,9 +814,11 @@ class MantisAcquisition(object):
         o3_z_start = -165
         o3_z_end = 165
         o3_z_step = 15
-        if extend_range:
-            logger.info('Running O3 refocus with extended range')
+        if scan_left:
+            logger.info('O3 refocus will scan further to the left')
             o3_z_start *= 2
+        if scan_right:
+            logger.info('O3 refocus will scan further to the right')
             o3_z_end *= 2
         o3_z_range = np.arange(o3_z_start, o3_z_end + o3_z_step, o3_z_step)
 
@@ -875,16 +877,18 @@ class MantisAcquisition(object):
         threshold_FWHM = 4.5
 
         focus_indices = []
+        peak_FWHM = []
         for stack_idx, stack in enumerate(data):
-            idx = focus_from_transverse_band(
+            idx, fwhm = focus_from_transverse_band(
                 stack,
                 NA_det=NA_DETECTION,
                 lambda_ill=wavelength,
                 pixel_size=LS_PIXEL_SIZE,
-                threshold_FWHM=threshold_FWHM,
+                threshold_FWHM=0,  # we'll discard invalid peaks below
                 plot_path=self._logs_dir / f'ls_refocus_plot_{timestamp}_Pos{stack_idx}.png',
             )
             focus_indices.append(idx)
+            peak_FWHM.append(fwhm)
         logger.debug(
             'Stacks at galvo positions %s are in focus at slice %s',
             np.round(galvo_range, 3),
@@ -893,7 +897,7 @@ class MantisAcquisition(object):
 
         # Refocus O3
         # Some focus_indices may be None, e.g. if there is no sample
-        valid_focus_indices = [idx for idx in focus_indices if idx is not None]
+        valid_focus_indices = [idx for (idx, fwhm) in zip(focus_indices, peak_FWHM) if fwhm > threshold_FWHM]
         if valid_focus_indices:
             focus_idx = int(np.median(valid_focus_indices))
             o3_displacement = int(o3_z_range[focus_idx])
@@ -907,8 +911,19 @@ class MantisAcquisition(object):
             logger.error(
                 'Could not determine the correct O3 in-focus position. O3 will not move'
             )
+            if not any((scan_left, scan_right)):
+                # Only do this if we are not already scanning at an extended range
+                focus_indices = np.asarray(focus_indices)
+                max_idx = len(o3_z_range) - 1
+                if all(focus_indices < 0.2*max_idx):
+                    scan_left = True
+                    logger.info('O3 autofocus will scan further to the left at the next iteration')
+                if all(focus_indices > 0.8*max_idx):
+                    scan_right = True
+                    logger.info('O3 autofocus will scan further to the right at the next iteration')
 
-        return success
+
+        return success, scan_left, scan_right
 
     def run_autoexposure(
         self,
@@ -1105,10 +1120,10 @@ class MantisAcquisition(object):
                         or current_time - ls_o3_refocus_time
                         > self.ls_acq.microscope_settings.o3_refocus_interval_min * 60
                     ):
-                        success = self.refocus_ls_path()
-                        # If autofocus fails, try again with extended range
-                        if not success:
-                            success = self.refocus_ls_path(extend_range=True)
+                        success, scan_left, scan_right = self.refocus_ls_path()
+                        # If autofocus fails, try again with extended range if we know which way to go
+                        if not success and any((scan_left, scan_right)):
+                            success, _, _ = self.refocus_ls_path(scan_left, scan_right)
                         # If it failed again, retry at the next position
                         if success:
                             ls_o3_refocus_time = current_time
