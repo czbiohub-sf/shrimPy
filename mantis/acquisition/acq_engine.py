@@ -61,7 +61,7 @@ LC_CHANGE_TIME = 20  # in ms
 LS_CHANGE_TIME = 200  # time needed to change LS filter wheel, in ms
 LS_KIM101_SN = 74000291
 LF_KIM101_SN = 74000565
-KIM101_BACKLASH = 0  # backlash correction distance, in steps
+KIM101_BACKLASH = -15  # backlash correction distance, in steps
 VORTRAN_488_COM_PORT = 'COM6'
 VORTRAN_561_COM_PORT = 'COM13'
 VORTRAN_639_COM_PORT = 'COM12'
@@ -815,8 +815,9 @@ class MantisAcquisition(object):
         o3_z_end = 165
         o3_z_step = 15
         if extend_range:
-            o3_z_start -= 6 * o3_z_step
-            o3_z_end += 6 * o3_z_step
+            logger.info('Running O3 refocus with extended range')
+            o3_z_start *= 2
+            o3_z_end *= 2
         o3_z_range = np.arange(o3_z_start, o3_z_end + o3_z_step, o3_z_step)
 
         # Define relative travel limits, in steps
