@@ -1100,24 +1100,6 @@ class MantisAcquisition(object):
                         )
                         continue
 
-                # O3 refocus
-                # Failing to refocus O3 will not abort the acquisition at the current PT index
-                if self.ls_acq.microscope_settings.use_o3_refocus:
-                    current_time = time.time()
-                    # Always refocus at the start
-                    if (
-                        (t_idx == 0 and p_idx == 0)
-                        or current_time - ls_o3_refocus_time
-                        > self.ls_acq.microscope_settings.o3_refocus_interval_min * 60
-                    ):
-                        success, scan_left, scan_right = self.refocus_ls_path()
-                        # If autofocus fails, try again with extended range if we know which way to go
-                        if not success and any((scan_left, scan_right)):
-                            success, _, _ = self.refocus_ls_path(scan_left, scan_right)
-                        # If it failed again, retry at the next position
-                        if success:
-                            ls_o3_refocus_time = current_time
-
                 # autoexposure
                 if well_id != previous_well_id:
                     globals.new_well = True
@@ -1138,6 +1120,24 @@ class MantisAcquisition(object):
                     globals.ls_laser_powers = (
                         self.ls_acq.channel_settings.laser_powers_per_well[well_id]
                     )
+
+                # O3 refocus
+                # Failing to refocus O3 will not abort the acquisition at the current PT index
+                if self.ls_acq.microscope_settings.use_o3_refocus:
+                    current_time = time.time()
+                    # Always refocus at the start
+                    if (
+                        (t_idx == 0 and p_idx == 0)
+                        or current_time - ls_o3_refocus_time
+                        > self.ls_acq.microscope_settings.o3_refocus_interval_min * 60
+                    ):
+                        success, scan_left, scan_right = self.refocus_ls_path()
+                        # If autofocus fails, try again with extended range if we know which way to go
+                        if not success and any((scan_left, scan_right)):
+                            success, _, _ = self.refocus_ls_path(scan_left, scan_right)
+                        # If it failed again, retry at the next position
+                        if success:
+                            ls_o3_refocus_time = current_time
 
                 # update events dictionaries
                 lf_events = deepcopy(lf_cz_events)
