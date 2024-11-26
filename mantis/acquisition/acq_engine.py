@@ -40,6 +40,7 @@ from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
 from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
     log_acquisition_start,
     update_ls_hardware,
+    update_laser_power,
 )
 from mantis.acquisition.hook_functions.post_camera_hook_functions import (
     start_daq_counters,
@@ -1109,16 +1110,25 @@ class MantisAcquisition(object):
                             well_id=well_id,
                             method=self.ls_acq.autoexposure_settings.autoexposure_method,
                         )
+
+                        globals.ls_slice_acquisition_rates = (
+                            self.ls_acq.slice_settings.acquisition_rate
+                        )
+                        globals.ls_laser_powers = (
+                            self.ls_acq.channel_settings.laser_powers_per_well[well_id]
+                        )
+
+                        # This is a bit of a hack, laser powers should be set in update_ls_hardware
+                        for c_idx in range(self.ls_acq.channel_settings.num_channels):
+                            update_laser_power(
+                                self.ls_acq.channel_settings.light_sources,
+                                c_idx
+                            )
+
                     # Acq rate needs to be updated even if autoexposure was not rerun in this well
                     # Only do that if we are using autoexposure?
                     self.update_ls_acquisition_rates(
                         self.ls_acq.channel_settings.exposure_times_per_well[well_id]
-                    )
-                    globals.ls_slice_acquisition_rates = (
-                        self.ls_acq.slice_settings.acquisition_rate
-                    )
-                    globals.ls_laser_powers = (
-                        self.ls_acq.channel_settings.laser_powers_per_well[well_id]
                     )
 
                 # O3 refocus

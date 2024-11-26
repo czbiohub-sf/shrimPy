@@ -25,10 +25,7 @@ def log_acquisition_start(events):
     return events
 
 
-def update_daq_freq(z_ctr_task, channels: list, events):
-    _event = get_first_acquisition_event(events)
-
-    c_idx = channels.index(_event['axes']['channel'])
+def update_daq_freq(z_ctr_task, c_idx: int):
     if z_ctr_task.is_task_done():
         z_ctr_task.stop()  # Counter needs to be stopped first
     z_ctr = z_ctr_task.co_channels[0]
@@ -38,13 +35,8 @@ def update_daq_freq(z_ctr_task, channels: list, events):
     logger.debug(f'Updating {z_ctr.name} pulse frequency to {acq_rates[c_idx]}')
     z_ctr.co_pulse_freq = acq_rates[c_idx]
 
-    return events
 
-
-def update_laser_power(lasers, channels: list, events):
-    _event = get_first_acquisition_event(events)
-
-    c_idx = channels.index(_event['axes']['channel'])
+def update_laser_power(lasers, c_idx: int):
     laser = lasers[c_idx]  # will be None if this channel does not use autoexposure
 
     if laser and globals.new_well:
@@ -55,15 +47,17 @@ def update_laser_power(lasers, channels: list, events):
         # Note, setting laser power takes ~1 s which is slow
         laser.pulse_power = laser_power
 
-    return events
 
-
-def update_ls_hardware(z_ctr_task, lasers, channels, events):
+def update_ls_hardware(z_ctr_task, lasers, channels: list, events):
     if not events:
         logger.debug('Acquisition events are not valid.')
         return
+    
+    _event = get_first_acquisition_event(events)
+    c_idx = channels.index(_event['axes']['channel'])
 
-    events = update_daq_freq(z_ctr_task, channels, events)
-    events = update_laser_power(lasers, channels, events)
+    update_daq_freq(z_ctr_task, c_idx)
+    # As a hack, setting laser power after call to `run_autoexposure`
+    # update_laser_power(lasers, c_idx)
 
     return events
