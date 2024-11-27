@@ -107,8 +107,8 @@ def make_position_grid(
 
     position_labels = np.asarray(
         [
-            [f"{well_label}-Site_{j:03}{i:03}" for i in range(x.shape[0])]
-            for j in range(x.shape[1])
+            [f"{well_label}-Site_{_x:03}{_y:03}" for _x in range(x.shape[0])]
+            for _y in range(x.shape[1])
         ]
     )
 
