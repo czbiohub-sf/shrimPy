@@ -127,28 +127,30 @@ def make_position_grid(
     y_coords = np.arange(y0, well_diameter, y_step)
     x, y = np.meshgrid(x_coords, y_coords, indexing='xy')
 
-    # make snake pattern
-    for i in range(1, x.shape[0], 2):
-        x[i] = x[i, ::-1]
+    position_list = np.stack(
+        (
+            x + well_center[0] - well_diameter / 2,
+            y + well_center[1] - well_diameter / 2,
+            np.ones_like(x) * well_center[2],
+        ),
+        axis=-1,
+    ).round(decimals=2)
 
-    position_list = (
-        np.vstack(
-            [
-                x.flatten() + well_center[0] - well_diameter / 2,
-                y.flatten() + well_center[1] - well_diameter / 2,
-                np.ones(x.size) * well_center[2],
-            ]
-        )
-        .round(decimals=2)
-        .T
-    )
     position_labels = np.asarray(
         [
-            f'{well_label}-Site_{j:03}{i:03}'
-            for i in range(x.shape[0])
-            for j in range(x.shape[1])
+            [f"{well_label}-Site_{_x:03}{_y:03}" for _x in range(x.shape[0])]
+            for _y in range(x.shape[1])
         ]
     )
+
+    # make snake pattern
+    for i in range(1, position_list.shape[0], 2):
+        position_list[i] = position_list[i][::-1]
+        position_labels[i] = position_labels[i][::-1]
+
+    # make 1D
+    position_list = position_list.reshape(-1, 3)
+    position_labels = position_labels.flatten()
 
     # remove positions that are too close to the well edge
     if min_fov_distance_from_well_edge:
