@@ -27,8 +27,8 @@ def get_position_list(mmStudio, z_stage_name):
 
 mmStudio = Studio()
 
-well_diameter = 2.0  # in mm
-min_fov_distance_from_well_edge = 0.8
+well_diameter = 4.0  # in mm
+min_fov_distance_from_well_edge = 0.5
 
 xyz_positions, position_labels = get_position_list(
     mmStudio,
