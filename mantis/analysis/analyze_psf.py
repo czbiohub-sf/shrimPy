@@ -20,7 +20,6 @@ from napari_psf_analysis.psf_analysis.psf import PSF
 from numpy.typing import ArrayLike
 from scipy.signal import peak_widths
 
-import mantis.acquisition.scripts
 import mantis.acquisition.templates
 
 
