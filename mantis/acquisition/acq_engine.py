@@ -786,10 +786,7 @@ class MantisAcquisition(object):
 
             # acquire defocus stack
             z_stack = microscope_operations.acquire_defocus_stack(
-                mmc,
-                z_stage,
-                z_range,
-                backlash_correction_distance=KIM101_BACKLASH
+                mmc, z_stage, z_range, backlash_correction_distance=KIM101_BACKLASH
             )
             data.append(z_stack)
 
@@ -806,7 +803,9 @@ class MantisAcquisition(object):
 
         return np.asarray(data)
 
-    def refocus_ls_path(self, scan_left: bool = False, scan_right: bool = False) -> tuple[bool, bool, bool]:
+    def refocus_ls_path(
+        self, scan_left: bool = False, scan_right: bool = False
+    ) -> tuple[bool, bool, bool]:
         logger.info('Running O3 refocus algorithm on light-sheet arm')
         success = False
 
@@ -888,7 +887,9 @@ class MantisAcquisition(object):
 
         # Refocus O3
         # Some focus_indices may be None, e.g. if there is no sample
-        valid_focus_indices = [idx for (idx, fwhm) in zip(focus_indices, peak_FWHM) if fwhm > threshold_FWHM]
+        valid_focus_indices = [
+            idx for (idx, fwhm) in zip(focus_indices, peak_FWHM) if fwhm > threshold_FWHM
+        ]
         if valid_focus_indices:
             focus_idx = int(np.median(valid_focus_indices))
             o3_displacement = int(o3_z_range[focus_idx])
@@ -906,13 +907,16 @@ class MantisAcquisition(object):
                 # Only do this if we are not already scanning at an extended range
                 focus_indices = np.asarray(focus_indices)
                 max_idx = len(o3_z_range) - 1
-                if all(focus_indices < 0.2*max_idx):
+                if all(focus_indices < 0.2 * max_idx):
                     scan_left = True
-                    logger.info('O3 autofocus will scan further to the left at the next iteration')
-                if all(focus_indices > 0.8*max_idx):
+                    logger.info(
+                        'O3 autofocus will scan further to the left at the next iteration'
+                    )
+                if all(focus_indices > 0.8 * max_idx):
                     scan_right = True
-                    logger.info('O3 autofocus will scan further to the right at the next iteration')
-
+                    logger.info(
+                        'O3 autofocus will scan further to the right at the next iteration'
+                    )
 
         return success, scan_left, scan_right
 
@@ -1121,8 +1125,7 @@ class MantisAcquisition(object):
                         # This is a bit of a hack, laser powers should be set in update_ls_hardware
                         for c_idx in range(self.ls_acq.channel_settings.num_channels):
                             update_laser_power(
-                                self.ls_acq.channel_settings.light_sources,
-                                c_idx
+                                self.ls_acq.channel_settings.light_sources, c_idx
                             )
 
                     # Acq rate needs to be updated even if autoexposure was not rerun in this well

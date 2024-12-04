@@ -52,7 +52,7 @@ def update_ls_hardware(z_ctr_task, lasers, channels: list, events):
     if not events:
         logger.debug('Acquisition events are not valid.')
         return
-    
+
     _event = get_first_acquisition_event(events)
     c_idx = channels.index(_event['axes']['channel'])
 
