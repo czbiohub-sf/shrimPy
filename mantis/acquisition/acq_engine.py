@@ -211,6 +211,12 @@ class BaseChannelSliceAcquisition(object):
         Apply acquisition settings as specified by the class properties
         """
         if self.enabled:
+            # Turn off Live mode
+            if self.mmStudio:
+                snap_live_manager = self.mmStudio.get_snap_live_manager()
+                if snap_live_manager.is_live_mode_on():
+                    snap_live_manager.set_live_mode_on(False)
+
             # Apply microscope config settings
             for settings in self.microscope_settings.config_group_settings:
                 microscope_operations.set_config(
@@ -642,6 +648,13 @@ class MantisAcquisition(object):
                 'Autoexposure is not supported in demo mode. Using default exposure time and laser power'
             )
             return
+        
+        if self.ls_acq.autoexposure_settings.autoexposure_method == 'manual':
+            # Check that the 'illumination.csv' file exists
+            if not (self._root_dir / 'illumination.csv').exists():
+                raise FileNotFoundError(
+                    f'The illumination.csv file required for manual autoexposure was not found in {self._root_dir}'
+                )
 
         # initialize lasers
         for channel_idx, config_name in enumerate(self.ls_acq.channel_settings.channels):
@@ -867,18 +880,18 @@ class MantisAcquisition(object):
         threshold_FWHM = 4.5
 
         focus_indices = []
-        peak_FWHM = []
+        peak_indices = []
         for stack_idx, stack in enumerate(data):
-            idx, fwhm = focus_from_transverse_band(
+            idx, stats = focus_from_transverse_band(
                 stack,
                 NA_det=NA_DETECTION,
                 lambda_ill=wavelength,
                 pixel_size=LS_PIXEL_SIZE,
-                threshold_FWHM=0,  # we'll discard invalid peaks below
+                threshold_FWHM=threshold_FWHM,
                 plot_path=self._logs_dir / f'ls_refocus_plot_{timestamp}_Pos{stack_idx}.png',
             )
             focus_indices.append(idx)
-            peak_FWHM.append(fwhm)
+            peak_indices.append(stats['peak_index'])
         logger.debug(
             'Stacks at galvo positions %s are in focus at slice %s',
             np.round(galvo_range, 3),
@@ -887,9 +900,7 @@ class MantisAcquisition(object):
 
         # Refocus O3
         # Some focus_indices may be None, e.g. if there is no sample
-        valid_focus_indices = [
-            idx for (idx, fwhm) in zip(focus_indices, peak_FWHM) if fwhm > threshold_FWHM
-        ]
+        valid_focus_indices = [idx for idx in focus_indices if idx is not None]
         if valid_focus_indices:
             focus_idx = int(np.median(valid_focus_indices))
             o3_displacement = int(o3_z_range[focus_idx])
@@ -905,14 +916,14 @@ class MantisAcquisition(object):
             )
             if not any((scan_left, scan_right)):
                 # Only do this if we are not already scanning at an extended range
-                focus_indices = np.asarray(focus_indices)
+                peak_indices = np.asarray(peak_indices)
                 max_idx = len(o3_z_range) - 1
-                if all(focus_indices < 0.2 * max_idx):
+                if all(peak_indices < 0.2 * max_idx):
                     scan_left = True
                     logger.info(
                         'O3 autofocus will scan further to the left at the next iteration'
                     )
-                if all(focus_indices > 0.8 * max_idx):
+                if all(peak_indices > 0.8 * max_idx):
                     scan_right = True
                     logger.info(
                         'O3 autofocus will scan further to the right at the next iteration'
@@ -1138,15 +1149,19 @@ class MantisAcquisition(object):
                 # O3 refocus
                 # Failing to refocus O3 will not abort the acquisition at the current PT index
                 if self.ls_acq.microscope_settings.use_o3_refocus:
-                    # O3 refocus can be skipped for certain wells
-                    if well_id not in self.ls_acq.microscope_settings.o3_refocus_skip_wells:
-                        current_time = time.time()
-                        # Always refocus at the start
-                        if (
-                            (t_idx == 0 and p_idx == 0)
-                            or current_time - ls_o3_refocus_time
-                            > self.ls_acq.microscope_settings.o3_refocus_interval_min * 60
-                        ):
+                    current_time = time.time()
+                    # Always refocus at the start
+                    if (
+                        (t_idx == 0 and p_idx == 0)
+                        or current_time - ls_o3_refocus_time
+                        > self.ls_acq.microscope_settings.o3_refocus_interval_min * 60
+                    ):
+                        # O3 refocus can be skipped for certain wells
+                        if well_id in self.ls_acq.microscope_settings.o3_refocus_skip_wells:
+                            logger.debug(
+                                f'O3 refocus is due, but will be skipped in well {well_id}.'
+                            )
+                        else:
                             success, scan_left, scan_right = self.refocus_ls_path()
                             # If autofocus fails, try again with extended range if we know which way to go
                             if not success and any((scan_left, scan_right)):
