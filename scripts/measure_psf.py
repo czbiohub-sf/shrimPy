@@ -189,7 +189,7 @@ if axis_labels == ("SCAN", "TILT", "COVERSLIP"):
     raw = True
     patch_size = (scale[0] * 30, scale[1] * 36, scale[2] * 18)
 
-# %% Characterize peaks
+## %% Characterize peaks
 
 peaks = _characterize_psf(
     zyx_data=zyx_data,
