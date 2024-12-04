@@ -62,7 +62,7 @@ LC_CHANGE_TIME = 20  # in ms
 LS_CHANGE_TIME = 200  # time needed to change LS filter wheel, in ms
 LS_KIM101_SN = 74000291
 LF_KIM101_SN = 74000565
-KIM101_BACKLASH = -5  # backlash correction distance, in steps
+KIM101_BACKLASH = 0  # backlash correction distance, in steps
 VORTRAN_488_COM_PORT = 'COM6'
 VORTRAN_561_COM_PORT = 'COM13'
 VORTRAN_639_COM_PORT = 'COM12'
@@ -1111,13 +1111,10 @@ class MantisAcquisition(object):
                             method=self.ls_acq.autoexposure_settings.autoexposure_method,
                         )
 
-                        globals.ls_slice_acquisition_rates = (
-                            self.ls_acq.slice_settings.acquisition_rate
-                        )
+                        # needs to be set before calling update_laser_power
                         globals.ls_laser_powers = (
                             self.ls_acq.channel_settings.laser_powers_per_well[well_id]
                         )
-
                         # This is a bit of a hack, laser powers should be set in update_ls_hardware
                         for c_idx in range(self.ls_acq.channel_settings.num_channels):
                             update_laser_power(
@@ -1130,24 +1127,30 @@ class MantisAcquisition(object):
                     self.update_ls_acquisition_rates(
                         self.ls_acq.channel_settings.exposure_times_per_well[well_id]
                     )
+                    # needs to be set after calling update_ls_acquisition_rates
+                    globals.ls_slice_acquisition_rates = (
+                        self.ls_acq.slice_settings.acquisition_rate
+                    )
 
                 # O3 refocus
                 # Failing to refocus O3 will not abort the acquisition at the current PT index
                 if self.ls_acq.microscope_settings.use_o3_refocus:
-                    current_time = time.time()
-                    # Always refocus at the start
-                    if (
-                        (t_idx == 0 and p_idx == 0)
-                        or current_time - ls_o3_refocus_time
-                        > self.ls_acq.microscope_settings.o3_refocus_interval_min * 60
-                    ):
-                        success, scan_left, scan_right = self.refocus_ls_path()
-                        # If autofocus fails, try again with extended range if we know which way to go
-                        if not success and any((scan_left, scan_right)):
-                            success, _, _ = self.refocus_ls_path(scan_left, scan_right)
-                        # If it failed again, retry at the next position
-                        if success:
-                            ls_o3_refocus_time = current_time
+                    # O3 refocus can be skipped for certain wells
+                    if well_id not in self.ls_acq.microscope_settings.o3_refocus_skip_wells:
+                        current_time = time.time()
+                        # Always refocus at the start
+                        if (
+                            (t_idx == 0 and p_idx == 0)
+                            or current_time - ls_o3_refocus_time
+                            > self.ls_acq.microscope_settings.o3_refocus_interval_min * 60
+                        ):
+                            success, scan_left, scan_right = self.refocus_ls_path()
+                            # If autofocus fails, try again with extended range if we know which way to go
+                            if not success and any((scan_left, scan_right)):
+                                success, _, _ = self.refocus_ls_path(scan_left, scan_right)
+                            # If it failed again, retry at the next position
+                            if success:
+                                ls_o3_refocus_time = current_time
 
                 # update events dictionaries
                 lf_events = deepcopy(lf_cz_events)
