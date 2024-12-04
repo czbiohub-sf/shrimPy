@@ -106,7 +106,7 @@ lines_between_types = 1
 default_section = "THIRDPARTY"
 no_lines_before = ["STDLIB"]
 ensure_newline_before_comments = true
-skip_glob = ["examples/*"]
+skip_glob = ["examples/*", "scripts/*"]
 
 [tool.pylint]
 # disable all conventions, refactors, warnings (C, R, W) and the following:
