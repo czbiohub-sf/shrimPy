@@ -40,7 +40,7 @@ dependencies = [
   "slurmkit @ git+https://github.com/royerlab/slurmkit",
   "tifffile",
   "torch>=2.3",
-  "waveorder @ git+https://github.com/mehta-lab/waveorder",
+  "waveorder @ git+https://github.com/mehta-lab/waveorder@return_peak_stats",
   "largestinteriorrectangle",
   "antspyx",
   "pystackreg",
