@@ -648,7 +648,7 @@ class MantisAcquisition(object):
                 'Autoexposure is not supported in demo mode. Using default exposure time and laser power'
             )
             return
-        
+
         if self.ls_acq.autoexposure_settings.autoexposure_method == 'manual':
             # Check that the 'illumination.csv' file exists
             if not (self._root_dir / 'illumination.csv').exists():
