@@ -39,5 +39,6 @@ def test_concatenate_cli(example_plate, tmp_path, example_concatenate_settings):
         ],
     )
 
+    assert 'deprecated' in result.output.lower()
     assert output_path.exists()
     assert result.exit_code == 0

@@ -81,7 +81,7 @@ def _characterize_psf(
     return peaks
 
 
-@click.command()
+@click.command(deprecated=True)
 @input_position_dirpaths()
 @config_filepath()
 @output_dirpath()
@@ -95,6 +95,11 @@ def characterize_psf(
 
     >> mantis characterize-psf -i ./beads.zarr/*/*/* -c ./characterize_params.yml -o ./
     """
+
+    click.echo(
+        '"This function is being moved to the biahub library, available at https://github.com/czbiohub-sf/biahub"'
+    )
+
     if len(input_position_dirpaths) > 1:
         warnings.warn("Only the first position will be characterized.")
 
