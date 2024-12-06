@@ -15,6 +15,7 @@ from pycromanager import Acquisition, Core, multi_d_acquisition_events
 # from mantis.acquisition.logger import configure_debug_logger
 
 def _create_acquisition_directory(root_dir: Path, acq_name: str, idx=1) -> Path:
+    assert root_dir.exists(), f'Root directory {root_dir} does not exist'
     acq_dir = root_dir / f'{acq_name}_{idx}'
     try:
         acq_dir.mkdir(parents=False, exist_ok=False)
@@ -226,6 +227,7 @@ with open(acq_dir / 'tracking_position_list.json', 'w') as fp:
 with open(acq_dir / 'pheno_position_list.json', 'w') as fp:
     json.dump(dict(zip(pheno_position_labels, pheno_position_list)), fp, indent=4)
 
+logger.info('Starting acquisition')
 pheno_position_list = np.asarray(pheno_position_list)
 for i, well_name in enumerate(well_centers.keys()):
     # Track cells across all wells
@@ -296,5 +298,7 @@ timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 logger.info(f'{timestamp} Acquiring tracking acquisition')
 with Acquisition(directory=str(acq_dir), name='tracking') as acq:
     acq.acquire(events)
+
+logger.info('Acquisition finished')
 
 # %%
