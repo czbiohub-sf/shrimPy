@@ -26,15 +26,15 @@ def _create_acquisition_directory(root_dir: Path, acq_name: str, idx=1) -> Path:
 DEBUG = False
 mmc = Core()
 
-acquisition_directory = Path(r'G:\OPS\OPS0003')
-acquisition_name = 'OPS0003'
+acquisition_directory = Path(r'G:\OPS')
+acquisition_name = 'test_OPS0005'
 
 well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
 min_fov_distance_from_well_edge = 800  # in um
 well_centers = {
-    'A1': (10100, 11600, 6336),
-    'A2': (49400, 11600, 6394),
-    'A3': (88600, 11600, 6488),
+    'A1': (10100, 11690, 6580),
+    'A2': (49240, 11690, 6580),
+    'A3': (88580, 11690, 6640),
 }  # (x, y, z) in um
 
 phenotyping_magnification = 20
@@ -227,7 +227,8 @@ with open(acq_dir / 'tracking_position_list.json', 'w') as fp:
 with open(acq_dir / 'pheno_position_list.json', 'w') as fp:
     json.dump(dict(zip(pheno_position_labels, pheno_position_list)), fp, indent=4)
 
-logger.info('Starting acquisition')
+timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+logger.info(f'{timestamp} Starting acquisition')
 pheno_position_list = np.asarray(pheno_position_list)
 for i, well_name in enumerate(well_centers.keys()):
     # Track cells across all wells
@@ -235,12 +236,13 @@ for i, well_name in enumerate(well_centers.keys()):
     logger.info(f'{timestamp} Changing magnification for tracking')
     change_magnification_tracking()
     events = multi_d_acquisition_events(
-        z_start=-50,
-        z_end=50,
+        z_start=-100,
+        z_end=100,
         z_step=25,
         channel_group=tracking_channel_group,
         channels=[tracking_channel],
         xyz_positions=tracking_position_list,
+        keep_shutter_open_between_z_steps=True,
         # position_labels=tracking_position_labels,
     )
     n_z_steps = len(np.arange(z_start, z_end+z_step, z_step))
@@ -286,12 +288,13 @@ timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 logger.info(f'{timestamp} Changing magnification for tracking')
 change_magnification_tracking()
 events = multi_d_acquisition_events(
-    z_start=-50,
-    z_end=50,
+    z_start=-100,
+    z_end=100,
     z_step=25,
     channel_group=tracking_channel_group,
     channels=[tracking_channel],
     xyz_positions=tracking_position_list,
+    keep_shutter_open_between_z_steps=True,
     # position_labels=tracking_position_labels,
 )
 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -299,6 +302,7 @@ logger.info(f'{timestamp} Acquiring tracking acquisition')
 with Acquisition(directory=str(acq_dir), name='tracking') as acq:
     acq.acquire(events)
 
-logger.info('Acquisition finished')
+timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+logger.info(f'{timestamp} Acquisition finished')
 
 # %%
