@@ -20,7 +20,7 @@ from napari_psf_analysis.psf_analysis.psf import PSF
 from numpy.typing import ArrayLike
 from scipy.signal import peak_widths
 
-import mantis.acquisition.scripts
+import mantis.acquisition.templates
 
 
 def _make_plots(
@@ -141,7 +141,7 @@ def generate_report(
     df_gaussian_fit.to_csv(output_path / 'psf_gaussian_fit.csv', index=False)
     df_1d_peak_width.to_csv(output_path / 'psf_1d_peak_width.csv', index=False)
 
-    with pkg_resources.path(mantis.acquisition.scripts, 'github-markdown.css') as css_path:
+    with pkg_resources.path(mantis.acquisition.templates, 'github-markdown.css') as css_path:
         shutil.copy(css_path, output_path)
     html_file_path = output_path / ('psf_analysis_report.html')
     with open(html_file_path, 'w') as file:

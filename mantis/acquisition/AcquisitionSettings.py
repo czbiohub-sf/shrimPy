@@ -141,6 +141,7 @@ class MicroscopeSettings:
     use_o3_refocus: bool = False
     o3_refocus_config: Optional[ConfigSettings] = None
     o3_refocus_interval_min: Optional[int] = None
+    o3_refocus_skip_wells: List[str] = field(default_factory=list)
 
 
 @dataclass

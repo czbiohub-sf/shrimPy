@@ -40,7 +40,7 @@ dependencies = [
   "slurmkit @ git+https://github.com/royerlab/slurmkit",
   "tifffile",
   "torch>=2.3",
-  "waveorder @ git+https://github.com/mehta-lab/waveorder",
+  "waveorder @ git+https://github.com/mehta-lab/waveorder@return_peak_stats",
   "largestinteriorrectangle",
   "antspyx",
   "pystackreg",
@@ -94,6 +94,7 @@ exclude = '''
     | notebooks
     | ignore
     | examples
+    | scripts
   )/
 )
 '''
@@ -105,7 +106,7 @@ lines_between_types = 1
 default_section = "THIRDPARTY"
 no_lines_before = ["STDLIB"]
 ensure_newline_before_comments = true
-skip_glob = ["examples/*"]
+skip_glob = ["examples/*", "scripts/*"]
 
 [tool.pylint]
 # disable all conventions, refactors, warnings (C, R, W) and the following:

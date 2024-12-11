@@ -40,6 +40,7 @@ from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
 from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
     log_acquisition_start,
     update_ls_hardware,
+    update_laser_power,
 )
 from mantis.acquisition.hook_functions.post_camera_hook_functions import (
     start_daq_counters,
@@ -61,6 +62,7 @@ LC_CHANGE_TIME = 20  # in ms
 LS_CHANGE_TIME = 200  # time needed to change LS filter wheel, in ms
 LS_KIM101_SN = 74000291
 LF_KIM101_SN = 74000565
+KIM101_BACKLASH = 0  # backlash correction distance, in steps
 VORTRAN_488_COM_PORT = 'COM6'
 VORTRAN_561_COM_PORT = 'COM13'
 VORTRAN_639_COM_PORT = 'COM12'
@@ -209,6 +211,12 @@ class BaseChannelSliceAcquisition(object):
         Apply acquisition settings as specified by the class properties
         """
         if self.enabled:
+            # Turn off Live mode
+            if self.mmStudio:
+                snap_live_manager = self.mmStudio.get_snap_live_manager()
+                if snap_live_manager.is_live_mode_on():
+                    snap_live_manager.set_live_mode_on(False)
+
             # Apply microscope config settings
             for settings in self.microscope_settings.config_group_settings:
                 microscope_operations.set_config(
@@ -641,6 +649,13 @@ class MantisAcquisition(object):
             )
             return
 
+        if self.ls_acq.autoexposure_settings.autoexposure_method == 'manual':
+            # Check that the 'illumination.csv' file exists
+            if not (self._root_dir / 'illumination.csv').exists():
+                raise FileNotFoundError(
+                    f'The illumination.csv file required for manual autoexposure was not found in {self._root_dir}'
+                )
+
         # initialize lasers
         for channel_idx, config_name in enumerate(self.ls_acq.channel_settings.channels):
             if self.ls_acq.channel_settings.use_autoexposure[channel_idx]:
@@ -723,15 +738,10 @@ class MantisAcquisition(object):
                     self.lf_acq.microscope_settings.autofocus_stage,
                 )
 
-    @staticmethod
     def acquire_ls_defocus_stack(
-        mmc: Core,
-        z_stage,
+        self,
         z_range: Iterable,
-        galvo: str,
         galvo_range: Iterable,
-        config_group: str = None,
-        config_name: str = None,
     ):
         """Acquire defocus stacks at different galvo positions and return image data
 
@@ -752,11 +762,22 @@ class MantisAcquisition(object):
 
         """
         data = []
+        mmc = self.ls_acq.mmc
+        config_group = self.ls_acq.microscope_settings.o3_refocus_config.config_group
+        config_name = self.ls_acq.microscope_settings.o3_refocus_config.config_name
+        config_idx = self.ls_acq.channel_settings.channels.index(config_name)
+        exposure_time = self.ls_acq.channel_settings.default_exposure_times_ms[config_idx]
+        z_stage = self.ls_acq.o3_stage
+        galvo = self.ls_acq.slice_settings.z_stage_name
 
         # Set config
         if config_name is not None:
             mmc.set_config(config_group, config_name)
             mmc.wait_for_config(config_group, config_name)
+
+        # Set exposure time
+        if exposure_time is not None:
+            mmc.set_exposure(exposure_time)
 
         # Open shutter
         auto_shutter_state, shutter_state = microscope_operations.get_shutter_state(mmc)
@@ -777,7 +798,9 @@ class MantisAcquisition(object):
             mmc.set_position(galvo, p0 + p)
 
             # acquire defocus stack
-            z_stack = microscope_operations.acquire_defocus_stack(mmc, z_stage, z_range)
+            z_stack = microscope_operations.acquire_defocus_stack(
+                mmc, z_stage, z_range, backlash_correction_distance=KIM101_BACKLASH
+            )
             data.append(z_stack)
 
         # Reset camera triggering
@@ -793,8 +816,11 @@ class MantisAcquisition(object):
 
         return np.asarray(data)
 
-    def refocus_ls_path(self):
+    def refocus_ls_path(
+        self, scan_left: bool = False, scan_right: bool = False
+    ) -> tuple[bool, bool, bool]:
         logger.info('Running O3 refocus algorithm on light-sheet arm')
+        success = False
 
         # Define O3 z range
         # 1 step is approx 20 nm, 15 steps are 300 nm which is sub-Nyquist sampling
@@ -802,13 +828,19 @@ class MantisAcquisition(object):
         o3_z_start = -165
         o3_z_end = 165
         o3_z_step = 15
+        if scan_left:
+            logger.info('O3 refocus will scan further to the left')
+            o3_z_start *= 2
+        if scan_right:
+            logger.info('O3 refocus will scan further to the right')
+            o3_z_end *= 2
         o3_z_range = np.arange(o3_z_start, o3_z_end + o3_z_step, o3_z_step)
 
         # Define relative travel limits, in steps
         o3_z_stage = self.ls_acq.o3_stage
         target_z_position = o3_z_stage.true_position + o3_z_range
-        max_z_position = 750  # O3 is allowed to travel ~15 um towards O2
-        min_z_position = -1500  # O3 is allowed to travel ~30 um away from O2
+        max_z_position = np.inf  # O3 is allowed to travel ~15 um towards O2
+        min_z_position = -np.inf  # O3 is allowed to travel ~30 um away from O2
         if np.any(target_z_position > max_z_position) or np.any(
             target_z_position < min_z_position
         ):
@@ -827,14 +859,12 @@ class MantisAcquisition(object):
 
         # Acquire defocus stacks at several galvo positions
         data = self.acquire_ls_defocus_stack(
-            mmc=self.ls_acq.mmc,
-            z_stage=o3_z_stage,
             z_range=o3_z_range,
-            galvo=self.ls_acq.slice_settings.z_stage_name,
             galvo_range=galvo_range,
-            config_group=self.ls_acq.microscope_settings.o3_refocus_config.config_group,
-            config_name=self.ls_acq.microscope_settings.o3_refocus_config.config_name,
         )
+
+        # Discount O3 backlash compensation from true position count
+        o3_z_stage.true_position -= KIM101_BACKLASH * len(galvo_range)
 
         # Save acquired stacks in logs
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -847,11 +877,12 @@ class MantisAcquisition(object):
         wavelength = 0.55  # in um, approx
         # works well to distinguish between noise and sample when using z_step = 15
         # the idea is that true features in the sample will come in focus slowly
-        threshold_FWHM = 3.0
+        threshold_FWHM = 4.5
 
         focus_indices = []
+        peak_indices = []
         for stack_idx, stack in enumerate(data):
-            idx = focus_from_transverse_band(
+            idx, stats = focus_from_transverse_band(
                 stack,
                 NA_det=NA_DETECTION,
                 lambda_ill=wavelength,
@@ -860,6 +891,7 @@ class MantisAcquisition(object):
                 plot_path=self._logs_dir / f'ls_refocus_plot_{timestamp}_Pos{stack_idx}.png',
             )
             focus_indices.append(idx)
+            peak_indices.append(stats['peak_index'])
         logger.debug(
             'Stacks at galvo positions %s are in focus at slice %s',
             np.round(galvo_range, 3),
@@ -877,10 +909,27 @@ class MantisAcquisition(object):
             microscope_operations.set_relative_kim101_position(
                 self.ls_acq.o3_stage, o3_displacement
             )
+            success = True
         else:
             logger.error(
                 'Could not determine the correct O3 in-focus position. O3 will not move'
             )
+            if not any((scan_left, scan_right)):
+                # Only do this if we are not already scanning at an extended range
+                peak_indices = np.asarray(peak_indices)
+                max_idx = len(o3_z_range) - 1
+                if all(peak_indices < 0.2 * max_idx):
+                    scan_left = True
+                    logger.info(
+                        'O3 autofocus will scan further to the left at the next iteration'
+                    )
+                if all(peak_indices > 0.8 * max_idx):
+                    scan_right = True
+                    logger.info(
+                        'O3 autofocus will scan further to the right at the next iteration'
+                    )
+
+        return success, scan_left, scan_right
 
     def run_autoexposure(
         self,
@@ -1067,6 +1116,36 @@ class MantisAcquisition(object):
                         )
                         continue
 
+                # autoexposure
+                if well_id != previous_well_id:
+                    globals.new_well = True
+                    if t_idx == 0 or self.ls_acq.autoexposure_settings.rerun_each_timepoint:
+                        self.run_autoexposure(
+                            acq=self.ls_acq,
+                            well_id=well_id,
+                            method=self.ls_acq.autoexposure_settings.autoexposure_method,
+                        )
+
+                        # needs to be set before calling update_laser_power
+                        globals.ls_laser_powers = (
+                            self.ls_acq.channel_settings.laser_powers_per_well[well_id]
+                        )
+                        # This is a bit of a hack, laser powers should be set in update_ls_hardware
+                        for c_idx in range(self.ls_acq.channel_settings.num_channels):
+                            update_laser_power(
+                                self.ls_acq.channel_settings.light_sources, c_idx
+                            )
+
+                    # Acq rate needs to be updated even if autoexposure was not rerun in this well
+                    # Only do that if we are using autoexposure?
+                    self.update_ls_acquisition_rates(
+                        self.ls_acq.channel_settings.exposure_times_per_well[well_id]
+                    )
+                    # needs to be set after calling update_ls_acquisition_rates
+                    globals.ls_slice_acquisition_rates = (
+                        self.ls_acq.slice_settings.acquisition_rate
+                    )
+
                 # O3 refocus
                 # Failing to refocus O3 will not abort the acquisition at the current PT index
                 if self.ls_acq.microscope_settings.use_o3_refocus:
@@ -1077,29 +1156,19 @@ class MantisAcquisition(object):
                         or current_time - ls_o3_refocus_time
                         > self.ls_acq.microscope_settings.o3_refocus_interval_min * 60
                     ):
-                        self.refocus_ls_path()
-                        ls_o3_refocus_time = current_time
-
-                # autoexposure
-                if well_id != previous_well_id:
-                    globals.new_well = True
-                    if t_idx == 0 or self.ls_acq.autoexposure_settings.rerun_each_timepoint:
-                        self.run_autoexposure(
-                            acq=self.ls_acq,
-                            well_id=well_id,
-                            method=self.ls_acq.autoexposure_settings.autoexposure_method,
-                        )
-                    # Acq rate needs to be updated even if autoexposure was not rerun in this well
-                    # Only do that if we are using autoexposure?
-                    self.update_ls_acquisition_rates(
-                        self.ls_acq.channel_settings.exposure_times_per_well[well_id]
-                    )
-                    globals.ls_slice_acquisition_rates = (
-                        self.ls_acq.slice_settings.acquisition_rate
-                    )
-                    globals.ls_laser_powers = (
-                        self.ls_acq.channel_settings.laser_powers_per_well[well_id]
-                    )
+                        # O3 refocus can be skipped for certain wells
+                        if well_id in self.ls_acq.microscope_settings.o3_refocus_skip_wells:
+                            logger.debug(
+                                f'O3 refocus is due, but will be skipped in well {well_id}.'
+                            )
+                        else:
+                            success, scan_left, scan_right = self.refocus_ls_path()
+                            # If autofocus fails, try again with extended range if we know which way to go
+                            if not success and any((scan_left, scan_right)):
+                                success, _, _ = self.refocus_ls_path(scan_left, scan_right)
+                            # If it failed again, retry at the next position
+                            if success:
+                                ls_o3_refocus_time = current_time
 
                 # update events dictionaries
                 lf_events = deepcopy(lf_cz_events)

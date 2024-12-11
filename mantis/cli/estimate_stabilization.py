@@ -47,7 +47,7 @@ def estimate_position_focus(
             if np.sum(data_zyx) == 0:
                 focal_plane = 0
             else:
-                focal_plane = focus_from_transverse_band(
+                focal_plane, _ = focus_from_transverse_band(
                     data_zyx,
                     NA_det=NA_DET,
                     lambda_ill=LAMBDA_ILL,
