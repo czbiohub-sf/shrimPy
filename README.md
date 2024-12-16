@@ -26,6 +26,10 @@ conda activate mantis
 pip install .
 ```
 
+3. Optionally, install the [biahub](https://github.com/czbiohub-sf/biahub) image analysis library.
+
+   `biahub` is currently used when characterizing the microscope point spread function, and will be used for real-time image processing in the future.
+
 ## Setting up the mantis microscope
 The mantis microscope implements simultaneous label-free and light-sheet imaging as described in [Ivanov et al.](https://doi.org/10.1093/pnasnexus/pgae323) The two imaging modalities are acquired on two independent arms of the microscope running separate instances of [Micro-Manager](https://micro-manager.org/) and [pycromanager](https://pycro-manager.readthedocs.io/). shrimPy and [biahub](https://github.com/czbiohub-sf/biahub) were developed to enable robust long-term imaging with mantis and efficient analysis of the resulting TB-scale datasets on a high-performance compute cluster.
 
