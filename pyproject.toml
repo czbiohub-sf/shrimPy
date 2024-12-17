@@ -21,7 +21,7 @@ classifiers = [
 # list package dependencies here
 dependencies = [
   "copylot @ git+https://github.com/czbiohub-sf/coPylot",
-  "ndtiff>=2.0",
+  "ndtiff==2.2.1",
   "nidaqmx",
   "numpy<2",
   "pycromanager==0.28.1",
