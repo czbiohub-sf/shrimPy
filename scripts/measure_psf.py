@@ -12,9 +12,9 @@ from iohub.reader import open_ome_zarr
 from pycromanager import Acquisition, Core, multi_d_acquisition_events
 
 from mantis.acquisition.microscope_operations import acquire_defocus_stack
-from mantis.analysis.AnalysisSettings import CharacterizeSettings
-from mantis.analysis.deskew import deskew_data, get_deskewed_data_shape
-from mantis.cli.characterize_psf import _characterize_psf
+from biahub.analysis.AnalysisSettings import CharacterizeSettings
+from biahub.analysis.deskew import deskew_data, get_deskewed_data_shape
+from biahub.cli.characterize_psf import _characterize_psf
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 epi_bead_detection_settings = {
