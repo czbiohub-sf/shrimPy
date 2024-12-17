@@ -11,24 +11,26 @@ This version of the code still uses the legacy name `mantis`, which overlaps wit
 
 ## Installation
 
-`mantis` can be installed as follows:
-
-1. Create a new Python 3.10 virtual environment using conda:
+We recommend using a virtual conda environment with Python 3.10:
 
 ```sh
 conda create -y --name mantis python=3.10
 conda activate mantis
+
+git clone https://github.com/czbiohub-sf/shrimPy.git
+pip install ./mantis
 ```
 
-2. Clone the repo and install this package:
+Optionally, you can also install the [biahub](https://github.com/czbiohub-sf/biahub) image analysis library in the same environment. `biahub` is currently used when characterizing the microscope point spread function, and will be used for real-time image processing in the future. You can install both libraries in a single step with:
 
 ```sh
-pip install .
+conda create -y --name mantis python=3.10
+conda activate mantis
+
+git clone https://github.com/czbiohub-sf/shrimPy.git
+git clone https://github.com/czbiohub-sf/biahub.git
+pip install ./mantis ./biahub
 ```
-
-3. Optionally, install the [biahub](https://github.com/czbiohub-sf/biahub) image analysis library.
-
-   `biahub` is currently used when characterizing the microscope point spread function, and will be used for real-time image processing in the future.
 
 ## Setting up the mantis microscope
 The mantis microscope implements simultaneous label-free and light-sheet imaging as described in [Ivanov et al.](https://doi.org/10.1093/pnasnexus/pgae323) The two imaging modalities are acquired on two independent arms of the microscope running separate instances of [Micro-Manager](https://micro-manager.org/) and [pycromanager](https://pycro-manager.readthedocs.io/). shrimPy and [biahub](https://github.com/czbiohub-sf/biahub) were developed to enable robust long-term imaging with mantis and efficient analysis of the resulting TB-scale datasets on a high-performance compute cluster.
