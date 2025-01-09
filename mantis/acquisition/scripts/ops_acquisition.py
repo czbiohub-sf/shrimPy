@@ -27,7 +27,7 @@ DEBUG = False
 mmc = Core()
 
 acquisition_directory = Path(r'G:\OPS')
-acquisition_name = 'test_OPS0005'
+acquisition_name = 'test_OPS0000'
 
 well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
 min_fov_distance_from_well_edge = 800  # in um
@@ -45,9 +45,9 @@ image_size = (2048, 2048)
 pixel_size = 6.5  # in um
 
 phenotyping_channel_group = 'Channels'
-phenotyping_channel = 'MultiCam_GFP_mCherry_BF_narrow'
+phenotyping_channel = '5-MultiCam_GFP_mCherry_BF_narrow'
 tracking_channel_group = 'Channels'
-tracking_channel = 'Zyla_BF'
+tracking_channel = '3-Zyla_BF'
 
 z_start = -2
 z_end = 6
@@ -70,7 +70,6 @@ def change_magnification_phenotyping():
         mmc.set_config('Objective', '20X')
     else:
         mmc.set_property('Core', 'Focus', 'PiezoZ')
-        mmc.set_property('Zyla', 'Binning', '2x2')
         mmc.set_property('ObjectiveTurret', 'Label', '3-20x'); time.sleep(5)
         mmc.set_property('TL-ApertureDiaphragm', 'Position', '24')
         # turn AFC back on
@@ -83,7 +82,6 @@ def change_magnification_tracking():
         mmc.set_config('Objective', '10X')
     else:
         mmc.set_property('Core', 'Focus', 'FocusDrive')
-        mmc.set_property('Zyla', 'Binning', '1x1')
         mmc.set_property('ObjectiveTurret', 'Label', '1-5x'); time.sleep(5)
         mmc.set_property('TL-ApertureDiaphragm', 'Position', '4')
 
