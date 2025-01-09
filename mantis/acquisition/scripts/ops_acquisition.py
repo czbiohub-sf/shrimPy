@@ -1,4 +1,4 @@
-# %%
+# %% on Dragonfly microscope works with pycromanager==0.19.2 and ndtiff==1.3.9
 import logging
 import time
 from pathlib import Path
@@ -28,6 +28,8 @@ mmc = Core()
 
 acquisition_directory = Path(r'G:\OPS')
 acquisition_name = 'test_OPS0000'
+start_time = '2025-01-08 17:50:00'
+# start_time = 'now'
 
 well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
 min_fov_distance_from_well_edge = 800  # in um
@@ -49,9 +51,18 @@ phenotyping_channel = '5-MultiCam_GFP_mCherry_BF_narrow'
 tracking_channel_group = 'Channels'
 tracking_channel = '3-Zyla_BF'
 
+# Define same exposure for all channels.
+# Not absolutely necessary, but helpful in debugging issues with BF exposure
+exposure_time = 100 # in ms
+
 z_start = -2
 z_end = 6
 z_step = 2
+
+if start_time == 'now':
+    start_time_obj = datetime.now()
+else:
+    start_time_obj = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
 
 if DEBUG:
     phenotyping_channel_group = 'Channel'
@@ -61,8 +72,10 @@ if DEBUG:
 
 # Setup Dragonfly microscope
 if not DEBUG:
-    # Open field stop all the way
-    mmc.set_property('TL-FieldDiaphragm', 'Position', '46')
+    # Make sure field stop is opened all the way
+    field_diaphragm = mmc.get_property('TL-FieldDiaphragm', 'Position')
+    if int(field_diaphragm) != 46:
+        raise ValueError('Please set the field diaphragm to 46 and adjust the brightfield illumnation as needed.')
 
 
 def change_magnification_phenotyping():
@@ -225,6 +238,11 @@ with open(acq_dir / 'tracking_position_list.json', 'w') as fp:
 with open(acq_dir / 'pheno_position_list.json', 'w') as fp:
     json.dump(dict(zip(pheno_position_labels, pheno_position_list)), fp, indent=4)
 
+start_delay_s = (start_time_obj - datetime.now()).total_seconds()
+if start_delay_s > 0:
+    logger.info(f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")} Waiting {int(start_delay_s)} seconds until {start_time}')
+    time.sleep(start_delay_s)
+
 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 logger.info(f'{timestamp} Starting acquisition')
 pheno_position_list = np.asarray(pheno_position_list)
@@ -239,6 +257,7 @@ for i, well_name in enumerate(well_centers.keys()):
         z_step=25,
         channel_group=tracking_channel_group,
         channels=[tracking_channel],
+        channel_exposures_ms=[exposure_time],
         xyz_positions=tracking_position_list,
         keep_shutter_open_between_z_steps=True,
         # position_labels=tracking_position_labels,
@@ -260,6 +279,7 @@ for i, well_name in enumerate(well_centers.keys()):
         z_step=z_step,
         channel_group=phenotyping_channel_group,
         channels=[phenotyping_channel],
+        channel_exposures_ms=[exposure_time],
         xy_positions=pheno_position_list[
             i * num_positions_per_well : (i + 1) * num_positions_per_well, :2
         ],
@@ -291,6 +311,7 @@ events = multi_d_acquisition_events(
     z_step=25,
     channel_group=tracking_channel_group,
     channels=[tracking_channel],
+    channel_exposures_ms=[exposure_time],
     xyz_positions=tracking_position_list,
     keep_shutter_open_between_z_steps=True,
     # position_labels=tracking_position_labels,
