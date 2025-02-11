@@ -649,7 +649,10 @@ class MantisAcquisition(object):
             )
             return
 
-        if self.ls_acq.autoexposure_settings.autoexposure_method == 'manual':
+        if (
+            any(self.ls_acq.channel_settings.use_autoexposure)
+            and self.ls_acq.autoexposure_settings.autoexposure_method == 'manual'
+        ):
             # Check that the 'illumination.csv' file exists
             if not (self._root_dir / 'illumination.csv').exists():
                 raise FileNotFoundError(
