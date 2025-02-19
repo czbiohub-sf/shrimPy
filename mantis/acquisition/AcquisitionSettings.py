@@ -220,4 +220,4 @@ class AutotrackerSettings:
                 raise ValueError(
                     'template_roi_zyx and template_channel must be provided for template matching'
                 )
-            return v
+        return v
