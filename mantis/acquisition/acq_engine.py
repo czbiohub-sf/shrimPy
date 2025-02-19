@@ -20,6 +20,7 @@ from waveorder.focus import focus_from_transverse_band
 
 from mantis import get_console_formatter
 from mantis.acquisition import microscope_operations
+from mantis.acquisition.autotracker import autotracker_hook_fn
 from mantis.acquisition.hook_functions import globals
 from mantis.acquisition.logger import configure_debug_logger, log_conda_environment
 
@@ -51,8 +52,7 @@ from mantis.acquisition.hook_functions.image_saved_hook_functions import (
     check_ls_acq_finished,
 )
 
-from mantis.acquisition.autotracker import autotracker_hook_fn
-
+# isort: on
 
 # Define constants
 LF_ZMQ_PORT = 4827
