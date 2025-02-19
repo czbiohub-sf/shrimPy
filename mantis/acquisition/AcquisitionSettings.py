@@ -203,8 +203,8 @@ class AutoexposureSettings:
 @dataclass
 class AutotrackerSettings:
     tracking_method: Literal['phase_cross_correlation', 'template_matching', 'multi_otsu']
-    tracking_interval: Optional[int] = 1
-    scale_yx: Optional[float] = 1.0
+    tracking_interval: Optional[int] = 1  # TODO: add units
+    scale_yx: Optional[float] = 1.0  # TODO: add units
     shift_limit: Optional[Union[Tuple[float, float, float], 'None']] = None
     device: Optional[str] = 'cpu'
     zyx_dampening_factor: Optional[Union[Tuple[float, float, float], None]] = None
