@@ -338,7 +338,7 @@ class Autotracker(object):
 
         # Limit the shifts_zyx, preserving the sign of the shift
         self.shifts_zyx = np.sign(shifts_zyx_um) * np.minimum(np.abs(shifts_zyx_um), self.shift_limit)
-        if self.shifts_zyx != shifts_zyx_um:
+        if any(self.shifts_zyx != shifts_zyx_um):
             logger.debug('Shifts_zyx limited to %s', self.shifts_zyx)
 
         if self.zyx_dampening is not None:
@@ -428,15 +428,15 @@ class Autotracker(object):
 
 
 def get_volume(dataset, axes):
-    p_idx, t_idx, autotrack_channel, z_range = axes
+    p_idx, t_idx, autotrack_channel, z_idx = axes
     images = []
     logger.debug(
-        f"Getting Zstack for p:{p_idx},t:{t_idx},c:{autotrack_channel},z_range:{z_range}"
+        f"Getting z-stack for p:{p_idx}, t:{t_idx}, c:{autotrack_channel}, z:{z_idx}"
     )
-    for z_id in range(z_range):
+    for _z in z_idx:
         images.append(
             dataset.read_image(
-                **{'channel': autotrack_channel, 'z': z_id, 'time': t_idx, 'position': p_idx}
+                **{'channel': autotrack_channel, 'z': _z, 'time': t_idx, 'position': p_idx}
             )
         )
     return np.stack(images)
@@ -498,7 +498,7 @@ def autotracker_hook_fn(
     # Get the z_max
     if channel == tracking_channel and z_idx == (num_slices - 1):
         # Skip the 1st timepoint
-        if t_idx > 1:
+        if t_idx >= 1:
             if t_idx % tracking_interval != 0:
                 logger.debug('Skipping autotracking t %d', t_idx)
                 return
@@ -506,9 +506,8 @@ def autotracker_hook_fn(
             # logger.debug('Curr axes :P:%s, T:%d, C:%s, Z:%d', p_idx, t_idx, channel, z_idx)
 
             # Logic to get the volumes
-            z_volume = z_range
-            volume_t0_axes = (p_idx, t_idx, tracking_channel, z_volume)
-            volume_t1_axes = (p_idx, t_idx, tracking_channel, z_volume)
+            volume_t0_axes = (p_idx, t_idx-1, tracking_channel, range(len(z_range)))
+            volume_t1_axes = (p_idx, t_idx, tracking_channel, range(len(z_range)))
             # Compute the shifts_zyx
             logger.debug('Instantiating autotracker')
             if globals.demo_run:
@@ -522,7 +521,7 @@ def autotracker_hook_fn(
                 volume_t0 = get_volume(dataset, volume_t0_axes)
                 volume_t1 = get_volume(dataset, volume_t1_axes)
                 # Reference and moving volumes
-                shifts_zyx = tracker.estimate_shifts(volume_t0, volume_t1)
+                shifts_zyx = tracker.estimate_shift(volume_t0, volume_t1)
 
             position_id = str(axes['position']) + '.csv'
             shift_coord_output = output_shift_path / position_id
