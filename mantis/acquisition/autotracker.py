@@ -303,6 +303,7 @@ class Autotracker(object):
         """
         self.tracking_method = tracking_method
         self.zyx_dampening = zyx_dampening_factor
+        self.shift_limit = shift_limit
         self.scale = scale
         self.shifts_zyx = None
 
@@ -330,10 +331,15 @@ class Autotracker(object):
         if not autofocus_method_func:
             raise ValueError(f'Unknown autofocus method: {self.tracking_method}')
 
-        shifts_zyx = autofocus_method_func(ref_img=ref_img, mov_img=mov_img, **kwargs)
+        shifts_zyx_pix = autofocus_method_func(ref_img=ref_img, mov_img=mov_img, **kwargs)
 
         # shifts_zyx in px to shifts_zyx in um
-        self.shifts_zyx = np.array(shifts_zyx) * self.scale
+        shifts_zyx_um = np.array(shifts_zyx_pix) * self.scale
+
+        # Limit the shifts_zyx, preserving the sign of the shift
+        self.shifts_zyx = np.sign(shifts_zyx_um) * np.minimum(np.abs(shifts_zyx_um), self.shift_limit)
+        if self.shifts_zyx != shifts_zyx_um:
+            logger.debug('Shifts_zyx limited to %s', self.shifts_zyx)
 
         if self.zyx_dampening is not None:
             self.shifts_zyx = self.shifts_zyx * self.zyx_dampening
