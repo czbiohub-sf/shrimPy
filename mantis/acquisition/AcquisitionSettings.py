@@ -6,8 +6,8 @@ from typing import Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 
-from pydantic import ConfigDict, NonNegativeFloat, NonNegativeInt, validator
-from pydantic.dataclasses import dataclass
+from pydantic.v1 import ConfigDict, NonNegativeFloat, NonNegativeInt, validator
+from pydantic.v1.dataclasses import dataclass
 
 config = ConfigDict(extra='forbid')
 
@@ -144,6 +144,7 @@ class MicroscopeSettings:
     use_o3_refocus: bool = False
     o3_refocus_config: Optional[ConfigSettings] = None
     o3_refocus_interval_min: Optional[int] = None
+    o3_refocus_skip_wells: List[str] = field(default_factory=list)
     autotracker_config: Optional[ConfigSettings] = None
 
 

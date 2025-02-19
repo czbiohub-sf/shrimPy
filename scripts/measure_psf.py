@@ -7,14 +7,14 @@ import napari
 import numpy as np
 import torch
 
-from iohub.ngff_meta import TransformationMeta
+from iohub.ngff import TransformationMeta
 from iohub.reader import open_ome_zarr
 from pycromanager import Acquisition, Core, multi_d_acquisition_events
 
 from mantis.acquisition.microscope_operations import acquire_defocus_stack
-from mantis.analysis.AnalysisSettings import CharacterizeSettings
-from mantis.analysis.deskew import deskew_data, get_deskewed_data_shape
-from mantis.cli.characterize_psf import _characterize_psf
+from biahub.analysis.AnalysisSettings import CharacterizeSettings
+from biahub.analysis.deskew import deskew_data, get_deskewed_data_shape
+from biahub.cli.characterize_psf import _characterize_psf
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 epi_bead_detection_settings = {
@@ -189,7 +189,7 @@ if axis_labels == ("SCAN", "TILT", "COVERSLIP"):
     raw = True
     patch_size = (scale[0] * 30, scale[1] * 36, scale[2] * 18)
 
-# %% Characterize peaks
+## %% Characterize peaks
 
 peaks = _characterize_psf(
     zyx_data=zyx_data,

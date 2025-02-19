@@ -21,30 +21,14 @@ classifiers = [
 # list package dependencies here
 dependencies = [
   "copylot @ git+https://github.com/czbiohub-sf/coPylot",
-  "iohub==0.1.0",
-  "matplotlib",
-  "napari; 'arm64' in platform_machine",                 # without Qt5 and skimage
-  "napari[all]; 'arm64' not in platform_machine",        # with Qt5 and skimage
-  "PyQt6; 'arm64' in platform_machine",
-  "natsort",
-  "ndtiff>=2.0",
+  "ndtiff==2.2.1",
   "nidaqmx",
   "numpy<2",
-  "markdown",
-  "monai",
-  "pandas~=2.1",
   "pycromanager==0.28.1",
-  "pydantic",
+  "pydantic>=2.0.0",
   "pylablib==1.4.1",
-  "scipy",
-  "slurmkit @ git+https://github.com/royerlab/slurmkit",
   "tifffile",
-  "torch>=2.3",
-  "waveorder @ git+https://github.com/mehta-lab/waveorder",
-  "largestinteriorrectangle",
-  "antspyx",
-  "pystackreg",
-  "napari-psf-analysis",
+  "waveorder @ git+https://github.com/mehta-lab/waveorder@return_peak_stats",
 ]
 
 
@@ -94,6 +78,7 @@ exclude = '''
     | notebooks
     | ignore
     | examples
+    | scripts
   )/
 )
 '''
@@ -105,7 +90,7 @@ lines_between_types = 1
 default_section = "THIRDPARTY"
 no_lines_before = ["STDLIB"]
 ensure_newline_before_comments = true
-skip_glob = ["examples/*"]
+skip_glob = ["examples/*", "scripts/*"]
 
 [tool.pylint]
 # disable all conventions, refactors, warnings (C, R, W) and the following:
@@ -116,4 +101,4 @@ msg-template = "{line},{column},{category},{symbol}:{msg}"
 reports = "n"
 
 [tool.pytest.ini_options]
-addopts = "--ignore examples/"
+addopts = "--ignore scripts/"
