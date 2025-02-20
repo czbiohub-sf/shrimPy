@@ -96,11 +96,11 @@ def get_position_list(mmStudio, z_stage_name):
 
 def get_current_position(mmc, z_stage_name):
     xyz_position = [
-        (
+        [
             mmc.get_x_position(),
             mmc.get_y_position(),
             mmc.get_position(z_stage_name) if z_stage_name else None,
-        )
+        ]
     ]
     position_label = ['FOV0']
 
