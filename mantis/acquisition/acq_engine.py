@@ -1062,6 +1062,8 @@ class MantisAcquisition(object):
         positions and time points.
         """
 
+        use_autotracker = any([self.lf_acq.microscope_settings.autotracker_config, self.ls_acq.microscope_settings.autotracker_config])
+
         # define LF hook functions
         if self._demo_run:
             lf_pre_hardware_hook_fn = log_preparing_acquisition
@@ -1166,19 +1168,15 @@ class MantisAcquisition(object):
                 well_id = self.position_settings.well_ids[p_idx]
 
                 # move to the given position
-                if p_label != previous_position_label:
-                    # Check if autotracker is on either arm
-                    if (
-                        self.ls_acq.microscope_settings.autotracker_config is not None
-                        or self.lf_acq.microscope_settings.autotracker_config is not None
-                    ):
-                        # TODO: Should we get the corods from the csv file or the modified xyz_positions_shifts
-                        logger.debug('Updating the positions for autotracker')
-                        logger.debug(
-                            'Previous position: %f,%f ',
-                            *self.position_settings.xyz_positions[p_idx][0:2],
-                        )
-                        self.update_position_autotracker()
+                if use_autotracker:
+                    # TODO: Should we get the corods from the csv file or the modified xyz_positions_shifts
+                    logger.debug('Updating the positions for autotracker')
+                    logger.debug(
+                        'Previous position: %f,%f ',
+                        *self.position_settings.xyz_positions[p_idx][0:2],
+                    )
+                    self.update_position_autotracker()
+                if p_label != previous_position_label or use_autotracker:
                     self.go_to_position(p_idx)
 
                     # TODO get the delta shifts
@@ -1348,7 +1346,7 @@ class MantisAcquisition(object):
         time.sleep(wait_time)
 
     def abort_stalled_acquisition(self):
-        buffer_time = 5
+        buffer_time = np.inf  # Dont about during debugging
         lf_acq_aborted = False
         ls_acq_aborted = False
 
