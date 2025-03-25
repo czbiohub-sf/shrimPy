@@ -210,6 +210,7 @@ def phase_cross_corr(
     maximum_shift: float = 1.0,
     to_device: Callable[[ArrayLike], ArrayLike] = lambda x: x,
     transform: Optional[Callable[[ArrayLike], ArrayLike]] = np.log1p,
+    normalization: bool = False,
 ) -> Tuple[int, ...]:
     """
     Borrowing from Jordao dexpv2.crosscorr https://github.com/royerlab/dexpv2
@@ -236,7 +237,7 @@ def phase_cross_corr(
         for s1, s2 in zip(ref_img.shape, mov_img.shape)
     )
 
-    logger.debug(
+    logger.info(
         f"phase cross corr. fft shape of {shape} for arrays of shape {ref_img.shape} and {mov_img.shape} "
         f"with maximum shift of {maximum_shift}"
     )
@@ -259,7 +260,10 @@ def phase_cross_corr(
     prod = Fimg1 * Fimg2.conj()
     del Fimg1, Fimg2
 
-    norm = np.fmax(np.abs(prod), eps)
+    if normalization:
+        norm = np.fmax(np.abs(prod), eps)
+    else:
+        norm = 1.0
     corr = np.fft.irfftn(prod / norm)
     del prod, norm
 
@@ -269,9 +273,9 @@ def phase_cross_corr(
     peak = np.unravel_index(argmax, corr.shape)
     peak = tuple(s // 2 - p for s, p in zip(corr.shape, peak))
 
-    logger.debug(f"phase cross corr. peak at {peak}")
+    logger.info(f"phase cross corr. peak at {peak}")
 
-    return peak
+    return corr, peak
 
 
 # %%
