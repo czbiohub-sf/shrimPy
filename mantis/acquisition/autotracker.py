@@ -510,7 +510,7 @@ def autotracker_hook_fn(
             # logger.debug('Curr axes :P:%s, T:%d, C:%s, Z:%d', p_idx, t_idx, channel, z_idx)
 
             # Logic to get the volumes
-            volume_t0_axes = (p_idx, t_idx-1, tracking_channel, range(len(z_range)))
+            volume_t0_axes = (p_idx, 0, tracking_channel, range(len(z_range)))
             volume_t1_axes = (p_idx, t_idx, tracking_channel, range(len(z_range)))
             # Compute the shifts_zyx
             logger.debug('Instantiating autotracker')
