@@ -186,7 +186,7 @@ def pad_to_shape(arr: ArrayLike, shape: Tuple[int, ...], mode: str, **kwargs) ->
 
     pad_width = [[s // 2, s - s // 2] for s in dif]
 
-    logger.info(f"padding: input shape {arr.shape}, output shape {shape}, padding {pad_width}")
+    logger.debug(f"padding: input shape {arr.shape}, output shape {shape}, padding {pad_width}")
 
     return np.pad(arr, pad_width=pad_width, mode=mode, **kwargs)
 
@@ -524,6 +524,12 @@ def autotracker_hook_fn(
             else:
                 volume_t0 = get_volume(dataset, volume_t0_axes)
                 volume_t1 = get_volume(dataset, volume_t1_axes)
+
+                # import napari
+                # viewer = napari.Viewer()
+                # viewer.add_image(volume_t0)
+                # viewer.add_image(volume_t1)
+
                 # Reference and moving volumes
                 shifts_zyx = tracker.estimate_shift(volume_t0, volume_t1)
 
@@ -537,26 +543,20 @@ def autotracker_hook_fn(
             # Read the previous shifts_zyx
             prev_x = position_settings.xyz_positions_shift[p_idx][0]
             prev_y = position_settings.xyz_positions_shift[p_idx][1]
+            prev_z = None
             # Update Z shifts_zyx if available
             if position_settings.xyz_positions_shift[p_idx][2] is not None:
                 prev_z = position_settings.xyz_positions_shift[p_idx][2]
-                logger.info('Previous shifts X Y Z: %f,%f,%f', prev_x, prev_y, prev_z)
-            else:
-                prev_z = None
-                logger.info('Previous shifts X Y:,%f,%f',prev_x, prev_y)
+            logger.info('Previous shifts (x, y, z): %f, %f, %f', prev_x, prev_y, prev_z)
             # Update the event coordinates
             position_settings.xyz_positions_shift[p_idx][0] = prev_x + shifts_zyx[-1]
             position_settings.xyz_positions_shift[p_idx][1] = prev_y + shifts_zyx[-2]
             # Update Z shifts_zyx if available
             if position_settings.xyz_positions_shift[p_idx][2] is not None:
                 position_settings.xyz_positions_shift[p_idx][2] = prev_z + shifts_zyx[-3]
-                logger.info(
-                    'New positions X Y Z: %f,%f,%f', *position_settings.xyz_positions_shift[p_idx]
-                )
-            else:
-                logger.info(
-                    'New positions X Y: %f,%f', *position_settings.xyz_positions_shift[p_idx][0:2]
-                )
+            logger.info(
+                'New positions (x, y, z): %f, %f, %f', *position_settings.xyz_positions_shift[p_idx]
+            )
             # Save the shifts_zyx
             tracker.save_shifts_to_file(
                 shift_coord_output,
