@@ -540,10 +540,10 @@ def autotracker_hook_fn(
             # Update Z shifts_zyx if available
             if position_settings.xyz_positions_shift[p_idx][2] is not None:
                 prev_z = position_settings.xyz_positions_shift[p_idx][2]
-                logger.info('Previous shifts_zyx: %f,%f,%f', prev_z, prev_y, prev_x)
+                logger.info('Previous shifts X Y Z: %f,%f,%f', prev_x, prev_y, prev_z)
             else:
                 prev_z = None
-                logger.info('Previous shifts_yx:,%f,%f', prev_y, prev_x)
+                logger.info('Previous shifts X Y:,%f,%f',prev_x, prev_y)
             # Update the event coordinates
             position_settings.xyz_positions_shift[p_idx][0] = prev_x + shifts_zyx[-1]
             position_settings.xyz_positions_shift[p_idx][1] = prev_y + shifts_zyx[-2]
@@ -551,11 +551,11 @@ def autotracker_hook_fn(
             if position_settings.xyz_positions_shift[p_idx][2] is not None:
                 position_settings.xyz_positions_shift[p_idx][2] = prev_z + shifts_zyx[-3]
                 logger.info(
-                    'New positions: %f,%f,%f', *position_settings.xyz_positions_shift[p_idx]
+                    'New positions X Y Z: %f,%f,%f', *position_settings.xyz_positions_shift[p_idx]
                 )
             else:
                 logger.info(
-                    'New positions: %f,%f', *position_settings.xyz_positions_shift[p_idx][0:2]
+                    'New positions X Y: %f,%f', *position_settings.xyz_positions_shift[p_idx][0:2]
                 )
             # Save the shifts_zyx
             tracker.save_shifts_to_file(
