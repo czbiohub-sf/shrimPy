@@ -275,7 +275,7 @@ def phase_cross_corr(
 
     logger.info(f"phase cross corr. peak at {peak}")
 
-    return corr, peak
+    return peak
 
 
 # %%
