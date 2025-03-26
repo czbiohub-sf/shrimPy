@@ -7,6 +7,7 @@ from dataclasses import asdict
 from datetime import datetime
 from functools import partial
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Iterable, Union
 
 import copylot
@@ -651,8 +652,7 @@ class MantisAcquisition(object):
             logger.debug('Autofocus is not enabled')
 
         # Connect to LS O3 scan stage
-        if self.ls_acq.microscope_settings.use_o3_refocus:
-            self.ls_acq.o3_stage = microscope_operations.setup_kim101_stage(LS_KIM101_SN)
+        self.ls_acq.o3_stage = 'O3 Piezo'
 
     def setup_autoexposure(self):
         # assign exposure_times_per_well and laser_powers_per_well to default values
@@ -772,7 +772,8 @@ class MantisAcquisition(object):
         self,
         z_range: Iterable,
         galvo_range: Iterable,
-    ):
+        use_pycromanager: bool = False,
+    ) -> np.array:
         """Acquire defocus stacks at different galvo positions and return image data
 
         Parameters
@@ -781,10 +782,13 @@ class MantisAcquisition(object):
         mmStudio : Studio
         z_stage : str or KinesisPiezoMotor
         z_range : Iterable
+            Provide absolute range when using pycromanager, relative range otherwise
         galvo : str
         galvo_range : Iterable
         config_group : str, optional
         config_name : str, optional
+        use_pycromanager : bool, optional
+            Flag to use pycromanager for acquisition, by default False
 
         Returns
         -------
@@ -821,17 +825,42 @@ class MantisAcquisition(object):
         microscope_operations.set_property(
             mmc, 'Prime BSI Express', 'TriggerMode', 'Internal Trigger'
         )
+        if use_pycromanager:
+            tempdir = TemporaryDirectory()
+            focus_stage = mmc.get_property('Core', 'Focus')
+            microscope_operations.set_property(mmc, 'Core', 'Focus', z_stage)
 
-        # acquire stack at different galvo positions
+        # acquire stacks at different galvo positions
         for p_idx, p in enumerate(galvo_range):
             # set galvo position
             mmc.set_position(galvo, p0 + p)
 
             # acquire defocus stack
-            z_stack = microscope_operations.acquire_defocus_stack(
-                mmc, z_stage, z_range, backlash_correction_distance=KIM101_BACKLASH
-            )
-            data.append(z_stack)
+            if use_pycromanager:
+                mmc.set_position(z_stage, z_range[0])  # prep o3 stage
+                with Acquisition(
+                    tempdir.name, f'ls_refocus_p{p_idx}', port=LS_ZMQ_PORT, show_display=False
+                ) as acq:
+                    acq.acquire(
+                        multi_d_acquisition_events(
+                            z_start=z_range[0],
+                            z_end=z_range[-1],
+                            z_step=z_range[1] - z_range[0],
+                        ),
+                    )
+                ds = acq.get_dataset()
+                data.append(np.asarray(ds.as_array()))
+                ds.close()
+                mmc.set_position(z_stage, z_range[len(z_range) // 2])  # reset o3 stage
+            else:
+                z_stack = microscope_operations.acquire_defocus_stack(
+                    mmc, z_stage, z_range, backlash_correction_distance=KIM101_BACKLASH
+                )
+                data.append(z_stack)
+
+        if use_pycromanager:
+            microscope_operations.set_property(mmc, 'Core', 'Focus', focus_stage)
+            tempdir.cleanup()
 
         # Reset camera triggering
         microscope_operations.set_property(
@@ -851,31 +880,31 @@ class MantisAcquisition(object):
     ) -> tuple[bool, bool, bool]:
         logger.info('Running O3 refocus algorithm on light-sheet arm')
         success = False
+        o3_low_limit = 0
+        o3_high_limit = 30
 
         # Define O3 z range
-        # 1 step is approx 20 nm, 15 steps are 300 nm which is sub-Nyquist sampling
-        # The stack starts away from O2 and moves closer
-        o3_z_start = -165
-        o3_z_end = 165
-        o3_z_step = 15
+        # The stack starts close to O2 and moves away
+        o3_z_stage = self.ls_acq.o3_stage
+        o3_position = float(self.ls_acq.mmc.get_property(o3_z_stage, 'Position'))
+
+        o3_z_start = -3.3
+        o3_z_end = 3.3
+        o3_z_step = 0.3
         if scan_left:
             logger.info('O3 refocus will scan further to the left')
             o3_z_start *= 2
         if scan_right:
             logger.info('O3 refocus will scan further to the right')
             o3_z_end *= 2
-        o3_z_range = np.arange(o3_z_start, o3_z_end + o3_z_step, o3_z_step)
-
-        # Define relative travel limits, in steps
-        o3_z_stage = self.ls_acq.o3_stage
-        target_z_position = o3_z_stage.true_position + o3_z_range
-        max_z_position = np.inf  # O3 is allowed to travel ~15 um towards O2
-        min_z_position = -np.inf  # O3 is allowed to travel ~30 um away from O2
-        if np.any(target_z_position > max_z_position) or np.any(
-            target_z_position < min_z_position
-        ):
-            logger.error('O3 relative travel limits will be exceeded. Aborting O3 refocus.')
-            return
+        o3_range_rel = np.arange(o3_z_start, o3_z_end + o3_z_step, o3_z_step)
+        o3_range_abs = o3_range_rel + o3_position
+        o3_range_rel = o3_range_rel[
+            (o3_range_abs >= o3_low_limit) & (o3_range_abs <= o3_high_limit)
+        ]
+        if o3_range_rel.size == 0:
+            logger.error('Invalid O3 travel range. Aborting O3 refocus.')
+            return success, scan_left, scan_right
 
         # Define galvo range, i.e. galvo positions at which O3 defocus stacks
         # are acquired, here at 30%, 50%, and 70% of galvo range. Should be odd number
@@ -889,12 +918,10 @@ class MantisAcquisition(object):
 
         # Acquire defocus stacks at several galvo positions
         data = self.acquire_ls_defocus_stack(
-            z_range=o3_z_range,
+            z_range=o3_range_abs,
             galvo_range=galvo_range,
+            use_pycromanager=True,
         )
-
-        # Discount O3 backlash compensation from true position count
-        o3_z_stage.true_position -= KIM101_BACKLASH * len(galvo_range)
 
         # Save acquired stacks in logs
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -933,12 +960,11 @@ class MantisAcquisition(object):
         valid_focus_indices = [idx for idx in focus_indices if idx is not None]
         if valid_focus_indices:
             focus_idx = int(np.median(valid_focus_indices))
-            o3_displacement = int(o3_z_range[focus_idx])
+            o3_position_rel = round(o3_range_rel[focus_idx], 2)
+            o3_position_abs = o3_range_abs[focus_idx]
 
-            logger.info(f'Moving O3 by {o3_displacement} steps')
-            microscope_operations.set_relative_kim101_position(
-                self.ls_acq.o3_stage, o3_displacement
-            )
+            logger.info(f'Moving O3 by {o3_position_rel} um')
+            microscope_operations.set_z_position(self.ls_acq.mmc, o3_z_stage, o3_position_abs)
             success = True
         else:
             logger.error(
@@ -947,7 +973,7 @@ class MantisAcquisition(object):
             if not any((scan_left, scan_right)):
                 # Only do this if we are not already scanning at an extended range
                 peak_indices = np.asarray(peak_indices)
-                max_idx = len(o3_z_range) - 1
+                max_idx = len(o3_range_rel) - 1
                 if all(peak_indices < 0.2 * max_idx):
                     scan_left = True
                     logger.info(

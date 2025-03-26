@@ -38,6 +38,8 @@ lf_slice_settings:
   # steps in sample space. We can achieve this by using (300 nm)*1.4/2 = 210 nm
   # steps of the mirror due to the 1.4x magnification of the remote volume and the
   # fact that the optical path length is extended by twice the mirror's motion.
+  # The MCL Piezo stage is programmed to move in sample-space coordinates, i.e.
+  # (1 um)*1.4/2 = 0.7 um for every 1 um in sample space.
   #
   # Here we choose to oversample the data to match the light-sheet axial
   # sampling. After deskewing and 3x binning, the light-sheet samples are spaced
