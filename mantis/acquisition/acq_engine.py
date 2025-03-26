@@ -7,8 +7,8 @@ from dataclasses import asdict
 from datetime import datetime
 from functools import partial
 from pathlib import Path
-from typing import Iterable, Union
 from tempfile import TemporaryDirectory
+from typing import Iterable, Union
 
 import copylot
 import nidaqmx
@@ -810,8 +810,10 @@ class MantisAcquisition(object):
 
             # acquire defocus stack
             if use_pycromanager:
-                mmc.set_position(z_stage, z_range[0]) # prep o3 stage
-                with Acquisition(tempdir.name, f'ls_refocus_p{p_idx}', port=LS_ZMQ_PORT, show_display=False) as acq:
+                mmc.set_position(z_stage, z_range[0])  # prep o3 stage
+                with Acquisition(
+                    tempdir.name, f'ls_refocus_p{p_idx}', port=LS_ZMQ_PORT, show_display=False
+                ) as acq:
                     acq.acquire(
                         multi_d_acquisition_events(
                             z_start=z_range[0],
@@ -822,7 +824,7 @@ class MantisAcquisition(object):
                 ds = acq.get_dataset()
                 data.append(np.asarray(ds.as_array()))
                 ds.close()
-                mmc.set_position(z_stage, z_range[len(z_range) // 2]) # reset o3 stage
+                mmc.set_position(z_stage, z_range[len(z_range) // 2])  # reset o3 stage
             else:
                 z_stack = microscope_operations.acquire_defocus_stack(
                     mmc, z_stage, z_range, backlash_correction_distance=KIM101_BACKLASH
@@ -870,7 +872,9 @@ class MantisAcquisition(object):
             o3_z_end *= 2
         o3_range_rel = np.arange(o3_z_start, o3_z_end + o3_z_step, o3_z_step)
         o3_range_abs = o3_range_rel + o3_position
-        o3_range_rel = o3_range_rel[(o3_range_abs >= o3_low_limit) & (o3_range_abs <= o3_high_limit)]
+        o3_range_rel = o3_range_rel[
+            (o3_range_abs >= o3_low_limit) & (o3_range_abs <= o3_high_limit)
+        ]
         if o3_range_rel.size == 0:
             logger.error('Invalid O3 travel range. Aborting O3 refocus.')
             return success, scan_left, scan_right
