@@ -67,6 +67,8 @@ KIM101_BACKLASH = 0  # backlash correction distance, in steps
 VORTRAN_488_COM_PORT = 'COM6'
 VORTRAN_561_COM_PORT = 'COM13'
 VORTRAN_639_COM_PORT = 'COM12'
+LF_ACQ_LABEL = 'labelfree'
+LS_ACQ_LABEL = 'lightsheet'
 
 NA_DETECTION = 1.35
 LS_PIXEL_SIZE = 6.5 / (40 * 1.4)  # in um
@@ -1067,7 +1069,7 @@ class MantisAcquisition(object):
         # define LF acquisition
         self._lf_acq_obj = Acquisition(
             directory=self._acq_dir,
-            name=f'{self._acq_name}_labelfree',
+            name=f'{self._acq_name}_{LF_ACQ_LABEL}',
             port=LF_ZMQ_PORT,
             pre_hardware_hook_fn=lf_pre_hardware_hook_fn,
             post_hardware_hook_fn=lf_post_hardware_hook_fn,
@@ -1097,7 +1099,7 @@ class MantisAcquisition(object):
         # define LS acquisition
         self._ls_acq_obj = Acquisition(
             directory=self._acq_dir,
-            name=f'{self._acq_name}_lightsheet',
+            name=f'{self._acq_name}_{LS_ACQ_LABEL}',
             port=LS_ZMQ_PORT,
             pre_hardware_hook_fn=ls_pre_hardware_hook_fn,
             post_hardware_hook_fn=ls_post_hardware_hook_fn,
@@ -1364,6 +1366,16 @@ def _generate_channel_slice_acq_events(
 
 def _create_acquisition_directory(root_dir: Path, acq_name: str, idx=1) -> Path:
     acq_dir = root_dir / f'{acq_name}_{idx}'
+    # 10000 4 GB files would be 40 TB, which should be plenty
+    _ndtif_filename = (
+        acq_dir
+        / f'{acq_name}_{LS_ACQ_LABEL}_1'
+        / f'{acq_name}_{LS_ACQ_LABEL}_NDTiffStack_9999.tif'
+    )
+    if len(str(_ndtif_filename)) > 255:
+        raise ValueError(
+            "Path length cannot exceed 255 characters. Please shorten the acquisition name."
+        )
     try:
         acq_dir.mkdir(parents=False, exist_ok=False)
     except OSError:
