@@ -1340,8 +1340,9 @@ def _generate_channel_slice_acq_events(
 
 def _create_acquisition_directory(root_dir: Path, acq_name: str, idx=1) -> Path:
     acq_dir = root_dir / f'{acq_name}_{idx}'
+    # 10000 4 GB files would be 40 TB, which should be plenty
     _ndtif_filename = (
-        acq_dir / f'{acq_name}_{LS_ACQ_LABEL}_1' / f'{acq_name}_{LS_ACQ_LABEL}_NDTiffStack.tif'
+        acq_dir / f'{acq_name}_{LS_ACQ_LABEL}_1' / f'{acq_name}_{LS_ACQ_LABEL}_NDTiffStack_9999.tif'
     )
     if len(str(_ndtif_filename)) > 255:
         raise ValueError(
