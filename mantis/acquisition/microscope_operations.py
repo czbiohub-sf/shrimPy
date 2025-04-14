@@ -9,7 +9,8 @@ import numpy as np
 
 from copylot.hardware.lasers.vortran.vortran import VortranLaser
 from nidaqmx.constants import AcquisitionType
-from pycromanager import Core, Studio
+#from pycromanager import Core, Studio
+from pymmcore_plus import CMMCorePlus
 from pylablib.devices.Thorlabs import KinesisPiezoMotor
 
 from mantis.acquisition.AcquisitionSettings import AutoexposureSettings
@@ -56,7 +57,7 @@ def _try_mmc_call(mmc, mmc_call_name, *mmc_carr_args):
 def set_config(mmc, config_group, config_name):
     logger.debug(f'Setting {config_group} config group to {config_name}')
 
-    mmc.set_config(config_group, config_name)
+    mmc.setConfig(config_group, config_name)
 
 
 def set_property(mmc, device_name, property_name, property_value):
@@ -307,7 +308,7 @@ def set_relative_kim101_position(
 
 
 def create_ram_datastore(
-    mmStudio: Studio,
+    mmStudio = None,
 ):
     """Create a Micro-manager RAM datastore and associate a display window with it
 
@@ -327,10 +328,10 @@ def create_ram_datastore(
 
 
 def acquire_defocus_stack(
-    mmc: Core,
+    mmc: CMMCorePlus,
     z_stage: Union[str, KinesisPiezoMotor],
     z_range: Iterable,
-    mmStudio: Studio = None,
+    mmStudio = None,
     datastore=None,
     channel_ind: int = 0,
     position_ind: int = 0,
@@ -406,12 +407,12 @@ def acquire_defocus_stack(
 
 
 def acquire_ls_defocus_stack_and_display(
-    mmc: Core,
-    mmStudio: Studio,
+    mmc: CMMCorePlus,
     z_stage: Union[str, KinesisPiezoMotor],
     z_range: Iterable,
     galvo: str,
     galvo_range: Iterable,
+    mmStudio = None,
     config_group: str = None,
     config_name: str = None,
     close_display: bool = True,
@@ -480,7 +481,7 @@ def acquire_ls_defocus_stack_and_display(
     return np.asarray(data)
 
 
-def get_shutter_state(mmc: Core):
+def get_shutter_state(mmc: CMMCorePlus):
     """Return the current state of the shutter
 
     Parameters
@@ -499,7 +500,7 @@ def get_shutter_state(mmc: Core):
     return auto_shutter_state, shutter_state
 
 
-def open_shutter(mmc: Core):
+def open_shutter(mmc: CMMCorePlus):
     """Open shutter if mechanical shutter exists
 
     Parameters
@@ -515,7 +516,7 @@ def open_shutter(mmc: Core):
         mmc.set_shutter_open(True)
 
 
-def reset_shutter(mmc: Core, auto_shutter_state: bool, shutter_state: bool):
+def reset_shutter(mmc: CMMCorePlus, auto_shutter_state: bool, shutter_state: bool):
     """Reset shutter if mechanical shutter exists
 
     Parameters
@@ -539,7 +540,7 @@ def reset_shutter(mmc: Core, auto_shutter_state: bool, shutter_state: bool):
 
 
 def abort_acquisition_sequence(
-    mmc: Core, camera: str = None, sequenced_stages: Iterable[str] = []
+    mmc: CMMCorePlus, camera: str = None, sequenced_stages: Iterable[str] = []
 ):
     """Abort acquisition sequence and clear circular buffer
 
@@ -577,14 +578,14 @@ def setup_vortran_laser(com_port: str):
     return laser
 
 
-def set_exposure(mmc: Core, exposure_time: float):
+def set_exposure(mmc: CMMCorePlus, exposure_time: float):
     logger.debug(f'Setting exposure time to {exposure_time:.2f} ms')
 
     mmc.set_exposure(exposure_time)
 
 
 def autoexposure(
-    mmc: Core,
+    mmc: CMMCorePlus,
     light_source: Union[str, VortranLaser],
     autoexposure_settings: AutoexposureSettings,
     autoexposure_method: str = None,

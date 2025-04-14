@@ -16,7 +16,9 @@ import numpy as np
 import tifffile
 
 from nidaqmx.constants import Slope
-from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, start_headless
+#from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, start_headless
+from pymmcore_plus import CMMCorePlus
+
 from waveorder.focus import focus_from_transverse_band
 
 from mantis import get_console_formatter
@@ -108,7 +110,7 @@ class BaseChannelSliceAcquisition(object):
         self._microscope_settings = MicroscopeSettings()
         self._autoexposure_settings = None
         self._z0 = None
-        self.headless = False if mm_app_path is None else True
+        self.headless = True #JGE False if mm_app_path is None else True
         self.type = 'light-sheet' if self.headless else 'label-free'
         self.mmc = None
         self.mmStudio = None
@@ -116,7 +118,7 @@ class BaseChannelSliceAcquisition(object):
 
         logger.debug(f'Initializing {self.type} acquisition engine')
         if enabled:
-            if self.headless:
+            if False: #JGE self.headless:
                 java_loc = None
                 if "JAVA_HOME" in os.environ:
                     java_loc = os.environ["JAVA_HOME"]
@@ -134,14 +136,14 @@ class BaseChannelSliceAcquisition(object):
 
             logger.debug(f'Connecting to Micro-Manager on port {zmq_port}')
 
-            self.mmc = Core(port=zmq_port)
+            self.mmc = CMMCorePlus() #Core(port=zmq_port)
 
             # headless MM instance doesn't have a studio object
             if not self.headless:
-                self.mmStudio = Studio(port=zmq_port)
+                self.mmStudio = None #Studio(port=zmq_port)
 
             logger.debug('Successfully connected to Micro-Manager')
-            logger.debug(f'{self.mmc.get_version_info()}')  # MMCore Version
+            logger.debug(f'{self.mmc.getVersionInfo()}')  # MMCore Version
 
             if not self.headless:
                 logger.debug(f'MM Studio version: {self.mmStudio.compat().get_version()}')
