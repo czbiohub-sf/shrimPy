@@ -106,7 +106,7 @@ class BaseChannelSliceAcquisition(object):
         self._channel_settings = ChannelSettings()
         self._slice_settings = SliceSettings()
         self._microscope_settings = MicroscopeSettings()
-        self._autoexposure_settings = None
+        self._autoexposure_settings = AutoexposureSettings()
         self._z0 = None
         self.headless = False if mm_app_path is None else True
         self.type = 'light-sheet' if self.headless else 'label-free'
@@ -180,6 +180,8 @@ class BaseChannelSliceAcquisition(object):
 
     @channel_settings.setter
     def channel_settings(self, settings: ChannelSettings):
+        if settings is None:
+            return
         logger.debug(
             f'{self.type.capitalize()} acquisition will have the following settings: {asdict(settings)}'
         )
@@ -188,6 +190,8 @@ class BaseChannelSliceAcquisition(object):
 
     @slice_settings.setter
     def slice_settings(self, settings: SliceSettings):
+        if settings is None:
+            return
         settings_dict = {key: val for key, val in asdict(settings).items() if key != 'z_range'}
         logger.debug(
             f'{self.type.capitalize()} acquisition will have the following settings: {settings_dict}'
@@ -197,6 +201,8 @@ class BaseChannelSliceAcquisition(object):
 
     @microscope_settings.setter
     def microscope_settings(self, settings: MicroscopeSettings):
+        if settings is None:
+            return
         logger.debug(
             f'{self.type.capitalize()} acquisition will have the following settings: {asdict(settings)}'
         )
@@ -204,6 +210,8 @@ class BaseChannelSliceAcquisition(object):
 
     @autoexposure_settings.setter
     def autoexposure_settings(self, settings: AutoexposureSettings):
+        if settings is None:
+            return
         logger.debug(
             f"{self.type.capitalize()} acquisition will have the following settings:{asdict(settings)}"
         )
@@ -407,6 +415,8 @@ class MantisAcquisition(object):
 
     @time_settings.setter
     def time_settings(self, settings: TimeSettings):
+        if settings is None:
+            return
         logger.debug(
             f'Mantis acquisition will have the following settings: {asdict(settings)}'
         )
@@ -414,6 +424,8 @@ class MantisAcquisition(object):
 
     @position_settings.setter
     def position_settings(self, settings: PositionSettings):
+        if settings is None:
+            return
         logger.debug(
             f'Mantis acquisition will have the following settings: {asdict(settings)}'
         )

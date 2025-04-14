@@ -147,7 +147,7 @@ class MicroscopeSettings:
 @dataclass
 class AutoexposureSettings:
     # autoexposure method; currently only "manual" is implemented
-    autoexposure_method: Literal['manual']
+    autoexposure_method: Literal['manual'] = None
 
     # rerun autoexposure for each timepoint at a given well
     rerun_each_timepoint: bool = False
