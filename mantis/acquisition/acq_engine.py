@@ -136,7 +136,7 @@ class BaseChannelSliceAcquisition(object):
 
             logger.debug(f'Connecting to Micro-Manager on port {zmq_port}')
 
-            self.mmc = CMMCorePlus() #Core(port=zmq_port)
+            self.mmc = CMMCorePlus(mm_config_file) #Core(port=zmq_port)
 
             # headless MM instance doesn't have a studio object
             if not self.headless:
@@ -356,7 +356,10 @@ class MantisAcquisition(object):
         self._verbose = verbose
         self._lf_acq_obj = None
         self._ls_acq_obj = None
-
+        self._ls_z_ctr_task = None
+        self._lf_channel_ctr_task = None
+        self._lf_z_ctr_task = None
+        
         if not enable_lf_acq or not enable_ls_acq:
             raise Exception('Disabling LF or LS acquisition is not currently supported')
 
@@ -628,15 +631,18 @@ class MantisAcquisition(object):
 
     def cleanup_daq(self):
         logger.debug('Stopping DAQ counter tasks')
-        if self.ls_acq.enabled:
+        if self.ls_acq.enabled and self._ls_z_ctr_task is not None:
             self._ls_z_ctr_task.stop()
             self._ls_z_ctr_task.close()
 
         if self.lf_acq.enabled:
-            self._lf_z_ctr_task.stop()
-            self._lf_z_ctr_task.close()
-            self._lf_channel_ctr_task.stop()
-            self._lf_channel_ctr_task.close()
+            if self._lf_channel_ctr_task is not None:
+                self._lf_channel_ctr_task.stop()
+                self._lf_channel_ctr_task.close()
+            if self._lf_z_ctr_task is not None:       
+                self._lf_z_ctr_task.stop()
+                self._lf_z_ctr_task.close()
+
 
     def setup_autofocus(self):
         if self.lf_acq.microscope_settings.use_autofocus:
