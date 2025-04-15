@@ -37,7 +37,7 @@ ls_channel_settings:
   channel_group: 'Channel'
   channels: ['Rhodamine', 'Cy5']
   use_sequencing: False
-  use_autoexposure: [True, False]
+  use_autoexposure: [False, False]
 
 ls_slice_settings:
   z_stage_name: 'Z'
@@ -56,7 +56,3 @@ ls_microscope_settings:
     - ['Camera', 'BitDepth', '11']
   z_sequencing_settings:
     - ['Z', 'UseSequences', 'Yes']
-
-ls_autoexposure_settings:
-  autoexposure_method: 'manual'
-  rerun_each_timepoint: True
