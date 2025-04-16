@@ -63,16 +63,16 @@ def set_config(mmc, config_group, config_name):
 def set_property(mmc, device_name, property_name, property_value):
     logger.debug(f'Setting {device_name} {property_name} to {property_value}')
 
-    mmc.set_property(device_name, property_name, property_value)
+    mmc.setProperty(device_name, property_name, property_value)
 
     if 'Line Selector' in property_name:
-        mmc.update_system_state_cache()
+        mmc.updateSystemStateCache()
 
 
 def set_roi(mmc, roi: tuple):
     logger.debug(f'Setting ROI to {roi}')
 
-    mmc.set_roi(*roi)
+    mmc.setROI(*roi)
 
 
 def get_position_list(mmStudio, z_stage_name):
@@ -98,9 +98,9 @@ def get_position_list(mmStudio, z_stage_name):
 def get_current_position(mmc, z_stage_name):
     xyz_position = [
         (
-            mmc.get_x_position(),
-            mmc.get_y_position(),
-            mmc.get_position(z_stage_name) if z_stage_name else None,
+            mmc.getXPosition(),
+            mmc.getYPosition(),
+            mmc.getPosition(z_stage_name) if z_stage_name else None,
         )
     ]
     position_label = ['FOV0']
@@ -222,10 +222,10 @@ def autofocus(mmc, mmStudio, z_stage_name: str, z_position):
         logger.debug('Continuous autofocus is already engaged')
     else:
         for z_offset in z_offsets:
-            mmc.set_position(z_stage_name, z_position + z_offset)
-            mmc.wait_for_device(z_stage_name)
+            mmc.setPosition(z_stage_name, z_position + z_offset)
+            mmc.waitForDevice(z_stage_name)
 
-            af_method.enable_continuous_focus(True)  # this call engages autofocus
+            af_method.enableContinuousFocus(True)  # this call engages autofocus
             time.sleep(1)  # wait an extra second
 
             if af_method.is_continuous_focus_locked():
@@ -367,7 +367,7 @@ def acquire_defocus_stack(
     # get z0 and define move_z callable for the given stage
     if isinstance(z_stage, str):
         # this is a MM stage
-        move_z = partial(mmc.set_relative_position, z_stage)  # test if this works
+        move_z = partial(mmc.setRelativePosition, z_stage)  # test if this works
     elif isinstance(z_stage, KinesisPiezoMotor):
         # this is a pylablib stage
         move_z = partial(set_relative_kim101_position, z_stage)
@@ -379,8 +379,8 @@ def acquire_defocus_stack(
         move_z(rel_z)
 
         # snap image
-        mmc.snap_image()
-        tagged_image = mmc.get_tagged_image()
+        mmc.snapImage()
+        tagged_image = mmc.getTaggedImage()
 
         # get image data
         image_data = np.reshape(
@@ -443,20 +443,20 @@ def acquire_ls_defocus_stack_and_display(
 
     # Set config
     if config_name is not None:
-        mmc.set_config(config_group, config_name)
-        mmc.wait_for_config(config_group, config_name)
+        mmc.setConfig(config_group, config_name)
+        mmc.waitForConfig(config_group, config_name)
 
     # Open shutter
     auto_shutter_state, shutter_state = get_shutter_state(mmc)
     open_shutter(mmc)
 
     # get galvo starting position
-    p0 = mmc.get_position(galvo)
+    p0 = mmc.getPosition(galvo)
 
     # acquire stack at different galvo positions
     for p_idx, p in enumerate(galvo_range):
         # set galvo position
-        mmc.set_position(galvo, p0 + p)
+        mmc.setPosition(galvo, p0 + p)
 
         # acquire defocus stack
         z_stack = acquire_defocus_stack(
@@ -468,7 +468,7 @@ def acquire_ls_defocus_stack_and_display(
     datastore.freeze()
 
     # Reset galvo
-    mmc.set_position(galvo, p0)
+    mmc.setPosition(galvo, p0)
 
     # Reset shutter
     reset_shutter(mmc, auto_shutter_state, shutter_state)
@@ -494,8 +494,8 @@ def get_shutter_state(mmc: CMMCorePlus):
     shutter_state : bool
 
     """
-    auto_shutter_state = mmc.get_auto_shutter()
-    shutter_state = mmc.get_shutter_open()
+    auto_shutter_state = mmc.getAutoShutter()
+    shutter_state = mmc.getShutterOpen()
 
     return auto_shutter_state, shutter_state
 
@@ -509,11 +509,11 @@ def open_shutter(mmc: CMMCorePlus):
 
     """
 
-    shutter_device = mmc.get_shutter_device()
+    shutter_device = mmc.getShutterDevice()
     if shutter_device:
         logger.debug(f'Opening shutter {shutter_device}')
-        mmc.set_auto_shutter(False)
-        mmc.set_shutter_open(True)
+        mmc.setAutoShutter(False)
+        mmc.setShutterOpen(True)
 
 
 def reset_shutter(mmc: CMMCorePlus, auto_shutter_state: bool, shutter_state: bool):
@@ -527,7 +527,7 @@ def reset_shutter(mmc: CMMCorePlus, auto_shutter_state: bool, shutter_state: boo
 
     """
 
-    shutter_device = mmc.get_shutter_device()
+    shutter_device = mmc.getShutterDevice()
     if shutter_device:
         logger.debug(
             'Resetting shutter %s to state Open:%s, Autoshutter: %s',
@@ -535,8 +535,8 @@ def reset_shutter(mmc: CMMCorePlus, auto_shutter_state: bool, shutter_state: boo
             shutter_state,
             auto_shutter_state,
         )
-        mmc.set_shutter_open(shutter_state)
-        mmc.set_auto_shutter(auto_shutter_state)
+        mmc.setShutterOpen(shutter_state)
+        mmc.setAutoShutter(auto_shutter_state)
 
 
 def abort_acquisition_sequence(
@@ -554,9 +554,9 @@ def abort_acquisition_sequence(
     """
 
     for stage in sequenced_stages:
-        mmc.stop_stage_sequence(stage)
-    mmc.stop_sequence_acquisition(camera)
-    mmc.clear_circular_buffer()
+        mmc.stopStageSequence(stage)
+    mmc.stopSequenceAcquisition(camera)
+    mmc.clearCircularBuffer()
 
 
 def setup_vortran_laser(com_port: str):
@@ -581,7 +581,7 @@ def setup_vortran_laser(com_port: str):
 def set_exposure(mmc: CMMCorePlus, exposure_time: float):
     logger.debug(f'Setting exposure time to {exposure_time:.2f} ms')
 
-    mmc.set_exposure(exposure_time)
+    mmc.setExposure(exposure_time)
 
 
 def autoexposure(
@@ -614,7 +614,7 @@ def autoexposure(
     """
 
     autoexposure_flag = None
-    current_exposure_time = mmc.get_exposure()
+    current_exposure_time = mmc.getExposure()
     current_light_intensity = None
     if isinstance(light_source, VortranLaser):
         current_light_intensity = light_source.pulse_power

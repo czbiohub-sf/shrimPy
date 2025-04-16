@@ -253,7 +253,7 @@ class BaseChannelSliceAcquisition(object):
             microscope_operations.set_property(
                 self.mmc, 'Core', 'Focus', self.slice_settings.z_stage_name
             )
-            self._z0 = round(float(self.mmc.get_position(self.slice_settings.z_stage_name)), 3)
+            self._z0 = round(float(self.mmc.getPosition(self.slice_settings.z_stage_name)), 3)
 
             # Note: sequencing should be turned off by default
             # Setup z sequencing
@@ -491,7 +491,7 @@ class MantisAcquisition(object):
             return
 
         # Determine label-free acq timing
-        oryx_framerate = float(self.lf_acq.mmc.get_property('Oryx', 'Frame Rate'))
+        oryx_framerate = float(self.lf_acq.mmc.getProperty('Oryx', 'Frame Rate'))
         # assumes all channels have the same exposure time
         self.lf_acq.slice_settings.acquisition_rate = np.minimum(
             1000 / (lf_exposure_times[0] + MCL_STEP_TIME),
@@ -519,7 +519,7 @@ class MantisAcquisition(object):
 
         # Determine light-sheet acq timing
         ls_readout_time_ms = np.around(
-            float(self.ls_acq.mmc.get_property('Prime BSI Express', 'Timing-ReadoutTimeNs'))
+            float(self.ls_acq.mmc.getProperty('Prime BSI Express', 'Timing-ReadoutTimeNs'))
             * 1e-6,
             decimals=3,
         )
@@ -648,7 +648,7 @@ class MantisAcquisition(object):
         if self.lf_acq.microscope_settings.use_autofocus:
             autofocus_method = self.lf_acq.microscope_settings.autofocus_method
             logger.debug(f'Setting autofocus method as {autofocus_method}')
-            self.lf_acq.mmc.set_auto_focus_device(autofocus_method)
+            self.lf_acq.mmc.setAutoFocusDevice(autofocus_method)
         else:
             logger.debug('Autofocus is not enabled')
 
@@ -685,7 +685,7 @@ class MantisAcquisition(object):
         for channel_idx, config_name in enumerate(self.ls_acq.channel_settings.channels):
             if self.ls_acq.channel_settings.use_autoexposure[channel_idx]:
                 config_group = self.ls_acq.channel_settings.channel_group
-                config = self.ls_acq.mmc.get_config_data(config_group, config_name)
+                config = self.ls_acq.mmc.getConfigData(config_group, config_name)
                 ts2_ttl_state = int(
                     config.get_setting('TS2_TTL1-8', 'State').get_property_value()
                 )
@@ -723,7 +723,7 @@ class MantisAcquisition(object):
         # only change stage speed if using autofocus
         if self.lf_acq.microscope_settings.use_autofocus and not self._demo_run:
             current_xy_position = np.asarray(
-                [self.lf_acq.mmc.get_x_position(), self.lf_acq.mmc.get_y_position()]
+                [self.lf_acq.mmc.getXPosition(), self.lf_acq.mmc.getYPosition()]
             )
             target_xy_position = np.asarray(
                 self.position_settings.xyz_positions[position_index][:2]
@@ -745,7 +745,7 @@ class MantisAcquisition(object):
             self.lf_acq.mmc, self.position_settings.xyz_positions[position_index][:2]
         )
         microscope_operations.wait_for_device(
-            self.lf_acq.mmc, self.lf_acq.mmc.get_xy_stage_device()
+            self.lf_acq.mmc, self.lf_acq.mmc.getXYStageDevice()
         )
 
         # Note: only set the z position if not using autofocus. Calling
@@ -801,19 +801,19 @@ class MantisAcquisition(object):
 
         # Set config
         if config_name is not None:
-            mmc.set_config(config_group, config_name)
-            mmc.wait_for_config(config_group, config_name)
+            mmc.setConfig(config_group, config_name)
+            mmc.waitForConfig(config_group, config_name)
 
         # Set exposure time
         if exposure_time is not None:
-            mmc.set_exposure(exposure_time)
+            mmc.setExposure(exposure_time)
 
         # Open shutter
         auto_shutter_state, shutter_state = microscope_operations.get_shutter_state(mmc)
         microscope_operations.open_shutter(mmc)
 
         # get galvo starting position
-        p0 = mmc.get_position(galvo)
+        p0 = mmc.getPosition(galvo)
 
         # set camera to internal trigger
         # TODO: do this properly, context manager?
@@ -822,17 +822,17 @@ class MantisAcquisition(object):
         )
         if use_pycromanager:
             tempdir = TemporaryDirectory()
-            focus_stage = mmc.get_property('Core', 'Focus')
+            focus_stage = mmc.getProperty('Core', 'Focus')
             microscope_operations.set_property(mmc, 'Core', 'Focus', z_stage)
 
         # acquire stacks at different galvo positions
         for p_idx, p in enumerate(galvo_range):
             # set galvo position
-            mmc.set_position(galvo, p0 + p)
+            mmc.setPosition(galvo, p0 + p)
 
             # acquire defocus stack
             if use_pycromanager:
-                mmc.set_position(z_stage, z_range[0])  # prep o3 stage
+                mmc.setPosition(z_stage, z_range[0])  # prep o3 stage
                 with Acquisition(
                     tempdir.name, f'ls_refocus_p{p_idx}', port=LS_ZMQ_PORT, show_display=False
                 ) as acq:
@@ -846,7 +846,7 @@ class MantisAcquisition(object):
                 ds = acq.get_dataset()
                 data.append(np.asarray(ds.as_array()))
                 ds.close()
-                mmc.set_position(z_stage, z_range[len(z_range) // 2])  # reset o3 stage
+                mmc.setPosition(z_stage, z_range[len(z_range) // 2])  # reset o3 stage
             else:
                 z_stack = microscope_operations.acquire_defocus_stack(
                     mmc, z_stage, z_range, backlash_correction_distance=KIM101_BACKLASH
@@ -863,7 +863,7 @@ class MantisAcquisition(object):
         )
 
         # Reset galvo
-        mmc.set_position(galvo, p0)
+        mmc.setPosition(galvo, p0)
 
         # Reset shutter
         microscope_operations.reset_shutter(mmc, auto_shutter_state, shutter_state)
@@ -881,7 +881,7 @@ class MantisAcquisition(object):
         # Define O3 z range
         # The stack starts close to O2 and moves away
         o3_z_stage = self.ls_acq.o3_stage
-        o3_position = float(self.ls_acq.mmc.get_property(o3_z_stage, 'Position'))
+        o3_position = float(self.ls_acq.mmc.getProperty(o3_z_stage, 'Position'))
 
         o3_z_start = -3.3
         o3_z_end = 3.3
