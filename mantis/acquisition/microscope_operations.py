@@ -109,25 +109,25 @@ def get_current_position(mmc, z_stage_name):
 
 
 def set_z_position(mmc, z_stage_name: str, z_position: float):
-    _try_mmc_call(mmc, 'set_position', str(z_stage_name), float(z_position))
+    _try_mmc_call(mmc, 'setPosition', str(z_stage_name), float(z_position))
 
 
 def set_relative_z_position(mmc, z_stage_name: str, z_offset: float):
-    _try_mmc_call(mmc, 'set_relative_position', str(z_stage_name), float(z_offset))
+    _try_mmc_call(mmc, 'setRelativePosition', str(z_stage_name), float(z_offset))
 
 
 def set_xy_position(mmc, xy_position: Tuple[float, float]):
-    _try_mmc_call(mmc, 'set_xy_position', float(xy_position[0]), float(xy_position[1]))
+    _try_mmc_call(mmc, 'setXYPosition', float(xy_position[0]), float(xy_position[1]))
 
 
 def set_relative_xy_position(mmc, xy_offset: Tuple[float, float]):
-    _try_mmc_call(mmc, 'set_relative_xy_position', float(xy_offset[0]), float(xy_offset[1]))
+    _try_mmc_call(mmc, 'setRelativeXYPosition', float(xy_offset[0]), float(xy_offset[1]))
 
 
 def wait_for_device(mmc, device_name: str):
     _try_mmc_call(
         mmc,
-        'wait_for_device',
+        'waitForDevice',
         str(device_name),
     )
 
