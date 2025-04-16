@@ -341,7 +341,7 @@ def acquire_defocus_stack(
 
     Parameters
     ----------
-    mmc : Core
+    mmc : CMMCorePlus
     z_stage : str or coPylot stage object
     z_range : Iterable
     mmStudio : Studio, optional
@@ -423,7 +423,7 @@ def acquire_ls_defocus_stack_and_display(
 
     Parameters
     ----------
-    mmc : Core
+    mmc : CMMCorePlus
     mmStudio : Studio
     z_stage : str or KinesisPiezoMotor
     z_range : Iterable
@@ -486,7 +486,7 @@ def get_shutter_state(mmc: CMMCorePlus):
 
     Parameters
     ----------
-    mmc : Core
+    mmc : CMMCorePlus
 
     Returns
     -------
@@ -505,7 +505,7 @@ def open_shutter(mmc: CMMCorePlus):
 
     Parameters
     ----------
-    mmc : Core
+    mmc : CMMCorePlus
 
     """
 
@@ -521,7 +521,7 @@ def reset_shutter(mmc: CMMCorePlus, auto_shutter_state: bool, shutter_state: boo
 
     Parameters
     ----------
-    mmc : Core
+    mmc : CMMCorePlus
     auto_shutter_state : bool
     shutter_state : bool
 
@@ -546,7 +546,7 @@ def abort_acquisition_sequence(
 
     Parameters
     ----------
-    mmc : Core
+    mmc : CMMCorePlus
     camera : str, optional
         Camera name, by default None
     sequenced_stages : Iterable[str], optional
@@ -603,7 +603,7 @@ def autoexposure(
 
     Parameters
     ----------
-    mmc : Core light_source : Union[str, VortranLaser]
+    mmc : CMMCorePlus light_source : Union[str, VortranLaser]
         Light source name for sources controlled by Micro-manager or
         VortranLaser object
     autoexposure_settings : AutoexposureSettings autoexposure_method : str

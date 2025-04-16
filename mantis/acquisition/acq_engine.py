@@ -773,7 +773,7 @@ class MantisAcquisition(object):
 
         Parameters
         ----------
-        mmc : Core
+        mmc : CMMCorePlus
         mmStudio : Studio
         z_stage : str or KinesisPiezoMotor
         z_range : Iterable
