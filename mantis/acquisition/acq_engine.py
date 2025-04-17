@@ -136,8 +136,9 @@ class BaseChannelSliceAcquisition(object):
 
             logger.debug(f'Connecting to Micro-Manager on port {zmq_port}')
 
-            self.mmc = CMMCorePlus(mm_config_file) #Core(port=zmq_port)
-
+            self.mmc = CMMCorePlus()
+            self.mmc.loadSystemConfiguration(mm_config_file)
+            
             # headless MM instance doesn't have a studio object
             if not self.headless:
                 self.mmStudio = None #Studio(port=zmq_port)
@@ -398,6 +399,7 @@ class MantisAcquisition(object):
         # Connect to MM running LF acq
         self.lf_acq = BaseChannelSliceAcquisition(
             enabled=enable_lf_acq,
+            mm_config_file=mm_config_file,
             zmq_port=LF_ZMQ_PORT,
         )
 
