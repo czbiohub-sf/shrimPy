@@ -19,6 +19,8 @@ from nidaqmx.constants import Slope
 #from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, start_headless
 from pymmcore_plus import CMMCorePlus
 
+import useq
+
 from waveorder.focus import focus_from_transverse_band
 
 from mantis import get_console_formatter
@@ -138,10 +140,10 @@ class BaseChannelSliceAcquisition(object):
 
             self.mmc = CMMCorePlus()
             self.mmc.loadSystemConfiguration(mm_config_file)
-            
+
             # headless MM instance doesn't have a studio object
             if not self.headless:
-                self.mmStudio = None #Studio(port=zmq_port)
+                self.mmStudio = None  #Studio(port=zmq_port)
 
             logger.debug('Successfully connected to Micro-Manager')
             logger.debug(f'{self.mmc.getVersionInfo()}')  # MMCore Version
@@ -360,7 +362,7 @@ class MantisAcquisition(object):
         self._ls_z_ctr_task = None
         self._lf_channel_ctr_task = None
         self._lf_z_ctr_task = None
-        
+
         if not enable_lf_acq or not enable_ls_acq:
             raise Exception('Disabling LF or LS acquisition is not currently supported')
 
@@ -468,9 +470,14 @@ class MantisAcquisition(object):
         if self.position_settings.num_positions == 0:
             logger.debug('Fetching position list from Micro-manager')
 
-            xyz_positions, position_labels = microscope_operations.get_position_list(
-                self.lf_acq.mmStudio, autofocus_stage
-            )
+            xyz_positions = None
+            try:
+                xyz_positions, position_labels = microscope_operations.get_position_list(
+                    self.lf_acq.mmStudio, autofocus_stage
+                )
+            except AttributeError:
+                print("Error: Micro-manager Studio not available. Fetching current position")
+                print("Todo: This is a hack to get around the fact that the mmStudio has yet to be ported")
 
             if not xyz_positions:
                 logger.debug('Micro-manager position list is empty. Fetching current position')
@@ -769,7 +776,7 @@ class MantisAcquisition(object):
         self,
         z_range: Iterable,
         galvo_range: Iterable,
-        use_pycromanager: bool = False,
+        use_pymmcore_plus: bool = False,
     ) -> np.array:
         """Acquire defocus stacks at different galvo positions and return image data
 
@@ -784,7 +791,7 @@ class MantisAcquisition(object):
         galvo_range : Iterable
         config_group : str, optional
         config_name : str, optional
-        use_pycromanager : bool, optional
+        use_pymmcore_plus : bool, optional
             Flag to use pycromanager for acquisition, by default False
 
         Returns
@@ -822,7 +829,7 @@ class MantisAcquisition(object):
         microscope_operations.set_property(
             mmc, 'Prime BSI Express', 'TriggerMode', 'Internal Trigger'
         )
-        if use_pycromanager:
+        if use_pymmcore_plus:
             tempdir = TemporaryDirectory()
             focus_stage = mmc.getProperty('Core', 'Focus')
             microscope_operations.set_property(mmc, 'Core', 'Focus', z_stage)
@@ -833,21 +840,22 @@ class MantisAcquisition(object):
             mmc.setPosition(galvo, p0 + p)
 
             # acquire defocus stack
-            if use_pycromanager:
+            if use_pymmcore_plus:
                 mmc.setPosition(z_stage, z_range[0])  # prep o3 stage
-                with Acquisition(
-                    tempdir.name, f'ls_refocus_p{p_idx}', port=LS_ZMQ_PORT, show_display=False
-                ) as acq:
-                    acq.acquire(
-                        multi_d_acquisition_events(
-                            z_start=z_range[0],
-                            z_end=z_range[-1],
-                            z_step=z_range[1] - z_range[0],
-                        ),
-                    )
-                ds = acq.get_dataset()
-                data.append(np.asarray(ds.as_array()))
-                ds.close()
+
+                # acquire defocus stack
+                mda = useq.MDASequence(z_plan=useq.ZAbsolutePositions(z_range))
+
+                # append data as its acquired.
+                def append_data(img: np.ndarray, event: useq.MDAEvent):
+                    data.append(img)
+                mmc.mda.events.frameReady.connect(append_data)
+
+                # run the acquisition, and wait for it to finish
+                mmc.run_mda(mda)
+                mmc.waitForAcquisition()
+                mmc.mda.events.frameReady.disconnect(append_data)
+
                 mmc.setPosition(z_stage, z_range[len(z_range) // 2])  # reset o3 stage
             else:
                 z_stack = microscope_operations.acquire_defocus_stack(
@@ -855,7 +863,7 @@ class MantisAcquisition(object):
                 )
                 data.append(z_stack)
 
-        if use_pycromanager:
+        if use_pymmcore_plus:
             microscope_operations.set_property(mmc, 'Core', 'Focus', focus_stage)
             tempdir.cleanup()
 
@@ -917,7 +925,7 @@ class MantisAcquisition(object):
         data = self.acquire_ls_defocus_stack(
             z_range=o3_range_abs,
             galvo_range=galvo_range,
-            use_pycromanager=True,
+            use_pymmcore_plus=True,
         )
 
         # Save acquired stacks in logs
@@ -1089,16 +1097,17 @@ class MantisAcquisition(object):
         lf_image_saved_fn = check_lf_acq_finished
 
         # define LF acquisition
-        self._lf_acq_obj = Acquisition(
-            directory=self._acq_dir,
-            name=f'{self._acq_name}_{LF_ACQ_LABEL}',
-            port=LF_ZMQ_PORT,
-            pre_hardware_hook_fn=lf_pre_hardware_hook_fn,
-            post_hardware_hook_fn=lf_post_hardware_hook_fn,
-            post_camera_hook_fn=lf_post_camera_hook_fn,
-            image_saved_fn=lf_image_saved_fn,  # data processing and display
-            show_display=False,
-        )
+        # JGE - commented out
+        # self._lf_acq_obj = Acquisition(
+        #     directory=self._acq_dir,
+        #     name=f'{self._acq_name}_{LF_ACQ_LABEL}',
+        #     port=LF_ZMQ_PORT,
+        #     pre_hardware_hook_fn=lf_pre_hardware_hook_fn,
+        #     post_hardware_hook_fn=lf_post_hardware_hook_fn,
+        #     post_camera_hook_fn=lf_post_camera_hook_fn,
+        #     image_saved_fn=lf_image_saved_fn,  # data processing and display
+        #     show_display=False,
+        # )
 
         # define LS hook functions
         if self._demo_run:
@@ -1119,24 +1128,25 @@ class MantisAcquisition(object):
         ls_image_saved_fn = check_ls_acq_finished
 
         # define LS acquisition
-        self._ls_acq_obj = Acquisition(
-            directory=self._acq_dir,
-            name=f'{self._acq_name}_{LS_ACQ_LABEL}',
-            port=LS_ZMQ_PORT,
-            pre_hardware_hook_fn=ls_pre_hardware_hook_fn,
-            post_hardware_hook_fn=ls_post_hardware_hook_fn,
-            post_camera_hook_fn=ls_post_camera_hook_fn,
-            image_saved_fn=ls_image_saved_fn,
-            saving_queue_size=500,
-            show_display=False,
-        )
+        # JGE - commented out
+        # self._ls_acq_obj = Acquisition(
+        #     directory=self._acq_dir,
+        #     name=f'{self._acq_name}_{LS_ACQ_LABEL}',
+        #     port=LS_ZMQ_PORT,
+        #     pre_hardware_hook_fn=ls_pre_hardware_hook_fn,
+        #     post_hardware_hook_fn=ls_post_hardware_hook_fn,
+        #     post_camera_hook_fn=ls_post_camera_hook_fn,
+        #     image_saved_fn=ls_image_saved_fn,
+        #     saving_queue_size=500,
+        #     show_display=False,
+        # )
 
         # Generate LF acquisition events
-        lf_cz_events = _generate_channel_slice_acq_events(
+        lf_cz_events = _generate_channel_slice_mda_seq(
             self.lf_acq.channel_settings, self.lf_acq.slice_settings
         )
         # Generate LS acquisition events
-        ls_cz_events = _generate_channel_slice_acq_events(
+        ls_cz_events = _generate_channel_slice_mda_seq(
             self.ls_acq.channel_settings, self.ls_acq.slice_settings
         )
 
@@ -1225,6 +1235,8 @@ class MantisAcquisition(object):
 
                 # update events dictionaries
                 lf_events = deepcopy(lf_cz_events)
+                print(f'LF events: {lf_events}')
+                lf_events.time_plan
                 for _event in lf_events:
                     _event['axes']['time'] = t_idx
                     _event['axes']['position'] = p_label
@@ -1253,8 +1265,8 @@ class MantisAcquisition(object):
                 globals.ls_acq_aborted = False
 
                 # start acquisition
-                self._ls_acq_obj.acquire(ls_events)
-                self._lf_acq_obj.acquire(lf_events)
+                self.ls_acq.mmc.run_mda(ls_events)
+                self.lf_acq.mmc.run_mda(lf_events)
 
                 # wait for CZYX acquisition to finish
                 self.await_cz_acq_completion()
@@ -1368,22 +1380,43 @@ class MantisAcquisition(object):
         return lf_acq_aborted, ls_acq_aborted
 
 
-def _generate_channel_slice_acq_events(
+def _generate_channel_slice_mda_seq(
     channel_settings: ChannelSettings, slice_settings: SliceSettings
 ):
-    events = multi_d_acquisition_events(
-        num_time_points=1,
-        time_interval_s=0,
-        z_start=slice_settings.z_start,
-        z_end=slice_settings.z_end,
-        z_step=slice_settings.z_step,
-        channel_group=channel_settings.channel_group,
-        channels=channel_settings.channels,
-        channel_exposures_ms=channel_settings.default_exposure_times_ms,
-        order="tpcz",
+    """
+    Generate a MDA sequence for the given channel and slice settings.
+    Parameters
+    ----------
+    channel_settings : ChannelSettings
+        Channel settings object
+    slice_settings : SliceSettings
+        Slice settings object
+    Returns
+    -------
+    MDASequence
+        MDA sequence object
+    """
+    
+    # Create an array of channel objects from lists of channel names and exposure times
+    # Note: the channel names and exposure times are zipped together
+    channel_zip = zip(channel_settings.channels, channel_settings.default_exposure_times_ms)
+    channels = [
+        useq.Channel(config=channel, group=channel_settings.channel_group, exposure=exposure)
+        for channel, exposure in channel_zip
+    ]
+    return useq.MDASequence(
+        time_plan=useq.TIntervalLoops(
+            loops=1,
+            interval=0,
+        ),
+        z_plan=useq.ZTopBottom(
+            bottom=slice_settings.z_start,
+            top=slice_settings.z_end,
+            step=slice_settings.z_step,
+        ),
+        channels=channels,
+        axis_order="tpcz",
     )
-
-    return events
 
 
 def _create_acquisition_directory(root_dir: Path, acq_name: str, idx=1) -> Path:
