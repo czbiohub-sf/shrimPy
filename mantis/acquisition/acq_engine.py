@@ -18,7 +18,6 @@ import tifffile
 from nidaqmx.constants import Slope
 #from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, start_headless
 from pymmcore_plus import CMMCorePlus
-
 import useq
 
 from waveorder.focus import focus_from_transverse_band
@@ -112,7 +111,7 @@ class BaseChannelSliceAcquisition(object):
         self._microscope_settings = MicroscopeSettings()
         self._autoexposure_settings = AutoexposureSettings()
         self._z0 = None
-        self.headless = True #JGE False if mm_app_path is None else True
+        self.headless = True  #JGE False if mm_app_path is None else True
         self.type = 'light-sheet' if self.headless else 'label-free'
         self.mmc = None
         self.mmStudio = None
@@ -140,7 +139,6 @@ class BaseChannelSliceAcquisition(object):
 
             self.mmc = CMMCorePlus()
             self.mmc.loadSystemConfiguration(mm_config_file)
-
             # headless MM instance doesn't have a studio object
             if not self.headless:
                 self.mmStudio = None  #Studio(port=zmq_port)
@@ -456,10 +454,11 @@ class MantisAcquisition(object):
         self.ls_acq.reset()
 
         # Abort acquisitions if they have not finished, usually after Ctr+C
-        if self._lf_acq_obj:
-            self._lf_acq_obj.abort()
-        if self._ls_acq_obj:
-            self._ls_acq_obj.abort()
+        # if self._lf_acq_obj:
+        #     self._lf_acq_obj.abort()
+        # if self._ls_acq_obj:
+        #     self._ls_acq_obj.abort()
+        logger.debug('FIXME: cleanup acquisition')
 
     def update_position_settings(self):
         """
@@ -1235,41 +1234,47 @@ class MantisAcquisition(object):
 
                 # update events dictionaries
                 lf_events = deepcopy(lf_cz_events)
-                print(f'LF events: {lf_events}')
-                lf_events.time_plan
-                for _event in lf_events:
-                    _event['axes']['time'] = t_idx
-                    _event['axes']['position'] = p_label
-                    _event['min_start_time'] = 0
+
+                # HACK (JGE) - block below commented out because pymmcore_plus handles events differently.
+
+                # for _event in lf_events:
+                #     _event['axes']['time'] = t_idx
+                #     _event['axes']['position'] = p_label
+                #     _event['min_start_time'] = 0
 
                 ls_events = deepcopy(ls_cz_events)
-                for _event in ls_events:
-                    _event['axes']['time'] = t_idx
-                    _event['axes']['position'] = p_label
-                    _event['min_start_time'] = 0
-                    if any(self.ls_acq.channel_settings.use_autoexposure):
-                        channel_index = self.ls_acq.channel_settings.channels.index(
-                            _event['axes']['channel']
-                        )
-                        _event[
-                            'exposure'
-                        ] = self.ls_acq.channel_settings.exposure_times_per_well[well_id][
-                            channel_index
-                        ]
 
-                globals.lf_last_img_idx = lf_events[-1]['axes']
-                globals.ls_last_img_idx = ls_events[-1]['axes']
+                # for _event in ls_events:
+                #     _event['axes']['time'] = t_idx
+                #     _event['axes']['position'] = p_label
+                #     _event['min_start_time'] = 0
+                #     if any(self.ls_acq.channel_settings.use_autoexposure):
+                #         channel_index = self.ls_acq.channel_settings.channels.index(
+                #             _event['axes']['channel']
+                #         )
+                #         _event[
+                #             'exposure'
+                #         ] = self.ls_acq.channel_settings.exposure_times_per_well[well_id][
+                #             channel_index
+                #         ]
+
+                # globals.lf_last_img_idx = lf_events[-1]['axes']
+                # globals.ls_last_img_idx = ls_events[-1]['axes']
                 globals.lf_acq_finished = False
                 globals.lf_acq_aborted = False
                 globals.ls_acq_finished = False
                 globals.ls_acq_aborted = False
 
                 # start acquisition
-                self.ls_acq.mmc.run_mda(ls_events)
-                self.lf_acq.mmc.run_mda(lf_events)
+                ls_thread = self.ls_acq.mmc.run_mda(ls_events)
+                lf_thread = self.lf_acq.mmc.run_mda(lf_events)
 
                 # wait for CZYX acquisition to finish
                 self.await_cz_acq_completion()
+
+                globals.ls_acq_finished = not ls_thread.is_alive()
+                globals.lf_acq_finished = not lf_thread.is_alive()
+
                 lf_acq_aborted, ls_acq_aborted = self.abort_stalled_acquisition()
                 error_message = (
                     '{} acquisition for timepoint {} at position {} did not complete in time. '
@@ -1289,19 +1294,19 @@ class MantisAcquisition(object):
                 logger.info(f"Waiting {t_wait/60:.2f} minutes until the next time point")
                 time.sleep(t_wait)
 
-        self._ls_acq_obj.mark_finished()
-        self._lf_acq_obj.mark_finished()
-
+        # JGE: HACK to indicate finished. 
+        # self._ls_acq_obj.mark_finished()
+        # self._lf_acq_obj.mark_finished()
         logger.debug('Waiting for acquisition to finish')
 
-        self._ls_acq_obj.await_completion()
+        #self._ls_acq_obj.await_completion()
         logger.debug('Light-sheet acquisition finished')
-        self._lf_acq_obj.await_completion()
+        #self._lf_acq_obj.await_completion()
         logger.debug('Label-free acquisition finished')
 
         # Close ndtiff dataset - not sure why this is necessary
-        self._lf_acq_obj.get_dataset().close()
-        self._ls_acq_obj.get_dataset().close()
+        # self._lf_acq_obj.get_dataset().close()
+        # self._ls_acq_obj.get_dataset().close()
 
         # Clean up pycromanager acquisition objects
         self._lf_acq_obj = None
