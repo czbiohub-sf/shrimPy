@@ -53,6 +53,6 @@ ls_microscope_settings:
   device_property_settings:
     - ['Camera', 'OnCameraCCDXSize', '2048']
     - ['Camera', 'OnCameraCCDYSize', '2048']
-    - ['Camera', 'BitDepth', '11']
+    - ['Camera', 'BitDepth', '12']
   z_sequencing_settings:
     - ['Z', 'UseSequences', 'Yes']
