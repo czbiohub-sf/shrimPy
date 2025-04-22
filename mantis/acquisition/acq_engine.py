@@ -16,8 +16,8 @@ import numpy as np
 import tifffile
 
 from nidaqmx.constants import Slope
-#from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, start_headless
 from pymmcore_plus import CMMCorePlus
+from pymmcore_plus.mda.handlers import OMETiffWriter
 import useq
 
 from waveorder.focus import focus_from_transverse_band
@@ -1108,6 +1108,9 @@ class MantisAcquisition(object):
         #     show_display=False,
         # )
 
+        self._lf_acq_obj = OMETiffWriter(
+            filename=self._acq_dir / f'{self._acq_name}_{LF_ACQ_LABEL}.tif'
+        )
         # define LS hook functions
         if self._demo_run:
             ls_pre_hardware_hook_fn = None
@@ -1139,6 +1142,9 @@ class MantisAcquisition(object):
         #     saving_queue_size=500,
         #     show_display=False,
         # )
+        self._lf_acq_obj = OMETiffWriter(
+            filename=self._acq_dir / f'{self._acq_name}_{LS_ACQ_LABEL}.tif'
+        )
 
         # Generate LF acquisition events
         lf_cz_events = _generate_channel_slice_mda_seq(
@@ -1266,8 +1272,8 @@ class MantisAcquisition(object):
                 globals.ls_acq_aborted = False
 
                 # start acquisition
-                ls_thread = self.ls_acq.mmc.run_mda(ls_events)
-                lf_thread = self.lf_acq.mmc.run_mda(lf_events)
+                ls_thread = self.ls_acq.mmc.run_mda(ls_events, output=self._ls_acq_obj)
+                lf_thread = self.lf_acq.mmc.run_mda(lf_events, output=self._lf_acq_obj)
 
                 # wait for CZYX acquisition to finish
                 self.await_cz_acq_completion()
