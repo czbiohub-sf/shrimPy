@@ -1109,7 +1109,7 @@ class MantisAcquisition(object):
         # )
 
         self._lf_acq_obj = OMETiffWriter(
-            filename=self._acq_dir / f'{self._acq_name}_{LF_ACQ_LABEL}.tif'
+            filename=self._acq_dir / f'{self._acq_name}_{LF_ACQ_LABEL}.ome.tif'
         )
         # define LS hook functions
         if self._demo_run:
@@ -1142,8 +1142,8 @@ class MantisAcquisition(object):
         #     saving_queue_size=500,
         #     show_display=False,
         # )
-        self._lf_acq_obj = OMETiffWriter(
-            filename=self._acq_dir / f'{self._acq_name}_{LS_ACQ_LABEL}.tif'
+        self._ls_acq_obj = OMETiffWriter(
+            filename=self._acq_dir / f'{self._acq_name}_{LS_ACQ_LABEL}.ome.tif'
         )
 
         # Generate LF acquisition events
