@@ -1165,6 +1165,7 @@ class MantisAcquisition(object):
                 p_label = self.position_settings.position_labels[p_idx]
                 well_id = self.position_settings.well_ids[p_idx]
 
+                print(f"position label: {p_label}, well id: {well_id}")
                 # move to the given position
                 if p_label != previous_position_label:
                     self.go_to_position(p_idx)
@@ -1238,31 +1239,36 @@ class MantisAcquisition(object):
                             if success:
                                 ls_o3_refocus_time = current_time
 
-                # update events dictionaries
-                lf_events = deepcopy(lf_cz_events)
+                # Generate LF acquisition events
 
-                # HACK (JGE) - block below commented out because pymmcore_plus handles events differently.
+                # since MDAEvents can't be modified in place, we need to recreate the whole mda_sequence
+                # and explicitly set the index for each event
+                def tweek_event(event):
 
-                # for _event in lf_events:
-                #     _event['axes']['time'] = t_idx
-                #     _event['axes']['position'] = p_label
-                #     _event['min_start_time'] = 0
+                    # new autoexposure, if any
+                    new_exposure = event.exposure
+                    if any(self.ls_acq.channel_settings.use_autoexposure):
+                        new_exposure = self.ls_acq.channel_settings.exposure_times_per_well[well_id][event.index["c"]]
 
-                ls_events = deepcopy(ls_cz_events)
+                    return useq.MDAEvent(
+                        index={"p": p_idx, "t": t_idx, "c": event.index["c"], "z": event.index["z"]},
+                        channel=event.channel,
+                        exposure=new_exposure,
+                        min_start_time=event.min_start_time,
+                        x_pos=self.position_settings.xyz_positions[p_idx][0],
+                        y_pos=self.position_settings.xyz_positions[p_idx][1],
+                        z_pos=self.position_settings.xyz_positions[p_idx][2],
+                        pos_name=p_label,
+                        slm_image=event.slm_image,
+                        properties=event.properties,
+                        metadata=event.metadata,
+                        action=event.action,
+                        keep_shutter_open=event.keep_shutter_open,
+                        reset_event_timer=event.reset_event_timer
+                    )
 
-                # for _event in ls_events:
-                #     _event['axes']['time'] = t_idx
-                #     _event['axes']['position'] = p_label
-                #     _event['min_start_time'] = 0
-                #     if any(self.ls_acq.channel_settings.use_autoexposure):
-                #         channel_index = self.ls_acq.channel_settings.channels.index(
-                #             _event['axes']['channel']
-                #         )
-                #         _event[
-                #             'exposure'
-                #         ] = self.ls_acq.channel_settings.exposure_times_per_well[well_id][
-                #             channel_index
-                #         ]
+                lf_events = [tweek_event(event) for event in lf_cz_events] 
+                ls_events = [tweek_event(event) for event in ls_cz_events]
 
                 # globals.lf_last_img_idx = lf_events[-1]['axes']
                 # globals.ls_last_img_idx = ls_events[-1]['axes']
@@ -1270,7 +1276,7 @@ class MantisAcquisition(object):
                 globals.lf_acq_aborted = False
                 globals.ls_acq_finished = False
                 globals.ls_acq_aborted = False
-
+                
                 # start acquisition
                 ls_thread = self.ls_acq.mmc.run_mda(ls_events, output=self._ls_acq_obj)
                 lf_thread = self.lf_acq.mmc.run_mda(lf_events, output=self._lf_acq_obj)
@@ -1427,6 +1433,7 @@ def _generate_channel_slice_mda_seq(
         ),
         channels=channels,
         axis_order="tpcz",
+        min_start_time=0,
     )
 
 
