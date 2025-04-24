@@ -5,6 +5,16 @@ time_settings:
   num_timepoints: 3
   time_interval_s: 5
 
+position_settings:
+  xyz_positions:
+    - [0, 0, 0]
+    - [0, 0, 1]
+    - [0, 0, 2]
+  position_labels:
+    - 'One-Pos001'
+    - 'Two-Pos002'
+    - 'Three-Pos003'
+  
 lf_channel_settings:
   default_exposure_times_ms: [10, 10]
   channel_group: 'Channel-Multiband'
