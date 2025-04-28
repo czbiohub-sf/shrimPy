@@ -58,8 +58,6 @@ from mantis.acquisition.hook_functions.image_saved_hook_functions import (
 
 
 # Define constants
-LF_ZMQ_PORT = 4827
-LS_ZMQ_PORT = 5827  # we need to space out port numbers a bit
 LS_POST_READOUT_DELAY = 0.05  # delay before acquiring next frame, in ms
 MCL_STEP_TIME = 1.5  # in ms
 LC_CHANGE_TIME = 20  # in ms
@@ -91,8 +89,6 @@ class BaseChannelSliceAcquisition(object):
         Path to Micro-manager which will be launched in headless mode, by default None
     mm_config_file : str, optional
         Path to config file for the headless acquisition, by default None
-    zmq_port : int, optional
-        ZeroMQ port of the acquisition, by default 4827
     core_log_path : str, optional
         Path where the headless acquisition core logs will be saved, by default ''
     """
@@ -102,7 +98,6 @@ class BaseChannelSliceAcquisition(object):
         enabled: bool = True,
         mm_app_path: str = None,
         mm_config_file: str = None,
-        zmq_port: int = 4827,
         core_log_path: str = '',
     ):
         self.enabled = enabled
@@ -134,8 +129,6 @@ class BaseChannelSliceAcquisition(object):
                     core_log_path=core_log_path,
                     buffer_size_mb=2048,
                 )
-
-            logger.debug(f'Connecting to Micro-Manager on port {zmq_port}')
 
             self.mmc = CMMCorePlus()
             self.mmc.loadSystemConfiguration(mm_config_file)
@@ -400,7 +393,6 @@ class MantisAcquisition(object):
         self.lf_acq = BaseChannelSliceAcquisition(
             enabled=enable_lf_acq,
             mm_config_file=mm_config_file,
-            zmq_port=LF_ZMQ_PORT,
         )
 
         # Connect to MM running LS acq
@@ -408,7 +400,6 @@ class MantisAcquisition(object):
             enabled=enable_ls_acq,
             mm_app_path=mm_app_path,
             mm_config_file=mm_config_file,
-            zmq_port=LS_ZMQ_PORT,
             core_log_path=Path(mm_app_path) / 'CoreLogs' / f'CoreLog{timestamp}_headless.txt',
         )
 
