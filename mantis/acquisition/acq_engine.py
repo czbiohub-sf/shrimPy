@@ -17,7 +17,8 @@ import tifffile
 
 from nidaqmx.constants import Slope
 from pymmcore_plus import CMMCorePlus
-from pymmcore_plus.mda.handlers import OMETiffWriter
+import acquire_zarr as aqz
+
 import useq
 
 from waveorder.focus import focus_from_transverse_band
@@ -26,6 +27,8 @@ from mantis import get_console_formatter
 from mantis.acquisition import microscope_operations
 from mantis.acquisition.hook_functions import globals
 from mantis.acquisition.logger import configure_debug_logger, log_conda_environment
+
+os.environ["MMCORE_PLUS_SIGNALS_BACKEND"] = "psygnal"
 
 # isort: off
 from mantis.acquisition.AcquisitionSettings import (
@@ -213,7 +216,7 @@ class BaseChannelSliceAcquisition(object):
         )
         self._autoexposure_settings = settings
 
-    def setup(self):
+    def setup(self, output_path: Union[str, os.PathLike] = None):
         """
         Apply acquisition settings as specified by the class properties
         """
@@ -269,6 +272,32 @@ class BaseChannelSliceAcquisition(object):
                         settings.property_name,
                         settings.property_value,
                     )
+                    
+            # arbitrary chunking constants (todo: make configurable)
+            xy_n_chunks = 16
+            z_n_chunks = 1
+            
+            x_size = int(self.microscope_settings.device_property_settings[0].property_value)
+            y_size = int(self.microscope_settings.device_property_settings[1].property_value)
+        
+            if output_path:
+                zarr_settings = aqz.StreamSettings(
+                    store_path=output_path,
+                    dtype=aqz.DataType.UINT16,  # FIXME: hardcoded for now, should be set from acquisition settings
+                    dimensions=[
+                        aqz.Dimension(name='t', array_size_px=0, chunk_size_px=1, shard_size_chunks=1, kind=aqz.DimensionType.TIME),  # zero denotes the append dimension in acquire
+                        aqz.Dimension(name='c', array_size_px=self.channel_settings.num_channels, chunk_size_px=int(self.channel_settings.num_channels), shard_size_chunks=1, kind=aqz.DimensionType.CHANNEL),
+                        aqz.Dimension(name='z', array_size_px=self.slice_settings.num_slices, chunk_size_px=int(self.slice_settings.num_slices/z_n_chunks), shard_size_chunks=1, kind=aqz.DimensionType.SPACE),
+                        aqz.Dimension(name='y', array_size_px=y_size, chunk_size_px=int(y_size/xy_n_chunks), shard_size_chunks=1, kind=aqz.DimensionType.SPACE),
+                        aqz.Dimension(name='x', array_size_px=x_size, chunk_size_px=int(x_size/xy_n_chunks), shard_size_chunks=1, kind=aqz.DimensionType.SPACE)
+                    ],
+                    muiltscale = False,
+                    version = aqz.ZarrVersion.V3,
+                    max_threads = 0
+                )
+                self._zarr_writer = aqz.ZarrStream(zarr_settings)
+
+                self.mmc.mda.events.frameReady.connect(self.write_data)
 
     def reset(self):
         """
@@ -289,6 +318,19 @@ class BaseChannelSliceAcquisition(object):
                 microscope_operations.set_z_position(
                     self.mmc, self.slice_settings.z_stage_name, self._z0
                 )
+                
+    def write_data(self, data: np.ndarray, event: useq.MDAEvent) -> None:
+        """
+        Write data to disk. This method should be overridden by subclasses.
+
+        Parameters
+        ----------
+        data : np.ndarray
+            The image data to write.
+        event : useq.Event
+            The event containing metadata about the acquisition.
+        """
+        self._zarr_writer.append(data)
 
 
 class MantisAcquisition(object):
@@ -1048,10 +1090,10 @@ class MantisAcquisition(object):
         logger.info('Setting up acquisition')
 
         logger.debug('Setting up label-free acquisition')
-        self.lf_acq.setup()
+        self.lf_acq.setup(output_path=f'{self._acq_dir}/{self._acq_name}_{LF_ACQ_LABEL}')
 
         logger.debug('Setting up light-sheet acquisition')
-        self.ls_acq.setup()
+        self.ls_acq.setup(output_path=f'{self._acq_dir}/{self._acq_name}_{LS_ACQ_LABEL}')
 
         logger.debug('Setting up DAQ')
         self.setup_daq()
@@ -1086,22 +1128,6 @@ class MantisAcquisition(object):
         lf_post_hardware_hook_fn = log_acquisition_start
         lf_image_saved_fn = check_lf_acq_finished
 
-        # define LF acquisition
-        # JGE - commented out
-        # self._lf_acq_obj = Acquisition(
-        #     directory=self._acq_dir,
-        #     name=f'{self._acq_name}_{LF_ACQ_LABEL}',
-        #     port=LF_ZMQ_PORT,
-        #     pre_hardware_hook_fn=lf_pre_hardware_hook_fn,
-        #     post_hardware_hook_fn=lf_post_hardware_hook_fn,
-        #     post_camera_hook_fn=lf_post_camera_hook_fn,
-        #     image_saved_fn=lf_image_saved_fn,  # data processing and display
-        #     show_display=False,
-        # )
-
-        self._lf_acq_obj = OMETiffWriter(
-            filename=self._acq_dir / f'{self._acq_name}_{LF_ACQ_LABEL}.ome.tif'
-        )
         # define LS hook functions
         if self._demo_run:
             ls_pre_hardware_hook_fn = None
@@ -1119,23 +1145,6 @@ class MantisAcquisition(object):
             )
             ls_post_camera_hook_fn = partial(start_daq_counters, [self._ls_z_ctr_task])
         ls_image_saved_fn = check_ls_acq_finished
-
-        # define LS acquisition
-        # JGE - commented out
-        # self._ls_acq_obj = Acquisition(
-        #     directory=self._acq_dir,
-        #     name=f'{self._acq_name}_{LS_ACQ_LABEL}',
-        #     port=LS_ZMQ_PORT,
-        #     pre_hardware_hook_fn=ls_pre_hardware_hook_fn,
-        #     post_hardware_hook_fn=ls_post_hardware_hook_fn,
-        #     post_camera_hook_fn=ls_post_camera_hook_fn,
-        #     image_saved_fn=ls_image_saved_fn,
-        #     saving_queue_size=500,
-        #     show_display=False,
-        # )
-        self._ls_acq_obj = OMETiffWriter(
-            filename=self._acq_dir / f'{self._acq_name}_{LS_ACQ_LABEL}.ome.tif'
-        )
 
         # Generate LF acquisition events
         lf_cz_events = _generate_channel_slice_mda_seq(
@@ -1156,6 +1165,7 @@ class MantisAcquisition(object):
                 p_label = self.position_settings.position_labels[p_idx]
                 well_id = self.position_settings.well_ids[p_idx]
 
+                print(f"position label: {p_label}, well id: {well_id}")
                 # move to the given position
                 if p_label != previous_position_label:
                     self.go_to_position(p_idx)
@@ -1229,31 +1239,36 @@ class MantisAcquisition(object):
                             if success:
                                 ls_o3_refocus_time = current_time
 
-                # update events dictionaries
-                lf_events = deepcopy(lf_cz_events)
+                # Generate LF acquisition events
 
-                # HACK (JGE) - block below commented out because pymmcore_plus handles events differently.
+                # since MDAEvents can't be modified in place, we need to recreate the whole mda_sequence
+                # and explicitly set the index for each event
+                def tweek_event(event):
 
-                # for _event in lf_events:
-                #     _event['axes']['time'] = t_idx
-                #     _event['axes']['position'] = p_label
-                #     _event['min_start_time'] = 0
+                    # new autoexposure, if any
+                    new_exposure = event.exposure
+                    if any(self.ls_acq.channel_settings.use_autoexposure):
+                        new_exposure = self.ls_acq.channel_settings.exposure_times_per_well[well_id][event.index["c"]]
 
-                ls_events = deepcopy(ls_cz_events)
+                    return useq.MDAEvent(
+                        index={"p": p_idx, "t": t_idx, "c": event.index["c"], "z": event.index["z"]},
+                        channel=event.channel,
+                        exposure=new_exposure,
+                        min_start_time=event.min_start_time,
+                        x_pos=self.position_settings.xyz_positions[p_idx][0],
+                        y_pos=self.position_settings.xyz_positions[p_idx][1],
+                        z_pos=self.position_settings.xyz_positions[p_idx][2],
+                        pos_name=p_label,
+                        slm_image=event.slm_image,
+                        properties=event.properties,
+                        metadata=event.metadata,
+                        action=event.action,
+                        keep_shutter_open=event.keep_shutter_open,
+                        reset_event_timer=event.reset_event_timer
+                    )
 
-                # for _event in ls_events:
-                #     _event['axes']['time'] = t_idx
-                #     _event['axes']['position'] = p_label
-                #     _event['min_start_time'] = 0
-                #     if any(self.ls_acq.channel_settings.use_autoexposure):
-                #         channel_index = self.ls_acq.channel_settings.channels.index(
-                #             _event['axes']['channel']
-                #         )
-                #         _event[
-                #             'exposure'
-                #         ] = self.ls_acq.channel_settings.exposure_times_per_well[well_id][
-                #             channel_index
-                #         ]
+                lf_events = [tweek_event(event) for event in lf_cz_events] 
+                ls_events = [tweek_event(event) for event in ls_cz_events]
 
                 # globals.lf_last_img_idx = lf_events[-1]['axes']
                 # globals.ls_last_img_idx = ls_events[-1]['axes']
@@ -1261,10 +1276,10 @@ class MantisAcquisition(object):
                 globals.lf_acq_aborted = False
                 globals.ls_acq_finished = False
                 globals.ls_acq_aborted = False
-
+                
                 # start acquisition
-                ls_thread = self.ls_acq.mmc.run_mda(ls_events, output=self._ls_acq_obj)
-                lf_thread = self.lf_acq.mmc.run_mda(lf_events, output=self._lf_acq_obj)
+                ls_thread = self.ls_acq.mmc.run_mda(ls_events)
+                lf_thread = self.lf_acq.mmc.run_mda(lf_events)
 
                 # wait for CZYX acquisition to finish
                 self.await_cz_acq_completion()
@@ -1418,6 +1433,7 @@ def _generate_channel_slice_mda_seq(
         ),
         channels=channels,
         axis_order="tpcz",
+        min_start_time=0,
     )
 
 
