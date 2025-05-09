@@ -853,11 +853,15 @@ class MantisAcquisition(object):
         # acquire stacks at different galvo positions
         for p_idx, p in enumerate(galvo_range):
             # set galvo position
-            mmc.set_position(galvo, p0 + p)
+            # mmc.set_position(galvo, p0 + p)
+            microscope_operations.set_z_position(mmc, galvo, p0 + p)
 
             # acquire defocus stack
             if use_pycromanager:
-                mmc.set_position(z_stage, z_range[0])  # prep o3 stage
+                # mmc.set_position(z_stage, z_range[0])  # prep o3 stage
+                microscope_operations.set_z_position(mmc, z_stage, z_range[0])
+                logger.debug('Starting pycromanager O3 autofocus acquisition')
+                # TODO: may need to abort stalled acquisitions
                 with Acquisition(
                     tempdir.name, f'ls_refocus_p{p_idx}', port=LS_ZMQ_PORT, show_display=False
                 ) as acq:
@@ -868,10 +872,13 @@ class MantisAcquisition(object):
                             z_step=z_range[1] - z_range[0],
                         ),
                     )
+                logger.debug('Pycromanager acquisition finished. Fetching data')
                 ds = acq.get_dataset()
                 data.append(np.asarray(ds.as_array()))
+                logger.debug('Data retrieved. Closing dataset')
                 ds.close()
-                mmc.set_position(z_stage, z_range[len(z_range) // 2])  # reset o3 stage
+                # mmc.set_position(z_stage, z_range[len(z_range) // 2])  # reset o3 stage
+                microscope_operations.set_z_position(mmc, z_stage, z_range[len(z_range) // 2])
             else:
                 z_stack = microscope_operations.acquire_defocus_stack(
                     mmc, z_stage, z_range, backlash_correction_distance=KIM101_BACKLASH
@@ -888,7 +895,8 @@ class MantisAcquisition(object):
         )
 
         # Reset galvo
-        mmc.set_position(galvo, p0)
+        # mmc.set_position(galvo, p0)
+        microscope_operations.set_z_position(mmc, galvo, p0)
 
         # Reset shutter
         microscope_operations.reset_shutter(mmc, auto_shutter_state, shutter_state)
@@ -931,9 +939,9 @@ class MantisAcquisition(object):
         galvo_scan_range = self.ls_acq.slice_settings.z_range
         len_galvo_scan_range = len(galvo_scan_range)
         galvo_range = [
-            galvo_scan_range[int(0.3 * len_galvo_scan_range)],
+            galvo_scan_range[int(0.4 * len_galvo_scan_range)],
             galvo_scan_range[int(0.5 * len_galvo_scan_range)],
-            galvo_scan_range[int(0.7 * len_galvo_scan_range)],
+            galvo_scan_range[int(0.6 * len_galvo_scan_range)],
         ]
 
         # Acquire defocus stacks at several galvo positions
