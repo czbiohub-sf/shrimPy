@@ -5,7 +5,6 @@ import time
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime
-from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Iterable, Union
@@ -28,8 +27,6 @@ from mantis.acquisition import microscope_operations
 from mantis.acquisition.hook_functions import globals
 from mantis.acquisition.logger import configure_debug_logger, log_conda_environment
 
-os.environ["MMCORE_PLUS_SIGNALS_BACKEND"] = "psygnal"
-
 # isort: off
 from mantis.acquisition.AcquisitionSettings import (
     TimeSettings,
@@ -39,26 +36,31 @@ from mantis.acquisition.AcquisitionSettings import (
     MicroscopeSettings,
     AutoexposureSettings,
 )
-from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
-    log_preparing_acquisition,
-    lf_pre_hardware_hook_function,
-    ls_pre_hardware_hook_function,
-)
+
+
+# from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
+#     log_preparing_acquisition,
+#     lf_pre_hardware_hook_function,
+#     ls_pre_hardware_hook_function,
+# )
 from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
-    log_acquisition_start,
-    update_ls_hardware,
+    # log_acquisition_start,
+    # update_ls_hardware,
     update_laser_power,
 )
-from mantis.acquisition.hook_functions.post_camera_hook_functions import (
-    start_daq_counters,
-)
-from mantis.acquisition.hook_functions.image_saved_hook_functions import (
-    check_lf_acq_finished,
-    check_ls_acq_finished,
-)
+
+# from mantis.acquisition.hook_functions.post_camera_hook_functions import (
+#     start_daq_counters,
+# )
+# from mantis.acquisition.hook_functions.image_saved_hook_functions import (
+#     check_lf_acq_finished,
+#     check_ls_acq_finished,
+# )
 
 # isort: on
 
+
+os.environ["MMCORE_PLUS_SIGNALS_BACKEND"] = "psygnal"
 
 # Define constants
 LS_POST_READOUT_DELAY = 0.05  # delay before acquiring next frame, in ms
@@ -117,21 +119,21 @@ class BaseChannelSliceAcquisition(object):
 
         logger.debug(f'Initializing {self.type} acquisition engine')
         if enabled:
-            if False:  # JGE self.headless:
-                java_loc = None
-                if "JAVA_HOME" in os.environ:
-                    java_loc = os.environ["JAVA_HOME"]
+            # if self.headless:
+            #     java_loc = None
+            #     if "JAVA_HOME" in os.environ:
+            #         java_loc = os.environ["JAVA_HOME"]
 
-                logger.debug(f'Starting headless Micro-Manager instance on port {zmq_port}')
-                logger.debug(f'Core logs will be saved at: {core_log_path}')
-                start_headless(
-                    mm_app_path,
-                    mm_config_file,
-                    java_loc=java_loc,
-                    port=zmq_port,
-                    core_log_path=core_log_path,
-                    buffer_size_mb=2048,
-                )
+            #     logger.debug(f'Starting headless Micro-Manager instance on port {zmq_port}')
+            #     logger.debug(f'Core logs will be saved at: {core_log_path}')
+            #     start_headless(
+            #         mm_app_path,
+            #         mm_config_file,
+            #         java_loc=java_loc,
+            #         port=zmq_port,
+            #         core_log_path=core_log_path,
+            #         buffer_size_mb=2048,
+            #     )
 
             self.mmc = CMMCorePlus()
             self.mmc.loadSystemConfiguration(mm_config_file)
@@ -1145,38 +1147,38 @@ class MantisAcquisition(object):
         positions and time points.
         """
 
-        # define LF hook functions
-        if self._demo_run:
-            lf_pre_hardware_hook_fn = log_preparing_acquisition
-            lf_post_camera_hook_fn = None
-        else:
-            lf_pre_hardware_hook_fn = partial(
-                lf_pre_hardware_hook_function,
-                [self._lf_z_ctr_task, self._lf_channel_ctr_task],
-            )
-            lf_post_camera_hook_fn = partial(
-                start_daq_counters, [self._lf_z_ctr_task, self._lf_channel_ctr_task]
-            )
-        lf_post_hardware_hook_fn = log_acquisition_start
-        lf_image_saved_fn = check_lf_acq_finished
+        # # define LF hook functions
+        # if self._demo_run:
+        #     lf_pre_hardware_hook_fn = log_preparing_acquisition
+        #     lf_post_camera_hook_fn = None
+        # else:
+        #     lf_pre_hardware_hook_fn = partial(
+        #         lf_pre_hardware_hook_function,
+        #         [self._lf_z_ctr_task, self._lf_channel_ctr_task],
+        #     )
+        #     lf_post_camera_hook_fn = partial(
+        #         start_daq_counters, [self._lf_z_ctr_task, self._lf_channel_ctr_task]
+        #     )
+        # lf_post_hardware_hook_fn = log_acquisition_start
+        # lf_image_saved_fn = check_lf_acq_finished
 
-        # define LS hook functions
-        if self._demo_run:
-            ls_pre_hardware_hook_fn = None
-            ls_post_hardware_hook_fn = None
-            ls_post_camera_hook_fn = None
-        else:
-            ls_pre_hardware_hook_fn = partial(
-                ls_pre_hardware_hook_function, [self._ls_z_ctr_task]
-            )
-            ls_post_hardware_hook_fn = partial(
-                update_ls_hardware,
-                self._ls_z_ctr_task,
-                self.ls_acq.channel_settings.light_sources,
-                self.ls_acq.channel_settings.channels,
-            )
-            ls_post_camera_hook_fn = partial(start_daq_counters, [self._ls_z_ctr_task])
-        ls_image_saved_fn = check_ls_acq_finished
+        # # define LS hook functions
+        # if self._demo_run:
+        #     ls_pre_hardware_hook_fn = None
+        #     ls_post_hardware_hook_fn = None
+        #     ls_post_camera_hook_fn = None
+        # else:
+        #     ls_pre_hardware_hook_fn = partial(
+        #         ls_pre_hardware_hook_function, [self._ls_z_ctr_task]
+        #     )
+        #     ls_post_hardware_hook_fn = partial(
+        #         update_ls_hardware,
+        #         self._ls_z_ctr_task,
+        #         self.ls_acq.channel_settings.light_sources,
+        #         self.ls_acq.channel_settings.channels,
+        #     )
+        #     ls_post_camera_hook_fn = partial(start_daq_counters, [self._ls_z_ctr_task])
+        # ls_image_saved_fn = check_ls_acq_finished
 
         # Generate LF acquisition events
         lf_cz_events = _generate_channel_slice_mda_seq(
