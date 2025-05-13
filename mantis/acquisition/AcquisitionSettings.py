@@ -57,12 +57,12 @@ class PositionSettings:
 
 @dataclass(config=config)
 class ChannelSettings:
-    default_exposure_times_ms: Union[NonNegativeFloat, List[NonNegativeFloat], None] = (
-        None  # in ms
-    )
-    default_laser_powers: Union[NonNegativeFloat, List[NonNegativeFloat], List[None], None] = (
-        None
-    )
+    default_exposure_times_ms: Union[
+        NonNegativeFloat, List[NonNegativeFloat], None
+    ] = None  # in ms
+    default_laser_powers: Union[
+        NonNegativeFloat, List[NonNegativeFloat], List[None], None
+    ] = None
     channel_group: Optional[str] = None
     channels: List[str] = field(default_factory=list)
     use_sequencing: bool = False

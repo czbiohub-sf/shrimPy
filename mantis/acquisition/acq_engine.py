@@ -763,19 +763,19 @@ class MantisAcquisition(object):
                 )
                 if ts2_ttl_state == 32:
                     # State 32 corresponds to illumination with 488 laser
-                    self.ls_acq.channel_settings.light_sources[channel_idx] = (
-                        microscope_operations.setup_vortran_laser(VORTRAN_488_COM_PORT)
-                    )
+                    self.ls_acq.channel_settings.light_sources[
+                        channel_idx
+                    ] = microscope_operations.setup_vortran_laser(VORTRAN_488_COM_PORT)
                 elif ts2_ttl_state == 64:
                     # State 64 corresponds to illumination with 561 laser
-                    self.ls_acq.channel_settings.light_sources[channel_idx] = (
-                        microscope_operations.setup_vortran_laser(VORTRAN_561_COM_PORT)
-                    )
+                    self.ls_acq.channel_settings.light_sources[
+                        channel_idx
+                    ] = microscope_operations.setup_vortran_laser(VORTRAN_561_COM_PORT)
                 elif ts2_ttl_state == 128:
                     # State 128 corresponds to illumination with 639 laser
-                    self.ls_acq.channel_settings.light_sources[channel_idx] = (
-                        microscope_operations.setup_vortran_laser(VORTRAN_639_COM_PORT)
-                    )
+                    self.ls_acq.channel_settings.light_sources[
+                        channel_idx
+                    ] = microscope_operations.setup_vortran_laser(VORTRAN_639_COM_PORT)
                 else:
                     logger.error(
                         'Unknown TTL state {} for channel {} in config group {}'.format(
