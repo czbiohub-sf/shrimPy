@@ -9,17 +9,15 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Iterable, Union
 
+import acquire_zarr as aqz
 import copylot
 import nidaqmx
 import numpy as np
 import tifffile
+import useq
 
 from nidaqmx.constants import Slope
 from pymmcore_plus import CMMCorePlus
-import acquire_zarr as aqz
-
-import useq
-
 from waveorder.focus import focus_from_transverse_band
 
 from mantis import get_console_formatter
@@ -28,6 +26,7 @@ from mantis.acquisition.hook_functions import globals
 from mantis.acquisition.logger import configure_debug_logger, log_conda_environment
 
 # isort: off
+
 from mantis.acquisition.AcquisitionSettings import (
     TimeSettings,
     PositionSettings,
@@ -58,7 +57,6 @@ from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
 # )
 
 # isort: on
-
 
 os.environ["MMCORE_PLUS_SIGNALS_BACKEND"] = "psygnal"
 

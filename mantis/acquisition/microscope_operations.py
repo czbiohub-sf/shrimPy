@@ -9,10 +9,10 @@ import numpy as np
 
 from copylot.hardware.lasers.vortran.vortran import VortranLaser
 from nidaqmx.constants import AcquisitionType
+from pylablib.devices.Thorlabs import KinesisPiezoMotor
 
 # from pycromanager import Core, Studio
 from pymmcore_plus import CMMCorePlus
-from pylablib.devices.Thorlabs import KinesisPiezoMotor
 
 from mantis.acquisition.AcquisitionSettings import AutoexposureSettings
 from mantis.acquisition.autoexposure import manual_autoexposure, mean_intensity_autoexposure
