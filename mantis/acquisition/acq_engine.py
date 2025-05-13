@@ -1243,7 +1243,7 @@ class MantisAcquisition(object):
 
                 # since MDAEvents can't be modified in place, we need to recreate the whole mda_sequence
                 # and explicitly set the index for each event
-                def tweek_event(event):
+                def mda_event_from_mda_sequence(event):
 
                     # new autoexposure, if any
                     new_exposure = event.exposure
@@ -1267,8 +1267,8 @@ class MantisAcquisition(object):
                         reset_event_timer=event.reset_event_timer
                     )
 
-                lf_events = [tweek_event(event) for event in lf_cz_events] 
-                ls_events = [tweek_event(event) for event in ls_cz_events]
+                lf_events = [mda_event_from_mda_sequence(event) for event in lf_cz_events] 
+                ls_events = [mda_event_from_mda_sequence(event) for event in ls_cz_events]
 
                 # globals.lf_last_img_idx = lf_events[-1]['axes']
                 # globals.ls_last_img_idx = ls_events[-1]['axes']
