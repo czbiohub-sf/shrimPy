@@ -533,8 +533,8 @@ def autotracker_hook_fn(
                 # Reference and moving volumes
                 shifts_zyx = tracker.estimate_shift(volume_t0, volume_t1)
 
-            position_id = str(axes['position']) + '.csv'
-            shift_coord_output = output_shift_path / position_id
+            csv_log_filename = f"autotracker_fov_{axes['position']}.csv"
+            shift_coord_output = output_shift_path / csv_log_filename
 
             # Read the previous shifts_zyx and coords
             prev_shifts = pd.read_csv(shift_coord_output)
@@ -571,8 +571,8 @@ def autotracker_hook_fn(
             )
         else:
             # Save the positions at t=0
-            position_id = str(axes['position']) + '.csv'
-            shift_coord_output = output_shift_path / position_id
+            csv_log_filename = f"autotracker_fov_{axes['position']}.csv"
+            shift_coord_output = output_shift_path / csv_log_filename
             prev_y = position_settings.xyz_positions_shift[p_idx][1]
             prev_x = position_settings.xyz_positions_shift[p_idx][0]
             if position_settings.xyz_positions_shift[p_idx][2] is not None:
