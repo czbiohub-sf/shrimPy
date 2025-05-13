@@ -109,7 +109,7 @@ class BaseChannelSliceAcquisition(object):
         self._microscope_settings = MicroscopeSettings()
         self._autoexposure_settings = AutoexposureSettings()
         self._z0 = None
-        self.headless = True  #JGE False if mm_app_path is None else True
+        self.headless = True  # JGE False if mm_app_path is None else True
         self.type = 'light-sheet' if self.headless else 'label-free'
         self.mmc = None
         self.mmStudio = None
@@ -117,7 +117,7 @@ class BaseChannelSliceAcquisition(object):
 
         logger.debug(f'Initializing {self.type} acquisition engine')
         if enabled:
-            if False: #JGE self.headless:
+            if False:  # JGE self.headless:
                 java_loc = None
                 if "JAVA_HOME" in os.environ:
                     java_loc = os.environ["JAVA_HOME"]
@@ -137,7 +137,7 @@ class BaseChannelSliceAcquisition(object):
             self.mmc.loadSystemConfiguration(mm_config_file)
             # headless MM instance doesn't have a studio object
             if not self.headless:
-                self.mmStudio = None  #Studio(port=zmq_port)
+                self.mmStudio = None  # Studio(port=zmq_port)
 
             logger.debug('Successfully connected to Micro-Manager')
             logger.debug(f'{self.mmc.getVersionInfo()}')  # MMCore Version
@@ -272,28 +272,58 @@ class BaseChannelSliceAcquisition(object):
                         settings.property_name,
                         settings.property_value,
                     )
-                    
+
             # arbitrary chunking constants (todo: make configurable)
             xy_n_chunks = 16
             z_n_chunks = 1
-            
+
             x_size = int(self.microscope_settings.device_property_settings[0].property_value)
             y_size = int(self.microscope_settings.device_property_settings[1].property_value)
-        
+
             if output_path:
                 zarr_settings = aqz.StreamSettings(
                     store_path=output_path,
                     dtype=aqz.DataType.UINT16,  # FIXME: hardcoded for now, should be set from acquisition settings
                     dimensions=[
-                        aqz.Dimension(name='t', array_size_px=0, chunk_size_px=1, shard_size_chunks=1, kind=aqz.DimensionType.TIME),  # zero denotes the append dimension in acquire
-                        aqz.Dimension(name='c', array_size_px=self.channel_settings.num_channels, chunk_size_px=int(self.channel_settings.num_channels), shard_size_chunks=1, kind=aqz.DimensionType.CHANNEL),
-                        aqz.Dimension(name='z', array_size_px=self.slice_settings.num_slices, chunk_size_px=int(self.slice_settings.num_slices/z_n_chunks), shard_size_chunks=1, kind=aqz.DimensionType.SPACE),
-                        aqz.Dimension(name='y', array_size_px=y_size, chunk_size_px=int(y_size/xy_n_chunks), shard_size_chunks=1, kind=aqz.DimensionType.SPACE),
-                        aqz.Dimension(name='x', array_size_px=x_size, chunk_size_px=int(x_size/xy_n_chunks), shard_size_chunks=1, kind=aqz.DimensionType.SPACE)
+                        aqz.Dimension(
+                            name='t',
+                            array_size_px=0,
+                            chunk_size_px=1,
+                            shard_size_chunks=1,
+                            kind=aqz.DimensionType.TIME,
+                        ),  # zero denotes the append dimension in acquire
+                        aqz.Dimension(
+                            name='c',
+                            array_size_px=self.channel_settings.num_channels,
+                            chunk_size_px=int(self.channel_settings.num_channels),
+                            shard_size_chunks=1,
+                            kind=aqz.DimensionType.CHANNEL,
+                        ),
+                        aqz.Dimension(
+                            name='z',
+                            array_size_px=self.slice_settings.num_slices,
+                            chunk_size_px=int(self.slice_settings.num_slices / z_n_chunks),
+                            shard_size_chunks=1,
+                            kind=aqz.DimensionType.SPACE,
+                        ),
+                        aqz.Dimension(
+                            name='y',
+                            array_size_px=y_size,
+                            chunk_size_px=int(y_size / xy_n_chunks),
+                            shard_size_chunks=1,
+                            kind=aqz.DimensionType.SPACE,
+                        ),
+                        aqz.Dimension(
+                            name='x',
+                            array_size_px=x_size,
+                            chunk_size_px=int(x_size / xy_n_chunks),
+                            shard_size_chunks=1,
+                            kind=aqz.DimensionType.SPACE,
+                        ),
                     ],
-                    muiltscale = False,
-                    version = aqz.ZarrVersion.V3,
-                    max_threads = 0
+                    muiltscale=False,
+                    version=aqz.ZarrVersion.V3,
+                    max_threads=0,
                 )
                 self._zarr_writer = aqz.ZarrStream(zarr_settings)
 
@@ -318,7 +348,7 @@ class BaseChannelSliceAcquisition(object):
                 microscope_operations.set_z_position(
                     self.mmc, self.slice_settings.z_stage_name, self._z0
                 )
-                
+
     def write_data(self, data: np.ndarray, event: useq.MDAEvent) -> None:
         """
         Write data to disk. This method should be overridden by subclasses.
@@ -509,7 +539,9 @@ class MantisAcquisition(object):
                 )
             except AttributeError:
                 print("Error: Micro-manager Studio not available. Fetching current position")
-                print("Todo: This is a hack to get around the fact that the mmStudio has yet to be ported")
+                print(
+                    "Todo: This is a hack to get around the fact that the mmStudio has yet to be ported"
+                )
 
             if not xyz_positions:
                 logger.debug('Micro-manager position list is empty. Fetching current position')
@@ -680,10 +712,9 @@ class MantisAcquisition(object):
             if self._lf_channel_ctr_task is not None:
                 self._lf_channel_ctr_task.stop()
                 self._lf_channel_ctr_task.close()
-            if self._lf_z_ctr_task is not None:       
+            if self._lf_z_ctr_task is not None:
                 self._lf_z_ctr_task.stop()
                 self._lf_z_ctr_task.close()
-
 
     def setup_autofocus(self):
         if self.lf_acq.microscope_settings.use_autofocus:
@@ -732,19 +763,19 @@ class MantisAcquisition(object):
                 )
                 if ts2_ttl_state == 32:
                     # State 32 corresponds to illumination with 488 laser
-                    self.ls_acq.channel_settings.light_sources[
-                        channel_idx
-                    ] = microscope_operations.setup_vortran_laser(VORTRAN_488_COM_PORT)
+                    self.ls_acq.channel_settings.light_sources[channel_idx] = (
+                        microscope_operations.setup_vortran_laser(VORTRAN_488_COM_PORT)
+                    )
                 elif ts2_ttl_state == 64:
                     # State 64 corresponds to illumination with 561 laser
-                    self.ls_acq.channel_settings.light_sources[
-                        channel_idx
-                    ] = microscope_operations.setup_vortran_laser(VORTRAN_561_COM_PORT)
+                    self.ls_acq.channel_settings.light_sources[channel_idx] = (
+                        microscope_operations.setup_vortran_laser(VORTRAN_561_COM_PORT)
+                    )
                 elif ts2_ttl_state == 128:
                     # State 128 corresponds to illumination with 639 laser
-                    self.ls_acq.channel_settings.light_sources[
-                        channel_idx
-                    ] = microscope_operations.setup_vortran_laser(VORTRAN_639_COM_PORT)
+                    self.ls_acq.channel_settings.light_sources[channel_idx] = (
+                        microscope_operations.setup_vortran_laser(VORTRAN_639_COM_PORT)
+                    )
                 else:
                     logger.error(
                         'Unknown TTL state {} for channel {} in config group {}'.format(
@@ -881,6 +912,7 @@ class MantisAcquisition(object):
                 # append data as its acquired.
                 def append_data(img: np.ndarray, event: useq.MDAEvent):
                     data.append(img)
+
                 mmc.mda.events.frameReady.connect(append_data)
 
                 # run the acquisition, and wait for it to finish
@@ -1248,10 +1280,17 @@ class MantisAcquisition(object):
                     # new autoexposure, if any
                     new_exposure = event.exposure
                     if any(self.ls_acq.channel_settings.use_autoexposure):
-                        new_exposure = self.ls_acq.channel_settings.exposure_times_per_well[well_id][event.index["c"]]
+                        new_exposure = self.ls_acq.channel_settings.exposure_times_per_well[
+                            well_id
+                        ][event.index["c"]]
 
                     return useq.MDAEvent(
-                        index={"p": p_idx, "t": t_idx, "c": event.index["c"], "z": event.index["z"]},
+                        index={
+                            "p": p_idx,
+                            "t": t_idx,
+                            "c": event.index["c"],
+                            "z": event.index["z"],
+                        },
                         channel=event.channel,
                         exposure=new_exposure,
                         min_start_time=event.min_start_time,
@@ -1264,10 +1303,10 @@ class MantisAcquisition(object):
                         metadata=event.metadata,
                         action=event.action,
                         keep_shutter_open=event.keep_shutter_open,
-                        reset_event_timer=event.reset_event_timer
+                        reset_event_timer=event.reset_event_timer,
                     )
 
-                lf_events = [mda_event_from_mda_sequence(event) for event in lf_cz_events] 
+                lf_events = [mda_event_from_mda_sequence(event) for event in lf_cz_events]
                 ls_events = [mda_event_from_mda_sequence(event) for event in ls_cz_events]
 
                 # globals.lf_last_img_idx = lf_events[-1]['axes']
@@ -1276,7 +1315,7 @@ class MantisAcquisition(object):
                 globals.lf_acq_aborted = False
                 globals.ls_acq_finished = False
                 globals.ls_acq_aborted = False
-                
+
                 # start acquisition
                 ls_thread = self.ls_acq.mmc.run_mda(ls_events)
                 lf_thread = self.lf_acq.mmc.run_mda(lf_events)
@@ -1306,14 +1345,14 @@ class MantisAcquisition(object):
                 logger.info(f"Waiting {t_wait/60:.2f} minutes until the next time point")
                 time.sleep(t_wait)
 
-        # JGE: HACK to indicate finished. 
+        # JGE: HACK to indicate finished.
         # self._ls_acq_obj.mark_finished()
         # self._lf_acq_obj.mark_finished()
         logger.debug('Waiting for acquisition to finish')
 
-        #self._ls_acq_obj.await_completion()
+        # self._ls_acq_obj.await_completion()
         logger.debug('Light-sheet acquisition finished')
-        #self._lf_acq_obj.await_completion()
+        # self._lf_acq_obj.await_completion()
         logger.debug('Label-free acquisition finished')
 
         # Close ndtiff dataset - not sure why this is necessary
@@ -1413,7 +1452,7 @@ def _generate_channel_slice_mda_seq(
     MDASequence
         MDA sequence object
     """
-    
+
     # Create an array of channel objects from lists of channel names and exposure times
     # Note: the channel names and exposure times are zipped together
     channel_zip = zip(channel_settings.channels, channel_settings.default_exposure_times_ms)
