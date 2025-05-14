@@ -1197,7 +1197,6 @@ class MantisAcquisition(object):
                 p_label = self.position_settings.position_labels[p_idx]
                 well_id = self.position_settings.well_ids[p_idx]
 
-                print(f"position label: {p_label}, well id: {well_id}")
                 # move to the given position
                 if p_label != previous_position_label:
                     self.go_to_position(p_idx)
