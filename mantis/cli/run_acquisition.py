@@ -63,7 +63,6 @@ def run_acquisition(
     )
 
     # isort: on
-
     demo_run = True if 'demo' in mm_config_filepath else False
 
     output_dirpath = Path(output_dirpath)
