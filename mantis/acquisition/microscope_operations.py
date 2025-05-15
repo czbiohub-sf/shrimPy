@@ -9,9 +9,10 @@ import numpy as np
 
 from copylot.hardware.lasers.vortran.vortran import VortranLaser
 from nidaqmx.constants import AcquisitionType
-#from pycromanager import Core, Studio
-from pymmcore_plus import CMMCorePlus
 from pylablib.devices.Thorlabs import KinesisPiezoMotor
+
+# from pycromanager import Core, Studio
+from pymmcore_plus import CMMCorePlus
 
 from mantis.acquisition.AcquisitionSettings import AutoexposureSettings
 from mantis.acquisition.autoexposure import manual_autoexposure, mean_intensity_autoexposure
@@ -308,7 +309,7 @@ def set_relative_kim101_position(
 
 
 def create_ram_datastore(
-    mmStudio = None,
+    mmStudio=None,
 ):
     """Create a Micro-manager RAM datastore and associate a display window with it
 
@@ -331,7 +332,7 @@ def acquire_defocus_stack(
     mmc: CMMCorePlus,
     z_stage: Union[str, KinesisPiezoMotor],
     z_range: Iterable,
-    mmStudio = None,
+    mmStudio=None,
     datastore=None,
     channel_ind: int = 0,
     position_ind: int = 0,
@@ -412,7 +413,7 @@ def acquire_ls_defocus_stack_and_display(
     z_range: Iterable,
     galvo: str,
     galvo_range: Iterable,
-    mmStudio = None,
+    mmStudio=None,
     config_group: str = None,
     config_name: str = None,
     close_display: bool = True,
