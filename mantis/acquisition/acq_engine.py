@@ -359,7 +359,7 @@ class BaseChannelSliceAcquisition(object):
             )
             
             for position_label in self.position_settings.position_labels:
-                zarr_settings.output_key = "self.acquisition_label/position_label"
+                zarr_settings.output_key = f"{self.acquisition_label}/{position_label}"
                 # set up stream
                 self._zarr_position_writers[position_label] = aqz.ZarrStream(zarr_settings)
                 
@@ -395,7 +395,6 @@ class BaseChannelSliceAcquisition(object):
             The event containing metadata about the acquisition.
         """
         self._zarr_position_writers[event.pos_name].append(data)
-
 
 class MantisAcquisition(object):
     """
