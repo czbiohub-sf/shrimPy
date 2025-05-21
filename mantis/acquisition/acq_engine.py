@@ -102,19 +102,22 @@ class BaseChannelSliceAcquisition(object):
         mm_app_path: str = None,
         mm_config_file: str = None,
         core_log_path: str = '',
+        acquisition_label: str = None,
     ):
         self.enabled = enabled
         self._channel_settings = ChannelSettings()
         self._slice_settings = SliceSettings()
         self._microscope_settings = MicroscopeSettings()
         self._autoexposure_settings = AutoexposureSettings()
+        self._position_settings = PositionSettings()
         self._z0 = None
         self.headless = True  # JGE False if mm_app_path is None else True
         self.type = 'light-sheet' if self.headless else 'label-free'
         self.mmc = None
         self.mmStudio = None
         self.o3_stage = None
-
+        self.acquisition_label = acquisition_label
+        
         logger.debug(f'Initializing {self.type} acquisition engine')
         if enabled:
             # if self.headless:
@@ -176,7 +179,11 @@ class BaseChannelSliceAcquisition(object):
     @property
     def autoexposure_settings(self):
         return self._autoexposure_settings
-
+    
+    @property
+    def position_settings(self):
+        return self._position_settings
+    
     @channel_settings.setter
     def channel_settings(self, settings: ChannelSettings):
         if settings is None:
@@ -216,6 +223,15 @@ class BaseChannelSliceAcquisition(object):
         )
         self._autoexposure_settings = settings
 
+    @position_settings.setter
+    def position_settings(self, settings: PositionSettings):
+        if settings is None:
+            return
+        logger.debug(
+            f"{self.type.capitalize()} position will have the following settings:{asdict(settings)}"
+        )
+        self._position_settings = settings
+        
     def setup(self, output_path: Union[str, os.PathLike] = None):
         """
         Apply acquisition settings as specified by the class properties
@@ -273,62 +289,79 @@ class BaseChannelSliceAcquisition(object):
                         settings.property_value,
                     )
 
-            # arbitrary chunking constants (todo: make configurable)
-            xy_n_chunks = 16
-            z_n_chunks = 1
+            self.initialize_output(output_path)
+            
+            self.mmc.mda.events.frameReady.connect(self.write_data)
 
-            x_size = int(self.microscope_settings.device_property_settings[0].property_value)
-            y_size = int(self.microscope_settings.device_property_settings[1].property_value)
+    def initialize_output(self, output_path: Union[str, os.PathLike] = None):
+        """
+        Initialize the output stream for the acquisition. The current implementation is to use
+        the acquire_zarr library to write data to a zarr file.  Note that since a ZarrStream has 
+        a single ouput_label, an instance of a ZarrStream is required for each position in the acquisition.
+        """
+        
+        # arbitrary chunking constants (todo: make configurable)
+        xy_n_chunks = 16
+        z_n_chunks = 1
 
-            if output_path:
-                zarr_settings = aqz.StreamSettings(
-                    store_path=output_path,
-                    dtype=aqz.DataType.UINT16,  # FIXME: hardcoded for now, should be set from acquisition settings
-                    dimensions=[
-                        aqz.Dimension(
-                            name='t',
-                            array_size_px=0,
-                            chunk_size_px=1,
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.TIME,
-                        ),  # zero denotes the append dimension in acquire
-                        aqz.Dimension(
-                            name='c',
-                            array_size_px=self.channel_settings.num_channels,
-                            chunk_size_px=int(self.channel_settings.num_channels),
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.CHANNEL,
-                        ),
-                        aqz.Dimension(
-                            name='z',
-                            array_size_px=self.slice_settings.num_slices,
-                            chunk_size_px=int(self.slice_settings.num_slices / z_n_chunks),
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.SPACE,
-                        ),
-                        aqz.Dimension(
-                            name='y',
-                            array_size_px=y_size,
-                            chunk_size_px=int(y_size / xy_n_chunks),
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.SPACE,
-                        ),
-                        aqz.Dimension(
-                            name='x',
-                            array_size_px=x_size,
-                            chunk_size_px=int(x_size / xy_n_chunks),
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.SPACE,
-                        ),
-                    ],
-                    muiltscale=False,
-                    version=aqz.ZarrVersion.V3,
-                    max_threads=0,
-                )
-                self._zarr_writer = aqz.ZarrStream(zarr_settings)
+        x_size = int(self.microscope_settings.device_property_settings[0].property_value)
+        y_size = int(self.microscope_settings.device_property_settings[1].property_value)
 
-                self.mmc.mda.events.frameReady.connect(self.write_data)
-
+        if output_path:
+            self._zarr_writers = []
+            
+            # m
+            zarr_settings = aqz.StreamSettings(
+                store_path=output_path,
+                dtype=aqz.DataType.UINT16,  # FIXME: hardcoded for now, should be set from acquisition settings
+                dimensions=[
+                    aqz.Dimension(
+                        name='t',
+                        array_size_px=0,
+                        chunk_size_px=1,
+                        shard_size_chunks=1,
+                        kind=aqz.DimensionType.TIME,
+                    ),  # zero denotes the append dimension in acquire
+                    aqz.Dimension(
+                        name='c',
+                        array_size_px=self.channel_settings.num_channels,
+                        chunk_size_px=int(self.channel_settings.num_channels),
+                        shard_size_chunks=1,
+                        kind=aqz.DimensionType.CHANNEL,
+                    ),
+                    aqz.Dimension(
+                        name='z',
+                        array_size_px=self.slice_settings.num_slices,
+                        chunk_size_px=int(self.slice_settings.num_slices / z_n_chunks),
+                        shard_size_chunks=1,
+                        kind=aqz.DimensionType.SPACE,
+                    ),
+                    aqz.Dimension(
+                        name='y',
+                        array_size_px=y_size,
+                        chunk_size_px=int(y_size / xy_n_chunks),
+                        shard_size_chunks=1,
+                        kind=aqz.DimensionType.SPACE,
+                    ),
+                    aqz.Dimension(
+                        name='x',
+                        array_size_px=x_size,
+                        chunk_size_px=int(x_size / xy_n_chunks),
+                        shard_size_chunks=1,
+                        kind=aqz.DimensionType.SPACE,
+                    ),
+                ],
+                muiltscale=False,
+                version=aqz.ZarrVersion.V3,
+                max_threads=0,
+                overwrite=False,
+            )
+            
+            for position_label in self.position_settings.position_labels:
+                zarr_settings.output_key = "self.acquisition_label/position_label"
+                # set up stream
+                self._zarr_writers.append(aqz.ZarrStream(zarr_settings))
+                
     def reset(self):
         """
         Reset the microscope device properties, typically at the end of the acquisition
@@ -465,6 +498,7 @@ class MantisAcquisition(object):
         self.lf_acq = BaseChannelSliceAcquisition(
             enabled=enable_lf_acq,
             mm_config_file=mm_config_file,
+            acquisition_label=LF_ACQ_LABEL
         )
 
         # Connect to MM running LS acq
@@ -473,6 +507,7 @@ class MantisAcquisition(object):
             mm_app_path=mm_app_path,
             mm_config_file=mm_config_file,
             core_log_path=Path(mm_app_path) / 'CoreLogs' / f'CoreLog{timestamp}_headless.txt',
+            acquisition_label=LS_ACQ_LABEL,
         )
 
     @property
@@ -556,6 +591,7 @@ class MantisAcquisition(object):
             )
         else:
             logger.debug('Position list is already populated and will not be updated')
+            
 
     def update_lf_acquisition_rates(self, lf_exposure_times: list):
         if self._demo_run:
@@ -1122,10 +1158,10 @@ class MantisAcquisition(object):
         logger.info('Setting up acquisition')
 
         logger.debug('Setting up label-free acquisition')
-        self.lf_acq.setup(output_path=f'{self._acq_dir}/{self._acq_name}_{LF_ACQ_LABEL}')
+        self.lf_acq.setup(output_path=f'{self._acq_dir}/{self._acq_name}')
 
         logger.debug('Setting up light-sheet acquisition')
-        self.ls_acq.setup(output_path=f'{self._acq_dir}/{self._acq_name}_{LS_ACQ_LABEL}')
+        self.ls_acq.setup(output_path=f'{self._acq_dir}/{self._acq_name}')
 
         logger.debug('Setting up DAQ')
         self.setup_daq()
