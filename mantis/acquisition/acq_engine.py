@@ -117,7 +117,7 @@ class BaseChannelSliceAcquisition(object):
         self.mmStudio = None
         self.o3_stage = None
         self.acquisition_label = acquisition_label
-        
+
         logger.debug(f'Initializing {self.type} acquisition engine')
         if enabled:
             # if self.headless:
@@ -179,11 +179,11 @@ class BaseChannelSliceAcquisition(object):
     @property
     def autoexposure_settings(self):
         return self._autoexposure_settings
-    
+
     @property
     def position_settings(self):
         return self._position_settings
-    
+
     @channel_settings.setter
     def channel_settings(self, settings: ChannelSettings):
         if settings is None:
@@ -231,7 +231,7 @@ class BaseChannelSliceAcquisition(object):
             f"{self.type.capitalize()} position will have the following settings:{asdict(settings)}"
         )
         self._position_settings = settings
-        
+
     def setup(self, output_path: Union[str, os.PathLike] = None):
         """
         Apply acquisition settings as specified by the class properties
@@ -290,16 +290,16 @@ class BaseChannelSliceAcquisition(object):
                     )
 
             self.initialize_output(output_path)
-            
+
             self.mmc.mda.events.frameReady.connect(self.write_data)
 
     def initialize_output(self, output_path: Union[str, os.PathLike] = None):
         """
         Initialize the output stream for the acquisition. The current implementation is to use
-        the acquire_zarr library to write data to a zarr file.  Note that since a ZarrStream has 
+        the acquire_zarr library to write data to a zarr file.  Note that since a ZarrStream has
         a single ouput_label, an instance of a ZarrStream is required for each position in the acquisition.
         """
-        
+
         # arbitrary chunking constants (todo: make configurable)
         xy_n_chunks = 16
         z_n_chunks = 1
@@ -308,9 +308,9 @@ class BaseChannelSliceAcquisition(object):
         y_size = int(self.microscope_settings.device_property_settings[1].property_value)
 
         if output_path:
-            
+
             self._zarr_position_writers = {}
-            
+
             # m
             zarr_settings = aqz.StreamSettings(
                 store_path=output_path,
@@ -357,12 +357,12 @@ class BaseChannelSliceAcquisition(object):
                 max_threads=0,
                 overwrite=False,
             )
-            
+
             for position_label in self.position_settings.position_labels:
                 zarr_settings.output_key = f"{self.acquisition_label}/{position_label}"
                 # set up stream
                 self._zarr_position_writers[position_label] = aqz.ZarrStream(zarr_settings)
-                
+
     def reset(self):
         """
         Reset the microscope device properties, typically at the end of the acquisition
@@ -395,6 +395,7 @@ class BaseChannelSliceAcquisition(object):
             The event containing metadata about the acquisition.
         """
         self._zarr_position_writers[event.pos_name].append(data)
+
 
 class MantisAcquisition(object):
     """
@@ -498,7 +499,7 @@ class MantisAcquisition(object):
         self.lf_acq = BaseChannelSliceAcquisition(
             enabled=enable_lf_acq,
             mm_config_file=mm_config_file,
-            acquisition_label=LF_ACQ_LABEL
+            acquisition_label=LF_ACQ_LABEL,
         )
 
         # Connect to MM running LS acq
@@ -591,7 +592,6 @@ class MantisAcquisition(object):
             )
         else:
             logger.debug('Position list is already populated and will not be updated')
-            
 
     def update_lf_acquisition_rates(self, lf_exposure_times: list):
         if self._demo_run:
