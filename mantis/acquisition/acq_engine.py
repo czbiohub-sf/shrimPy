@@ -308,7 +308,8 @@ class BaseChannelSliceAcquisition(object):
         y_size = int(self.microscope_settings.device_property_settings[1].property_value)
 
         if output_path:
-            self._zarr_writers = []
+            
+            self._zarr_position_writers = {}
             
             # m
             zarr_settings = aqz.StreamSettings(
@@ -360,7 +361,7 @@ class BaseChannelSliceAcquisition(object):
             for position_label in self.position_settings.position_labels:
                 zarr_settings.output_key = "self.acquisition_label/position_label"
                 # set up stream
-                self._zarr_writers.append(aqz.ZarrStream(zarr_settings))
+                self._zarr_position_writers[position_label] = aqz.ZarrStream(zarr_settings)
                 
     def reset(self):
         """
@@ -384,7 +385,7 @@ class BaseChannelSliceAcquisition(object):
 
     def write_data(self, data: np.ndarray, event: useq.MDAEvent) -> None:
         """
-        Write data to disk. This method should be overridden by subclasses.
+        Write data to disk.
 
         Parameters
         ----------
@@ -393,7 +394,7 @@ class BaseChannelSliceAcquisition(object):
         event : useq.Event
             The event containing metadata about the acquisition.
         """
-        self._zarr_writer.append(data)
+        self._zarr_position_writers[event.pos_name].append(data)
 
 
 class MantisAcquisition(object):
