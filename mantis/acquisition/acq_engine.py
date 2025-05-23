@@ -426,8 +426,8 @@ class MantisAcquisition(object):
         self._lf_channel_ctr_task = None
         self._lf_z_ctr_task = None
 
-        if not enable_lf_acq or not enable_ls_acq:
-            raise Exception('Disabling LF or LS acquisition is not currently supported')
+        if not (enable_lf_acq or enable_ls_acq):
+            raise Exception('No acquisition type selected. Please enable at least one acquisition.')
 
         # Create acquisition directory and log directory
         self._acq_dir = _create_acquisition_directory(self._root_dir, self._acq_name)
@@ -465,7 +465,7 @@ class MantisAcquisition(object):
         self.lf_acq = BaseChannelSliceAcquisition(
             enabled=enable_lf_acq,
             mm_config_file=mm_config_file,
-        )
+        ) if enable_lf_acq else None
 
         # Connect to MM running LS acq
         self.ls_acq = BaseChannelSliceAcquisition(
@@ -473,7 +473,7 @@ class MantisAcquisition(object):
             mm_app_path=mm_app_path,
             mm_config_file=mm_config_file,
             core_log_path=Path(mm_app_path) / 'CoreLogs' / f'CoreLog{timestamp}_headless.txt',
-        )
+        ) if enable_ls_acq else None
 
     @property
     def time_settings(self):
@@ -514,7 +514,8 @@ class MantisAcquisition(object):
 
         # Reset LF and LS acquisitions
         self.lf_acq.reset()
-        self.ls_acq.reset()
+        if self.ls_acq:
+            self.ls_acq.reset()
 
         # Abort acquisitions if they have not finished, usually after Ctr+C
         # if self._lf_acq_obj:
@@ -620,12 +621,15 @@ class MantisAcquisition(object):
         light-sheet acquisitions. Acquisition can be sequenced across z slices
         and channels
         """
-        self.update_lf_acquisition_rates(
-            self.lf_acq.channel_settings.default_exposure_times_ms,
-        )
-        self.update_ls_acquisition_rates(
-            self.ls_acq.channel_settings.default_exposure_times_ms,
-        )
+        if self.lf_acq:
+            self.update_lf_acquisition_rates(
+                self.lf_acq.channel_settings.default_exposure_times_ms,
+            )
+            
+        if self.ls_acq:
+            self.update_ls_acquisition_rates(
+                self.ls_acq.channel_settings.default_exposure_times_ms,
+            )
 
         if self._demo_run:
             logger.debug('DAQ setup is not supported in demo mode')
@@ -717,17 +721,24 @@ class MantisAcquisition(object):
                 self._lf_z_ctr_task.close()
 
     def setup_autofocus(self):
-        if self.lf_acq.microscope_settings.use_autofocus:
-            autofocus_method = self.lf_acq.microscope_settings.autofocus_method
-            logger.debug(f'Setting autofocus method as {autofocus_method}')
-            self.lf_acq.mmc.setAutoFocusDevice(autofocus_method)
-        else:
-            logger.debug('Autofocus is not enabled')
+        if self.lf_acq:
+            if self.lf_acq.microscope_settings.use_autofocus:
+                autofocus_method = self.lf_acq.microscope_settings.autofocus_method
+                logger.debug(f'Setting autofocus method as {autofocus_method}')
+                self.lf_acq.mmc.setAutoFocusDevice(autofocus_method)
+            else:
+                logger.debug('Autofocus is not enabled')
 
         # Connect to LS O3 scan stage
-        self.ls_acq.o3_stage = 'O3 Piezo'
+        if self.ls_acq:
+            self.ls_acq.o3_stage = 'O3 Piezo'
 
     def setup_autoexposure(self):
+        
+        if self.ls_acq is None:
+            logger.debug('Light-sheet acquisition is not enabled, so no autoexposure setup is needed')
+            return
+        
         # assign exposure_times_per_well and laser_powers_per_well to default values
         for well_id in set(self.position_settings.well_ids):
             self.ls_acq.channel_settings.exposure_times_per_well[well_id] = deepcopy(
@@ -1121,12 +1132,18 @@ class MantisAcquisition(object):
 
         logger.info('Setting up acquisition')
 
-        logger.debug('Setting up label-free acquisition')
-        self.lf_acq.setup(output_path=f'{self._acq_dir}/{self._acq_name}_{LF_ACQ_LABEL}')
+        if self.lf_acq is not None:
+            logger.debug('Setting up label-free acquisition')
+            self.lf_acq.setup(output_path=f'{self._acq_dir}/{self._acq_name}_{LF_ACQ_LABEL}')
+        else:
+            logger.debug('Label-free acquisition is not enabled')
 
-        logger.debug('Setting up light-sheet acquisition')
-        self.ls_acq.setup(output_path=f'{self._acq_dir}/{self._acq_name}_{LS_ACQ_LABEL}')
-
+        if self.ls_acq is not None:
+            logger.debug('Setting up light-sheet acquisition')
+            self.ls_acq.setup(output_path=f'{self._acq_dir}/{self._acq_name}_{LS_ACQ_LABEL}')
+        else:
+            logger.debug('Light-sheet acquisition is not enabled')
+            
         logger.debug('Setting up DAQ')
         self.setup_daq()
 
