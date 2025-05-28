@@ -7,8 +7,8 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Iterable, Union
 from threading import Thread
+from typing import Iterable, Union
 
 import acquire_zarr as aqz
 import copylot
@@ -351,24 +351,24 @@ class BaseChannelSliceAcquisition(object):
                 )
 
     def run_sequence(self, events: Iterable[useq.MDAEvent]) -> Thread:
-        """ 
+        """
         Run the acquisition using the provided events.
         """
         if self.enabled:
             self.mmc.run_mda(events)
         else:
+
             def do_nothing():
                 """
                 Dummy function to run in a thread when acquisition is not enabled.
                 This is used to maintain the interface consistency.
                 """
                 pass
+
             emptythread = Thread(target=do_nothing)
             emptythread.start()
             return emptythread
-        
-        
-        
+
     def write_data(self, data: np.ndarray, event: useq.MDAEvent) -> None:
         """
         Write data to disk. This method should be overridden by subclasses.
@@ -448,7 +448,9 @@ class MantisAcquisition(object):
 
         # Require at least one acquisition type to be enabled
         if not (enable_lf_acq or enable_ls_acq):
-            raise Exception('No acquisition type selected. Please enable at least one acquisition.')
+            raise Exception(
+                'No acquisition type selected. Please enable at least one acquisition.'
+            )
 
         # Create acquisition directory and log directory
         self._acq_dir = _create_acquisition_directory(self._root_dir, self._acq_name)
