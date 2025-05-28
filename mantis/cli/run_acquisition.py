@@ -88,22 +88,17 @@ def run_acquisition(
         mm_app_path=mm_app_path,
         mm_config_file=mm_config_filepath,
         demo_run=demo_run,
-        enable_ls_acq=False,
         verbose=False,
     ) as acq:
         acq.time_settings = time_settings
         acq.position_settings = position_settings
-        
-        if (acq.lf_acq is not None):
-            acq.lf_acq.channel_settings = lf_channel_settings
-            acq.lf_acq.slice_settings = lf_slice_settings
-            acq.lf_acq.microscope_settings = lf_microscope_settings
-        
-        if (acq.ls_acq is not None):
-            acq.ls_acq.channel_settings = ls_channel_settings
-            acq.ls_acq.slice_settings = ls_slice_settings
-            acq.ls_acq.microscope_settings = ls_microscope_settings
-            acq.ls_acq.autoexposure_settings = ls_autoexposure_settings
+        acq.lf_acq.channel_settings = lf_channel_settings
+        acq.lf_acq.slice_settings = lf_slice_settings
+        acq.lf_acq.microscope_settings = lf_microscope_settings
+        acq.ls_acq.channel_settings = ls_channel_settings
+        acq.ls_acq.slice_settings = ls_slice_settings
+        acq.ls_acq.microscope_settings = ls_microscope_settings
+        acq.ls_acq.autoexposure_settings = ls_autoexposure_settings
 
         acq.setup()
         acq.acquire()
