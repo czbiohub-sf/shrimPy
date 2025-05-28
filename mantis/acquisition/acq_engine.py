@@ -355,7 +355,7 @@ class BaseChannelSliceAcquisition(object):
         Run the acquisition using the provided events.
         """
         if self.enabled:
-            self.mmc.run_mda(events)
+            return self.mmc.run_mda(events)
         else:
 
             def do_nothing():
@@ -1340,7 +1340,7 @@ class MantisAcquisition(object):
 
                 # start acquisition
                 ls_thread = self.ls_acq.run_sequence(ls_events)
-                lf_thread = self.lf_acq.mmc.run_mda(lf_events)
+                lf_thread = self.lf_acq.run_sequence(lf_events)
 
                 # wait for CZYX acquisition to finish
                 self.await_cz_acq_completion()
