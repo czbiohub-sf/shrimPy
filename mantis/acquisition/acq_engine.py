@@ -593,7 +593,7 @@ class MantisAcquisition(object):
             return
 
         # Determine label-free acq timing
-        oryx_framerate = float(self.lf_acq.mmc.getProperty('Oryx', 'Frame Rate'))
+        oryx_framerate = float(self.lf_acq.mmc.getProperty('ORX-10GS-51S5M', 'Frame Rate'))
         # assumes all channels have the same exposure time
         self.lf_acq.slice_settings.acquisition_rate = np.minimum(
             1000 / (lf_exposure_times[0] + MCL_STEP_TIME),
