@@ -278,8 +278,8 @@ class BaseChannelSliceAcquisition(object):
             xy_n_chunks = 16
             z_n_chunks = 1
 
-            x_size = int(self.microscope_settings.device_property_settings[0].property_value)
-            y_size = int(self.microscope_settings.device_property_settings[1].property_value)
+            x_size = self.mmc.getImageWidth()
+            y_size = self.mmc.getImageHeight()
 
             if output_path:
                 zarr_settings = aqz.StreamSettings(
