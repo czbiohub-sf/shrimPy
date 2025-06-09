@@ -319,7 +319,7 @@ class BaseChannelSliceAcquisition(object):
                     version=aqz.ZarrVersion.V3,
                     max_threads=0,
                 )
-                
+
                 if self.channel_settings.num_channels > 1:
                     zarr_settings.dimensions.insert(
                         1,
@@ -329,7 +329,7 @@ class BaseChannelSliceAcquisition(object):
                             chunk_size_px=int(self.channel_settings.num_channels),
                             shard_size_chunks=1,
                             kind=aqz.DimensionType.CHANNEL,
-                        )
+                        ),
                     )
                 print(f'Zarr settings: {zarr_settings}')
                 self._zarr_writer = aqz.ZarrStream(zarr_settings)
