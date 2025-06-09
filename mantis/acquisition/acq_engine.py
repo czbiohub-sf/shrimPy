@@ -294,13 +294,6 @@ class BaseChannelSliceAcquisition(object):
                             kind=aqz.DimensionType.TIME,
                         ),  # zero denotes the append dimension in acquire
                         aqz.Dimension(
-                            name='c',
-                            array_size_px=self.channel_settings.num_channels,
-                            chunk_size_px=int(self.channel_settings.num_channels),
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.CHANNEL,
-                        ),
-                        aqz.Dimension(
                             name='z',
                             array_size_px=self.slice_settings.num_slices,
                             chunk_size_px=int(self.slice_settings.num_slices / z_n_chunks),
@@ -326,6 +319,19 @@ class BaseChannelSliceAcquisition(object):
                     version=aqz.ZarrVersion.V3,
                     max_threads=0,
                 )
+                
+                if self.channel_settings.num_channels > 1:
+                    zarr_settings.dimensions.insert(
+                        1,
+                        aqz.Dimension(
+                            name='c',
+                            array_size_px=self.channel_settings.num_channels,
+                            chunk_size_px=int(self.channel_settings.num_channels),
+                            shard_size_chunks=1,
+                            kind=aqz.DimensionType.CHANNEL,
+                        )
+                    )
+                print(f'Zarr settings: {zarr_settings}')
                 self._zarr_writer = aqz.ZarrStream(zarr_settings)
 
                 self.mmc.mda.events.frameReady.connect(self.write_data)
@@ -1423,7 +1429,7 @@ class MantisAcquisition(object):
         if not globals.lf_acq_finished:
             # abort LF acq
             lf_acq_aborted = True
-            camera = 'Camera' if self._demo_run else 'Oryx'
+            camera = 'Camera' if self._demo_run else 'ORX-10GS-51S5M'
             sequenced_stages = []
             if self.lf_acq.slice_settings.use_sequencing:
                 sequenced_stages.append(self.lf_acq.slice_settings.z_stage_name)
