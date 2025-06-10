@@ -7,6 +7,7 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import Thread
 from typing import Iterable, Union
 
 import acquire_zarr as aqz
@@ -277,8 +278,8 @@ class BaseChannelSliceAcquisition(object):
             xy_n_chunks = 16
             z_n_chunks = 1
 
-            x_size = int(self.microscope_settings.device_property_settings[0].property_value)
-            y_size = int(self.microscope_settings.device_property_settings[1].property_value)
+            x_size = self.mmc.getImageWidth()
+            y_size = self.mmc.getImageHeight()
 
             if output_path:
                 zarr_settings = aqz.StreamSettings(
@@ -292,13 +293,6 @@ class BaseChannelSliceAcquisition(object):
                             shard_size_chunks=1,
                             kind=aqz.DimensionType.TIME,
                         ),  # zero denotes the append dimension in acquire
-                        aqz.Dimension(
-                            name='c',
-                            array_size_px=self.channel_settings.num_channels,
-                            chunk_size_px=int(self.channel_settings.num_channels),
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.CHANNEL,
-                        ),
                         aqz.Dimension(
                             name='z',
                             array_size_px=self.slice_settings.num_slices,
@@ -325,6 +319,18 @@ class BaseChannelSliceAcquisition(object):
                     version=aqz.ZarrVersion.V3,
                     max_threads=0,
                 )
+
+                if self.channel_settings.num_channels > 1:
+                    zarr_settings.dimensions.insert(
+                        1,
+                        aqz.Dimension(
+                            name='c',
+                            array_size_px=self.channel_settings.num_channels,
+                            chunk_size_px=int(self.channel_settings.num_channels),
+                            shard_size_chunks=1,
+                            kind=aqz.DimensionType.CHANNEL,
+                        ),
+                    )
                 self._zarr_writer = aqz.ZarrStream(zarr_settings)
 
                 self.mmc.mda.events.frameReady.connect(self.write_data)
@@ -348,6 +354,25 @@ class BaseChannelSliceAcquisition(object):
                 microscope_operations.set_z_position(
                     self.mmc, self.slice_settings.z_stage_name, self._z0
                 )
+
+    def run_sequence(self, events: Iterable[useq.MDAEvent]) -> Thread:
+        """
+        Run the acquisition using the provided events.
+        """
+        if self.enabled:
+            return self.mmc.run_mda(events)
+        else:
+
+            def do_nothing():
+                """
+                Dummy function to run in a thread when acquisition is not enabled.
+                This is used to maintain the interface consistency.
+                """
+                pass
+
+            emptythread = Thread(target=do_nothing)
+            emptythread.start()
+            return emptythread
 
     def write_data(self, data: np.ndarray, event: useq.MDAEvent) -> None:
         """
@@ -426,8 +451,11 @@ class MantisAcquisition(object):
         self._lf_channel_ctr_task = None
         self._lf_z_ctr_task = None
 
-        if not enable_lf_acq or not enable_ls_acq:
-            raise Exception('Disabling LF or LS acquisition is not currently supported')
+        # Require at least one acquisition type to be enabled
+        if not (enable_lf_acq or enable_ls_acq):
+            raise Exception(
+                'No acquisition type selected. Please enable at least one acquisition.'
+            )
 
         # Create acquisition directory and log directory
         self._acq_dir = _create_acquisition_directory(self._root_dir, self._acq_name)
@@ -564,8 +592,9 @@ class MantisAcquisition(object):
             return
 
         # Determine label-free acq timing
-        oryx_framerate = float(self.lf_acq.mmc.getProperty('Oryx', 'Frame Rate'))
+        oryx_framerate = float(self.lf_acq.mmc.getProperty('ORX-10GS-51S5M', 'Frame Rate'))
         # assumes all channels have the same exposure time
+        print(lf_exposure_times)
         self.lf_acq.slice_settings.acquisition_rate = np.minimum(
             1000 / (lf_exposure_times[0] + MCL_STEP_TIME),
             np.floor(oryx_framerate),
@@ -583,6 +612,10 @@ class MantisAcquisition(object):
         )
 
     def update_ls_acquisition_rates(self, ls_exposure_times: list):
+        if not self.ls_acq.enabled:
+            logger.debug('Light-sheet acquisition is not enabled')
+            return
+
         if self._demo_run:
             # Set approximate demo camera acquisition rate for use in await_cz_acq_completion
             self.ls_acq.slice_settings.acquisition_rate = [
@@ -620,6 +653,11 @@ class MantisAcquisition(object):
         light-sheet acquisitions. Acquisition can be sequenced across z slices
         and channels
         """
+
+        if not self.ls_acq.enabled:
+            logger.debug('Light-sheet acquisition is not enabled')
+            return
+
         self.update_lf_acquisition_rates(
             self.lf_acq.channel_settings.default_exposure_times_ms,
         )
@@ -763,19 +801,19 @@ class MantisAcquisition(object):
                 )
                 if ts2_ttl_state == 32:
                     # State 32 corresponds to illumination with 488 laser
-                    self.ls_acq.channel_settings.light_sources[
-                        channel_idx
-                    ] = microscope_operations.setup_vortran_laser(VORTRAN_488_COM_PORT)
+                    self.ls_acq.channel_settings.light_sources[channel_idx] = (
+                        microscope_operations.setup_vortran_laser(VORTRAN_488_COM_PORT)
+                    )
                 elif ts2_ttl_state == 64:
                     # State 64 corresponds to illumination with 561 laser
-                    self.ls_acq.channel_settings.light_sources[
-                        channel_idx
-                    ] = microscope_operations.setup_vortran_laser(VORTRAN_561_COM_PORT)
+                    self.ls_acq.channel_settings.light_sources[channel_idx] = (
+                        microscope_operations.setup_vortran_laser(VORTRAN_561_COM_PORT)
+                    )
                 elif ts2_ttl_state == 128:
                     # State 128 corresponds to illumination with 639 laser
-                    self.ls_acq.channel_settings.light_sources[
-                        channel_idx
-                    ] = microscope_operations.setup_vortran_laser(VORTRAN_639_COM_PORT)
+                    self.ls_acq.channel_settings.light_sources[channel_idx] = (
+                        microscope_operations.setup_vortran_laser(VORTRAN_639_COM_PORT)
+                    )
                 else:
                     logger.error(
                         'Unknown TTL state {} for channel {} in config group {}'.format(
@@ -1248,7 +1286,7 @@ class MantisAcquisition(object):
 
                 # O3 refocus
                 # Failing to refocus O3 will not abort the acquisition at the current PT index
-                if self.ls_acq.microscope_settings.use_o3_refocus:
+                if self.ls_acq.enabled and self.ls_acq.microscope_settings.use_o3_refocus:
                     current_time = time.time()
                     # Always refocus at the start
                     if (
@@ -1316,8 +1354,8 @@ class MantisAcquisition(object):
                 globals.ls_acq_aborted = False
 
                 # start acquisition
-                ls_thread = self.ls_acq.mmc.run_mda(ls_events)
-                lf_thread = self.lf_acq.mmc.run_mda(lf_events)
+                ls_thread = self.ls_acq.run_sequence(ls_events)
+                lf_thread = self.lf_acq.run_sequence(lf_events)
 
                 # wait for CZYX acquisition to finish
                 self.await_cz_acq_completion()
@@ -1366,17 +1404,22 @@ class MantisAcquisition(object):
 
     def await_cz_acq_completion(self):
         # LS acq time
-        num_slices = self.ls_acq.slice_settings.num_slices
-        slice_acq_rate = self.ls_acq.slice_settings.acquisition_rate  # list
-        num_channels = self.ls_acq.channel_settings.num_channels
-        ls_acq_time = sum(
-            [num_slices / rate for rate in slice_acq_rate]
-        ) + LS_CHANGE_TIME / 1000 * (num_channels - 1)
+        if self.ls_acq.enabled:
+            num_slices = self.ls_acq.slice_settings.num_slices
+            slice_acq_rate = self.ls_acq.slice_settings.acquisition_rate  # list
+            num_channels = self.ls_acq.channel_settings.num_channels
+            ls_acq_time = sum(
+                [num_slices / rate for rate in slice_acq_rate]
+            ) + LS_CHANGE_TIME / 1000 * (num_channels - 1)
+        else:
+            ls_acq_time = 0
 
         # LF acq time
         num_slices = self.lf_acq.slice_settings.num_slices
         slice_acq_rate = self.lf_acq.slice_settings.acquisition_rate  # float
+        slice_acq_rate = 1.0
         num_channels = self.lf_acq.channel_settings.num_channels
+
         lf_acq_time = num_slices / slice_acq_rate * num_channels + LC_CHANGE_TIME / 1000 * (
             num_channels - 1
         )
@@ -1400,7 +1443,7 @@ class MantisAcquisition(object):
         if not globals.lf_acq_finished:
             # abort LF acq
             lf_acq_aborted = True
-            camera = 'Camera' if self._demo_run else 'Oryx'
+            camera = 'Camera' if self._demo_run else 'ORX-10GS-51S5M'
             sequenced_stages = []
             if self.lf_acq.slice_settings.use_sequencing:
                 sequenced_stages.append(self.lf_acq.slice_settings.z_stage_name)
