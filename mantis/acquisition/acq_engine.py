@@ -331,7 +331,6 @@ class BaseChannelSliceAcquisition(object):
                             kind=aqz.DimensionType.CHANNEL,
                         ),
                     )
-                print(f'Zarr settings: {zarr_settings}')
                 self._zarr_writer = aqz.ZarrStream(zarr_settings)
 
                 self.mmc.mda.events.frameReady.connect(self.write_data)
@@ -595,6 +594,7 @@ class MantisAcquisition(object):
         # Determine label-free acq timing
         oryx_framerate = float(self.lf_acq.mmc.getProperty('ORX-10GS-51S5M', 'Frame Rate'))
         # assumes all channels have the same exposure time
+        print(lf_exposure_times)
         self.lf_acq.slice_settings.acquisition_rate = np.minimum(
             1000 / (lf_exposure_times[0] + MCL_STEP_TIME),
             np.floor(oryx_framerate),
@@ -612,6 +612,10 @@ class MantisAcquisition(object):
         )
 
     def update_ls_acquisition_rates(self, ls_exposure_times: list):
+        if not self.ls_acq.enabled:
+            logger.debug('Light-sheet acquisition is not enabled')
+            return
+
         if self._demo_run:
             # Set approximate demo camera acquisition rate for use in await_cz_acq_completion
             self.ls_acq.slice_settings.acquisition_rate = [
@@ -649,6 +653,11 @@ class MantisAcquisition(object):
         light-sheet acquisitions. Acquisition can be sequenced across z slices
         and channels
         """
+
+        if not self.ls_acq.enabled:
+            logger.debug('Light-sheet acquisition is not enabled')
+            return
+
         self.update_lf_acquisition_rates(
             self.lf_acq.channel_settings.default_exposure_times_ms,
         )
@@ -792,19 +801,19 @@ class MantisAcquisition(object):
                 )
                 if ts2_ttl_state == 32:
                     # State 32 corresponds to illumination with 488 laser
-                    self.ls_acq.channel_settings.light_sources[
-                        channel_idx
-                    ] = microscope_operations.setup_vortran_laser(VORTRAN_488_COM_PORT)
+                    self.ls_acq.channel_settings.light_sources[channel_idx] = (
+                        microscope_operations.setup_vortran_laser(VORTRAN_488_COM_PORT)
+                    )
                 elif ts2_ttl_state == 64:
                     # State 64 corresponds to illumination with 561 laser
-                    self.ls_acq.channel_settings.light_sources[
-                        channel_idx
-                    ] = microscope_operations.setup_vortran_laser(VORTRAN_561_COM_PORT)
+                    self.ls_acq.channel_settings.light_sources[channel_idx] = (
+                        microscope_operations.setup_vortran_laser(VORTRAN_561_COM_PORT)
+                    )
                 elif ts2_ttl_state == 128:
                     # State 128 corresponds to illumination with 639 laser
-                    self.ls_acq.channel_settings.light_sources[
-                        channel_idx
-                    ] = microscope_operations.setup_vortran_laser(VORTRAN_639_COM_PORT)
+                    self.ls_acq.channel_settings.light_sources[channel_idx] = (
+                        microscope_operations.setup_vortran_laser(VORTRAN_639_COM_PORT)
+                    )
                 else:
                     logger.error(
                         'Unknown TTL state {} for channel {} in config group {}'.format(
@@ -1277,7 +1286,7 @@ class MantisAcquisition(object):
 
                 # O3 refocus
                 # Failing to refocus O3 will not abort the acquisition at the current PT index
-                if self.ls_acq.microscope_settings.use_o3_refocus:
+                if self.ls_acq.enabled and self.ls_acq.microscope_settings.use_o3_refocus:
                     current_time = time.time()
                     # Always refocus at the start
                     if (
@@ -1395,17 +1404,22 @@ class MantisAcquisition(object):
 
     def await_cz_acq_completion(self):
         # LS acq time
-        num_slices = self.ls_acq.slice_settings.num_slices
-        slice_acq_rate = self.ls_acq.slice_settings.acquisition_rate  # list
-        num_channels = self.ls_acq.channel_settings.num_channels
-        ls_acq_time = sum(
-            [num_slices / rate for rate in slice_acq_rate]
-        ) + LS_CHANGE_TIME / 1000 * (num_channels - 1)
+        if self.ls_acq.enabled:
+            num_slices = self.ls_acq.slice_settings.num_slices
+            slice_acq_rate = self.ls_acq.slice_settings.acquisition_rate  # list
+            num_channels = self.ls_acq.channel_settings.num_channels
+            ls_acq_time = sum(
+                [num_slices / rate for rate in slice_acq_rate]
+            ) + LS_CHANGE_TIME / 1000 * (num_channels - 1)
+        else:
+            ls_acq_time = 0
 
         # LF acq time
         num_slices = self.lf_acq.slice_settings.num_slices
         slice_acq_rate = self.lf_acq.slice_settings.acquisition_rate  # float
+        slice_acq_rate = 1.0
         num_channels = self.lf_acq.channel_settings.num_channels
+
         lf_acq_time = num_slices / slice_acq_rate * num_channels + LC_CHANGE_TIME / 1000 * (
             num_channels - 1
         )
