@@ -14,8 +14,8 @@ AP_GALVO_DAC: &AP_GALVO_DAC 'TS2_DAC03'
 # the acquisition will continue immediately if the elapsed time to acquire all
 # positions is greater
 time_settings:
-  num_timepoints: 10
-  time_interval_s: 60
+  num_timepoints: 3
+  time_interval_s: 30
 
 # Define channel settings for the label-free acquisition. All channels must be
 # within the same config group. `default_exposure_times_ms` must be a float
@@ -56,12 +56,12 @@ lf_slice_settings:
 # be changed unless updated by the autoexposure algorithm. `use_autoexposure`
 # may be bool or a list
 ls_channel_settings:
-  default_exposure_times_ms: [10, 10]
+  default_exposure_times_ms: [10, 20]
   default_laser_powers:
   channel_group: 'Channel - LS'
   channels: ['GFP EX488 EM525-45', 'mCherry EX561 EM600-37']
   use_sequencing: False
-  use_autoexposure: [True, False]
+  use_autoexposure: [False, False]
 
 # Define slice (i.e. z-stack) settings for the light-sheet acquisition.
 ls_slice_settings:
@@ -117,7 +117,7 @@ lf_microscope_settings:
   # Autofocus properties. `autofocus_stage` is the coarse stage which will be
   # moved between positions to ensure that the autofocus mechanism is within
   # range
-  use_autofocus: True
+  use_autofocus: False
   autofocus_stage: 'ZDrive'
   autofocus_method: 'PFS'
 
@@ -126,8 +126,8 @@ lf_microscope_settings:
 ls_microscope_settings:
   roi: [0, 896, 2048, 256]
   device_property_settings:
-    - ['Prime BSI Express', 'ReadoutRate', '200MHz 11bit']
-    - ['Prime BSI Express', 'Gain', '1-Full well']
+    - ['Prime BSI Express', 'ReadoutRate', '100MHz 16bit']
+    - ['Prime BSI Express', 'Gain', '1-HDR']
     - ['Prime BSI Express', 'TriggerMode', 'Edge Trigger']
     - ['Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter']
     # Illuminate sample only when all rows are exposing, aka pseudo global shutter
@@ -137,10 +137,6 @@ ls_microscope_settings:
     - ['TS2_TTL1-8', 'Blanking', 'Off']
   z_sequencing_settings:
     - [*AP_GALVO_DAC, 'Sequence', 'On']
-  use_o3_refocus: True
+  use_o3_refocus: False
   o3_refocus_config: ['Channel - LS', 'GFP EX488 EM525-45']
   o3_refocus_interval_min: 10
-
-ls_autoexposure_settings:
-  autoexposure_method: 'manual'
-  rerun_each_timepoint: True
