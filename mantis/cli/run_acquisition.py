@@ -9,7 +9,7 @@ from mantis.cli.parsing import config_filepath, output_dirpath
 default_mm_app_path = 'C:\\Program Files\\Micro-Manager-2.0_{}_{}_{}_2'.format(
     *__mm_version__.split('-')
 )
-default_mm_config_filepath = 'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg'
+default_mm_config_filepath = 'C:\\CompMicro_MMConfigs\\mantis\\mantis-LF.cfg'
 
 
 def load_settings(raw_settings: dict, settings_key: str, settings_class):
@@ -88,6 +88,7 @@ def run_acquisition(
         mm_app_path=mm_app_path,
         mm_config_file=mm_config_filepath,
         demo_run=demo_run,
+        enable_ls_acq=False,
         verbose=False,
     ) as acq:
         acq.time_settings = time_settings
