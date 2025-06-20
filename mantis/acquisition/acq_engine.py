@@ -1220,6 +1220,8 @@ class MantisAcquisition(object):
         lf_cz_events = _generate_channel_slice_mda_seq(
             self.lf_acq.channel_settings, self.lf_acq.slice_settings
         )
+        print(lf_cz_events)
+
         # Generate LS acquisition events
         ls_cz_events = _generate_channel_slice_mda_seq(
             self.ls_acq.channel_settings, self.ls_acq.slice_settings
@@ -1239,6 +1241,7 @@ class MantisAcquisition(object):
                 if p_label != previous_position_label:
                     self.go_to_position(p_idx)
 
+                """
                 # autofocus
                 if self.lf_acq.microscope_settings.use_autofocus:
                     autofocus_success = microscope_operations.autofocus(
@@ -1307,7 +1310,7 @@ class MantisAcquisition(object):
                             # If it failed again, retry at the next position
                             if success:
                                 ls_o3_refocus_time = current_time
-
+                """
                 # Generate LF acquisition events
 
                 # since MDAEvents can't be modified in place, we need to recreate the whole mda_sequence
@@ -1321,7 +1324,7 @@ class MantisAcquisition(object):
                             well_id
                         ][event.index["c"]]
 
-                    return useq.MDAEvent(
+                    new_event = useq.MDAEvent(
                         index={
                             "p": p_idx,
                             "t": t_idx,
@@ -1342,10 +1345,14 @@ class MantisAcquisition(object):
                         keep_shutter_open=event.keep_shutter_open,
                         reset_event_timer=event.reset_event_timer,
                     )
-
+                    print(new_event)
+                    return new_event
+                
+                
                 lf_events = [mda_event_from_mda_sequence(event) for event in lf_cz_events]
                 ls_events = [mda_event_from_mda_sequence(event) for event in ls_cz_events]
-
+                continue 
+            
                 # globals.lf_last_img_idx = lf_events[-1]['axes']
                 # globals.ls_last_img_idx = ls_events[-1]['axes']
                 globals.lf_acq_finished = False
