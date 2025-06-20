@@ -594,7 +594,7 @@ class MantisAcquisition(object):
         # Determine label-free acq timing
         oryx_framerate = float(self.lf_acq.mmc.getProperty('ORX-10GS-51S5M', 'Frame Rate'))
         # assumes all channels have the same exposure time
-        print(lf_exposure_times)
+
         self.lf_acq.slice_settings.acquisition_rate = np.minimum(
             1000 / (lf_exposure_times[0] + MCL_STEP_TIME),
             np.floor(oryx_framerate),
@@ -1220,7 +1220,6 @@ class MantisAcquisition(object):
         lf_cz_events = _generate_channel_slice_mda_seq(
             self.lf_acq.channel_settings, self.lf_acq.slice_settings
         )
-        print(lf_cz_events)
 
         # Generate LS acquisition events
         ls_cz_events = _generate_channel_slice_mda_seq(
@@ -1323,7 +1322,6 @@ class MantisAcquisition(object):
                         new_exposure = self.ls_acq.channel_settings.exposure_times_per_well[
                             well_id
                         ][event.index["c"]]
-
                     new_event = useq.MDAEvent(
                         index={
                             "p": p_idx,
@@ -1334,9 +1332,7 @@ class MantisAcquisition(object):
                         channel=event.channel,
                         exposure=new_exposure,
                         min_start_time=event.min_start_time,
-                        x_pos=self.position_settings.xyz_positions[p_idx][0],
-                        y_pos=self.position_settings.xyz_positions[p_idx][1],
-                        z_pos=self.position_settings.xyz_positions[p_idx][2],
+                        z_pos=event.z_pos,
                         pos_name=p_label,
                         slm_image=event.slm_image,
                         properties=event.properties,
@@ -1345,13 +1341,13 @@ class MantisAcquisition(object):
                         keep_shutter_open=event.keep_shutter_open,
                         reset_event_timer=event.reset_event_timer,
                     )
-                    print(new_event)
                     return new_event
+
+                if self.lf_acq.enabled:
+                    lf_events = [mda_event_from_mda_sequence(event) for event in lf_cz_events]
                 
-                
-                lf_events = [mda_event_from_mda_sequence(event) for event in lf_cz_events]
-                ls_events = [mda_event_from_mda_sequence(event) for event in ls_cz_events]
-                continue 
+                if self.ls_acq.enabled:
+                    ls_events = [mda_event_from_mda_sequence(event) for event in ls_cz_events] 
             
                 # globals.lf_last_img_idx = lf_events[-1]['axes']
                 # globals.ls_last_img_idx = ls_events[-1]['axes']
@@ -1361,8 +1357,15 @@ class MantisAcquisition(object):
                 globals.ls_acq_aborted = False
 
                 # start acquisition
-                ls_thread = self.ls_acq.run_sequence(ls_events)
-                lf_thread = self.lf_acq.run_sequence(lf_events)
+                if self.lf_acq.enabled:
+                    lf_thread = self.lf_acq.run_sequence(lf_events)
+                else:
+                    lf_thread = Thread()
+
+                if self.ls_acq.enabled:
+                    ls_thread = self.ls_acq.run_sequence(ls_events)
+                else:
+                    ls_thread = Thread()
 
                 # wait for CZYX acquisition to finish
                 self.await_cz_acq_completion()
@@ -1510,10 +1513,6 @@ def _generate_channel_slice_mda_seq(
         for channel, exposure in channel_zip
     ]
     return useq.MDASequence(
-        time_plan=useq.TIntervalLoops(
-            loops=1,
-            interval=0,
-        ),
         z_plan=useq.ZTopBottom(
             bottom=slice_settings.z_start,
             top=slice_settings.z_end,
