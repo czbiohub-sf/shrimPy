@@ -25,7 +25,8 @@ authors:
     orcid: 'https://orcid.org/0000-0002-3033-674X'
   - given-names: 'Shalin B.'
     family-names: Mehta
-    affiliation: shalin.mehta@czbiohub.org
+    email: shalin.mehta@czbiohub.org
+    affiliation: Chan Zuckerberg Biohub San Francisco
     orcid: 'https://orcid.org/0000-0002-2542-3582'
 repository-code: 'https://github.com/czbiohub-sf/shrimPy'
 abstract: >-
