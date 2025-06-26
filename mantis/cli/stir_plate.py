@@ -1,5 +1,5 @@
-import time
 import logging
+import time
 
 import click
 
@@ -9,6 +9,7 @@ from mantis.acquisition.acq_engine import LF_ZMQ_PORT
 from mantis.acquisition.microscope_operations import get_position_list, set_xy_position
 
 logger = logging.getLogger(__name__)
+
 
 def stir_plate(duration_hours: float, dwell_time_min: int) -> None:
     """Move through all positions defined in the Micro-manager position list,
