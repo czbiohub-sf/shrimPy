@@ -1,4 +1,5 @@
 import time
+import logging
 
 import click
 
@@ -7,6 +8,7 @@ from pycromanager import Core, Studio
 from mantis.acquisition.acq_engine import LF_ZMQ_PORT
 from mantis.acquisition.microscope_operations import get_position_list, set_xy_position
 
+logger = logging.getLogger(__name__)
 
 def stir_plate(duration_hours: float, dwell_time_min: int) -> None:
     """Move through all positions defined in the Micro-manager position list,
@@ -28,7 +30,8 @@ def stir_plate(duration_hours: float, dwell_time_min: int) -> None:
 
     # Import positions from the Micro-manager position list
     positions, position_labels = get_position_list(mmStudio, z_stage)
-    if len(positions) == 0:
+    num_positions = len(positions)
+    if num_positions == 0:
         raise RuntimeError(
             "No positions found in the Micro-manager position list. "
             "Please create a position list before running this command."
@@ -39,17 +42,17 @@ def stir_plate(duration_hours: float, dwell_time_min: int) -> None:
     t_end = t_start + duration_hours * 3600  # Convert hours to seconds
     while time.time() < t_end:
         # Move to the next position
-        click.echo(f"Moving to position: {position_labels[p_idx]}")
+        logger.info(f"Moving to position: {position_labels[p_idx]}")
         set_xy_position(mmc, positions[p_idx][:2])
 
         # Dwell for specified amount of time
         time.sleep(dwell_time_min * 60)
 
         # Increment position index, wrap around if necessary
-        p_idx = (p_idx + 1) % len(positions)
+        p_idx = (p_idx + 1) % num_positions
 
     # Move back to the first position
-    click.echo("Stirring completed, moving to the first position.")
+    logger.info("Stirring completed, moving to the first position.")
     set_xy_position(mmc, positions[0][:2])
 
 
