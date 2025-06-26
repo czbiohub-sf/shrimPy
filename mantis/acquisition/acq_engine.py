@@ -1130,12 +1130,12 @@ class MantisAcquisition(object):
         if self.lf_acq.microscope_settings.autotracker_config is not None:
             lf_image_saved_fn = partial(
                 autotracker_hook_fn,
-                'lf',
-                self.lf_acq.autotracker_settings,
-                self._position_settings,
-                self.lf_acq.microscope_settings.autotracker_config,
-                self.lf_acq.slice_settings,
-                self._acq_dir,
+                arm='lf',
+                autotracker_settings=self.lf_acq.autotracker_settings,
+                position_settings=self._position_settings,
+                channel_config=self.lf_acq.microscope_settings.autotracker_config,
+                z_slice_settings=self.lf_acq.slice_settings,
+                output_shift_path=self._logs_dir,
             )
         else:
             logger.info('No autotracker config found. Using default image saved hook')
@@ -1174,10 +1174,12 @@ class MantisAcquisition(object):
         if self.ls_acq.microscope_settings.autotracker_config is not None:
             ls_image_saved_fn = partial(
                 autotracker_hook_fn,
-                'ls',
-                self.ls_acq.autotracker_settings,
-                self.ls_acq.slice_settings,
-                self._acq_dir,
+                arm='ls',
+                autotracker_settings=self.ls_acq.autotracker_settings,
+                position_settings=self._position_settings,
+                channel_config=self.ls_acq.microscope_settings.autotracker_config,
+                z_slice_settings=self.ls_acq.slice_settings,
+                output_shift_path=self._logs_dir,
             )
         else:
             logger.info('No autotracker config found. Using default image saved hook')

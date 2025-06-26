@@ -1,6 +1,7 @@
 import click
 
 from mantis.cli.run_acquisition import run_acquisition
+from mantis.cli.stir_plate import stir_plate_cli
 
 CONTEXT = {"help_option_names": ["-h", "--help"]}
 
@@ -17,3 +18,4 @@ def cli():
 
 
 cli.add_command(run_acquisition)
+cli.add_command(stir_plate_cli)
