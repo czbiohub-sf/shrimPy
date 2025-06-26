@@ -28,6 +28,11 @@ def stir_plate(duration_hours: float, dwell_time_min: int) -> None:
 
     # Import positions from the Micro-manager position list
     positions, position_labels = get_position_list(mmStudio, z_stage)
+    if len(positions) == 0:
+        raise RuntimeError(
+            "No positions found in the Micro-manager position list. "
+            "Please create a position list before running this command."
+        )
 
     p_idx = 0
     t_start = time.time()
@@ -60,17 +65,10 @@ def stir_plate(duration_hours: float, dwell_time_min: int) -> None:
     type=int,
     required=False,
     default=1,
-    help="Time spent at each position in minutes.",
+    help="Time spent at each position in minutes, by default 1 minute.",
 )
 def stir_plate_cli(duration_hours: float, dwell_time_min: int) -> None:
-    """CLI command to stir the plate by moving through all positions in the
+    """Stir the plate by moving through all positions in the
     Micro-manager position list.
-
-    Parameters
-    ----------
-    duration_hours : float
-        Total duration for stirring the plate in hours.
-    dwell_time_min : int
-        Time spent at each position in minutes.
     """
     stir_plate(duration_hours, dwell_time_min)
