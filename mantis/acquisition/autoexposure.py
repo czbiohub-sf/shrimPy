@@ -28,7 +28,7 @@ def load_manual_illumination_settings(csv_filepath: str) -> pd.DataFrame:
     - laser_power_mW
     """
 
-    df = pd.read_csv(csv_filepath)
+    df = pd.read_csv(csv_filepath, dtype=str)
     if not set(df.columns) == {"well_id", "exposure_time_ms", "laser_power_mW"}:
         raise ValueError(
             "CSV file must contain columns: well_id, exposure_time_ms, laser_power_mW"

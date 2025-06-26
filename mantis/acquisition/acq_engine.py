@@ -511,6 +511,7 @@ class MantisAcquisition(object):
             self.ls_acq.slice_settings.acquisition_rate = [
                 np.minimum(30, 1000 / exp_time) for exp_time in ls_exposure_times
             ]
+            self.ls_acq.channel_settings.min_exposure_time = 2  # useful for debugging
             return
 
         # Determine light-sheet acq timing
@@ -661,10 +662,14 @@ class MantisAcquisition(object):
                 self.ls_acq.channel_settings.default_laser_powers
             )
 
-        if (
-            any(self.ls_acq.channel_settings.use_autoexposure)
-            and self.ls_acq.autoexposure_settings.autoexposure_method == 'manual'
-        ):
+        if any(self.ls_acq.channel_settings.use_autoexposure):
+            if self.ls_acq.autoexposure_settings.autoexposure_method is None:
+                raise ValueError(
+                    'Autoexposure is requested, but autoexposure settings are not provided. '
+                    'Please provide autoexposure settings in the acquisition config file.'
+                )
+
+        if self.ls_acq.autoexposure_settings.autoexposure_method == 'manual':
             # Check that the 'illumination.csv' file exists
             if not (self._root_dir / 'illumination.csv').exists():
                 raise FileNotFoundError(
@@ -673,9 +678,15 @@ class MantisAcquisition(object):
             illumination_settings = load_manual_illumination_settings(
                 self._root_dir / 'illumination.csv',
             )
-            if not (illumination_settings["exposure_times_ms"] > self.ls_acq.channel_settings.min_exposure_time).all():
+            # Check that exposure times are greater than the minimum exposure time
+            if not (illumination_settings["exposure_time_ms"] > self.ls_acq.channel_settings.min_exposure_time).all():
                 raise ValueError(
                     f'All exposure times in the illumination.csv file must be greater than the minimum exposure time of {self.ls_acq.channel_settings.min_exposure_time} ms.'
+                )
+            # Check that illumination settings are provided for all wells
+            if not set(illumination_settings.index.values) == set(self.position_settings.well_ids):
+                raise ValueError(
+                    'Well IDs in the illumination.csv file do not match the well IDs in the position settings.'
                 )
             
         if self._demo_run:
