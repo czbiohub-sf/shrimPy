@@ -661,12 +661,6 @@ class MantisAcquisition(object):
                 self.ls_acq.channel_settings.default_laser_powers
             )
 
-        if self._demo_run:
-            logger.debug(
-                'Autoexposure is not supported in demo mode. Using default exposure time and laser power'
-            )
-            return
-
         if (
             any(self.ls_acq.channel_settings.use_autoexposure)
             and self.ls_acq.autoexposure_settings.autoexposure_method == 'manual'
@@ -683,6 +677,12 @@ class MantisAcquisition(object):
                 raise ValueError(
                     f'All exposure times in the illumination.csv file must be greater than the minimum exposure time of {self.ls_acq.channel_settings.min_exposure_time} ms.'
                 )
+            
+        if self._demo_run:
+            logger.debug(
+                'Autoexposure is not supported in demo mode. Using default exposure time and laser power'
+            )
+            return
 
         # initialize lasers
         for channel_idx, config_name in enumerate(self.ls_acq.channel_settings.channels):
