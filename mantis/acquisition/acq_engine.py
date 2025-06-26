@@ -20,6 +20,7 @@ from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, 
 from waveorder.focus import focus_from_transverse_band
 
 from mantis import get_console_formatter
+from mantis.acquisition.autoexposure import load_manual_illumination_settings
 from mantis.acquisition import microscope_operations
 from mantis.acquisition.hook_functions import globals
 from mantis.acquisition.logger import configure_debug_logger, log_conda_environment
@@ -519,6 +520,9 @@ class MantisAcquisition(object):
             decimals=3,
         )
         _cam_max_fps = int(np.around(1000 / ls_readout_time_ms))
+        # When using simulated global shutter by modulating the laser excitation time,
+        # the exposure time needs to be greater than the sensor readout time
+        self.ls_acq.channel_settings.min_exposure_time = ls_readout_time_ms
         for ls_exp_time in ls_exposure_times:
             assert (
                 ls_readout_time_ms < ls_exp_time
@@ -671,6 +675,13 @@ class MantisAcquisition(object):
             if not (self._root_dir / 'illumination.csv').exists():
                 raise FileNotFoundError(
                     f'The illumination.csv file required for manual autoexposure was not found in {self._root_dir}'
+                )
+            illumination_settings = load_manual_illumination_settings(
+                self._root_dir / 'illumination.csv',
+            )
+            if not (illumination_settings["exposure_times_ms"] > self.ls_acq.channel_settings.min_exposure_time).all():
+                raise ValueError(
+                    f'All exposure times in the illumination.csv file must be greater than the minimum exposure time of {self.ls_acq.channel_settings.min_exposure_time} ms.'
                 )
 
         # initialize lasers
