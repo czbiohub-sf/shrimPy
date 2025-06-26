@@ -662,13 +662,25 @@ class MantisAcquisition(object):
                 self.ls_acq.channel_settings.default_laser_powers
             )
 
-        if any(self.ls_acq.channel_settings.use_autoexposure):
-            if self.ls_acq.autoexposure_settings.autoexposure_method is None:
-                raise ValueError(
-                    'Autoexposure is requested, but autoexposure settings are not provided. '
-                    'Please provide autoexposure settings in the acquisition config file.'
-                )
+        if not any(self.ls_acq.channel_settings.use_autoexposure):
+            logger.debug(
+                'Autoexposure is not enabled for any channels. Using default exposure time and laser power'
+            )
+            return
 
+        if self._demo_run:
+            logger.debug(
+                'Autoexposure is not supported in demo mode. Using default exposure time and laser power'
+            )
+            return
+    
+        if self.ls_acq.autoexposure_settings.autoexposure_method is None:
+            raise ValueError(
+                'Autoexposure is requested, but autoexposure settings are not provided. '
+                'Please provide autoexposure settings in the acquisition config file.'
+            )
+
+        logger.debug('Setting up autoexposure for light-sheet acquisition')
         if self.ls_acq.autoexposure_settings.autoexposure_method == 'manual':
             # Check that the 'illumination.csv' file exists
             if not (self._root_dir / 'illumination.csv').exists():
@@ -688,12 +700,6 @@ class MantisAcquisition(object):
                 raise ValueError(
                     'Well IDs in the illumination.csv file do not match the well IDs in the position settings.'
                 )
-            
-        if self._demo_run:
-            logger.debug(
-                'Autoexposure is not supported in demo mode. Using default exposure time and laser power'
-            )
-            return
 
         # initialize lasers
         for channel_idx, config_name in enumerate(self.ls_acq.channel_settings.channels):
