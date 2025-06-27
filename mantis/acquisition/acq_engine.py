@@ -21,6 +21,7 @@ from waveorder.focus import focus_from_transverse_band
 
 from mantis import get_console_formatter
 from mantis.acquisition import microscope_operations
+from mantis.acquisition.autotracker import autotracker_hook_fn
 from mantis.acquisition.hook_functions import globals
 from mantis.acquisition.logger import configure_debug_logger, log_conda_environment
 
@@ -32,6 +33,7 @@ from mantis.acquisition.AcquisitionSettings import (
     SliceSettings,
     MicroscopeSettings,
     AutoexposureSettings,
+    AutotrackerSettings,
 )
 from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
     log_preparing_acquisition,
@@ -52,7 +54,6 @@ from mantis.acquisition.hook_functions.image_saved_hook_functions import (
 )
 
 # isort: on
-
 
 # Define constants
 LF_ZMQ_PORT = 4827
@@ -105,8 +106,9 @@ class BaseChannelSliceAcquisition(object):
         self.enabled = enabled
         self._channel_settings = ChannelSettings()
         self._slice_settings = SliceSettings()
-        self._microscope_settings = MicroscopeSettings()
+        self._microscope_settings = MicroscopeSettings()        
         self._autoexposure_settings = AutoexposureSettings()
+        self._autotracker_settings = None
         self._z0 = None
         self.headless = False if mm_app_path is None else True
         self.type = 'light-sheet' if self.headless else 'label-free'
@@ -178,6 +180,10 @@ class BaseChannelSliceAcquisition(object):
     def autoexposure_settings(self):
         return self._autoexposure_settings
 
+    @property
+    def autotracker_settings(self):
+        return self._autotracker_settings
+
     @channel_settings.setter
     def channel_settings(self, settings: ChannelSettings):
         if settings is None:
@@ -216,6 +222,16 @@ class BaseChannelSliceAcquisition(object):
             f"{self.type.capitalize()} acquisition will have the following settings:{asdict(settings)}"
         )
         self._autoexposure_settings = settings
+
+    @autotracker_settings.setter
+    def autotracker_settings(self, settings: AutotrackerSettings):
+        if settings is None:
+            logger.debug('Autotracker settings are not provided')
+        else:
+            logger.debug(
+                f"{self.type.capitalize()} acquisition will have the following settings:{asdict(settings)}"
+            )
+        self._autotracker_settings = settings
 
     def setup(self):
         """
@@ -295,6 +311,7 @@ class BaseChannelSliceAcquisition(object):
                 )
 
 
+# TODO: check the enable_ls_acq and enable_lf_acq work independently
 class MantisAcquisition(object):
     """
     Acquisition class for simultaneous label-free and light-sheet acquisition on
@@ -354,6 +371,8 @@ class MantisAcquisition(object):
         self._verbose = verbose
         self._lf_acq_obj = None
         self._ls_acq_obj = None
+
+        globals.demo_run = demo_run
 
         if not enable_lf_acq or not enable_ls_acq:
             raise Exception('Disabling LF or LS acquisition is not currently supported')
@@ -476,6 +495,8 @@ class MantisAcquisition(object):
                 xyz_positions=xyz_positions,
                 position_labels=position_labels,
             )
+            self.position_settings.xyz_positions_shift = deepcopy(xyz_positions)
+
         else:
             logger.debug('Position list is already populated and will not be updated')
 
@@ -703,6 +724,12 @@ class MantisAcquisition(object):
                         )
                     )
 
+    def update_position_autotracker(self):
+        # Update the position list from the backup
+        self.position_settings.xyz_positions = deepcopy(
+            self.position_settings.xyz_positions_shift
+        )
+
     def go_to_position(self, position_index: int):
         # Move slowly for short distances such that autofocus can stay engaged.
         # Autofocus typically fails when moving long distances, so we can move
@@ -820,11 +847,15 @@ class MantisAcquisition(object):
         # acquire stacks at different galvo positions
         for p_idx, p in enumerate(galvo_range):
             # set galvo position
-            mmc.set_position(galvo, p0 + p)
+            # mmc.set_position(galvo, p0 + p)
+            microscope_operations.set_z_position(mmc, galvo, p0 + p)
 
             # acquire defocus stack
             if use_pycromanager:
-                mmc.set_position(z_stage, z_range[0])  # prep o3 stage
+                # mmc.set_position(z_stage, z_range[0])  # prep o3 stage
+                microscope_operations.set_z_position(mmc, z_stage, z_range[0])
+                logger.debug('Starting pycromanager O3 autofocus acquisition')
+                # TODO: may need to abort stalled acquisitions
                 with Acquisition(
                     tempdir.name, f'ls_refocus_p{p_idx}', port=LS_ZMQ_PORT, show_display=False
                 ) as acq:
@@ -835,10 +866,13 @@ class MantisAcquisition(object):
                             z_step=z_range[1] - z_range[0],
                         ),
                     )
+                logger.debug('Pycromanager acquisition finished. Fetching data')
                 ds = acq.get_dataset()
                 data.append(np.asarray(ds.as_array()))
+                logger.debug('Data retrieved. Closing dataset')
                 ds.close()
-                mmc.set_position(z_stage, z_range[len(z_range) // 2])  # reset o3 stage
+                # mmc.set_position(z_stage, z_range[len(z_range) // 2])  # reset o3 stage
+                microscope_operations.set_z_position(mmc, z_stage, z_range[len(z_range) // 2])
             else:
                 z_stack = microscope_operations.acquire_defocus_stack(
                     mmc, z_stage, z_range, backlash_correction_distance=KIM101_BACKLASH
@@ -855,7 +889,8 @@ class MantisAcquisition(object):
         )
 
         # Reset galvo
-        mmc.set_position(galvo, p0)
+        # mmc.set_position(galvo, p0)
+        microscope_operations.set_z_position(mmc, galvo, p0)
 
         # Reset shutter
         microscope_operations.reset_shutter(mmc, auto_shutter_state, shutter_state)
@@ -898,9 +933,9 @@ class MantisAcquisition(object):
         galvo_scan_range = self.ls_acq.slice_settings.z_range
         len_galvo_scan_range = len(galvo_scan_range)
         galvo_range = [
-            galvo_scan_range[int(0.3 * len_galvo_scan_range)],
+            galvo_scan_range[int(0.4 * len_galvo_scan_range)],
             galvo_scan_range[int(0.5 * len_galvo_scan_range)],
-            galvo_scan_range[int(0.7 * len_galvo_scan_range)],
+            galvo_scan_range[int(0.6 * len_galvo_scan_range)],
         ]
 
         # Acquire defocus stacks at several galvo positions
@@ -1030,6 +1065,18 @@ class MantisAcquisition(object):
                         f'Autoexposure method {method} is not yet implemented.'
                     )
 
+    def run_autotracker(
+        self,
+        acq: BaseChannelSliceAcquisition,
+        well_id: str,
+        method: str = 'manual',
+    ):
+        logging.debug('running autotracker')
+        if not any(acq.channel_settings.use_autoexposure):
+            return
+        # TODO: implement autotracker
+        microscope_operations.autotracker(acq.mmc, acq.autoexposure_settings)
+
     def setup(self):
         """
         Setup the mantis acquisition. This method sets up the label-free
@@ -1063,6 +1110,8 @@ class MantisAcquisition(object):
         positions and time points.
         """
 
+        use_autotracker = any([self.lf_acq.microscope_settings.autotracker_config, self.ls_acq.microscope_settings.autotracker_config])
+
         # define LF hook functions
         if self._demo_run:
             lf_pre_hardware_hook_fn = log_preparing_acquisition
@@ -1076,7 +1125,21 @@ class MantisAcquisition(object):
                 start_daq_counters, [self._lf_z_ctr_task, self._lf_channel_ctr_task]
             )
         lf_post_hardware_hook_fn = log_acquisition_start
-        lf_image_saved_fn = check_lf_acq_finished
+
+        # TODO: implement logic for the autotracker_img_saved_hook_fn
+        if self.lf_acq.microscope_settings.autotracker_config is not None:
+            lf_image_saved_fn = partial(
+                autotracker_hook_fn,
+                'lf',
+                self.lf_acq.autotracker_settings,
+                self._position_settings,
+                self.lf_acq.microscope_settings.autotracker_config,
+                self.lf_acq.slice_settings,
+                self._acq_dir,
+            )
+        else:
+            logger.info('No autotracker config found. Using default image saved hook')
+            lf_image_saved_fn = check_lf_acq_finished
 
         # define LF acquisition
         self._lf_acq_obj = Acquisition(
@@ -1106,7 +1169,19 @@ class MantisAcquisition(object):
                 self.ls_acq.channel_settings.channels,
             )
             ls_post_camera_hook_fn = partial(start_daq_counters, [self._ls_z_ctr_task])
-        ls_image_saved_fn = check_ls_acq_finished
+
+        # TODO: implement logic for the autotracker_img_saved_hook_fn
+        if self.ls_acq.microscope_settings.autotracker_config is not None:
+            ls_image_saved_fn = partial(
+                autotracker_hook_fn,
+                'ls',
+                self.ls_acq.autotracker_settings,
+                self.ls_acq.slice_settings,
+                self._acq_dir,
+            )
+        else:
+            logger.info('No autotracker config found. Using default image saved hook')
+            ls_image_saved_fn = check_ls_acq_finished
 
         # define LS acquisition
         self._ls_acq_obj = Acquisition(
@@ -1141,8 +1216,19 @@ class MantisAcquisition(object):
                 well_id = self.position_settings.well_ids[p_idx]
 
                 # move to the given position
-                if p_label != previous_position_label:
+                if use_autotracker:
+                    # TODO: Should we get the corods from the csv file or the modified xyz_positions_shifts
+                    logger.debug('Updating the positions for autotracker')
+                    logger.debug(
+                        'Previous position: %f,%f ',
+                        *self.position_settings.xyz_positions[p_idx][0:2],
+                    )
+                    self.update_position_autotracker()
+                if p_label != previous_position_label or use_autotracker:
                     self.go_to_position(p_idx)
+
+                    # TODO get the delta shifts
+                    # read the files here and move separately
 
                 # autofocus
                 if self.lf_acq.microscope_settings.use_autofocus:
