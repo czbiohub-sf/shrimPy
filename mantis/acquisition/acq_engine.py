@@ -436,6 +436,7 @@ class MantisAcquisition(object):
         acquisition_name: str,
         mm_app_path: str,
         mm_config_file: str,
+        lf_config_file: str,
         enable_ls_acq: bool = True,
         enable_lf_acq: bool = True,
         demo_run: bool = False,
@@ -492,7 +493,7 @@ class MantisAcquisition(object):
         # Connect to MM running LF acq
         self.lf_acq = BaseChannelSliceAcquisition(
             enabled=enable_lf_acq,
-            mm_config_file=mm_config_file,
+            mm_config_file=lf_config_file,
         )
 
         # Connect to MM running LS acq
@@ -1345,10 +1346,10 @@ class MantisAcquisition(object):
 
                 if self.lf_acq.enabled:
                     lf_events = [mda_event_from_mda_sequence(event) for event in lf_cz_events]
-                
+
                 if self.ls_acq.enabled:
-                    ls_events = [mda_event_from_mda_sequence(event) for event in ls_cz_events] 
-            
+                    ls_events = [mda_event_from_mda_sequence(event) for event in ls_cz_events]
+
                 # globals.lf_last_img_idx = lf_events[-1]['axes']
                 # globals.ls_last_img_idx = ls_events[-1]['axes']
                 globals.lf_acq_finished = False
@@ -1512,6 +1513,8 @@ def _generate_channel_slice_mda_seq(
         useq.Channel(config=channel, group=channel_settings.channel_group, exposure=exposure)
         for channel, exposure in channel_zip
     ]
+
+    print(f"Creating MDA sequence with channels: {channels}")
     return useq.MDASequence(
         z_plan=useq.ZTopBottom(
             bottom=slice_settings.z_start,

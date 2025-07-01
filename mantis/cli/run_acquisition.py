@@ -38,11 +38,20 @@ def load_settings(raw_settings: dict, settings_key: str, settings_class):
     help='''Path to Micro-manager config file
       which will run the light-sheet acquisition''',
 )
+@click.option(
+    "--lf-config-filepath",
+    default=default_mm_config_filepath,
+    type=click.Path(exists=True, file_okay=True, dir_okay=False),
+    show_default=True,
+    help='''Path to Micro-manager config file
+      which will run the label-free acquisition''',
+)
 def run_acquisition(
     config_filepath,
     output_dirpath,
     mm_app_path,
     mm_config_filepath,
+    lf_config_filepath: str = default_mm_config_filepath,
 ):
     """Acquire mantis data as specified by a configuration file.
 
@@ -63,7 +72,7 @@ def run_acquisition(
     )
 
     # isort: on
-    demo_run = True if 'demo' in mm_config_filepath else False
+    demo_run = True if 'demo' in lf_config_filepath else False
 
     output_dirpath = Path(output_dirpath)
     acq_directory, acq_name = output_dirpath.parent, output_dirpath.name
@@ -87,6 +96,7 @@ def run_acquisition(
         acquisition_name=acq_name,
         mm_app_path=mm_app_path,
         mm_config_file=mm_config_filepath,
+        lf_config_file=lf_config_filepath,
         demo_run=demo_run,
         enable_ls_acq=False,
         verbose=False,
