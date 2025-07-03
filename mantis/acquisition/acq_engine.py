@@ -593,7 +593,9 @@ class MantisAcquisition(object):
             return
 
         # Determine label-free acq timing
-        oryx_framerate = float(self.lf_acq.mmc.getProperty('ORX-10GS-51S5M', 'Frame Rate'))
+        oryx_framerate = float(
+            self.lf_acq.mmc.getProperty(self.lf_acq.mmc.getCameraDevice(), 'Frame Rate')
+        )
         # assumes all channels have the same exposure time
 
         self.lf_acq.slice_settings.acquisition_rate = np.minimum(
@@ -655,10 +657,6 @@ class MantisAcquisition(object):
         and channels
         """
 
-        if not self.ls_acq.enabled:
-            logger.debug('Light-sheet acquisition is not enabled')
-            return
-
         self.update_lf_acquisition_rates(
             self.lf_acq.channel_settings.default_exposure_times_ms,
         )
@@ -666,8 +664,10 @@ class MantisAcquisition(object):
             self.ls_acq.channel_settings.default_exposure_times_ms,
         )
 
-        if self._demo_run:
-            logger.debug('DAQ setup is not supported in demo mode')
+        if self._demo_run or not self.ls_acq.enabled:
+            logger.debug(
+                'DAQ setup is not supported unless there are 2 acquisitions enabled on real hardware'
+            )
             return
 
         # LF channel trigger - accommodates longer LC switching times
@@ -1428,7 +1428,6 @@ class MantisAcquisition(object):
         # LF acq time
         num_slices = self.lf_acq.slice_settings.num_slices
         slice_acq_rate = self.lf_acq.slice_settings.acquisition_rate  # float
-        slice_acq_rate = 1.0
         num_channels = self.lf_acq.channel_settings.num_channels
 
         lf_acq_time = num_slices / slice_acq_rate * num_channels + LC_CHANGE_TIME / 1000 * (
@@ -1445,7 +1444,9 @@ class MantisAcquisition(object):
 
         t_start = time.time()
         while (
-            not all((globals.lf_acq_finished, globals.ls_acq_finished))
+            not all(
+                (globals.lf_acq_finished, (self.ls_acq.enabled and globals.ls_acq_finished))
+            )
             and (time.time() - t_start) < buffer_time
         ):
             time.sleep(0.2)
@@ -1454,7 +1455,7 @@ class MantisAcquisition(object):
         if not globals.lf_acq_finished:
             # abort LF acq
             lf_acq_aborted = True
-            camera = 'Camera' if self._demo_run else 'ORX-10GS-51S5M'
+            camera = self.lf_acq.mmc.getCameraDevice()
             sequenced_stages = []
             if self.lf_acq.slice_settings.use_sequencing:
                 sequenced_stages.append(self.lf_acq.slice_settings.z_stage_name)
@@ -1462,6 +1463,7 @@ class MantisAcquisition(object):
                 self.lf_acq.channel_settings.use_sequencing
                 and self.lf_acq.channel_settings.num_channels > 1
                 and not self._demo_run
+                and self.ls_acq.enabled
             ):
                 sequenced_stages.extend(['TS1_DAC01', 'TS1_DAC02'])
             microscope_operations.abort_acquisition_sequence(
@@ -1470,7 +1472,7 @@ class MantisAcquisition(object):
             # set a flag to clear any remaining events
             globals.lf_acq_aborted = True
 
-        if not globals.ls_acq_finished:
+        if not (globals.ls_acq_finished and self.ls_acq.enabled):
             # abort LS acq
             ls_acq_aborted = True
             camera = 'Camera' if self._demo_run else 'Prime BSI Express'
