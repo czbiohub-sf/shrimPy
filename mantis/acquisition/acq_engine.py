@@ -1472,7 +1472,7 @@ class MantisAcquisition(object):
             # set a flag to clear any remaining events
             globals.lf_acq_aborted = True
 
-        if not (globals.ls_acq_finished and self.ls_acq.enabled):
+        if not globals.ls_acq_finished and self.ls_acq.enabled:
             # abort LS acq
             ls_acq_aborted = True
             camera = 'Camera' if self._demo_run else 'Prime BSI Express'
