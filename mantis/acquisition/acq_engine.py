@@ -1241,9 +1241,8 @@ class MantisAcquisition(object):
                 if p_label != previous_position_label:
                     self.go_to_position(p_idx)
 
-                """
                 # autofocus
-                if self.lf_acq.microscope_settings.use_autofocus:
+                if self.lf_acq.enabled and self.lf_acq.microscope_settings.use_autofocus:
                     autofocus_success = microscope_operations.autofocus(
                         self.lf_acq.mmc,
                         self.lf_acq.mmStudio,
@@ -1260,7 +1259,11 @@ class MantisAcquisition(object):
                 # autoexposure
                 if well_id != previous_well_id:
                     globals.new_well = True
-                    if t_idx == 0 or self.ls_acq.autoexposure_settings.rerun_each_timepoint:
+                    if (
+                        self.ls_acq.enabled
+                        and t_idx == 0
+                        or self.ls_acq.autoexposure_settings.rerun_each_timepoint
+                    ):
                         self.run_autoexposure(
                             acq=self.ls_acq,
                             well_id=well_id,
@@ -1310,7 +1313,6 @@ class MantisAcquisition(object):
                             # If it failed again, retry at the next position
                             if success:
                                 ls_o3_refocus_time = current_time
-                """
                 # Generate LF acquisition events
 
                 # since MDAEvents can't be modified in place, we need to recreate the whole mda_sequence
