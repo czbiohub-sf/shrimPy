@@ -27,16 +27,16 @@ DEBUG = False
 mmc = Core()
 
 acquisition_directory = Path(r'G:\OPS')
-acquisition_name = 'test_OPS0000'
-start_time = '2025-01-08 17:50:00'
+acquisition_name = 'OPS0058'
+start_time = '2025-07-08 01:15:00'
 # start_time = 'now'
-
 well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
 min_fov_distance_from_well_edge = 800  # in um
+#TODO:uncomment this after this acquisition -EH
 well_centers = {
-    'A1': (10100, 11690, 6580),
-    'A2': (49240, 11690, 6580),
-    'A3': (88580, 11690, 6640),
+    'A1': (-35087, -21032, 6247),
+    'A2': (4253, -21032, 6279),
+    'A3': (43593, -21032, 6383),
 }  # (x, y, z) in um
 
 phenotyping_magnification = 20
@@ -47,17 +47,30 @@ image_size = (2048, 2048)
 pixel_size = 6.5  # in um
 
 phenotyping_channel_group = 'Channels'
-phenotyping_channel = '5-MultiCam_GFP_mCherry_BF_narrow'
+phenotyping_channel = '5-MultiCam_GFP_mCherry_BF'
+# phenotyping_channel = '4-MultiCam_CL488_BF'
+# phenotyping_channel = '4-MultiCam_mCherry_BF'
+# phenotyping_channel = '1-Zyla_BF'
 tracking_channel_group = 'Channels'
-tracking_channel = '3-Zyla_BF'
+tracking_channel = '1-Zyla_BF'
 
 # Define same exposure for all channels.
 # Not absolutely necessary, but helpful in debugging issues with BF exposure
 exposure_time = 100 # in ms
 
-z_start = -2
-z_end = 6
-z_step = 2
+z_start = 0
+z_end = 12
+z_step = 2.0
+
+if phenotyping_channel[0] in ('1', '2', '3'):
+    num_phenotyping_channel = 1
+elif phenotyping_channel[0] == '4':
+    num_phenotyping_channel = 2
+elif phenotyping_channel[0] == '5':
+    num_phenotyping_channel = 3
+else:
+    if not DEBUG:
+        raise ValueError('Unknown number of phenotyping channels')
 
 if start_time == 'now':
     start_time_obj = datetime.now()
@@ -69,6 +82,7 @@ if DEBUG:
     phenotyping_channel = 'DAPI'
     tracking_channel_group = 'Channel'
     tracking_channel = 'FITC'
+    num_phenotyping_channel = 1
 
 # Setup Dragonfly microscope
 if not DEBUG:
@@ -96,7 +110,7 @@ def change_magnification_tracking():
     else:
         mmc.set_property('Core', 'Focus', 'FocusDrive')
         mmc.set_property('ObjectiveTurret', 'Label', '1-5x'); time.sleep(5)
-        mmc.set_property('TL-ApertureDiaphragm', 'Position', '4')
+        mmc.set_property('TL-ApertureDiaphragm', 'Position', '2')
 
 
 # %% Setup logger and acquisition directory=
@@ -286,7 +300,7 @@ for i, well_name in enumerate(well_centers.keys()):
         keep_shutter_open_between_z_steps=True,
     )
     last_img_idx = dict(events[-1]['axes'])
-    last_img_idx.update({'channel': 2})
+    last_img_idx.update({'channel': num_phenotyping_channel-1})
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logger.info(f'{timestamp} Acquiring phenotyping at well {well_name}')
     acq = Acquisition(
