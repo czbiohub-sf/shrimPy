@@ -4,7 +4,6 @@ import time
 from pathlib import Path
 import json
 from datetime import datetime
-import re
 
 import numpy as np
 
@@ -24,9 +23,7 @@ def _create_acquisition_directory(root_dir: Path, acq_name: str, idx=1) -> Path:
         return _create_acquisition_directory(root_dir, acq_name, idx + 1)
     return acq_dir
 
-USE_HW_SEQUENCING = True
 DEBUG = False
-PIEZO_STEP_TIME_S = 0.05
 mmc = Core()
 
 acquisition_directory = Path(r'G:\OPS')
@@ -86,7 +83,6 @@ if DEBUG:
     tracking_channel_group = 'Channel'
     tracking_channel = 'FITC'
     num_phenotyping_channel = 1
-    USE_HW_SEQUENCING = False  # HW Sequencing is not tested in debug mode
 
 # Setup Dragonfly microscope
 if not DEBUG:
@@ -100,10 +96,7 @@ def change_magnification_phenotyping():
     if DEBUG:
         mmc.set_config('Objective', '20X')
     else:
-        if USE_HW_SEQUENCING:
-            mmc.set_property('Core', 'Focus', 'TS_PiezoZ')
-        else:
-            mmc.set_property('Core', 'Focus', 'PiezoZ')
+        mmc.set_property('Core', 'Focus', 'PiezoZ')
         mmc.set_property('ObjectiveTurret', 'Label', '3-20x'); time.sleep(5)
         mmc.set_property('TL-ApertureDiaphragm', 'Position', '24')
         # turn AFC back on
@@ -264,20 +257,37 @@ if start_delay_s > 0:
     logger.info(f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")} Waiting {int(start_delay_s)} seconds until {start_time}')
     time.sleep(start_delay_s)
 
-tracking_events = multi_d_acquisition_events(
-    z_start=-100,
-    z_end=100,
-    z_step=25,
-    channel_group=tracking_channel_group,
-    channels=[tracking_channel],
-    channel_exposures_ms=[exposure_time],
-    xyz_positions=tracking_position_list,
-    keep_shutter_open_between_z_steps=True,
-    # position_labels=tracking_position_labels,
-)
-phenotyping_events = []
-for i in len(well_centers):
-    _events = multi_d_acquisition_events(
+timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+logger.info(f'{timestamp} Starting acquisition')
+pheno_position_list = np.asarray(pheno_position_list)
+for i, well_name in enumerate(well_centers.keys()):
+    # Track cells across all wells
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logger.info(f'{timestamp} Changing magnification for tracking')
+    change_magnification_tracking()
+    events = multi_d_acquisition_events(
+        z_start=-100,
+        z_end=100,
+        z_step=25,
+        channel_group=tracking_channel_group,
+        channels=[tracking_channel],
+        channel_exposures_ms=[exposure_time],
+        xyz_positions=tracking_position_list,
+        keep_shutter_open_between_z_steps=True,
+        # position_labels=tracking_position_labels,
+    )
+    n_z_steps = len(np.arange(z_start, z_end+z_step, z_step))
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logger.info(f'{timestamp} Acquiring tracking acquisition')
+    with Acquisition(directory=str(acq_dir), name='tracking') as acq:
+        acq.acquire(events)
+
+    # Phenotype cells in this well
+    acq_finished = False
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logger.info(f'{timestamp} Changing magnification for phenotyping')
+    change_magnification_phenotyping()
+    events = multi_d_acquisition_events(
         z_start=z_start,
         z_end=z_end,
         z_step=z_step,
@@ -289,105 +299,43 @@ for i in len(well_centers):
         ],
         keep_shutter_open_between_z_steps=True,
     )
-    phenotyping_events.append(_events)
-
-try:
-    # Setup acquisition for hardware sequencing
-    if USE_HW_SEQUENCING:
-        # Setup Z Stage
-        # Set PiezoZ to external input; TODO: should we do this here?
-        mmc.set_property('XYStage', 'SerialCommand', 'PZ Z=1'); time.sleep(2)
-        mmc.set_property('TS_DAC01', 'Sequence', 'On')
-        mmc.set_position('TS_PiezoZ', z_start)
-
-        # Setup Zyla camera
-        # turn off overlapping readout to be able to set framerate inpedendently
-        mmc.set_property('Zyla', 'AuxiliaryOutSource (TTL I/O)', 'FireAny')
-        mmc.set_property('Zyla', 'Overlap', 'Off')
-        max_framerate_str = mmc.get_property('Zyla', 'FrameRateLimits')
-        match = re.search(r'Max:\s*([\d.]+)', max_framerate_str)
-        if match:
-            max_framerate = float(match.group(1))
-        else:
-            raise RuntimeError('Could not determine max Zyla framerate')
-        framerate = 1 / (1/max_framerate + PIEZO_STEP_TIME_S)
-        mmc.set_property('Zyla', 'FrameRate', framerate)
-
-        # Setup Prime BSI Express camera
-        mmc.set_property('BSI_Express', 'ExposureOutMode', 'Any Row')
-        mmc.set_property('BSI_Express', 'TriggerMode', 'Edge Trigger')
-
-        # Setup Prime BSI camera
-        mmc.set_property('Prime', 'ExposureOutMode', 'Any Row')
-        mmc.set_property('Prime', 'TriggerMode', 'Edge Trigger')
-        
+    last_img_idx = dict(events[-1]['axes'])
+    last_img_idx.update({'channel': num_phenotyping_channel-1})
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    logger.info(f'{timestamp} Starting acquisition')
-    pheno_position_list = np.asarray(pheno_position_list)
-    for i, well_name in enumerate(well_centers.keys()):
-        # Track cells across all wells
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        logger.info(f'{timestamp} Changing magnification for tracking')
-        change_magnification_tracking()
-        n_z_steps = len(np.arange(z_start, z_end+z_step, z_step))
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        logger.info(f'{timestamp} Acquiring tracking acquisition')
-        with Acquisition(directory=str(acq_dir), name='tracking') as acq:
-            acq.acquire(tracking_events)
+    logger.info(f'{timestamp} Acquiring phenotyping at well {well_name}')
+    acq = Acquisition(
+        directory=str(acq_dir),
+        name=f'phenotyping_well_{well_name}',
+        post_hardware_hook_fn=autofocus_hook_fn,
+        image_saved_fn=check_acq_finished,
+    )
+    acq.acquire(events)
+    acq.mark_finished()
+    while not acq_finished:
+        time.sleep(1)
+    acq.await_completion()
 
-        # Phenotype cells in this well
-        acq_finished = False
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        logger.info(f'{timestamp} Changing magnification for phenotyping')
-        change_magnification_phenotyping()
-        events = phenotyping_events[i]
-        last_img_idx = dict(events[-1]['axes'])
-        last_img_idx.update({'channel': num_phenotyping_channel-1})
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        logger.info(f'{timestamp} Acquiring phenotyping at well {well_name}')
-        acq = Acquisition(
-            directory=str(acq_dir),
-            name=f'phenotyping_well_{well_name}',
-            post_hardware_hook_fn=autofocus_hook_fn,
-            image_saved_fn=check_acq_finished,
-        )
-        acq.acquire(events)
-        acq.mark_finished()
-        while not acq_finished:
-            time.sleep(1)
-        acq.await_completion()
+# Track cells once more at the end
+timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+logger.info(f'{timestamp} Changing magnification for tracking')
+change_magnification_tracking()
+events = multi_d_acquisition_events(
+    z_start=-100,
+    z_end=100,
+    z_step=25,
+    channel_group=tracking_channel_group,
+    channels=[tracking_channel],
+    channel_exposures_ms=[exposure_time],
+    xyz_positions=tracking_position_list,
+    keep_shutter_open_between_z_steps=True,
+    # position_labels=tracking_position_labels,
+)
+timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+logger.info(f'{timestamp} Acquiring tracking acquisition')
+with Acquisition(directory=str(acq_dir), name='tracking') as acq:
+    acq.acquire(events)
 
-    # Track cells once more at the end
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    logger.info(f'{timestamp} Changing magnification for tracking')
-    change_magnification_tracking()
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    logger.info(f'{timestamp} Acquiring tracking acquisition')
-    with Acquisition(directory=str(acq_dir), name='tracking') as acq:
-        acq.acquire(tracking_events)
+timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+logger.info(f'{timestamp} Acquisition finished')
 
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    logger.info(f'{timestamp} Acquisition finished')
-
-finally:
-    # Reset microscope after hardware sequencing
-    if USE_HW_SEQUENCING:
-        # Reset Z Stage
-        mmc.set_property('XYStage', 'SerialCommand', 'PZ Z=0'); time.sleep(2)
-        mmc.set_property('TS_DAC01', 'Sequence', 'Off')
-
-        # Reset Zyla camera
-        mmc.set_property('Zyla', 'AuxiliaryOutSource (TTL I/O)', 'FireAll')
-        mmc.set_property('Zyla', 'Overlap', 'On')
-
-        # Reset Prime BSI Express camera
-        mmc.set_property('BSI_Express', 'ExposureOutMode', 'Rolling Shutter')
-        mmc.set_property('BSI_Express', 'TriggerMode', 'Internal Trigger')
-
-        # Reset Prime BSI camera
-        mmc.set_property('Prime', 'ExposureOutMode', 'Rolling Shutter')
-        mmc.set_property('Prime', 'TriggerMode', 'Internal Trigger')
-
-
-
-## %%
+# %%
