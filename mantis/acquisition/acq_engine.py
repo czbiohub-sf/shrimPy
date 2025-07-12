@@ -5,6 +5,7 @@ import time
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Thread
@@ -38,24 +39,24 @@ from mantis.acquisition.AcquisitionSettings import (
 )
 
 
-# from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
-#     log_preparing_acquisition,
-#     lf_pre_hardware_hook_function,
-#     ls_pre_hardware_hook_function,
-# )
+from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
+    log_preparing_acquisition,
+    lf_pre_hardware_hook_function,
+    ls_pre_hardware_hook_function,
+)
 from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
-    # log_acquisition_start,
-    # update_ls_hardware,
+    log_acquisition_start,
+    update_ls_hardware,
     update_laser_power,
 )
 
-# from mantis.acquisition.hook_functions.post_camera_hook_functions import (
-#     start_daq_counters,
-# )
-# from mantis.acquisition.hook_functions.image_saved_hook_functions import (
-#     check_lf_acq_finished,
-#     check_ls_acq_finished,
-# )
+from mantis.acquisition.hook_functions.post_camera_hook_functions import (
+    start_daq_counters,
+)
+from mantis.acquisition.hook_functions.image_saved_hook_functions import (
+    check_lf_acq_finished,
+    check_ls_acq_finished,
+)
 
 # isort: on
 
@@ -664,9 +665,9 @@ class MantisAcquisition(object):
             self.ls_acq.channel_settings.default_exposure_times_ms,
         )
 
-        if self._demo_run or not self.ls_acq.enabled:
+        if self._demo_run:
             logger.debug(
-                'DAQ setup is not supported unless there are 2 acquisitions enabled on real hardware'
+                'DAQ setup is not supported on demo hardware'
             )
             return
 
@@ -706,15 +707,16 @@ class MantisAcquisition(object):
         # LS Z trigger
         # LS Z counter will start with a software command
         # Counter frequency is updated for each channel in post-camera hook fn
-        self._ls_z_ctr_task = nidaqmx.Task('LS Z Counter')
-        microscope_operations.setup_daq_counter(
-            self._ls_z_ctr_task,
-            co_channel='cDAQ1/_ctr3',
-            freq=self.ls_acq.slice_settings.acquisition_rate[0],
-            duty_cycle=0.1,
-            samples_per_channel=self.ls_acq.slice_settings.num_slices,
-            pulse_terminal='/cDAQ1/PFI1',
-        )
+        if self.ls_acq.enabled:
+            self._ls_z_ctr_task = nidaqmx.Task('LS Z Counter')
+            microscope_operations.setup_daq_counter(
+                self._ls_z_ctr_task,
+                co_channel='cDAQ1/_ctr3',
+                freq=self.ls_acq.slice_settings.acquisition_rate,
+                duty_cycle=0.1,
+                samples_per_channel=self.ls_acq.slice_settings.num_slices,
+                pulse_terminal='/cDAQ1/PFI1',
+            )
 
         # # The LF Channel counter task serve as a master start trigger
         # # LF Channel counter triggers LS Channel counter
@@ -1184,20 +1186,23 @@ class MantisAcquisition(object):
         positions and time points.
         """
 
-        # # define LF hook functions
-        # if self._demo_run:
-        #     lf_pre_hardware_hook_fn = log_preparing_acquisition
-        #     lf_post_camera_hook_fn = None
-        # else:
-        #     lf_pre_hardware_hook_fn = partial(
-        #         lf_pre_hardware_hook_function,
-        #         [self._lf_z_ctr_task, self._lf_channel_ctr_task],
-        #     )
-        #     lf_post_camera_hook_fn = partial(
-        #         start_daq_counters, [self._lf_z_ctr_task, self._lf_channel_ctr_task]
-        #     )
-        # lf_post_hardware_hook_fn = log_acquisition_start
-        # lf_image_saved_fn = check_lf_acq_finished
+        # define LF hook functions
+        if self._demo_run:
+            lf_pre_hardware_hook_fn = log_preparing_acquisition
+            lf_post_camera_hook_fn = None
+        else:
+            lf_pre_hardware_hook_fn = partial(
+                lf_pre_hardware_hook_function,
+                [self._lf_z_ctr_task, self._lf_channel_ctr_task],
+            )
+            lf_post_camera_hook_fn = partial(
+                start_daq_counters, [self._lf_z_ctr_task, self._lf_channel_ctr_task]
+            )
+            
+            self.lf_acq.mmc.mda.events.sequenceStarted.connect(lf_post_camera_hook_fn)
+
+        lf_post_hardware_hook_fn = log_acquisition_start
+        lf_image_saved_fn = check_lf_acq_finished
 
         # # define LS hook functions
         # if self._demo_run:
@@ -1217,12 +1222,12 @@ class MantisAcquisition(object):
         #     ls_post_camera_hook_fn = partial(start_daq_counters, [self._ls_z_ctr_task])
         # ls_image_saved_fn = check_ls_acq_finished
 
-        # Generate LF acquisition events
+        # Generate LF MDA
         lf_cz_events = _generate_channel_slice_mda_seq(
             self.lf_acq.channel_settings, self.lf_acq.slice_settings
         )
 
-        # Generate LS acquisition events
+        # Generate LS MDA
         ls_cz_events = _generate_channel_slice_mda_seq(
             self.ls_acq.channel_settings, self.ls_acq.slice_settings
         )
@@ -1518,7 +1523,6 @@ def _generate_channel_slice_mda_seq(
         for channel, exposure in channel_zip
     ]
 
-    print(f"Creating MDA sequence with channels: {channels}")
     return useq.MDASequence(
         z_plan=useq.ZTopBottom(
             bottom=slice_settings.z_start,
