@@ -1199,8 +1199,8 @@ class MantisAcquisition(object):
                 start_daq_counters, [self._lf_z_ctr_task, self._lf_channel_ctr_task]
             )
             
-            self.lf_acq.mmc.mda.events.sequenceStarted.connect(lf_post_camera_hook_fn)
-
+            self.lf_acq.mmc.events.sequenceAcquisitionStarted.connect(lf_post_camera_hook_fn)
+            
         lf_post_hardware_hook_fn = log_acquisition_start
         lf_image_saved_fn = check_lf_acq_finished
 
