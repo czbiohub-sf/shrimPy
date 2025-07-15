@@ -1365,23 +1365,13 @@ class MantisAcquisition(object):
 
                 # start acquisition
                 if self.lf_acq.enabled:
-                    lf_thread = self.lf_acq.run_sequence(lf_events)
-                else:
-                    lf_thread = Thread()
+                    self.lf_acq.run_sequence(lf_events)
 
                 if self.ls_acq.enabled:
-                    ls_thread = self.ls_acq.run_sequence(ls_events)
-                else:
-                    ls_thread = Thread()
+                    self.ls_acq.run_sequence(ls_events)
 
                 # wait for CZYX acquisition to finish
                 self.await_cz_acq_completion()
-
-                print('Waiting for acquisition threads to finish')
-
-                lf_thread.join()
-                globals.ls_acq_finished = not ls_thread.is_alive()
-                globals.lf_acq_finished = not self.lf_acq.mmc.isSequenceRunning()
 
                 lf_acq_aborted, ls_acq_aborted = self.abort_stalled_acquisition()
                 error_message = (
@@ -1452,16 +1442,27 @@ class MantisAcquisition(object):
         ls_acq_aborted = False
 
         t_start = time.time()
+        print_extra_time_message = True
         while (
             not all(
-                (globals.lf_acq_finished, (self.ls_acq.enabled and globals.ls_acq_finished))
+                (
+                    self.lf_acq.mmc.isSequenceRunning(),
+                    (not self.ls_acq.enabled or self.ls_acq.mmc.isSequenceRunning()),
+                )
             )
             and (time.time() - t_start) < buffer_time
         ):
+            if print_extra_time_message:
+                # print this once
+                logger.warning(
+                    'Acquisition is taking longer than expected. '
+                    f'Allowing up to {buffer_time} seconds for the acquisition to finish...'
+                )
+                print_extra_time_message = False
             time.sleep(0.2)
 
         # TODO: a lot of hardcoded values here
-        if not globals.lf_acq_finished:
+        if not self.lf_acq.mmc.isSequenceRunning():
             # abort LF acq
             lf_acq_aborted = True
             camera = self.lf_acq.mmc.getCameraDevice()
@@ -1481,7 +1482,7 @@ class MantisAcquisition(object):
             # set a flag to clear any remaining events
             globals.lf_acq_aborted = True
 
-        if not globals.ls_acq_finished and self.ls_acq.enabled:
+        if self.ls_acq.enabled and not self.ls_acq.mmc.isSequenceRunning():
             # abort LS acq
             ls_acq_aborted = True
             camera = 'Camera' if self._demo_run else 'Prime BSI Express'
