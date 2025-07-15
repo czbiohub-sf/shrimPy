@@ -39,24 +39,25 @@ from mantis.acquisition.AcquisitionSettings import (
 )
 
 
-from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
-    log_preparing_acquisition,
-    lf_pre_hardware_hook_function,
-    ls_pre_hardware_hook_function,
-)
+# from mantis.acquisition.hook_functions.pre_hardware_hook_functions import (
+#     log_preparing_acquisition,
+#     lf_pre_hardware_hook_function,
+#     ls_pre_hardware_hook_function,
+# )
 from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
-    log_acquisition_start,
-    update_ls_hardware,
+    # log_acquisition_start,
+    # update_ls_hardware,
     update_laser_power,
 )
 
 from mantis.acquisition.hook_functions.post_camera_hook_functions import (
     start_daq_counters,
 )
-from mantis.acquisition.hook_functions.image_saved_hook_functions import (
-    check_lf_acq_finished,
-    check_ls_acq_finished,
-)
+
+# from mantis.acquisition.hook_functions.image_saved_hook_functions import (
+#     check_lf_acq_finished,
+#     check_ls_acq_finished,
+# )
 
 # isort: on
 
@@ -1186,21 +1187,21 @@ class MantisAcquisition(object):
 
         # define LF hook functions
         if self._demo_run:
-            lf_pre_hardware_hook_fn = log_preparing_acquisition
-            lf_post_camera_hook_fn = None
+            # lf_pre_hardware_hook_fn = log_preparing_acquisition
+            # lf_post_camera_hook_fn = None
+            pass
         else:
-            lf_pre_hardware_hook_fn = partial(
-                lf_pre_hardware_hook_function,
-                [self._lf_z_ctr_task, self._lf_channel_ctr_task],
-            )
+            # lf_pre_hardware_hook_fn = partial(
+            #     lf_pre_hardware_hook_function,
+            #     [self._lf_z_ctr_task, self._lf_channel_ctr_task],
+            # )
             lf_post_camera_hook_fn = partial(
                 start_daq_counters, [self._lf_z_ctr_task, self._lf_channel_ctr_task]
             )
-
             self.lf_acq.mmc.events.sequenceAcquisitionStarted.connect(lf_post_camera_hook_fn)
 
-        lf_post_hardware_hook_fn = log_acquisition_start
-        lf_image_saved_fn = check_lf_acq_finished
+        # lf_post_hardware_hook_fn = log_acquisition_start
+        # lf_image_saved_fn = check_lf_acq_finished
 
         # # define LS hook functions
         # if self._demo_run:
@@ -1376,8 +1377,11 @@ class MantisAcquisition(object):
                 # wait for CZYX acquisition to finish
                 self.await_cz_acq_completion()
 
+                print('Waiting for acquisition threads to finish')
+
+                lf_thread.join()
                 globals.ls_acq_finished = not ls_thread.is_alive()
-                globals.lf_acq_finished = not lf_thread.is_alive()
+                globals.lf_acq_finished = not self.lf_acq.mmc.isSequenceRunning()
 
                 lf_acq_aborted, ls_acq_aborted = self.abort_stalled_acquisition()
                 error_message = (
