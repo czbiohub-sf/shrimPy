@@ -126,6 +126,58 @@ def change_magnification_tracking():
         mmc.set_property('TL-ApertureDiaphragm', 'Position', '4')
 
 
+def setup_hw_sequencing():
+        logger.info(f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")} Setting up for hardware sequencing')
+
+        # Setup Z Stage
+        # Set PiezoZ to external input; TODO: should we do this here?
+        mmc.set_property('XYStage', 'SerialCommand', 'PZ Z=1'); time.sleep(2)
+        mmc.set_property('TS_DAC01', 'Sequence', 'On')
+        mmc.set_position('TS_PiezoZ', z_start)
+
+        # Setup Zyla camera
+        # turn off overlapping readout to be able to set framerate inpedendently
+        mmc.set_property('Zyla', 'AuxiliaryOutSource (TTL I/O)', 'FireAny')
+        mmc.set_property('Zyla', 'Overlap', 'Off')
+        max_framerate_str = mmc.get_property('Zyla', 'FrameRateLimits')
+        match = re.search(r'Max:\s*([\d.]+)', max_framerate_str)
+        if match:
+            max_framerate = float(match.group(1))
+        else:
+            raise RuntimeError('Could not determine max Zyla framerate')
+        framerate = 1 / (1/max_framerate + PIEZO_STEP_TIME_S)
+        mmc.set_property('Zyla', 'FrameRate', framerate)
+
+        # Setup Prime BSI Express camera
+        mmc.set_property('BSI_Express', 'ExposeOutMode', 'Any Row')
+        mmc.set_property('BSI_Express', 'TriggerMode', 'Edge Trigger')
+
+        # Setup Prime BSI camera
+        mmc.set_property('Prime', 'ExposeOutMode', 'Any Row')
+        mmc.set_property('Prime', 'TriggerMode', 'Edge Trigger')
+
+
+def reset_hw_sequencing():
+        logger.info(f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")} Resetting after hardware sequencing')
+
+        # Reset Z Stage
+        mmc.set_property('XYStage', 'SerialCommand', 'PZ Z=0'); time.sleep(2)
+        mmc.set_property('TS_DAC01', 'Sequence', 'Off')
+
+        # Reset Zyla camera
+        mmc.set_property('Zyla', 'AuxiliaryOutSource (TTL I/O)', 'FireAll')
+        mmc.set_property('Zyla', 'Overlap', 'On')
+
+        # Reset Prime BSI Express camera
+        mmc.set_property('BSI_Express', 'ExposeOutMode', 'Rolling Shutter')
+        mmc.set_property('BSI_Express', 'TriggerMode', 'Internal Trigger')
+
+        # Reset Prime BSI camera
+        mmc.set_property('Prime', 'ExposeOutMode', 'Rolling Shutter')
+        mmc.set_property('Prime', 'TriggerMode', 'Internal Trigger')
+
+
+
 # %% Setup logger and acquisition directory=
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
@@ -293,34 +345,8 @@ for i in range(len(well_centers)):
     phenotyping_events.append(_events)
 
 try:
-    # Setup acquisition for hardware sequencing
     if USE_HW_SEQUENCING:
-        # Setup Z Stage
-        # Set PiezoZ to external input; TODO: should we do this here?
-        mmc.set_property('XYStage', 'SerialCommand', 'PZ Z=1'); time.sleep(2)
-        mmc.set_property('TS_DAC01', 'Sequence', 'On')
-        mmc.set_position('TS_PiezoZ', z_start)
-
-        # Setup Zyla camera
-        # turn off overlapping readout to be able to set framerate inpedendently
-        mmc.set_property('Zyla', 'AuxiliaryOutSource (TTL I/O)', 'FireAny')
-        mmc.set_property('Zyla', 'Overlap', 'Off')
-        max_framerate_str = mmc.get_property('Zyla', 'FrameRateLimits')
-        match = re.search(r'Max:\s*([\d.]+)', max_framerate_str)
-        if match:
-            max_framerate = float(match.group(1))
-        else:
-            raise RuntimeError('Could not determine max Zyla framerate')
-        framerate = 1 / (1/max_framerate + PIEZO_STEP_TIME_S)
-        mmc.set_property('Zyla', 'FrameRate', framerate)
-
-        # Setup Prime BSI Express camera
-        mmc.set_property('BSI_Express', 'ExposeOutMode', 'Any Row')
-        mmc.set_property('BSI_Express', 'TriggerMode', 'Edge Trigger')
-
-        # Setup Prime BSI camera
-        mmc.set_property('Prime', 'ExposeOutMode', 'Any Row')
-        mmc.set_property('Prime', 'TriggerMode', 'Edge Trigger')
+        setup_hw_sequencing()
         
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logger.info(f'{timestamp} Starting acquisition')
@@ -371,22 +397,7 @@ try:
     logger.info(f'{timestamp} Acquisition finished')
 
 finally:
-    # Reset microscope after hardware sequencing
     if USE_HW_SEQUENCING:
-        # Reset Z Stage
-        mmc.set_property('XYStage', 'SerialCommand', 'PZ Z=0'); time.sleep(2)
-        mmc.set_property('TS_DAC01', 'Sequence', 'Off')
-
-        # Reset Zyla camera
-        mmc.set_property('Zyla', 'AuxiliaryOutSource (TTL I/O)', 'FireAll')
-        mmc.set_property('Zyla', 'Overlap', 'On')
-
-        # Reset Prime BSI Express camera
-        mmc.set_property('BSI_Express', 'ExposeOutMode', 'Rolling Shutter')
-        mmc.set_property('BSI_Express', 'TriggerMode', 'Internal Trigger')
-
-        # Reset Prime BSI camera
-        mmc.set_property('Prime', 'ExposeOutMode', 'Rolling Shutter')
-        mmc.set_property('Prime', 'TriggerMode', 'Internal Trigger')
+        reset_hw_sequencing()
 
 ## %%
