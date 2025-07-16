@@ -29,17 +29,17 @@ DEBUG = False
 PIEZO_STEP_TIME_S = 0.05
 mmc = Core()
 
-acquisition_directory = Path(r'G:\OPS')
-acquisition_name = 'OPS0058'
-start_time = '2025-07-08 01:15:00'
+acquisition_directory = Path(r'D:\\Ivan\\2025-07-16_ops_acq_speed_testing')
+acquisition_name = 'ops_pipeline_test'
+start_time = '2025-07-15 00:45:00'
 # start_time = 'now'
-well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
+well_diameter = 3000  # in um, 6 well plates have 35 mm diameter wells
 min_fov_distance_from_well_edge = 800  # in um
 #TODO:uncomment this after this acquisition -EH
 well_centers = {
-    'A1': (-35087, -21032, 6247),
-    'A2': (4253, -21032, 6279),
-    'A3': (43593, -21032, 6383),
+    'A1': (-35000, -21000, 6459),
+    # 'A2': (4221, -21107, 6820),
+    # 'A3': (43561, -21107, 7203),
 }  # (x, y, z) in um
 
 phenotyping_magnification = 20
@@ -97,6 +97,9 @@ if not DEBUG:
 
 
 def change_magnification_phenotyping():
+    mmc.set_config(phenotyping_channel_group, phenotyping_channel)
+    mmc.set_exposure(exposure_time)
+
     if DEBUG:
         mmc.set_config('Objective', '20X')
     else:
@@ -112,12 +115,15 @@ def change_magnification_phenotyping():
 
 
 def change_magnification_tracking():
+    mmc.set_config(tracking_channel_group, tracking_channel)
+    mmc.set_exposure(exposure_time)
+
     if DEBUG:
         mmc.set_config('Objective', '10X')
     else:
         mmc.set_property('Core', 'Focus', 'FocusDrive')
         mmc.set_property('ObjectiveTurret', 'Label', '1-5x'); time.sleep(5)
-        mmc.set_property('TL-ApertureDiaphragm', 'Position', '2')
+        mmc.set_property('TL-ApertureDiaphragm', 'Position', '4')
 
 
 # %% Setup logger and acquisition directory=
@@ -268,22 +274,17 @@ tracking_events = multi_d_acquisition_events(
     z_start=-100,
     z_end=100,
     z_step=25,
-    channel_group=tracking_channel_group,
-    channels=[tracking_channel],
-    channel_exposures_ms=[exposure_time],
     xyz_positions=tracking_position_list,
     keep_shutter_open_between_z_steps=True,
     # position_labels=tracking_position_labels,
 )
 phenotyping_events = []
-for i in len(well_centers):
+pheno_position_list = np.asarray(pheno_position_list)
+for i in range(len(well_centers)):
     _events = multi_d_acquisition_events(
         z_start=z_start,
         z_end=z_end,
         z_step=z_step,
-        channel_group=phenotyping_channel_group,
-        channels=[phenotyping_channel],
-        channel_exposures_ms=[exposure_time],
         xy_positions=pheno_position_list[
             i * num_positions_per_well : (i + 1) * num_positions_per_well, :2
         ],
@@ -314,11 +315,11 @@ try:
         mmc.set_property('Zyla', 'FrameRate', framerate)
 
         # Setup Prime BSI Express camera
-        mmc.set_property('BSI_Express', 'ExposureOutMode', 'Any Row')
+        mmc.set_property('BSI_Express', 'ExposeOutMode', 'Any Row')
         mmc.set_property('BSI_Express', 'TriggerMode', 'Edge Trigger')
 
         # Setup Prime BSI camera
-        mmc.set_property('Prime', 'ExposureOutMode', 'Any Row')
+        mmc.set_property('Prime', 'ExposeOutMode', 'Any Row')
         mmc.set_property('Prime', 'TriggerMode', 'Edge Trigger')
         
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -381,13 +382,11 @@ finally:
         mmc.set_property('Zyla', 'Overlap', 'On')
 
         # Reset Prime BSI Express camera
-        mmc.set_property('BSI_Express', 'ExposureOutMode', 'Rolling Shutter')
+        mmc.set_property('BSI_Express', 'ExposeOutMode', 'Rolling Shutter')
         mmc.set_property('BSI_Express', 'TriggerMode', 'Internal Trigger')
 
         # Reset Prime BSI camera
-        mmc.set_property('Prime', 'ExposureOutMode', 'Rolling Shutter')
+        mmc.set_property('Prime', 'ExposeOutMode', 'Rolling Shutter')
         mmc.set_property('Prime', 'TriggerMode', 'Internal Trigger')
-
-
 
 ## %%
