@@ -24,22 +24,22 @@ def _create_acquisition_directory(root_dir: Path, acq_name: str, idx=1) -> Path:
         return _create_acquisition_directory(root_dir, acq_name, idx + 1)
     return acq_dir
 
-USE_HW_SEQUENCING = True
+USE_HW_SEQUENCING = False
 DEBUG = False
 PIEZO_STEP_TIME_S = 0.05
 mmc = Core()
 
-acquisition_directory = Path(r'D:\\Ivan\\2025-07-16_ops_acq_speed_testing')
-acquisition_name = 'ops_pipeline_test'
-start_time = '2025-07-15 00:45:00'
+acquisition_directory = Path(r'G:\OPS')
+acquisition_name = 'OPS0061'
+start_time = '2025-07-18 01:00:00'
 # start_time = 'now'
-well_diameter = 3000  # in um, 6 well plates have 35 mm diameter wells
+well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
 min_fov_distance_from_well_edge = 800  # in um
 #TODO:uncomment this after this acquisition -EH
 well_centers = {
-    'A1': (-35000, -21000, 6459),
-    # 'A2': (4221, -21107, 6820),
-    # 'A3': (43561, -21107, 7203),
+    'A1': (-35214, -20986, 6299),
+    'A2': (4126, -20986, 6312),
+    'A3': (43466, -20986, 6396),
 }  # (x, y, z) in um
 
 phenotyping_magnification = 20
@@ -289,6 +289,12 @@ for well_name, well_coords in well_centers.items():
     tracking_position_labels.extend(_position_labels)
 
 # %%
+if USE_HW_SEQUENCING:
+    logger.warning(
+        "WARNING: This acquisition will use hardware sequencing. "
+        "This is an experimental feature."
+    )
+
 acq_dir = _create_acquisition_directory(acquisition_directory, acquisition_name)
 num_wells = len(well_centers)
 num_positions_per_well = len(pheno_position_list) // num_wells
