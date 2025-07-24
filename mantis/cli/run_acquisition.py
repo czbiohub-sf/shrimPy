@@ -9,7 +9,8 @@ from mantis.cli.parsing import config_filepath, output_dirpath
 default_mm_app_path = 'C:\\Program Files\\Micro-Manager-2.0_{}_{}_{}_2'.format(
     *__mm_version__.split('-')
 )
-default_mm_config_filepath = 'C:\\CompMicro_MMConfigs\\mantis\\mantis-LF.cfg'
+default_lf_config_filepath = 'C:\\CompMicro_MMConfigs\\mantis\\mantis-LF.cfg'
+default_ls_config_filepath = 'C:\\CompMicro_MMConfigs\\mantis\\mantis-LS.cfg'
 
 
 def load_settings(raw_settings: dict, settings_key: str, settings_class):
@@ -32,7 +33,7 @@ def load_settings(raw_settings: dict, settings_key: str, settings_class):
 )
 @click.option(
     "--mm-config-filepath",
-    default=default_mm_config_filepath,
+    default=default_ls_config_filepath,
     type=click.Path(exists=True, file_okay=True, dir_okay=False),
     show_default=True,
     help='''Path to Micro-manager config file
@@ -40,7 +41,7 @@ def load_settings(raw_settings: dict, settings_key: str, settings_class):
 )
 @click.option(
     "--lf-config-filepath",
-    default=default_mm_config_filepath,
+    default=default_lf_config_filepath,
     type=click.Path(exists=True, file_okay=True, dir_okay=False),
     show_default=True,
     help='''Path to Micro-manager config file
@@ -50,8 +51,8 @@ def run_acquisition(
     config_filepath,
     output_dirpath,
     mm_app_path,
-    mm_config_filepath,
-    lf_config_filepath: str = default_mm_config_filepath,
+    ls_config_filepath,
+    lf_config_filepath: str = default_lf_config_filepath,
 ):
     """Acquire mantis data as specified by a configuration file.
 
@@ -95,7 +96,7 @@ def run_acquisition(
         acquisition_directory=acq_directory,
         acquisition_name=acq_name,
         mm_app_path=mm_app_path,
-        mm_config_file=mm_config_filepath,
+        ls_config_file=ls_config_filepath,
         lf_config_file=lf_config_filepath,
         demo_run=demo_run,
         enable_ls_acq=False,

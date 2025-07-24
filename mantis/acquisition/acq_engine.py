@@ -437,7 +437,7 @@ class MantisAcquisition(object):
         acquisition_directory: Union[str, os.PathLike],
         acquisition_name: str,
         mm_app_path: str,
-        mm_config_file: str,
+        ls_config_file: str,
         lf_config_file: str,
         enable_ls_acq: bool = True,
         enable_lf_acq: bool = True,
@@ -502,7 +502,7 @@ class MantisAcquisition(object):
         self.ls_acq = BaseChannelSliceAcquisition(
             enabled=enable_ls_acq,
             mm_app_path=mm_app_path,
-            mm_config_file=mm_config_file,
+            mm_config_file=ls_config_file,
             core_log_path=Path(mm_app_path) / 'CoreLogs' / f'CoreLog{timestamp}_headless.txt',
         )
 
