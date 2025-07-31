@@ -12,7 +12,7 @@ from nidaqmx.constants import AcquisitionType
 from pycromanager import Core, Studio
 from pylablib.devices.Thorlabs import KinesisPiezoMotor
 
-from mantis.acquisition.AcquisitionSettings import AutoexposureSettings
+from mantis.acquisition.AcquisitionSettings import AutoexposureSettings, AutotrackerSettings
 from mantis.acquisition.autoexposure import manual_autoexposure, mean_intensity_autoexposure
 
 logger = logging.getLogger(__name__)
@@ -96,11 +96,11 @@ def get_position_list(mmStudio, z_stage_name):
 
 def get_current_position(mmc, z_stage_name):
     xyz_position = [
-        (
+        [
             mmc.get_x_position(),
             mmc.get_y_position(),
             mmc.get_position(z_stage_name) if z_stage_name else None,
-        )
+        ]
     ]
     position_label = ['FOV0']
 
@@ -673,3 +673,12 @@ def autoexposure(
         )
 
     return suggested_exposure_time, suggested_light_intensity
+
+
+def autotracker(
+    mmc: Core,
+    autotracker_settings: AutotrackerSettings,
+    **kwargs,
+):
+    logging.debug('microscope operateions autotracker')
+    pass
