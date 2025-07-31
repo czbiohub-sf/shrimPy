@@ -20,8 +20,8 @@ from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, 
 from waveorder.focus import focus_from_transverse_band
 
 from mantis import get_console_formatter
-from mantis.acquisition.autoexposure import load_manual_illumination_settings
 from mantis.acquisition import microscope_operations
+from mantis.acquisition.autoexposure import load_manual_illumination_settings
 from mantis.acquisition.hook_functions import globals
 from mantis.acquisition.logger import configure_debug_logger, log_conda_environment
 
@@ -673,7 +673,7 @@ class MantisAcquisition(object):
                 'Autoexposure is not supported in demo mode. Using default exposure time and laser power'
             )
             return
-    
+
         if self.ls_acq.autoexposure_settings.autoexposure_method is None:
             raise ValueError(
                 'Autoexposure is requested, but autoexposure settings are not provided. '
@@ -691,12 +691,17 @@ class MantisAcquisition(object):
                 self._root_dir / 'illumination.csv',
             )
             # Check that exposure times are greater than the minimum exposure time
-            if not (illumination_settings["exposure_time_ms"] > self.ls_acq.channel_settings.min_exposure_time).all():
+            if not (
+                illumination_settings["exposure_time_ms"]
+                > self.ls_acq.channel_settings.min_exposure_time
+            ).all():
                 raise ValueError(
                     f'All exposure times in the illumination.csv file must be greater than the minimum exposure time of {self.ls_acq.channel_settings.min_exposure_time} ms.'
                 )
             # Check that illumination settings are provided for all wells
-            if not set(illumination_settings.index.values) == set(self.position_settings.well_ids):
+            if not set(illumination_settings.index.values) == set(
+                self.position_settings.well_ids
+            ):
                 raise ValueError(
                     'Well IDs in the illumination.csv file do not match the well IDs in the position settings.'
                 )

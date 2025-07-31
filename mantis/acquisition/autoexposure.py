@@ -39,6 +39,7 @@ def load_manual_illumination_settings(csv_filepath: str) -> pd.DataFrame:
 
     return df
 
+
 def manual_autoexposure(
     current_exposure_time,
     current_laser_power,
