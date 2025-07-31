@@ -472,7 +472,7 @@ class MantisAcquisition(object):
         if self._ls_acq_obj:
             self._ls_acq_obj.abort()
 
-    def update_position_settings(self):
+    def load_position_settings(self):
         """
         Fetch positions defined in the Micro-manager Position List Manager
         """
@@ -500,7 +500,23 @@ class MantisAcquisition(object):
 
         else:
             logger.debug('Position list is already populated and will not be updated')
+    
+    
+    def update_mm_position_list(self):
+        """
+        Update the MicroManager position list with the current position settings.
+        Currently done between acquisition chunks when using the autotracker.
+        """
 
+        microscope_operations.update_position_list(
+            self.lf_acq.mmc,
+            self.lf_acq.mmStudio,
+            self.position_settings.xyz_positions,
+            self.position_settings.position_labels,
+            z_stage_name=self.lf_acq.microscope_settings.autofocus_stage,
+        )
+
+    
     def update_lf_acquisition_rates(self, lf_exposure_times: list):
         if self._demo_run:
             # Set approximate demo camera acquisition rate for use in await_cz_acq_completion
@@ -1132,7 +1148,7 @@ class MantisAcquisition(object):
         self.setup_autofocus()
 
         logger.debug('Updating position settings')
-        self.update_position_settings()
+        self.load_position_settings()
 
         logger.debug('Setting up autoexposure')
         self.setup_autoexposure()
@@ -1407,6 +1423,9 @@ class MantisAcquisition(object):
         self._ls_acq_obj = None
 
         logger.info('Acquisition finished')
+
+        if use_autotracker:
+            self.update_mm_position_settings()
 
     def await_cz_acq_completion(self):
         # LS acq time

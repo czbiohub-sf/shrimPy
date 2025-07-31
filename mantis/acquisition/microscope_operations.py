@@ -9,6 +9,7 @@ import numpy as np
 
 from copylot.hardware.lasers.vortran.vortran import VortranLaser
 from nidaqmx.constants import AcquisitionType
+import pycromanager
 from pycromanager import Core, Studio
 from pylablib.devices.Thorlabs import KinesisPiezoMotor
 
@@ -92,6 +93,56 @@ def get_position_list(mmStudio, z_stage_name):
         position_labels.append(_pos.get_label())
 
     return xyz_positions, position_labels
+
+
+def update_position_list(
+    mmc,
+    mmStudio,
+    xyz_positions: list,
+    position_labels: list,
+    xy_stage_name: str=None,
+    z_stage_name: str=None
+):
+    if xy_stage_name is None:
+        xy_stage_name = mmc.get_xy_stage_device()
+    if z_stage_name is None:
+        z_stage_name = mmc.get_focus_device()
+
+    mm_pos_list_manager = mmStudio.get_position_list_manager()
+    mm_pos_list = mm_pos_list_manager.get_position_list()
+
+    # Iterate over the positions in the MM position list
+    number_of_positions = mm_pos_list.get_number_of_positions()
+    for i in range(number_of_positions):
+        _pos = mm_pos_list.get_position(i)
+        mm_pos_label = _pos.get_label()
+
+        try:
+            # Update the position with a matching label
+            idx = position_labels.index(mm_pos_label)
+            mm_position = pycromanager.JavaObject(
+                "org.micromanager.MultiStagePosition",
+                [
+                    xy_stage_name,
+                    xyz_positions[idx][0],
+                    xyz_positions[idx][1],
+                    z_stage_name,
+                    xyz_positions[idx][2]
+                ]
+            )
+            mm_position.set_label(position_labels[idx])
+            mm_pos_list.replace_position(idx, mm_position)
+            logger.debug(
+                f'Updated position {mm_pos_label} with coordinates {xyz_positions[idx]}'
+            )
+        except ValueError:
+            logger.warning(
+                f'The MicroManager position list contains position "{mm_pos_label}" which is not in the provided position labels.'
+            )
+
+    # Set the updates position list as the "current" position list
+    mm_pos_list_manager.set_position_list(mm_pos_list)
+    logger.info('Updated MicroManager position list with new coordinates')
 
 
 def get_current_position(mmc, z_stage_name):
