@@ -22,6 +22,7 @@ from waveorder.focus import focus_from_transverse_band
 from mantis import get_console_formatter
 from mantis.acquisition import microscope_operations
 from mantis.acquisition.autotracker import autotracker_hook_fn
+from mantis.acquisition.autoexposure import load_manual_illumination_settings
 from mantis.acquisition.hook_functions import globals
 from mantis.acquisition.logger import configure_debug_logger, log_conda_environment
 
@@ -531,6 +532,7 @@ class MantisAcquisition(object):
             self.ls_acq.slice_settings.acquisition_rate = [
                 np.minimum(30, 1000 / exp_time) for exp_time in ls_exposure_times
             ]
+            self.ls_acq.channel_settings.min_exposure_time = 2  # useful for debugging
             return
 
         # Determine light-sheet acq timing
@@ -540,6 +542,9 @@ class MantisAcquisition(object):
             decimals=3,
         )
         _cam_max_fps = int(np.around(1000 / ls_readout_time_ms))
+        # When using simulated global shutter by modulating the laser excitation time,
+        # the exposure time needs to be greater than the sensor readout time
+        self.ls_acq.channel_settings.min_exposure_time = ls_readout_time_ms
         for ls_exp_time in ls_exposure_times:
             assert (
                 ls_readout_time_ms < ls_exp_time
@@ -678,20 +683,48 @@ class MantisAcquisition(object):
                 self.ls_acq.channel_settings.default_laser_powers
             )
 
+        if not any(self.ls_acq.channel_settings.use_autoexposure):
+            logger.debug(
+                'Autoexposure is not enabled for any channels. Using default exposure time and laser power'
+            )
+            return
+
         if self._demo_run:
             logger.debug(
                 'Autoexposure is not supported in demo mode. Using default exposure time and laser power'
             )
             return
 
-        if (
-            any(self.ls_acq.channel_settings.use_autoexposure)
-            and self.ls_acq.autoexposure_settings.autoexposure_method == 'manual'
-        ):
+        if self.ls_acq.autoexposure_settings.autoexposure_method is None:
+            raise ValueError(
+                'Autoexposure is requested, but autoexposure settings are not provided. '
+                'Please provide autoexposure settings in the acquisition config file.'
+            )
+
+        logger.debug('Setting up autoexposure for light-sheet acquisition')
+        if self.ls_acq.autoexposure_settings.autoexposure_method == 'manual':
             # Check that the 'illumination.csv' file exists
             if not (self._root_dir / 'illumination.csv').exists():
                 raise FileNotFoundError(
                     f'The illumination.csv file required for manual autoexposure was not found in {self._root_dir}'
+                )
+            illumination_settings = load_manual_illumination_settings(
+                self._root_dir / 'illumination.csv',
+            )
+            # Check that exposure times are greater than the minimum exposure time
+            if not (
+                illumination_settings["exposure_time_ms"]
+                > self.ls_acq.channel_settings.min_exposure_time
+            ).all():
+                raise ValueError(
+                    f'All exposure times in the illumination.csv file must be greater than the minimum exposure time of {self.ls_acq.channel_settings.min_exposure_time} ms.'
+                )
+            # Check that illumination settings are provided for all wells
+            if not set(illumination_settings.index.values) == set(
+                self.position_settings.well_ids
+            ):
+                raise ValueError(
+                    'Well IDs in the illumination.csv file do not match the well IDs in the position settings.'
                 )
 
         # initialize lasers

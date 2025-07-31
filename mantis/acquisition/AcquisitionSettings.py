@@ -76,6 +76,7 @@ class ChannelSettings:
     # dictionaries with following structure: {well_id: list_of_exposure_times}
     exposure_times_per_well: Dict = field(init=None, default_factory=dict)
     laser_powers_per_well: Dict = field(init=None, default_factory=dict)
+    min_exposure_time: NonNegativeFloat = 0  # in ms
 
     def __post_init__(self):
         self.num_channels = len(self.channels)
