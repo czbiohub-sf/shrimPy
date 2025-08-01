@@ -1179,15 +1179,15 @@ class MantisAcquisition(object):
         if self.lf_acq.microscope_settings.autotracker_config is not None:
             lf_image_saved_fn = partial(
                 autotracker_hook_fn,
-                arm='lf',
-                autotracker_settings=self.lf_acq.autotracker_settings,
-                position_settings=self._position_settings,
-                channel_config=self.lf_acq.microscope_settings.autotracker_config,
-                z_slice_settings=self.lf_acq.slice_settings,
-                output_shift_path=self._logs_dir,
+                'lf',
+                self.lf_acq.autotracker_settings,
+                self._position_settings,
+                self.lf_acq.microscope_settings.autotracker_config,
+                self.lf_acq.slice_settings,
+                self._logs_dir,
             )
         else:
-            logger.info('No autotracker config found. Using default image saved hook')
+            logger.info('No autotracker config found for LF acquisition. Using default image saved hook')
             lf_image_saved_fn = check_lf_acq_finished
 
         # define LF acquisition
@@ -1223,15 +1223,15 @@ class MantisAcquisition(object):
         if self.ls_acq.microscope_settings.autotracker_config is not None:
             ls_image_saved_fn = partial(
                 autotracker_hook_fn,
-                arm='ls',
-                autotracker_settings=self.ls_acq.autotracker_settings,
-                position_settings=self._position_settings,
-                channel_config=self.ls_acq.microscope_settings.autotracker_config,
-                z_slice_settings=self.ls_acq.slice_settings,
-                output_shift_path=self._logs_dir,
+                'ls',
+                self.ls_acq.autotracker_settings,
+                self._position_settings,
+                self.ls_acq.microscope_settings.autotracker_config,
+                self.ls_acq.slice_settings,
+                self._logs_dir,
             )
         else:
-            logger.info('No autotracker config found. Using default image saved hook')
+            logger.info('No autotracker config found for LS acquisition. Using default image saved hook')
             ls_image_saved_fn = check_ls_acq_finished
 
         # define LS acquisition
@@ -1425,7 +1425,7 @@ class MantisAcquisition(object):
         logger.info('Acquisition finished')
 
         if use_autotracker:
-            self.update_mm_position_settings()
+            self.update_mm_position_list()
 
     def await_cz_acq_completion(self):
         # LS acq time
