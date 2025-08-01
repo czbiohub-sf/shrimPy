@@ -1425,6 +1425,9 @@ class MantisAcquisition(object):
         logger.info('Acquisition finished')
 
         if use_autotracker:
+            # update self.position_settings with the latest autotracker positions
+            self.update_position_autotracker()
+            # update mm position list
             self.update_mm_position_list()
 
     def await_cz_acq_completion(self):
