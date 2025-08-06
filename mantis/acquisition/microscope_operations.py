@@ -182,7 +182,7 @@ def get_total_num_daq_counter_samples(CtrTask: nidaqmx.Task or list):
     return num_counter_samples
 
 
-def autofocus(mmc: CMMCorePlus, z_stage_name: str, z_position):
+def autofocus(mmc: CMMCorePlus, z_stage_name: str):
     """
     Attempt to engage Nikon PFS continuous autofocus. This function will log a
     message and continue if continuous autofocus is already engaged. Otherwise,
@@ -202,19 +202,17 @@ def autofocus(mmc: CMMCorePlus, z_stage_name: str, z_position):
     bool
         True if continuous autofocus successfully engaged, False otherwise.
     """
-    device = mmc.getAutoFocusDevice()
-    logger.debug(f'Engaging autofocus. device:{device}'  )
+    
+    logger.debug(f'Engaging autofocus.'  )
     autofocus_success = False
     error_occurred = False
+    z_position = mmc.getPosition(z_stage_name)
 
-
-    #af_method = mmStudio.get_autofocus_manager().get_autofocus_method()
     z_offsets = [0, -10, 10, -20, 20, -30, 30]  # in um
 
     # Turn on autofocus if it has been turned off. This call has no effect is
     # continuous autofocus is already engaged
     try:
-        #af_method.full_focus()
         mmc.fullFocus()  # This is the Micro-manager call to engage autofocus
     except Exception:
         logger.debug('Call to full_focus() method failed')

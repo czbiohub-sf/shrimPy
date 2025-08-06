@@ -1250,7 +1250,6 @@ class MantisAcquisition(object):
                     autofocus_success = microscope_operations.autofocus(
                         self.lf_acq.mmc,
                         self.lf_acq.microscope_settings.autofocus_stage,
-                        self.position_settings.xyz_positions[p_idx][2],
                     )
                     if not autofocus_success:
                         # abort acquisition at this time/position index
