@@ -1438,10 +1438,11 @@ class MantisAcquisition(object):
         buffer_time = 5
 
         t_start = time.time()
-        print_extra_time_message = True
-        while (lf_acq_aborted := self.lf_acq.mmc.isSequenceRunning() or
-            (ls_acq_aborted := (self.ls_acq.enabled and self.ls_acq.mmc.isSequenceRunning()))):
-            
+
+        while lf_acq_aborted := self.lf_acq.mmc.isSequenceRunning() or (
+            ls_acq_aborted := (self.ls_acq.enabled and self.ls_acq.mmc.isSequenceRunning())
+        ):
+
             remaining_time = buffer_time - (time.time() - t_start)
             if remaining_time > 0:
                 # print this once

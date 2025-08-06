@@ -202,8 +202,8 @@ def autofocus(mmc: CMMCorePlus, z_stage_name: str):
     bool
         True if continuous autofocus successfully engaged, False otherwise.
     """
-    
-    logger.debug(f'Engaging autofocus.'  )
+
+    logger.debug('Engaging autofocus.')
     autofocus_success = False
     error_occurred = False
     z_position = mmc.getPosition(z_stage_name)
