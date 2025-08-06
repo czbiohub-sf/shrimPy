@@ -1249,7 +1249,6 @@ class MantisAcquisition(object):
                 if self.lf_acq.enabled and self.lf_acq.microscope_settings.use_autofocus:
                     autofocus_success = microscope_operations.autofocus(
                         self.lf_acq.mmc,
-                        self.lf_acq.mmStudio,
                         self.lf_acq.microscope_settings.autofocus_stage,
                         self.position_settings.xyz_positions[p_idx][2],
                     )
