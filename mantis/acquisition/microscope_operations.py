@@ -182,7 +182,7 @@ def get_total_num_daq_counter_samples(CtrTask: nidaqmx.Task or list):
     return num_counter_samples
 
 
-def autofocus(mmc: CMMCorePlus, z_stage_name: str):
+def autofocus(mmc: CMMCorePlus, z_stage_name: str, z_position: float) -> bool:
     """
     Attempt to engage Nikon PFS continuous autofocus. This function will log a
     message and continue if continuous autofocus is already engaged. Otherwise,
@@ -204,9 +204,9 @@ def autofocus(mmc: CMMCorePlus, z_stage_name: str):
     """
 
     logger.debug('Engaging autofocus.')
+    logger.info(f"z stage {z_stage_name} @ position {z_position} um")
     autofocus_success = False
     error_occurred = False
-    z_position = mmc.getPosition(z_stage_name)
 
     z_offsets = [0, -10, 10, -20, 20, -30, 30]  # in um
 

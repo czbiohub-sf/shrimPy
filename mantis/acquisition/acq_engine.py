@@ -1247,9 +1247,17 @@ class MantisAcquisition(object):
 
                 # autofocus
                 if self.lf_acq.enabled and self.lf_acq.microscope_settings.use_autofocus:
+                    # use current position if not set to > 0 value.
+                    starting_pos = self.position_settings.xyz_positions[p_idx][2]
+                    if starting_pos <= 0:
+                        starting_pos = self.lf_acq.mmc.getPosition(
+                            self.lf_acq.microscope_settings.autofocus_stage
+                        )
+
                     autofocus_success = microscope_operations.autofocus(
                         self.lf_acq.mmc,
                         self.lf_acq.microscope_settings.autofocus_stage,
+                        starting_pos,
                     )
                     if not autofocus_success:
                         # abort acquisition at this time/position index
@@ -1257,7 +1265,15 @@ class MantisAcquisition(object):
                             f'Autofocus failed. Aborting acquisition for timepoint {t_idx} at position {p_label}'
                         )
                         continue
-
+                    else:
+                        self.position_settings.xyz_positions[p_idx][
+                            2
+                        ] = self.lf_acq.mmc.getPosition(
+                            self.lf_acq.microscope_settings.autofocus_stage
+                        )
+                        logger.debug(
+                            f'Autofocus successful. Z position updated to {self.position_settings.xyz_positions[p_idx][2]} at position {p_label}'
+                        )
                 # autoexposure
                 if well_id != previous_well_id:
                     globals.new_well = True
