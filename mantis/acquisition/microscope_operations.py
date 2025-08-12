@@ -182,7 +182,7 @@ def get_total_num_daq_counter_samples(CtrTask: nidaqmx.Task or list):
     return num_counter_samples
 
 
-def autofocus(mmc, mmStudio, z_stage_name: str, z_position):
+def autofocus(mmc: CMMCorePlus, z_stage_name: str, z_position: float) -> bool:
     """
     Attempt to engage Nikon PFS continuous autofocus. This function will log a
     message and continue if continuous autofocus is already engaged. Otherwise,
@@ -202,23 +202,24 @@ def autofocus(mmc, mmStudio, z_stage_name: str, z_position):
     bool
         True if continuous autofocus successfully engaged, False otherwise.
     """
-    logger.debug('Engaging autofocus')
+
+    logger.debug('Engaging autofocus.')
+    logger.info(f"z stage {z_stage_name} @ position {z_position} um")
     autofocus_success = False
     error_occurred = False
 
-    af_method = mmStudio.get_autofocus_manager().get_autofocus_method()
     z_offsets = [0, -10, 10, -20, 20, -30, 30]  # in um
 
     # Turn on autofocus if it has been turned off. This call has no effect is
     # continuous autofocus is already engaged
     try:
-        af_method.full_focus()
+        mmc.fullFocus()  # This is the Micro-manager call to engage autofocus
     except Exception:
         logger.debug('Call to full_focus() method failed')
     else:
         logger.debug('Call to full_focus() method succeeded')
 
-    if af_method.is_continuous_focus_locked():  # True if autofocus is engaged
+    if mmc.isContinuousFocusLocked():  # True if autofocus is engaged
         autofocus_success = True
         logger.debug('Continuous autofocus is already engaged')
     else:
@@ -226,10 +227,10 @@ def autofocus(mmc, mmStudio, z_stage_name: str, z_position):
             mmc.setPosition(z_stage_name, z_position + z_offset)
             mmc.waitForDevice(z_stage_name)
 
-            af_method.enableContinuousFocus(True)  # this call engages autofocus
+            mmc.enableContinuousFocus(True)  # this call engages autofocus
             time.sleep(1)  # wait an extra second
 
-            if af_method.is_continuous_focus_locked():
+            if mmc.isContinuousFocusLocked():
                 autofocus_success = True
                 break
             else:

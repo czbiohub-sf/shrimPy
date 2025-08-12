@@ -711,7 +711,7 @@ class MantisAcquisition(object):
             microscope_operations.setup_daq_counter(
                 self._ls_z_ctr_task,
                 co_channel='cDAQ1/_ctr3',
-                freq=self.ls_acq.slice_settings.acquisition_rate,
+                freq=self.ls_acq.slice_settings.acquisition_rate[0],
                 duty_cycle=0.1,
                 samples_per_channel=self.ls_acq.slice_settings.num_slices,
                 pulse_terminal='/cDAQ1/PFI1',
@@ -1247,11 +1247,17 @@ class MantisAcquisition(object):
 
                 # autofocus
                 if self.lf_acq.enabled and self.lf_acq.microscope_settings.use_autofocus:
+                    # use current position if not set to > 0 value.
+                    starting_pos = self.position_settings.xyz_positions[p_idx][2]
+                    if starting_pos <= 0:
+                        starting_pos = self.lf_acq.mmc.getPosition(
+                            self.lf_acq.microscope_settings.autofocus_stage
+                        )
+
                     autofocus_success = microscope_operations.autofocus(
                         self.lf_acq.mmc,
-                        self.lf_acq.mmStudio,
                         self.lf_acq.microscope_settings.autofocus_stage,
-                        self.position_settings.xyz_positions[p_idx][2],
+                        starting_pos,
                     )
                     if not autofocus_success:
                         # abort acquisition at this time/position index
@@ -1259,7 +1265,15 @@ class MantisAcquisition(object):
                             f'Autofocus failed. Aborting acquisition for timepoint {t_idx} at position {p_label}'
                         )
                         continue
-
+                    else:
+                        self.position_settings.xyz_positions[p_idx][
+                            2
+                        ] = self.lf_acq.mmc.getPosition(
+                            self.lf_acq.microscope_settings.autofocus_stage
+                        )
+                        logger.debug(
+                            f'Autofocus successful. Z position updated to {self.position_settings.xyz_positions[p_idx][2]} at position {p_label}'
+                        )
                 # autoexposure
                 if well_id != previous_well_id:
                     globals.new_well = True
@@ -1438,33 +1452,27 @@ class MantisAcquisition(object):
 
     def abort_stalled_acquisition(self):
         buffer_time = 5
-        lf_acq_aborted = False
-        ls_acq_aborted = False
 
         t_start = time.time()
-        print_extra_time_message = True
-        while (
-            not all(
-                (
-                    self.lf_acq.mmc.isSequenceRunning(),
-                    (not self.ls_acq.enabled or self.ls_acq.mmc.isSequenceRunning()),
-                )
-            )
-            and (time.time() - t_start) < buffer_time
+
+        while lf_acq_aborted := self.lf_acq.mmc.isSequenceRunning() or (
+            ls_acq_aborted := (self.ls_acq.enabled and self.ls_acq.mmc.isSequenceRunning())
         ):
-            if print_extra_time_message:
+
+            remaining_time = buffer_time - (time.time() - t_start)
+            if remaining_time > 0:
                 # print this once
                 logger.warning(
                     'Acquisition is taking longer than expected. '
-                    f'Allowing up to {buffer_time} seconds for the acquisition to finish...'
+                    f'Allowing up to {remaining_time} seconds for the acquisition to finish...'
                 )
-                print_extra_time_message = False
+            else:
+                break
             time.sleep(0.2)
 
         # TODO: a lot of hardcoded values here
-        if not self.lf_acq.mmc.isSequenceRunning():
+        if lf_acq_aborted:
             # abort LF acq
-            lf_acq_aborted = True
             camera = self.lf_acq.mmc.getCameraDevice()
             sequenced_stages = []
             if self.lf_acq.slice_settings.use_sequencing:
@@ -1482,9 +1490,8 @@ class MantisAcquisition(object):
             # set a flag to clear any remaining events
             globals.lf_acq_aborted = True
 
-        if self.ls_acq.enabled and not self.ls_acq.mmc.isSequenceRunning():
+        if ls_acq_aborted:
             # abort LS acq
-            ls_acq_aborted = True
             camera = 'Camera' if self._demo_run else 'Prime BSI Express'
             sequenced_stages = []
             if self.ls_acq.slice_settings.use_sequencing:

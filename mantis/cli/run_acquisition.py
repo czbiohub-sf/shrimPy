@@ -32,7 +32,7 @@ def load_settings(raw_settings: dict, settings_key: str, settings_class):
       which will run the light-sheet acquisition''',
 )
 @click.option(
-    "--mm-config-filepath",
+    "--ls-config-filepath",
     default=default_ls_config_filepath,
     type=click.Path(exists=True, file_okay=True, dir_okay=False),
     show_default=True,
