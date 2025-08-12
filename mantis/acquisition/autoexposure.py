@@ -12,12 +12,32 @@
 # adjusting camera exposure and laser power based on these suggestions until
 # convergence.
 
-import csv
-
 import numpy as np
+import pandas as pd
 
 from mantis import logger
 from mantis.acquisition.AcquisitionSettings import AutoexposureSettings
+
+
+def load_manual_illumination_settings(csv_filepath: str) -> pd.DataFrame:
+    """
+    Import the manual illumination settings from a CSV file.
+    The CSV file should have the following columns:
+    - well_id
+    - exposure_time_ms
+    - laser_power_mW
+    """
+
+    df = pd.read_csv(csv_filepath, dtype=str)
+    if not set(df.columns) == {"well_id", "exposure_time_ms", "laser_power_mW"}:
+        raise ValueError(
+            "CSV file must contain columns: well_id, exposure_time_ms, laser_power_mW"
+        )
+    df.set_index("well_id", inplace=True)
+    df["exposure_time_ms"] = df["exposure_time_ms"].astype(float)
+    df["laser_power_mW"] = df["laser_power_mW"].astype(float)
+
+    return df
 
 
 def manual_autoexposure(
@@ -26,20 +46,20 @@ def manual_autoexposure(
     illumination_settings_filepath,
     well_id,
 ):
-    autoexposure_flag = (
-        None  # 1: over-exposed , 0: optimally exposed, -1: under-exposed, None: error
-    )
-    suggested_exposure_time = current_exposure_time
-    suggested_laser_power = current_laser_power
-    with open(illumination_settings_filepath) as csvfile:
-        reader = csv.reader(csvfile)
-
-        for line in reader:
-            if line[0] == well_id:
-                autoexposure_flag = 0
-                suggested_exposure_time = float(line[1])
-                suggested_laser_power = float(line[2])
-                break
+    try:
+        autoexposure_flag = 0
+        illumination_settings = load_manual_illumination_settings(
+            illumination_settings_filepath
+        )
+        suggested_exposure_time = illumination_settings.loc[well_id, "exposure_time_ms"]
+        suggested_laser_power = illumination_settings.loc[well_id, "laser_power_mW"]
+    except Exception as e:
+        logger.error(f"Error reading manual illumination settings: {e}")
+        # If autoexposure fails, we return None for autoexposure_flag
+        # and keep the current exposure time and laser power
+        autoexposure_flag = None
+        suggested_exposure_time = current_exposure_time
+        suggested_laser_power = current_laser_power
 
     return autoexposure_flag, suggested_exposure_time, suggested_laser_power
 
