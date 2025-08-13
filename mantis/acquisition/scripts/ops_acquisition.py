@@ -30,16 +30,16 @@ PIEZO_STEP_TIME_S = 0.05
 mmc = Core()
 
 acquisition_directory = Path(r'G:\OPS')
-acquisition_name = 'OPS0061'
-start_time = '2025-07-18 01:00:00'
+acquisition_name = 'OPS0068'
+start_time = '2025-08-12 01:00:00'
 # start_time = 'now'
 well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
 min_fov_distance_from_well_edge = 800  # in um
 #TODO:uncomment this after this acquisition -EH
 well_centers = {
-    'A1': (-35214, -20986, 6299),
-    'A2': (4126, -20986, 6312),
-    'A3': (43466, -20986, 6396),
+    'A1': (620, 13, 7731),
+    'A2': (39960, 13, 7793),
+    'A3': (79300, 13, 7829),
 }  # (x, y, z) in um
 
 phenotyping_magnification = 20
@@ -50,7 +50,8 @@ image_size = (2048, 2048)
 pixel_size = 6.5  # in um
 
 phenotyping_channel_group = 'Channels'
-phenotyping_channel = '5-MultiCam_GFP_mCherry_BF'
+# phenotyping_channel = '5-MultiCam_GFP_mCherry_BF'
+phenotyping_channel = '4-MultiCam_GFP_BF'
 # phenotyping_channel = '4-MultiCam_CL488_BF'
 # phenotyping_channel = '4-MultiCam_mCherry_BF'
 # phenotyping_channel = '1-Zyla_BF'
@@ -145,7 +146,9 @@ def setup_hw_sequencing():
             max_framerate = float(match.group(1))
         else:
             raise RuntimeError('Could not determine max Zyla framerate')
-        framerate = 1 / (1/max_framerate + PIEZO_STEP_TIME_S)
+        frame_interval_s = max(1/max_framerate - exposure_time/1000, PIEZO_STEP_TIME_S)
+        framerate = 1 / (exposure_time/1000 + frame_interval_s)
+        print(f'Setting acquisition framerate to {framerate:.4f} Hz')
         mmc.set_property('Zyla', 'FrameRate', framerate)
 
         # Setup Prime BSI Express camera
