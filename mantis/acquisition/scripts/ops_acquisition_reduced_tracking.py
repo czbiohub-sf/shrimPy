@@ -123,14 +123,30 @@ def change_magnification_tracking():
         mmc.set_property('TL-ApertureDiaphragm', 'Position', '4')
 
 
-def setup_hw_sequencing():
+def setup_acquisition():
+    logger.info('Setting up microscope for acquisition')
+
+    # Set PiezoZ to external input
+    mmc.set_property('XYStage', 'SerialCommand', 'PZ Z=1'); time.sleep(2)
+    mmc.set_position('TS_PiezoZ', z_start)
+
+    # TODO: Set autofocus time to 0.1s
+
+    # Turn off camera denoising
+    mmc.set_property('Prime', 'PP  1   ENABLED', 'No')
+    mmc.set_property('Prime', 'PP  2   ENABLED', 'No')
+    mmc.set_property('Prime', 'PP  3   ENABLED', 'No')
+    mmc.set_property('Prime', 'PP  4   ENABLED', 'No')
+    mmc.set_property('BSI_Express', 'PP  1   ENABLED', 'No')
+    mmc.set_property('BSI_Express', 'PP  2   ENABLED', 'No')
+    mmc.set_property('BSI_Express', 'PP  3   ENABLED', 'No')
+    mmc.set_property('BSI_Express', 'PP  4   ENABLED', 'No')
+
+    if USE_HW_SEQUENCING:
         logger.info(f'Setting up for hardware sequencing')
 
         # Setup Z Stage
-        # Set PiezoZ to external input; TODO: should we do this here?
-        mmc.set_property('XYStage', 'SerialCommand', 'PZ Z=1'); time.sleep(2)
         mmc.set_property('TS_DAC01', 'Sequence', 'On')
-        mmc.set_position('TS_PiezoZ', z_start)
 
         # Setup Zyla camera
         # turn off overlapping readout to be able to set framerate inpedendently
@@ -156,11 +172,31 @@ def setup_hw_sequencing():
         mmc.set_property('Prime', 'TriggerMode', 'Edge Trigger')
 
 
-def reset_hw_sequencing():
+def reset_acquisition():
+    logger.info('Resetting microscope after acquisition')
+    
+    # Close shutter - pycromanager leaves it open
+    mmc.set_shutter_open(False)
+
+    # Reset PiezoZ
+    mmc.set_property('XYStage', 'SerialCommand', 'PZ Z=0'); time.sleep(2)
+
+    # TODO: Reset autofocus
+
+    # Reset camera denoising
+    mmc.set_property('Prime', 'PP  1   ENABLED', 'Yes')
+    mmc.set_property('Prime', 'PP  2   ENABLED', 'Yes')
+    mmc.set_property('Prime', 'PP  3   ENABLED', 'Yes')
+    mmc.set_property('Prime', 'PP  4   ENABLED', 'Yes')
+    mmc.set_property('BSI_Express', 'PP  1   ENABLED', 'Yes')
+    mmc.set_property('BSI_Express', 'PP  2   ENABLED', 'Yes')
+    mmc.set_property('BSI_Express', 'PP  3   ENABLED', 'Yes')
+    mmc.set_property('BSI_Express', 'PP  4   ENABLED', 'Yes')
+
+    if USE_HW_SEQUENCING:
         logger.info(f'Resetting after hardware sequencing')
 
         # Reset Z Stage
-        mmc.set_property('XYStage', 'SerialCommand', 'PZ Z=0'); time.sleep(2)
         mmc.set_property('TS_DAC01', 'Sequence', 'Off')
 
         # Reset Zyla camera
@@ -330,8 +366,7 @@ if start_delay_s > 0:
     time.sleep(start_delay_s)
 
 try:
-    if USE_HW_SEQUENCING:
-        setup_hw_sequencing()
+    setup_acquisition()
         
     logger.info(f'Starting acquisition')
     for i, well_name in enumerate(well_names):
@@ -379,8 +414,6 @@ try:
     logger.info(f'Acquisition finished')
 
 finally:
-    mmc.set_shutter_open(False)
-    if USE_HW_SEQUENCING:
-        reset_hw_sequencing()
+    reset_acquisition()
 
 ## %%
