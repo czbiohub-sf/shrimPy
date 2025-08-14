@@ -24,17 +24,17 @@ DEBUG = False
 PIEZO_STEP_TIME_S = 0.05
 mmc = Core()
 
-acquisition_directory = Path(r'D:\Ivan\2025_08_12_OPS_speed_test')
-acquisition_name = 'test1'
-# start_time = '2025-08-12 01:00:00'
-start_time = 'now'
-well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
+acquisition_directory = Path(r'G:\OPS')
+acquisition_name = 'OPS0069_test'
+start_time = '2025-08-12 01:00:00'
+# start_time = 'now'
+well_diameter = 3000  # in um, 6 well plates have 35 mm diameter wells
 min_fov_distance_from_well_edge = 800  # in um
 #TODO:uncomment this after this acquisition -EH
 well_centers = {
-    'A1': (620, 13, 7993),
-    'A2': (39960, 13, 7978),
-    'A3': (79300, 13, 7973),
+    'A1': (1551, -500, 7716),
+    'A2': (40891, -500, 7776),
+    'A3': (80231, -500, 7935),
 }  # (x, y, z) in um
 
 phenotyping_magnification = 20
@@ -45,8 +45,8 @@ image_size = (2048, 2048)
 pixel_size = 6.5  # in um
 
 phenotyping_channel_group = 'Channels'
-phenotyping_channel = '5-MultiCam_GFP_mCherry_BF'
-# phenotyping_channel = '4-MultiCam_GFP_BF'
+# phenotyping_channel = '5-MultiCam_GFP_mCherry_BF'
+phenotyping_channel = '4-MultiCam_GFP_BF'
 # phenotyping_channel = '4-MultiCam_CL488_BF'
 # phenotyping_channel = '4-MultiCam_mCherry_BF'
 # phenotyping_channel = '1-Zyla_BF'
@@ -175,9 +175,6 @@ def setup_acquisition():
 
 def reset_acquisition():
     logger.info('Resetting microscope after acquisition')
-    
-    # Close shutter - pycromanager leaves it open
-    mmc.set_shutter_open(False)
 
     # Reset PiezoZ
     mmc.set_property('XYStage', 'SerialCommand', 'PZ Z=0'); time.sleep(2)
@@ -397,6 +394,7 @@ try:
         while not acq_finished:
             time.sleep(1)
         acq.await_completion()
+        mmc.set_shutter_open(False)  # pycromanager leaves it open
 
         # Track cells
         if i < num_wells-1:  # no need to track after the last well has been phenotyped
@@ -413,6 +411,7 @@ try:
             logger.info(f'Acquiring tracking at wells {well_names[0:i+1]}')
             with Acquisition(directory=str(acq_dir), name='tracking') as acq:
                 acq.acquire(events)
+            mmc.set_shutter_open(False)  # pycromanager leaves it open
     logger.info(f'Acquisition finished')
 
 finally:
