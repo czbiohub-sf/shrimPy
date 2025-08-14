@@ -25,10 +25,10 @@ PIEZO_STEP_TIME_S = 0.05
 mmc = Core()
 
 acquisition_directory = Path(r'G:\OPS')
-acquisition_name = 'OPS0069_test'
-start_time = '2025-08-12 01:00:00'
+acquisition_name = 'OPS0069'
+start_time = '2025-08-15 05:00:00'
 # start_time = 'now'
-well_diameter = 3000  # in um, 6 well plates have 35 mm diameter wells
+well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
 min_fov_distance_from_well_edge = 800  # in um
 #TODO:uncomment this after this acquisition -EH
 well_centers = {
