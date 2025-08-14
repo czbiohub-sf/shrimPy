@@ -130,7 +130,8 @@ def setup_acquisition():
     mmc.set_property('XYStage', 'SerialCommand', 'PZ Z=1'); time.sleep(2)
     mmc.set_position('TS_PiezoZ', z_start)
 
-    # TODO: Set autofocus time to 0.1s
+    # Set autofocus time to 0.1s
+    mmc.set_property('Adaptive Focus Control', 'FullFocusTime', '100')
 
     # Turn off camera denoising
     mmc.set_property('Prime', 'PP  1   ENABLED', 'No')
@@ -181,7 +182,8 @@ def reset_acquisition():
     # Reset PiezoZ
     mmc.set_property('XYStage', 'SerialCommand', 'PZ Z=0'); time.sleep(2)
 
-    # TODO: Reset autofocus
+    # Reset autofocus
+    mmc.set_property('Adaptive Focus Control', 'FullFocusTime', '300')
 
     # Reset camera denoising
     mmc.set_property('Prime', 'PP  1   ENABLED', 'Yes')
