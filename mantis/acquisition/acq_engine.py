@@ -472,7 +472,7 @@ class MantisAcquisition(object):
         if self._ls_acq_obj:
             self._ls_acq_obj.abort()
 
-    def update_position_settings(self):
+    def load_position_settings(self):
         """
         Fetch positions defined in the Micro-manager Position List Manager
         """
@@ -500,7 +500,23 @@ class MantisAcquisition(object):
 
         else:
             logger.debug('Position list is already populated and will not be updated')
+    
+    
+    def update_mm_position_list(self):
+        """
+        Update the MicroManager position list with the current position settings.
+        Currently done between acquisition chunks when using the autotracker.
+        """
 
+        microscope_operations.update_position_list(
+            self.lf_acq.mmc,
+            self.lf_acq.mmStudio,
+            self.position_settings.xyz_positions,
+            self.position_settings.position_labels,
+            z_stage_name=self.lf_acq.microscope_settings.autofocus_stage,
+        )
+
+    
     def update_lf_acquisition_rates(self, lf_exposure_times: list):
         if self._demo_run:
             # Set approximate demo camera acquisition rate for use in await_cz_acq_completion
@@ -1132,7 +1148,7 @@ class MantisAcquisition(object):
         self.setup_autofocus()
 
         logger.debug('Updating position settings')
-        self.update_position_settings()
+        self.load_position_settings()
 
         logger.debug('Setting up autoexposure')
         self.setup_autoexposure()
@@ -1163,15 +1179,15 @@ class MantisAcquisition(object):
         if self.lf_acq.microscope_settings.autotracker_config is not None:
             lf_image_saved_fn = partial(
                 autotracker_hook_fn,
-                arm='lf',
-                autotracker_settings=self.lf_acq.autotracker_settings,
-                position_settings=self._position_settings,
-                channel_config=self.lf_acq.microscope_settings.autotracker_config,
-                z_slice_settings=self.lf_acq.slice_settings,
-                output_shift_path=self._logs_dir,
+                'lf',
+                self.lf_acq.autotracker_settings,
+                self._position_settings,
+                self.lf_acq.microscope_settings.autotracker_config,
+                self.lf_acq.slice_settings,
+                self._logs_dir,
             )
         else:
-            logger.info('No autotracker config found. Using default image saved hook')
+            logger.info('No autotracker config found for LF acquisition. Using default image saved hook')
             lf_image_saved_fn = check_lf_acq_finished
 
         # define LF acquisition
@@ -1207,15 +1223,15 @@ class MantisAcquisition(object):
         if self.ls_acq.microscope_settings.autotracker_config is not None:
             ls_image_saved_fn = partial(
                 autotracker_hook_fn,
-                arm='ls',
-                autotracker_settings=self.ls_acq.autotracker_settings,
-                position_settings=self._position_settings,
-                channel_config=self.ls_acq.microscope_settings.autotracker_config,
-                z_slice_settings=self.ls_acq.slice_settings,
-                output_shift_path=self._logs_dir,
+                'ls',
+                self.ls_acq.autotracker_settings,
+                self._position_settings,
+                self.ls_acq.microscope_settings.autotracker_config,
+                self.ls_acq.slice_settings,
+                self._logs_dir,
             )
         else:
-            logger.info('No autotracker config found. Using default image saved hook')
+            logger.info('No autotracker config found for LS acquisition. Using default image saved hook')
             ls_image_saved_fn = check_ls_acq_finished
 
         # define LS acquisition
@@ -1407,6 +1423,12 @@ class MantisAcquisition(object):
         self._ls_acq_obj = None
 
         logger.info('Acquisition finished')
+
+        if use_autotracker:
+            # update self.position_settings with the latest autotracker positions
+            self.update_position_autotracker()
+            # update mm position list
+            self.update_mm_position_list()
 
     def await_cz_acq_completion(self):
         # LS acq time
