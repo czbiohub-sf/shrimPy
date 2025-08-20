@@ -53,7 +53,7 @@ def update_ls_hardware(z_ctr_task, lasers, channels: list, event):
         logger.debug('Acquisition events are not valid.')
         return
 
-    c_idx = channels.index(event.channel.config )
+    c_idx = channels.index(event.channel.config)
 
     update_daq_freq(z_ctr_task, c_idx)
     # As a hack, setting laser power after call to `run_autoexposure`
