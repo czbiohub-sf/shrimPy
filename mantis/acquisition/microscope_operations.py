@@ -9,8 +9,7 @@ import numpy as np
 
 from copylot.hardware.lasers.vortran.vortran import VortranLaser
 from nidaqmx.constants import AcquisitionType
-import pycromanager
-from pycromanager import Core, Studio
+from pycromanager import Core, JavaObject, Studio
 from pylablib.devices.Thorlabs import KinesisPiezoMotor
 
 from mantis.acquisition.AcquisitionSettings import AutoexposureSettings, AutotrackerSettings
@@ -120,7 +119,7 @@ def update_position_list(
         try:
             # Update the position with a matching label
             idx = position_labels.index(mm_pos_label)
-            mm_position = pycromanager.JavaObject(
+            mm_position = JavaObject(
                 "org.micromanager.MultiStagePosition",
                 [
                     xy_stage_name,
