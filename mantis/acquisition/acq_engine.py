@@ -1488,8 +1488,8 @@ class MantisAcquisition(object):
 
         t_start = time.time()
 
-        while lf_acq_aborted := self.lf_acq.mmc.isSequenceRunning() or (
-            ls_acq_aborted := (self.ls_acq.enabled and self.ls_acq.mmc.isSequenceRunning())
+        while lf_acq_still_running := self.lf_acq.mmc.mda.is_running() or (
+            ls_acq_still_running := (self.ls_acq.enabled and self.ls_acq.mmc.mda.is_running())
         ):
 
             remaining_time = buffer_time - (time.time() - t_start)
@@ -1504,7 +1504,7 @@ class MantisAcquisition(object):
             time.sleep(0.2)
 
         # TODO: a lot of hardcoded values here
-        if lf_acq_aborted:
+        if lf_acq_still_running:
             # abort LF acq
             camera = self.lf_acq.mmc.getCameraDevice()
             sequenced_stages = []
@@ -1523,7 +1523,7 @@ class MantisAcquisition(object):
             # set a flag to clear any remaining events
             globals.lf_acq_aborted = True
 
-        if ls_acq_aborted:
+        if ls_acq_still_running:
             # abort LS acq
             camera = 'Camera' if self._demo_run else 'Prime BSI Express'
             sequenced_stages = []
@@ -1538,7 +1538,7 @@ class MantisAcquisition(object):
             # set a flag to clear any remaining events
             globals.ls_acq_aborted = True
 
-        return lf_acq_aborted, ls_acq_aborted
+        return lf_acq_still_running, ls_acq_still_running
 
 
 def _generate_channel_slice_mda_seq(
