@@ -6,6 +6,7 @@ from typing import Callable, Optional, Tuple, cast
 import numpy as np
 import pandas as pd
 import skimage
+import torch
 
 from numpy.typing import ArrayLike
 from scipy.fftpack import next_fast_len
@@ -13,6 +14,7 @@ from skimage.exposure import rescale_intensity
 from skimage.feature import match_template
 from skimage.filters import gaussian
 from skimage.measure import label, regionprops
+from waveorder.models.phase_thick_3d import apply_inverse_transfer_function, calculate_transfer_function
 
 from mantis import logger
 from mantis.acquisition.hook_functions import globals
@@ -24,6 +26,7 @@ from mantis.acquisition.hook_functions import globals
 # TODO: write test functions
 # TODO: consider splitting this file into two
 
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def calc_weighted_center(labeled_im):
     """calculates weighted centroid based on the area of the regions
@@ -245,8 +248,8 @@ def phase_cross_corr(
     ref_img = _match_shape(ref_img, shape)
     mov_img = _match_shape(mov_img, shape)
 
-    ref_img = to_device(ref_img)
-    mov_img = to_device(mov_img)
+   # ref_img = to_device(ref_img)
+   # mov_img = to_device(mov_img)
 
     if transform is not None:
         ref_img = transform(ref_img)
@@ -291,7 +294,9 @@ class Autotracker(object):
         tracking_method: str,
         shift_limit: Tuple[float, float, float],
         scale: ArrayLike,
+        zyx_shape: Tuple[int, int, int],
         zyx_dampening_factor: ArrayLike = None,
+        phase_config: dict = None,
     ):
         """
         Autotracker object
@@ -306,11 +311,19 @@ class Autotracker(object):
             Dampening factor for xy shifts_zyx
         """
         self.tracking_method = tracking_method
-        self.zyx_dampening = zyx_dampening_factor
+        self.zyx_dampening = zyx_dampening_factor   
         self.shift_limit = shift_limit
         self.scale = scale
         self.shifts_zyx = None
+        self.phase_config = phase_config
+        self.zyx_shape = zyx_shape
+        if self.phase_config is not None:
+            # TODO: compute the transfer function
+            self.phase_config['zyx_shape'] = zyx_shape
+            self.transfer_function = tuple(torch.from_numpy(tf).to(DEVICE) for tf in calculate_transfer_function(self.phase_config['transfer_function']))
 
+
+        
     def estimate_shift(self, ref_img: ArrayLike, mov_img: ArrayLike, **kwargs) -> np.ndarray:
         """
         Estimates the shift between two images using the specified autofocus method.
@@ -453,8 +466,10 @@ def autotracker_hook_fn(
     channel_config,
     z_slice_settings,
     output_shift_path,
+    yx_shape,
     axes,
     dataset,
+
 ) -> None:
     """
     Pycromanager hook function that is called when an image is saved.
@@ -485,7 +500,7 @@ def autotracker_hook_fn(
     tracking_channel = channel_config.config_name
     zyx_dampening_factor = autotracker_settings.zyx_dampening_factor
     output_shift_path = Path(output_shift_path)
-
+    zyx_shape = (num_slices, yx_shape[0], yx_shape[1])
     # Get axes info
     p_label = axes['position']
     p_idx = position_settings.position_labels.index(p_label)
@@ -498,6 +513,7 @@ def autotracker_hook_fn(
         scale=scale,
         shift_limit=shift_limit,
         zyx_dampening_factor=zyx_dampening_factor,
+        zyx_shape=zyx_shape,
     )
     # Get the z_max
     if channel == tracking_channel and z_idx == (num_slices - 1):
@@ -525,13 +541,24 @@ def autotracker_hook_fn(
                 volume_t0 = get_volume(dataset, volume_t0_axes)
                 volume_t1 = get_volume(dataset, volume_t1_axes)
 
-                # import napari
+                if tracker.phase_config is not None:
+                    volume_t0 = torch.from_numpy(volume_t0).to(DEVICE)
+                    volume_t1 = torch.from_numpy(volume_t1).to(DEVICE)
+                    volume_t0 = apply_inverse_transfer_function(volume_t0, *tracker.transfer_function, **tracker.phase_config['apply_inverse'], z_padding=tracker.phase_config['z_padding'])
+                    volume_t1 = apply_inverse_transfer_function(volume_t1, *tracker.transfer_function, **tracker.phase_config['apply_inverse'], z_padding=tracker.phase_config['z_padding'])
+                if tracker.vs_config is not None:
+                    pass
+                    # TODO: apply the vs config
+                
                 # viewer = napari.Viewer()
                 # viewer.add_image(volume_t0)
                 # viewer.add_image(volume_t1)
 
                 # Reference and moving volumes
-                shifts_zyx = tracker.estimate_shift(volume_t0, volume_t1)
+                volume_t0_t = torch.from_numpy(volume_t0).to(DEVICE)
+                volume_t1_t = torch.from_numpy(volume_t1).to(DEVICE)
+                shifts_zyx = tracker.estimate_shift(volume_t0_t, volume_t1_t)
+                #shifts_zyx = shifts_zyx.cpu().numpy()
 
             csv_log_filename = f"autotracker_fov_{axes['position']}.csv"
             shift_coord_output = output_shift_path / csv_log_filename
