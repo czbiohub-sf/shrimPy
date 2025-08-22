@@ -470,10 +470,14 @@ def autotracker_hook_fn(
                 volume_t1 = get_volume(dataset, volume_t1_axes)
 
                 if tracker.phase_config is not None:
-                    volume_t0 = torch.as_tensor(volume_t0, device=DEVICE, dtype=torch.float32)
-                    volume_t1 = torch.as_tensor(volume_t1, device=DEVICE, dtype=torch.float32)
-                    volume_t0 = apply_inverse_transfer_function(volume_t0, *tracker.transfer_function, **tracker.phase_config['apply_inverse'], z_padding=tracker.phase_config['transfer_function']['z_padding'])
-                    volume_t1 = apply_inverse_transfer_function(volume_t1, *tracker.transfer_function, **tracker.phase_config['apply_inverse'], z_padding=tracker.phase_config['transfer_function']['z_padding'])
+                    volume_t0_tensor = torch.as_tensor(volume_t0, device=DEVICE, dtype=torch.float32)
+                    volume_t1_tensor = torch.as_tensor(volume_t1, device=DEVICE, dtype=torch.float32)
+                    volume_t0_tensor = apply_inverse_transfer_function(volume_t0_tensor, *tracker.transfer_function, **tracker.phase_config['apply_inverse'], z_padding=tracker.phase_config['transfer_function']['z_padding'])
+                    volume_t1_tensor = apply_inverse_transfer_function(volume_t1_tensor, *tracker.transfer_function, **tracker.phase_config['apply_inverse'], z_padding=tracker.phase_config['transfer_function']['z_padding'])
+                    volume_t0 = volume_t0_tensor.detach().cpu().numpy()
+                    volume_t1 = volume_t1_tensor.detach().cpu().numpy()
+                    del volume_t0_tensor, volume_t1_tensor
+                
                 if tracker.vs_config is not None:
                     pass
                     # TODO: apply the vs config
@@ -483,8 +487,6 @@ def autotracker_hook_fn(
                 # viewer.add_image(volume_t1)
 
                 # Reference and moving volumes
-                volume_t0 = volume_t0.detach().cpu().numpy()
-                volume_t1 = volume_t1.detach().cpu().numpy()
                 
                 shifts_zyx = tracker.estimate_shift(volume_t0, volume_t1)
                 del volume_t0, volume_t1
