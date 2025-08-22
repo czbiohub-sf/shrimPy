@@ -1,7 +1,7 @@
 # %%
 from pathlib import Path
 from time import sleep
-from typing import Callable, Optional, Tuple, cast
+from typing import Callable, Optional, Tuple, Literal
 
 import numpy as np
 import pandas as pd
@@ -9,7 +9,6 @@ import skimage
 import torch
 
 from numpy.typing import ArrayLike
-from scipy.fftpack import next_fast_len
 from skimage.exposure import rescale_intensity
 from skimage.feature import match_template
 from skimage.filters import gaussian
@@ -147,73 +146,13 @@ def to_cpu(arr: ArrayLike) -> ArrayLike:
         arr = arr.get()
     return arr
 
-
-def center_crop(arr: ArrayLike, shape: Tuple[int, ...]) -> ArrayLike:
-    """Crops the center of `arr`"""
-    assert arr.ndim == len(shape)
-
-    starts = tuple((cur_s - s) // 2 for cur_s, s in zip(arr.shape, shape))
-
-    assert all(s >= 0 for s in starts)
-
-    slicing = tuple(slice(s, s + d) for s, d in zip(starts, shape))
-
-    logger.info(
-        f"center crop: input shape {arr.shape}, output shape {shape}, slicing {slicing}"
-    )
-
-    return arr[slicing]
-
-
-def pad_to_shape(arr: ArrayLike, shape: Tuple[int, ...], mode: str, **kwargs) -> ArrayLike:
-    """Pads array to shape.
-
-    Parameters
-    ----------
-    arr : ArrayLike
-        Input array.
-    shape : Tuple[int]
-        Output shape.
-    mode : str
-        Padding mode (see np.pad).
-
-    Returns
-    -------
-    ArrayLike
-        Padded array.
-    """
-    assert arr.ndim == len(shape)
-
-    dif = tuple(s - a for s, a in zip(shape, arr.shape))
-    assert all(d >= 0 for d in dif)
-
-    pad_width = [[s // 2, s - s // 2] for s in dif]
-
-    logger.debug(f"padding: input shape {arr.shape}, output shape {shape}, padding {pad_width}")
-
-    return np.pad(arr, pad_width=pad_width, mode=mode, **kwargs)
-
-
-def _match_shape(img: ArrayLike, shape: Tuple[int, ...]) -> ArrayLike:
-    """Pad or crop array to match provided shape."""
-
-    if np.any(shape > img.shape):
-        padded_shape = np.maximum(img.shape, shape)
-        img = pad_to_shape(img, padded_shape, mode="reflect")
-
-    if np.any(shape < img.shape):
-        img = center_crop(img, shape)
-
-    return img
-
-
+ # ensure float tensor
+    
 def phase_cross_corr(
     ref_img: ArrayLike,
     mov_img: ArrayLike,
-    maximum_shift: float = 1.0,
-    to_device: Callable[[ArrayLike], ArrayLike] = lambda x: x,
     transform: Optional[Callable[[ArrayLike], ArrayLike]] = np.log1p,
-    normalization: bool = False,
+    normalization: Optional[Literal['magnitude', 'classic']] = None,
 ) -> Tuple[int, ...]:
     """
     Borrowing from Jordao dexpv2.crosscorr https://github.com/royerlab/dexpv2
@@ -227,29 +166,11 @@ def phase_cross_corr(
         Reference image.
     mov_img : ArrayLike
         Moved image.
-    maximum_shift : float, optional
-        Maximum location shift normalized by axis size, by default 1.0
-
     Returns
     -------
     Tuple[int, ...]
         Shift between reference and moved image.
     """
-    shape = tuple(
-        cast(int, next_fast_len(int(max(s1, s2) * maximum_shift)))
-        for s1, s2 in zip(ref_img.shape, mov_img.shape)
-    )
-
-    logger.info(
-        f"phase cross corr. fft shape of {shape} for arrays of shape {ref_img.shape} and {mov_img.shape} "
-        f"with maximum shift of {maximum_shift}"
-    )
-
-    ref_img = _match_shape(ref_img, shape)
-    mov_img = _match_shape(mov_img, shape)
-
-   # ref_img = to_device(ref_img)
-   # mov_img = to_device(mov_img)
 
     if transform is not None:
         ref_img = transform(ref_img)
@@ -261,24 +182,31 @@ def phase_cross_corr(
     del ref_img, mov_img
 
     prod = Fimg1 * Fimg2.conj()
-    del Fimg1, Fimg2
 
-    if normalization:
+    if normalization == 'magnitude':
         norm = np.fmax(np.abs(prod), eps)
+    elif normalization == 'classic':
+        norm = np.abs(Fimg1)*np.abs(Fimg2)
     else:
         norm = 1.0
     corr = np.fft.irfftn(prod / norm)
+    del Fimg1, Fimg2
+
+    maxima = np.unravel_index(
+        np.argmax(np.abs(corr)), corr.shape
+    )
+    midpoint = np.array([np.fix(axis_size / 2) for axis_size in corr.shape])
+
+    float_dtype = prod.real.dtype
     del prod, norm
 
-    corr = np.fft.fftshift(np.abs(corr))
+    shift = np.stack(maxima).astype(float_dtype, copy=False)
+    shift[shift > midpoint] -= np.array(corr.shape)[shift > midpoint]
+    del corr
 
-    argmax = to_cpu(np.argmax(corr))
-    peak = np.unravel_index(argmax, corr.shape)
-    peak = tuple(s // 2 - p for s, p in zip(corr.shape, peak))
+    logger.info(f"phase cross corr. shift {shift}")
 
-    logger.info(f"phase cross corr. peak at {peak}")
-
-    return peak
+    return shift
 
 
 # %%
