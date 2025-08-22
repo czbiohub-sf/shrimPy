@@ -1177,6 +1177,8 @@ class MantisAcquisition(object):
 
         # TODO: implement logic for the autotracker_img_saved_hook_fn
         if self.lf_acq.microscope_settings.autotracker_config is not None:
+            yx_shape = self.lf_acq.microscope_settings.roi[:2][::-1]
+
             lf_image_saved_fn = partial(
                 autotracker_hook_fn,
                 'lf',
@@ -1185,6 +1187,7 @@ class MantisAcquisition(object):
                 self.lf_acq.microscope_settings.autotracker_config,
                 self.lf_acq.slice_settings,
                 self._logs_dir,
+                yx_shape,
             )
         else:
             logger.info('No autotracker config found for LF acquisition. Using default image saved hook')
