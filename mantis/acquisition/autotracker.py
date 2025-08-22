@@ -151,7 +151,7 @@ def to_cpu(arr: ArrayLike) -> ArrayLike:
 def phase_cross_corr(
     ref_img: ArrayLike,
     mov_img: ArrayLike,
-    transform: Optional[Callable[[ArrayLike], ArrayLike]] = np.log1p,
+    transform: Optional[Callable[[ArrayLike], ArrayLike]] = None,
     normalization: Optional[Literal['magnitude', 'classic']] = None,
 ) -> Tuple[int, ...]:
     """
@@ -247,8 +247,8 @@ class Autotracker(object):
         self.zyx_shape = zyx_shape
         if self.phase_config is not None:
             # TODO: compute the transfer function
-            self.phase_config['zyx_shape'] = zyx_shape
-            self.transfer_function = tuple(torch.from_numpy(tf).to(DEVICE) for tf in calculate_transfer_function(self.phase_config['transfer_function']))
+            self.phase_config['transfer_function']['zyx_shape'] = zyx_shape
+            self.transfer_function = tuple(tf.to(DEVICE) for tf in calculate_transfer_function(**self.phase_config['transfer_function']))
 
 
         
@@ -470,10 +470,10 @@ def autotracker_hook_fn(
                 volume_t1 = get_volume(dataset, volume_t1_axes)
 
                 if tracker.phase_config is not None:
-                    volume_t0 = torch.from_numpy(volume_t0).to(DEVICE)
-                    volume_t1 = torch.from_numpy(volume_t1).to(DEVICE)
-                    volume_t0 = apply_inverse_transfer_function(volume_t0, *tracker.transfer_function, **tracker.phase_config['apply_inverse'], z_padding=tracker.phase_config['z_padding'])
-                    volume_t1 = apply_inverse_transfer_function(volume_t1, *tracker.transfer_function, **tracker.phase_config['apply_inverse'], z_padding=tracker.phase_config['z_padding'])
+                    volume_t0 = torch.as_tensor(volume_t0, device=DEVICE, dtype=torch.float32)
+                    volume_t1 = torch.as_tensor(volume_t1, device=DEVICE, dtype=torch.float32)
+                    volume_t0 = apply_inverse_transfer_function(volume_t0, *tracker.transfer_function, **tracker.phase_config['apply_inverse'], z_padding=tracker.phase_config['transfer_function']['z_padding'])
+                    volume_t1 = apply_inverse_transfer_function(volume_t1, *tracker.transfer_function, **tracker.phase_config['apply_inverse'], z_padding=tracker.phase_config['transfer_function']['z_padding'])
                 if tracker.vs_config is not None:
                     pass
                     # TODO: apply the vs config
@@ -483,9 +483,11 @@ def autotracker_hook_fn(
                 # viewer.add_image(volume_t1)
 
                 # Reference and moving volumes
-                volume_t0_t = torch.from_numpy(volume_t0).to(DEVICE)
-                volume_t1_t = torch.from_numpy(volume_t1).to(DEVICE)
-                shifts_zyx = tracker.estimate_shift(volume_t0_t, volume_t1_t)
+                volume_t0 = volume_t0.detach().cpu().numpy()
+                volume_t1 = volume_t1.detach().cpu().numpy()
+                
+                shifts_zyx = tracker.estimate_shift(volume_t0, volume_t1)
+                del volume_t0, volume_t1
                 #shifts_zyx = shifts_zyx.cpu().numpy()
 
             csv_log_filename = f"autotracker_fov_{axes['position']}.csv"
