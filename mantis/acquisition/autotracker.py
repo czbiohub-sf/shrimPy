@@ -559,6 +559,15 @@ def autotracker_hook_fn(
                 # Reference and moving volumes
                 
                 shifts_zyx = tracker.estimate_shift(volume_t0, volume_t1)
+
+                ### HARDCODED shifting
+                if abs(shifts_zyx[0]) < 3:
+                    shifts_zyx[0] = 0
+                if abs(shifts_zyx[1]) < 5:
+                    shifts_zyx[1] = 0
+                if abs(shifts_zyx[2]) < 5:
+                    shifts_zyx[2] = 0
+
                 del volume_t0, volume_t1
                 #shifts_zyx = shifts_zyx.cpu().numpy()
 
