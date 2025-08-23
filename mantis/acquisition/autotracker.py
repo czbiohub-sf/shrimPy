@@ -561,11 +561,11 @@ def autotracker_hook_fn(
                 shifts_zyx = tracker.estimate_shift(volume_t0, volume_t1)
 
                 ### HARDCODED shifting
-                if abs(shifts_zyx[0]) < 3:
+                if abs(shifts_zyx[0]) < 0.5:
                     shifts_zyx[0] = 0
-                if abs(shifts_zyx[1]) < 5:
+                if abs(shifts_zyx[1]) < 2:
                     shifts_zyx[1] = 0
-                if abs(shifts_zyx[2]) < 5:
+                if abs(shifts_zyx[2]) < 2:
                     shifts_zyx[2] = 0
 
                 del volume_t0, volume_t1
