@@ -18,6 +18,8 @@ import tifffile
 from nidaqmx.constants import Slope
 from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, start_headless
 from waveorder.focus import focus_from_transverse_band
+from waveorder.models.phase_thick_3d import calculate_transfer_function
+
 
 from mantis import get_console_formatter
 from mantis.acquisition import microscope_operations
@@ -1204,7 +1206,11 @@ class MantisAcquisition(object):
 
         # TODO: implement logic for the autotracker_img_saved_hook_fn
         if self.lf_acq.microscope_settings.autotracker_config is not None:
-            yx_shape = self.lf_acq.microscope_settings.roi[:2][::-1]
+            phase_config = self.lf_acq.autotracker_settings.phase_config
+            if phase_config is not None:
+                yx_shape = self.lf_acq.microscope_settings.roi[-2:][::-1]
+                phase_config['transfer_function']['zyx_shape'] =  (self.lf_acq.slice_settings.num_slices, yx_shape[0], yx_shape[1])
+                transfer_function = calculate_transfer_function(**phase_config['transfer_function'])
 
             lf_image_saved_fn = partial(
                 autotracker_hook_fn,
@@ -1214,7 +1220,7 @@ class MantisAcquisition(object):
                 self.lf_acq.microscope_settings.autotracker_config,
                 self.lf_acq.slice_settings,
                 self._logs_dir,
-                yx_shape,
+                transfer_function,   
             )
         else:
             logger.info('No autotracker config found for LF acquisition. Using default image saved hook')

@@ -169,6 +169,5 @@ autotracker_settings:
       regularization_strength: 0.01
       TV_rho_strength: 0.001
       TV_iterations: 1
-  vs_config: None
 
 
