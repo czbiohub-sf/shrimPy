@@ -1,19 +1,24 @@
 # %%
 from pathlib import Path
 from time import sleep
-from typing import Callable, Optional, Tuple, Literal
+from typing import Callable, Optional, Tuple, cast
 
 import numpy as np
 import pandas as pd
 import skimage
 import torch
+import gc
+import tifffile
+
+from scipy.fftpack import next_fast_len
+
 
 from numpy.typing import ArrayLike
 from skimage.exposure import rescale_intensity
 from skimage.feature import match_template
 from skimage.filters import gaussian
 from skimage.measure import label, regionprops
-from waveorder.models.phase_thick_3d import apply_inverse_transfer_function, calculate_transfer_function
+from waveorder.models.phase_thick_3d import apply_inverse_transfer_function
 
 from mantis import logger
 from mantis.acquisition.hook_functions import globals
@@ -148,11 +153,72 @@ def to_cpu(arr: ArrayLike) -> ArrayLike:
 
  # ensure float tensor
     
+def center_crop(arr: ArrayLike, shape: Tuple[int, ...]) -> ArrayLike:
+    """Crops the center of `arr`"""
+    assert arr.ndim == len(shape)
+
+    starts = tuple((cur_s - s) // 2 for cur_s, s in zip(arr.shape, shape))
+
+    assert all(s >= 0 for s in starts)
+
+    slicing = tuple(slice(s, s + d) for s, d in zip(starts, shape))
+
+    logger.info(
+        f"center crop: input shape {arr.shape}, output shape {shape}, slicing {slicing}"
+    )
+
+    return arr[slicing]
+
+
+def pad_to_shape(arr: ArrayLike, shape: Tuple[int, ...], mode: str, **kwargs) -> ArrayLike:
+    """Pads array to shape.
+
+    Parameters
+    ----------
+    arr : ArrayLike
+        Input array.
+    shape : Tuple[int]
+        Output shape.
+    mode : str
+        Padding mode (see np.pad).
+
+    Returns
+    -------
+    ArrayLike
+        Padded array.
+    """
+    assert arr.ndim == len(shape)
+
+    dif = tuple(s - a for s, a in zip(shape, arr.shape))
+    assert all(d >= 0 for d in dif)
+
+    pad_width = [[s // 2, s - s // 2] for s in dif]
+
+    logger.debug(f"padding: input shape {arr.shape}, output shape {shape}, padding {pad_width}")
+
+    return np.pad(arr, pad_width=pad_width, mode=mode, **kwargs)
+
+
+def _match_shape(img: ArrayLike, shape: Tuple[int, ...]) -> ArrayLike:
+    """Pad or crop array to match provided shape."""
+
+    if np.any(shape > img.shape):
+        padded_shape = np.maximum(img.shape, shape)
+        img = pad_to_shape(img, padded_shape, mode="reflect")
+
+    if np.any(shape < img.shape):
+        img = center_crop(img, shape)
+
+    return img
+
+
 def phase_cross_corr(
     ref_img: ArrayLike,
     mov_img: ArrayLike,
-    transform: Optional[Callable[[ArrayLike], ArrayLike]] = None,
-    normalization: Optional[Literal['magnitude', 'classic']] = None,
+    maximum_shift: float = 1.0,
+    to_device: Callable[[ArrayLike], ArrayLike] = lambda x: x,
+    transform: Optional[Callable[[ArrayLike], ArrayLike]] = np.log1p,
+    normalization: bool = False,
 ) -> Tuple[int, ...]:
     """
     Borrowing from Jordao dexpv2.crosscorr https://github.com/royerlab/dexpv2
@@ -166,11 +232,29 @@ def phase_cross_corr(
         Reference image.
     mov_img : ArrayLike
         Moved image.
+    maximum_shift : float, optional
+        Maximum location shift normalized by axis size, by default 1.0
+
     Returns
     -------
     Tuple[int, ...]
         Shift between reference and moved image.
     """
+    shape = tuple(
+        cast(int, next_fast_len(int(max(s1, s2) * maximum_shift)))
+        for s1, s2 in zip(ref_img.shape, mov_img.shape)
+    )
+
+    logger.info(
+        f"phase cross corr. fft shape of {shape} for arrays of shape {ref_img.shape} and {mov_img.shape} "
+        f"with maximum shift of {maximum_shift}"
+    )
+
+    ref_img = _match_shape(ref_img, shape)
+    mov_img = _match_shape(mov_img, shape)
+
+    ref_img = to_device(ref_img)
+    mov_img = to_device(mov_img)
 
     if transform is not None:
         ref_img = transform(ref_img)
@@ -182,31 +266,24 @@ def phase_cross_corr(
     del ref_img, mov_img
 
     prod = Fimg1 * Fimg2.conj()
+    del Fimg1, Fimg2
 
-    if normalization == 'magnitude':
+    if normalization:
         norm = np.fmax(np.abs(prod), eps)
-    elif normalization == 'classic':
-        norm = np.abs(Fimg1)*np.abs(Fimg2)
     else:
         norm = 1.0
     corr = np.fft.irfftn(prod / norm)
-    del Fimg1, Fimg2
-
-    maxima = np.unravel_index(
-        np.argmax(np.abs(corr)), corr.shape
-    )
-    midpoint = np.array([np.fix(axis_size / 2) for axis_size in corr.shape])
-
-    float_dtype = prod.real.dtype
     del prod, norm
 
-    shift = np.stack(maxima).astype(float_dtype, copy=False)
-    shift[shift > midpoint] -= np.array(corr.shape)[shift > midpoint]
-    del corr
+    corr = np.fft.fftshift(np.abs(corr))
 
-    logger.info(f"phase cross corr. shift {shift}")
+    argmax = to_cpu(np.argmax(corr))
+    peak = np.unravel_index(argmax, corr.shape)
+    peak = tuple(s // 2 - p for s, p in zip(corr.shape, peak))
 
-    return shift
+    logger.info(f"phase cross corr. peak at {peak}")
+
+    return peak
 
 
 # %%
@@ -222,9 +299,7 @@ class Autotracker(object):
         tracking_method: str,
         shift_limit: Tuple[float, float, float],
         scale: ArrayLike,
-        zyx_shape: Tuple[int, int, int],
         zyx_dampening_factor: ArrayLike = None,
-        phase_config: dict = None,
     ):
         """
         Autotracker object
@@ -243,14 +318,7 @@ class Autotracker(object):
         self.shift_limit = shift_limit
         self.scale = scale
         self.shifts_zyx = None
-        self.phase_config = phase_config
-        self.zyx_shape = zyx_shape
-        if self.phase_config is not None:
-            # TODO: compute the transfer function
-            self.phase_config['transfer_function']['zyx_shape'] = zyx_shape
-            self.transfer_function = tuple(tf.to(DEVICE) for tf in calculate_transfer_function(**self.phase_config['transfer_function']))
-
-
+        logger.debug(f'Using device: {DEVICE}')
         
     def estimate_shift(self, ref_img: ArrayLike, mov_img: ArrayLike, **kwargs) -> np.ndarray:
         """
@@ -394,7 +462,7 @@ def autotracker_hook_fn(
     channel_config,
     z_slice_settings,
     output_shift_path,
-    yx_shape,
+    transfer_function,
     axes,
     dataset,
 
@@ -427,8 +495,9 @@ def autotracker_hook_fn(
     tracking_interval = autotracker_settings.tracking_interval
     tracking_channel = channel_config.config_name
     zyx_dampening_factor = autotracker_settings.zyx_dampening_factor
+    phase_config = autotracker_settings.phase_config
     output_shift_path = Path(output_shift_path)
-    zyx_shape = (num_slices, yx_shape[0], yx_shape[1])
+   
     # Get axes info
     p_label = axes['position']
     p_idx = position_settings.position_labels.index(p_label)
@@ -441,7 +510,6 @@ def autotracker_hook_fn(
         scale=scale,
         shift_limit=shift_limit,
         zyx_dampening_factor=zyx_dampening_factor,
-        zyx_shape=zyx_shape,
     )
     # Get the z_max
     if channel == tracking_channel and z_idx == (num_slices - 1):
@@ -469,20 +537,21 @@ def autotracker_hook_fn(
                 volume_t0 = get_volume(dataset, volume_t0_axes)
                 volume_t1 = get_volume(dataset, volume_t1_axes)
 
-                if tracker.phase_config is not None:
+                if phase_config is not None:
+                    tf_tensor = tuple(tf.to(DEVICE) for tf in transfer_function)
                     t_volume_t0_bf = torch.as_tensor(volume_t0, device=DEVICE, dtype=torch.float32)
                     t_volume_t1_bf = torch.as_tensor(volume_t1, device=DEVICE, dtype=torch.float32)
-                    t_volume_t0_phase = apply_inverse_transfer_function(t_volume_t0_bf, *tracker.transfer_function, **tracker.phase_config['apply_inverse'], z_padding=tracker.phase_config['transfer_function']['z_padding'])
-                    t_volume_t1_phase = apply_inverse_transfer_function(t_volume_t1_bf, *tracker.transfer_function, **tracker.phase_config['apply_inverse'], z_padding=tracker.phase_config['transfer_function']['z_padding'])
+                    t_volume_t0_phase = apply_inverse_transfer_function(t_volume_t0_bf, *tf_tensor, **phase_config['apply_inverse'], z_padding=phase_config['transfer_function']['z_padding'])
+                    t_volume_t1_phase = apply_inverse_transfer_function(t_volume_t1_bf, *tf_tensor, **phase_config['apply_inverse'], z_padding=phase_config['transfer_function']['z_padding'])
                     del t_volume_t0_bf, t_volume_t1_bf
                     volume_t0 = t_volume_t0_phase.detach().cpu().numpy()
                     volume_t1 = t_volume_t1_phase.detach().cpu().numpy()
-                    del t_volume_t0_phase, t_volume_t1_phase
-                
-                if tracker.vs_config is not None:
-                    pass
-                    # TODO: apply the vs config
-                
+                    del t_volume_t0_phase, t_volume_t1_phase, tf_tensor
+                    gc.collect(); torch.cuda.empty_cache()
+
+                    tifffile.imwrite(f"E:\\2025_08_22_76hpf_cldnb-she-myo6b\\volume_{t_idx}_0.tiff", volume_t0)
+                    tifffile.imwrite(f"E:\\2025_08_22_76hpf_cldnb-she-myo6b\\volume_{t_idx}_1.tiff", volume_t1)
+
                 # viewer = napari.Viewer()
                 # viewer.add_image(volume_t0)
                 # viewer.add_image(volume_t1)
