@@ -389,6 +389,7 @@ class BaseChannelSliceAcquisition(object):
         event : useq.Event
             The event containing metadata about the acquisition.
         """
+        logger.info(data[0][0])
         self._zarr_writer.append(data)
 
 
@@ -1220,20 +1221,14 @@ class MantisAcquisition(object):
         """
 
         # define LF hook functions
+        daq_counter_tasks = []
         if self._demo_run:
             # lf_pre_hardware_hook_fn = log_preparing_acquisition
             # lf_post_camera_hook_fn = None
             pass
         else:
-            # lf_pre_hardware_hook_fn = partial(
-            #     lf_pre_hardware_hook_function,
-            #     [self._lf_z_ctr_task, self._lf_channel_ctr_task],
-            # )
-            lf_post_camera_hook_fn = partial(
-                start_daq_counters, [self._lf_z_ctr_task, self._lf_channel_ctr_task]
-            )
-            self.lf_acq.mmc.events.sequenceAcquisitionStarted.connect(lf_post_camera_hook_fn)
-
+            daq_counter_tasks.append(self._lf_z_ctr_task)
+            daq_counter_tasks.append(self._lf_channel_ctr_task)
         # lf_post_hardware_hook_fn = log_acquisition_start
         # lf_image_saved_fn = check_lf_acq_finished
 
@@ -1249,7 +1244,11 @@ class MantisAcquisition(object):
 
             # ls_image_saved_fn = check_ls_acq_finished
             self.ls_acq.mmc.mda.events.eventStarted.connect(ls_post_hardware_hook_fn)
-            self.ls_acq.mmc.events.sequenceAcquisitionStarted(ls_post_camera_hook_fn)
+            daq_counter_tasks.append(self._ls_z_ctr_task)
+
+        if len(daq_counter_tasks) > 0:
+            lf_post_camera_hook_fn = partial(start_daq_counters, daq_counter_tasks)
+            self.lf_acq.mmc.events.sequenceAcquisitionStarted.connect(lf_post_camera_hook_fn)
 
         # Generate LF MDA
         lf_cz_events = _generate_channel_slice_mda_seq(
