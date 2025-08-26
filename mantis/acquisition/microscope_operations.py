@@ -556,7 +556,10 @@ def abort_acquisition_sequence(
     """
 
     for stage in sequenced_stages:
-        mmc.stopStageSequence(stage)
+        try:
+            mmc.stopStageSequence(stage)
+        except (RuntimeError):
+            logger.warning(f"attempted and failed to stop sequenced stage {stage}")
     mmc.stopSequenceAcquisition(camera)
     mmc.clearCircularBuffer()
 
