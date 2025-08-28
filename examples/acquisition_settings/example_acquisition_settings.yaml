@@ -169,5 +169,29 @@ autotracker_settings:
       regularization_strength: 0.01
       TV_rho_strength: 0.001
       TV_iterations: 1
+  vs_config:
+    gpu: True
+    model:
+      class_path: viscy.translation.engine.VSUNet
+      init_args:
+        architecture: fcmae
+        model_config:
+          in_channels: 1
+          out_channels: 2
+          in_stack_depth: 21
+          encoder_blocks: [3, 3, 9, 3]
+          dims: [96, 192, 384, 768]
+          encoder_drop_path_rate: 0.0
+          stem_kernel_size: [7, 4, 4]
+          in_stack_depth: 21
+          decoder_conv_blocks: 2
+          pretraining: False
+          head_conv: True
+          head_conv_expansion_ratio: 4
+          head_conv_pool: False
+    test_time_augmentations: True
+    tta_type: median
+    ckpt_path: /hpc/projects/comp.micro/virtual_staining/models/fcmae-3d/fit_v2/pretrain_end2end/lightning_logs/finetune_VS_end2end_v1_test6_prefetch2_nopersistwork_restart_2/checkpoints/epoch=64-step=24960.ckpt
+
 
 

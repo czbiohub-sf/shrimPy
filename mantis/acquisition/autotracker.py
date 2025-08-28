@@ -9,6 +9,9 @@ import skimage
 import torch
 import gc
 import tifffile
+import importlib
+
+from viscy.translation.engine import AugmentedPredictionVSUNet
 
 from scipy.fftpack import next_fast_len
 
@@ -32,6 +35,45 @@ from mantis.acquisition.hook_functions import globals
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+def vs_inference_t2t(x: torch.Tensor, cfg: dict, gpu: bool = True) -> torch.Tensor:
+    """
+    Run virtual staining using a config dictionary and 5D input tensor (B, C, Z, Y, X).
+    Returns predicted tensor of shape (B, C_out, Z, Y, X).
+    """
+    if gpu:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device("cpu")
+
+    # Extract model info
+    model_cfg = cfg["model"].copy()
+    init_args = model_cfg["init_args"]
+    class_path = model_cfg["class_path"]
+
+    # Inject ckpt_path from top-level config if needed
+    if "ckpt_path" in cfg:
+        init_args["ckpt_path"] = cfg["ckpt_path"]
+
+    # Import model class dynamically
+    module_path, class_name = class_path.rsplit(".", 1)
+    model_class = getattr(importlib.import_module(module_path), class_name)
+
+    # Instantiate model
+    model = model_class(**init_args).to(device).eval()
+
+    # Wrap with augmentation logic
+    wrapper = (
+        AugmentedPredictionVSUNet(
+            model=model.model,
+            forward_transforms=[lambda t: t],
+            inverse_transforms=[lambda t: t],
+        )
+        .to(x.device)
+        .eval()
+    )
+
+    wrapper.on_predict_start()
+    return wrapper.predict_sliding_windows(x)
 def calc_weighted_center(labeled_im):
     """calculates weighted centroid based on the area of the regions
 
@@ -496,6 +538,7 @@ def autotracker_hook_fn(
     tracking_channel = channel_config.config_name
     zyx_dampening_factor = autotracker_settings.zyx_dampening_factor
     phase_config = autotracker_settings.phase_config
+    vs_config = autotracker_settings.vs_config
     output_shift_path = Path(output_shift_path)
    
     # Get axes info
@@ -539,19 +582,36 @@ def autotracker_hook_fn(
 
                 if phase_config is not None:
                     tf_tensor = tuple(tf.to(DEVICE) for tf in transfer_function)
+                    
                     t_volume_t0_bf = torch.as_tensor(volume_t0, device=DEVICE, dtype=torch.float32)
                     t_volume_t1_bf = torch.as_tensor(volume_t1, device=DEVICE, dtype=torch.float32)
+                    
                     t_volume_t0_phase = apply_inverse_transfer_function(t_volume_t0_bf, *tf_tensor, **phase_config['apply_inverse'], z_padding=phase_config['transfer_function']['z_padding'])
                     t_volume_t1_phase = apply_inverse_transfer_function(t_volume_t1_bf, *tf_tensor, **phase_config['apply_inverse'], z_padding=phase_config['transfer_function']['z_padding'])
-                    del t_volume_t0_bf, t_volume_t1_bf
-                    volume_t0 = t_volume_t0_phase.detach().cpu().numpy()
-                    volume_t1 = t_volume_t1_phase.detach().cpu().numpy()
-                    del t_volume_t0_phase, t_volume_t1_phase, tf_tensor
+                    del t_volume_t0_bf, t_volume_t1_bf, tf_tensor
                     gc.collect(); torch.cuda.empty_cache()
 
-                    tifffile.imwrite(f"E:\\2025_08_22_76hpf_cldnb-she-myo6b\\volume_{t_idx}_0.tiff", volume_t0)
-                    tifffile.imwrite(f"E:\\2025_08_22_76hpf_cldnb-she-myo6b\\volume_{t_idx}_1.tiff", volume_t1)
-
+                    #tifffile.imwrite(f"E:\\2025_08_22_76hpf_cldnb-she-myo6b\\volume_{t_idx}_0.tiff", volume_t0)
+                    #tifffile.imwrite(f"E:\\2025_08_22_76hpf_cldnb-she-myo6b\\volume_{t_idx}_1.tiff", volume_t1)
+                    if vs_config is not None:
+                        
+                        volume_t0_vs = vs_inference_t2t(t_volume_t0_phase, vs_config)
+                        volume_t1_vs = vs_inference_t2t(t_volume_t1_phase, vs_config)
+                        del t_volume_t0_phase, t_volume_t1_phase
+                        gc.collect(); torch.cuda.empty_cache()
+                        
+                        volume_t0 = volume_t0_vs.detach().cpu().numpy()
+                        volume_t1 = volume_t1_vs.detach().cpu().numpy()
+                        del volume_t0_vs, volume_t1_vs
+                        gc.collect(); torch.cuda.empty_cache()
+                        
+                    else:  
+                        volume_t0 = t_volume_t0_phase.detach().cpu().numpy()
+                        volume_t1 = t_volume_t1_phase.detach().cpu().numpy()
+                        del t_volume_t0_phase, t_volume_t1_phase
+                        gc.collect(); torch.cuda.empty_cache()
+                        
+                   
                 # viewer = napari.Viewer()
                 # viewer.add_image(volume_t0)
                 # viewer.add_image(volume_t1)
