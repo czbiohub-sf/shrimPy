@@ -214,6 +214,7 @@ class AutotrackerSettings:
     template_channel: Optional[str] = None
     reconstruction: Optional[List[str]] = field(default_factory=list)
     phase_config: Optional[Dict[str, Any]] = field(default_factory=dict)
+    vs_config: Optional[Dict[str, Any]] = field(default_factory=dict)
 
     @validator("tracking_method")
     def check_tracking_method_options(cls, v):
