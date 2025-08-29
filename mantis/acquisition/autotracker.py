@@ -351,7 +351,6 @@ class Autotracker(object):
         self.shift_limit = shift_limit
         self.scale = scale
         self.shifts_zyx = None
-        logger.debug(f'Using device: {DEVICE}')
         
     def estimate_shift(self, ref_img: ArrayLike, mov_img: ArrayLike, **kwargs) -> np.ndarray:
         """
@@ -608,8 +607,8 @@ def autotracker_hook_fn(
                         del t_volume_t0_phase, t_volume_t1_phase
                         gc.collect(); torch.cuda.empty_cache()
 
-                    tifffile.imwrite(f"E:\\2025_07_31_test_autotracker\\volume_{t_idx}_0.tiff", volume_t0)
-                    tifffile.imwrite(f"E:\\2025_07_31_test_autotracker\\volume_{t_idx}_1.tiff", volume_t1)
+                    # tifffile.imwrite(f"E:\\2025_07_31_test_autotracker\\volume_{t_idx}_0.tiff", volume_t0)
+                    # tifffile.imwrite(f"E:\\2025_07_31_test_autotracker\\volume_{t_idx}_1.tiff", volume_t1)
                    
                         
                    
