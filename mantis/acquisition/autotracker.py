@@ -258,8 +258,6 @@ def phase_cross_corr(
     ref_img: ArrayLike,
     mov_img: ArrayLike,
     maximum_shift: float = 1.0,
-    to_device: Callable[[ArrayLike], ArrayLike] = lambda x: x,
-    transform: Optional[Callable[[ArrayLike], ArrayLike]] = np.log1p,
     normalization: bool = False,
 ) -> Tuple[int, ...]:
     """
@@ -294,13 +292,6 @@ def phase_cross_corr(
 
     ref_img = _match_shape(ref_img, shape)
     mov_img = _match_shape(mov_img, shape)
-
-    ref_img = to_device(ref_img)
-    mov_img = to_device(mov_img)
-
-    if transform is not None:
-        ref_img = transform(ref_img)
-        mov_img = transform(mov_img)
 
     Fimg1 = np.fft.rfftn(ref_img)
     Fimg2 = np.fft.rfftn(mov_img)
@@ -629,6 +620,13 @@ def autotracker_hook_fn(
                 if abs(shifts_zyx[1]) < 2:
                     shifts_zyx[1] = 0
                 if abs(shifts_zyx[2]) < 2:
+                    shifts_zyx[2] = 0
+
+                if abs(shifts_zyx[0]) > 2:
+                    shifts_zyx[0] = 0
+                if abs(shifts_zyx[1]) > 10:
+                    shifts_zyx[1] = 0
+                if abs(shifts_zyx[2]) > 10:
                     shifts_zyx[2] = 0
 
                 del volume_t0, volume_t1
