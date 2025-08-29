@@ -584,9 +584,11 @@ def autotracker_hook_fn(
                     tf_tensor = tuple(tf.to(DEVICE) for tf in transfer_function)
                     
                     t_volume_t0_bf = torch.as_tensor(volume_t0, device=DEVICE, dtype=torch.float32)
-                    t_volume_t1_bf = torch.as_tensor(volume_t1, device=DEVICE, dtype=torch.float32)
-                    
                     t_volume_t0_phase = apply_inverse_transfer_function(t_volume_t0_bf, *tf_tensor, **phase_config['apply_inverse'], z_padding=phase_config['transfer_function']['z_padding'])
+                    del t_volume_t0_bf
+                    gc.collect(); torch.cuda.empty_cache()
+                    
+                    t_volume_t1_bf = torch.as_tensor(volume_t1, device=DEVICE, dtype=torch.float32)
                     t_volume_t1_phase = apply_inverse_transfer_function(t_volume_t1_bf, *tf_tensor, **phase_config['apply_inverse'], z_padding=phase_config['transfer_function']['z_padding'])
                     del t_volume_t0_bf, t_volume_t1_bf, tf_tensor
                     gc.collect(); torch.cuda.empty_cache()
@@ -595,14 +597,15 @@ def autotracker_hook_fn(
                     #tifffile.imwrite(f"E:\\2025_08_22_76hpf_cldnb-she-myo6b\\volume_{t_idx}_1.tiff", volume_t1)
                     if vs_config is not None:
                         
-                        volume_t0_vs = vs_inference_t2t(t_volume_t0_phase, vs_config)
-                        volume_t1_vs = vs_inference_t2t(t_volume_t1_phase, vs_config)
+                        pred_t0_vs = vs_inference_t2t(t_volume_t0_phase.unsqueeze(0).unsqueeze(0), vs_config)
+                        pred_t1_vs = vs_inference_t2t(t_volume_t1_phase.unsqueeze(0).unsqueeze(0), vs_config)
                         del t_volume_t0_phase, t_volume_t1_phase
                         gc.collect(); torch.cuda.empty_cache()
                         
-                        volume_t0 = volume_t0_vs.detach().cpu().numpy()
-                        volume_t1 = volume_t1_vs.detach().cpu().numpy()
-                        del volume_t0_vs, volume_t1_vs
+                        volume_t0 = pred_t0_vs.detach().cpu().numpy()
+                        volume_t1 = pred_t1_vs.detach().cpu().numpy()
+                        
+                        del pred_t0_vs, pred_t1_vs
                         gc.collect(); torch.cuda.empty_cache()
                         
                     else:  

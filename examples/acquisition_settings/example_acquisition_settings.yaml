@@ -170,7 +170,6 @@ autotracker_settings:
       TV_rho_strength: 0.001
       TV_iterations: 1
   vs_config:
-    gpu: True
     model:
       class_path: viscy.translation.engine.VSUNet
       init_args:
@@ -191,7 +190,7 @@ autotracker_settings:
           head_conv_pool: False
     test_time_augmentations: True
     tta_type: median
-    ckpt_path: /hpc/projects/comp.micro/virtual_staining/models/fcmae-3d/fit_v2/pretrain_end2end/lightning_logs/finetune_VS_end2end_v1_test6_prefetch2_nopersistwork_restart_2/checkpoints/epoch=64-step=24960.ckpt
+  ckpt_path: /hpc/projects/comp.micro/virtual_staining/models/fcmae-3d/fit_v2/pretrain_end2end/lightning_logs/finetune_VS_end2end_v1_test6_prefetch2_nopersistwork_restart_2/checkpoints/epoch=64-step=24960.ckpt
 
 
 
