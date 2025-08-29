@@ -44,7 +44,7 @@ def vs_inference_t2t(x: torch.Tensor, cfg: dict, gpu: bool = True) -> torch.Tens
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     else:
         device = torch.device("cpu")
-
+    
     # Extract model info
     model_cfg = cfg["model"].copy()
     init_args = model_cfg["init_args"]
@@ -572,6 +572,8 @@ def autotracker_hook_fn(
                 volume_t1 = get_volume(dataset, volume_t1_axes)
 
                 if phase_config is not None:
+                    logger.info("Predicting Phase...")
+
                     tf_tensor = tuple(tf.to(DEVICE) for tf in transfer_function)
                     
                     t_volume_t0_bf = torch.as_tensor(volume_t0, device=DEVICE, dtype=torch.float32)
@@ -581,20 +583,21 @@ def autotracker_hook_fn(
                     
                     t_volume_t1_bf = torch.as_tensor(volume_t1, device=DEVICE, dtype=torch.float32)
                     t_volume_t1_phase = apply_inverse_transfer_function(t_volume_t1_bf, *tf_tensor, **phase_config['apply_inverse'], z_padding=phase_config['transfer_function']['z_padding'])
-                    del t_volume_t0_bf, t_volume_t1_bf, tf_tensor
+                    del t_volume_t1_bf, tf_tensor
                     gc.collect(); torch.cuda.empty_cache()
 
                     #tifffile.imwrite(f"E:\\2025_08_22_76hpf_cldnb-she-myo6b\\volume_{t_idx}_0.tiff", volume_t0)
                     #tifffile.imwrite(f"E:\\2025_08_22_76hpf_cldnb-she-myo6b\\volume_{t_idx}_1.tiff", volume_t1)
                     if vs_config is not None:
+                        logger.info("Predicting VS...")
                         
                         pred_t0_vs = vs_inference_t2t(t_volume_t0_phase.unsqueeze(0).unsqueeze(0), vs_config)
                         pred_t1_vs = vs_inference_t2t(t_volume_t1_phase.unsqueeze(0).unsqueeze(0), vs_config)
                         del t_volume_t0_phase, t_volume_t1_phase
                         gc.collect(); torch.cuda.empty_cache()
                         
-                        volume_t0 = pred_t0_vs.detach().cpu().numpy()
-                        volume_t1 = pred_t1_vs.detach().cpu().numpy()
+                        volume_t0 = pred_t0_vs.detach().cpu().numpy()[0, 0]
+                        volume_t1 = pred_t1_vs.detach().cpu().numpy()[0, 0]
                         
                         del pred_t0_vs, pred_t1_vs
                         gc.collect(); torch.cuda.empty_cache()
@@ -604,6 +607,10 @@ def autotracker_hook_fn(
                         volume_t1 = t_volume_t1_phase.detach().cpu().numpy()
                         del t_volume_t0_phase, t_volume_t1_phase
                         gc.collect(); torch.cuda.empty_cache()
+
+                    tifffile.imwrite(f"E:\\2025_07_31_test_autotracker\\volume_{t_idx}_0.tiff", volume_t0)
+                    tifffile.imwrite(f"E:\\2025_07_31_test_autotracker\\volume_{t_idx}_1.tiff", volume_t1)
+                   
                         
                    
                 # viewer = napari.Viewer()
