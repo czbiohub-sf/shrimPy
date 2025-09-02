@@ -110,7 +110,7 @@ def change_magnification_tracking():
     else:
         mmc.set_property('Core', 'Focus', 'FocusDrive')
         mmc.set_property('ObjectiveTurret', 'Label', '1-5x'); time.sleep(5)
-        mmc.set_property('TL-ApertureDiaphragm', 'Position', '2')
+        mmc.set_property('TL-ApertureDiaphragm', 'Position', '4')
 
 
 # %% Setup logger and acquisition directory=

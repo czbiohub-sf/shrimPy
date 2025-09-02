@@ -30,16 +30,16 @@ PIEZO_STEP_TIME_S = 0.05
 mmc = Core()
 
 acquisition_directory = Path(r'G:\OPS')
-acquisition_name = 'OPS0068'
+acquisition_name = 'OPS0069'
 start_time = '2025-08-12 01:00:00'
 # start_time = 'now'
-well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
+well_diameter = 3000  # in um, 6 well plates have 35 mm diameter wells
 min_fov_distance_from_well_edge = 800  # in um
 #TODO:uncomment this after this acquisition -EH
 well_centers = {
-    'A1': (620, 13, 7731),
-    'A2': (39960, 13, 7793),
-    'A3': (79300, 13, 7829),
+    'A1': (1551, -500, 7716),
+    'A2': (40891, -500, 7776),
+    'A3': (80231, -500, 7935),
 }  # (x, y, z) in um
 
 phenotyping_magnification = 20

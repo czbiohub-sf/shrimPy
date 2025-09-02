@@ -4,7 +4,7 @@ from pycromanager import Acquisition, Core, multi_d_acquisition_events
 mmc = Core()
 
 acquisition_directory = Path(r'G:\OPS')
-acquisition_name = 'OPS0069_beads'
+acquisition_name = 'OPS0078_beads'
 
 z_start = -2
 z_end = 25
