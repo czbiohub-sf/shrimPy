@@ -11,7 +11,7 @@ from tempfile import TemporaryDirectory
 from threading import Thread
 from typing import Iterable, Union
 
-import acquire_zarr as aqz
+from ome_writers import create_stream, Dimension
 import copylot
 import nidaqmx
 import numpy as np
@@ -220,7 +220,12 @@ class BaseChannelSliceAcquisition(object):
         )
         self._autoexposure_settings = settings
 
-    def setup(self, output_path: Union[str, os.PathLike] = None):
+    def setup(
+        self,
+        output_path: Union[str, os.PathLike] = None,
+        position_settings=None,
+        time_settings=None,
+    ):
         """
         Apply acquisition settings as specified by the class properties
         """
@@ -285,56 +290,40 @@ class BaseChannelSliceAcquisition(object):
             y_size = self.mmc.getImageHeight()
 
             if output_path:
-                zarr_settings = aqz.StreamSettings(
-                    store_path=output_path,
-                    dtype=aqz.DataType.UINT16,  # FIXME: hardcoded for now, should be set from acquisition settings
-                    dimensions=[
-                        aqz.Dimension(
-                            name='t',
-                            array_size_px=0,
-                            chunk_size_px=1,
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.TIME,
-                        ),  # zero denotes the append dimension in acquire
-                        aqz.Dimension(
-                            name='z',
-                            array_size_px=self.slice_settings.num_slices,
-                            chunk_size_px=int(self.slice_settings.num_slices / z_n_chunks),
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.SPACE,
-                        ),
-                        aqz.Dimension(
-                            name='y',
-                            array_size_px=y_size,
-                            chunk_size_px=int(y_size / xy_n_chunks),
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.SPACE,
-                        ),
-                        aqz.Dimension(
-                            name='x',
-                            array_size_px=x_size,
-                            chunk_size_px=int(x_size / xy_n_chunks),
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.SPACE,
-                        ),
-                    ],
-                    muiltscale=False,
-                    version=aqz.ZarrVersion.V3,
-                    max_threads=0,
-                )
+                # Create dimensions for ome_writers with position and time dimensions
+                num_positions = position_settings.num_positions if position_settings else 1
+                num_timepoints = time_settings.num_timepoints if time_settings else 1
 
-                if self.channel_settings.num_channels > 1:
-                    zarr_settings.dimensions.insert(
-                        1,
-                        aqz.Dimension(
-                            name='c',
-                            array_size_px=self.channel_settings.num_channels,
-                            chunk_size_px=int(self.channel_settings.num_channels),
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.CHANNEL,
-                        ),
-                    )
-                self._zarr_writer = aqz.ZarrStream(zarr_settings)
+                dimensions = [
+                    Dimension(
+                        label='p', size=num_positions, chunk_size=1  # position dimension
+                    ),
+                    Dimension(label='t', size=num_timepoints, chunk_size=1),  # time dimension
+                    Dimension(
+                        label='c',
+                        size=self.channel_settings.num_channels,
+                        chunk_size=self.channel_settings.num_channels,
+                    ),
+                    Dimension(
+                        label='z',
+                        size=self.slice_settings.num_slices,
+                        chunk_size=int(max(1, self.slice_settings.num_slices / z_n_chunks)),
+                    ),
+                    Dimension(
+                        label='y', size=y_size, chunk_size=int(max(1, y_size / xy_n_chunks))
+                    ),
+                    Dimension(
+                        label='x', size=x_size, chunk_size=int(max(1, x_size / xy_n_chunks))
+                    ),
+                ]
+
+                self._ome_writer = create_stream(
+                    output_path,
+                    dtype='uint16',  # FIXME: hardcoded for now, should be set from acquisition settings
+                    dimensions=dimensions,
+                    backend="acquire-zarr",
+                    overwrite=True,
+                )
 
                 self.mmc.mda.events.frameReady.connect(self.write_data)
 
@@ -388,7 +377,7 @@ class BaseChannelSliceAcquisition(object):
         event : useq.Event
             The event containing metadata about the acquisition.
         """
-        self._zarr_writer.append(data)
+        self._ome_writer.append(data)
 
 
 class MantisAcquisition(object):
@@ -836,19 +825,19 @@ class MantisAcquisition(object):
                 )
                 if ts2_ttl_state == 32:
                     # State 32 corresponds to illumination with 488 laser
-                    self.ls_acq.channel_settings.light_sources[
-                        channel_idx
-                    ] = microscope_operations.setup_vortran_laser(VORTRAN_488_COM_PORT)
+                    self.ls_acq.channel_settings.light_sources[channel_idx] = (
+                        microscope_operations.setup_vortran_laser(VORTRAN_488_COM_PORT)
+                    )
                 elif ts2_ttl_state == 64:
                     # State 64 corresponds to illumination with 561 laser
-                    self.ls_acq.channel_settings.light_sources[
-                        channel_idx
-                    ] = microscope_operations.setup_vortran_laser(VORTRAN_561_COM_PORT)
+                    self.ls_acq.channel_settings.light_sources[channel_idx] = (
+                        microscope_operations.setup_vortran_laser(VORTRAN_561_COM_PORT)
+                    )
                 elif ts2_ttl_state == 128:
                     # State 128 corresponds to illumination with 639 laser
-                    self.ls_acq.channel_settings.light_sources[
-                        channel_idx
-                    ] = microscope_operations.setup_vortran_laser(VORTRAN_639_COM_PORT)
+                    self.ls_acq.channel_settings.light_sources[channel_idx] = (
+                        microscope_operations.setup_vortran_laser(VORTRAN_639_COM_PORT)
+                    )
                 else:
                     logger.error(
                         'Unknown TTL state {} for channel {} in config group {}'.format(
@@ -1195,10 +1184,18 @@ class MantisAcquisition(object):
         logger.info('Setting up acquisition')
 
         logger.debug('Setting up label-free acquisition')
-        self.lf_acq.setup(output_path=f'{self._acq_dir}/{self._acq_name}_{LF_ACQ_LABEL}')
+        self.lf_acq.setup(
+            output_path=f'{self._acq_dir}/{self._acq_name}_{LF_ACQ_LABEL}',
+            position_settings=self.position_settings,
+            time_settings=self.time_settings,
+        )
 
         logger.debug('Setting up light-sheet acquisition')
-        self.ls_acq.setup(output_path=f'{self._acq_dir}/{self._acq_name}_{LS_ACQ_LABEL}')
+        self.ls_acq.setup(
+            output_path=f'{self._acq_dir}/{self._acq_name}_{LS_ACQ_LABEL}',
+            position_settings=self.position_settings,
+            time_settings=self.time_settings,
+        )
 
         logger.debug('Setting up DAQ')
         self.setup_daq()
@@ -1299,10 +1296,10 @@ class MantisAcquisition(object):
                         )
                         continue
                     else:
-                        self.position_settings.xyz_positions[p_idx][
-                            2
-                        ] = self.lf_acq.mmc.getPosition(
-                            self.lf_acq.microscope_settings.autofocus_stage
+                        self.position_settings.xyz_positions[p_idx][2] = (
+                            self.lf_acq.mmc.getPosition(
+                                self.lf_acq.microscope_settings.autofocus_stage
+                            )
                         )
                         logger.debug(
                             f'Autofocus successful. Z position updated to {self.position_settings.xyz_positions[p_idx][2]} at position {p_label}'

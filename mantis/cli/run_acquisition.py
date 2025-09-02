@@ -26,7 +26,7 @@ def load_settings(raw_settings: dict, settings_key: str, settings_class):
 @click.option(
     "--mm-app-path",
     default=default_mm_app_path,
-    type=click.Path(exists=True, file_okay=False, dir_okay=True),
+    type=click.Path(file_okay=False, dir_okay=True),
     show_default=True,
     help='''Path to Micro-manager installation directory
       which will run the light-sheet acquisition''',
@@ -34,7 +34,7 @@ def load_settings(raw_settings: dict, settings_key: str, settings_class):
 @click.option(
     "--ls-config-filepath",
     default=default_ls_config_filepath,
-    type=click.Path(exists=True, file_okay=True, dir_okay=False),
+    type=click.Path(file_okay=True, dir_okay=False),
     show_default=True,
     help='''Path to Micro-manager config file
       which will run the light-sheet acquisition''',
