@@ -285,11 +285,6 @@ def phase_cross_corr(
         for s1, s2 in zip(ref_img.shape, mov_img.shape)
     )
 
-    logger.info(
-        f"phase cross corr. fft shape of {shape} for arrays of shape {ref_img.shape} and {mov_img.shape} "
-        f"with maximum shift of {maximum_shift}"
-    )
-
     ref_img = _match_shape(ref_img, shape)
     mov_img = _match_shape(mov_img, shape)
 
@@ -314,7 +309,7 @@ def phase_cross_corr(
     peak = np.unravel_index(argmax, corr.shape)
     peak = tuple(s // 2 - p for s, p in zip(corr.shape, peak))
 
-    logger.info(f"phase cross corr. peak at {peak}")
+    logger.info(f"PCC shift(z,y,x): {peak}")
 
     return peak
 
@@ -538,7 +533,7 @@ def autotracker_hook_fn(
     vs_config = autotracker_settings.vs_config
     output_shift_path = Path(output_shift_path)
    
-    # Get axes info
+    # Get axes info 
     p_label = axes['position']
     p_idx = position_settings.position_labels.index(p_label)
     t_idx = axes['time']
@@ -618,16 +613,9 @@ def autotracker_hook_fn(
                     # tifffile.imwrite(f"E:\\2025_07_31_test_autotracker\\volume_{t_idx}_1.tiff", volume_t1)
                    
                         
-                # viewer = napari.Viewer()
-                # viewer.add_image(volume_t0)
-                # viewer.add_image(volume_t1)
-
-                # Reference and moving volumes
-                
                 shifts_zyx = tracker.estimate_shift(volume_t0, volume_t1)
 
                 del volume_t0, volume_t1
-                #shifts_zyx = shifts_zyx.cpu().numpy()
 
             csv_log_filename = f"autotracker_fov_{axes['position']}.csv"
             shift_coord_output = output_shift_path / csv_log_filename
