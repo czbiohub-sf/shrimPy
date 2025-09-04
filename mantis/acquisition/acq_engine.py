@@ -904,13 +904,14 @@ class MantisAcquisition(object):
             if use_pycromanager:
                 global acq_finished
                 acq_finished = False
-                acq_fps = 20
+                acq_fps = 20  # TODO: hardcoded for now
                 camera = 'Prime BSI Express'
                 num_slices = len(z_range)
                 acq_duration = num_slices / acq_fps + 5  # Extra buffer time
+
                 def check_acq_finished(axes, dataset):
                     global acq_finished
-                    if axes['z'] == num_slices-1:
+                    if axes['z'] == num_slices - 1:
                         acq_finished = True
 
                 microscope_operations.set_z_position(mmc, z_stage, z_range[0])
@@ -926,7 +927,7 @@ class MantisAcquisition(object):
                     f'ls_refocus_p{p_idx}',
                     port=LS_ZMQ_PORT,
                     image_saved_fn=check_acq_finished,
-                    show_display=False
+                    show_display=False,
                 )
                 acq.acquire(events)
                 acq.mark_finished()
