@@ -793,7 +793,7 @@ class MantisAcquisition(object):
         z_range: Iterable,
         galvo_range: Iterable,
         use_pycromanager: bool = False,
-    ) -> np.array:
+    ) -> np.ndarray:
         """Acquire defocus stacks at different galvo positions and return image data
 
         Parameters
@@ -812,7 +812,7 @@ class MantisAcquisition(object):
 
         Returns
         -------
-        data : np.array
+        data : np.ndarray
 
         """
         data = []
@@ -853,25 +853,56 @@ class MantisAcquisition(object):
         # acquire stacks at different galvo positions
         for p_idx, p in enumerate(galvo_range):
             # set galvo position
-            mmc.set_position(galvo, p0 + p)
+            microscope_operations.set_z_position(mmc, galvo, p0 + p)
 
             # acquire defocus stack
             if use_pycromanager:
-                mmc.set_position(z_stage, z_range[0])  # prep o3 stage
-                with Acquisition(
-                    tempdir.name, f'ls_refocus_p{p_idx}', port=LS_ZMQ_PORT, show_display=False
-                ) as acq:
-                    acq.acquire(
-                        multi_d_acquisition_events(
-                            z_start=z_range[0],
-                            z_end=z_range[-1],
-                            z_step=z_range[1] - z_range[0],
-                        ),
-                    )
-                ds = acq.get_dataset()
-                data.append(np.asarray(ds.as_array()))
-                ds.close()
-                mmc.set_position(z_stage, z_range[len(z_range) // 2])  # reset o3 stage
+                global acq_finished
+                acq_finished = False
+                acq_fps = 20  # TODO: hardcoded for now
+                camera = 'Prime BSI Express'
+                num_slices = len(z_range)
+                acq_duration = num_slices / acq_fps + 5  # Extra buffer time
+
+                def check_acq_finished(axes, dataset):
+                    global acq_finished
+                    if axes['z'] == num_slices - 1:
+                        acq_finished = True
+
+                microscope_operations.set_z_position(mmc, z_stage, z_range[0])
+
+                logger.debug('Starting pycromanager O3 autofocus acquisition')
+                events = multi_d_acquisition_events(
+                    z_start=z_range[0],
+                    z_end=z_range[-1],
+                    z_step=z_range[1] - z_range[0],
+                )
+                acq = Acquisition(
+                    tempdir.name,
+                    f'ls_refocus_p{p_idx}',
+                    port=LS_ZMQ_PORT,
+                    image_saved_fn=check_acq_finished,
+                    show_display=False,
+                )
+                acq.acquire(events)
+                acq.mark_finished()
+                start_time = time.time()
+                while not acq_finished and time.time() - start_time < acq_duration:
+                    time.sleep(0.2)
+                if acq_finished:
+                    acq.await_completion()
+                    logger.debug('Pycromanager acquisition finished. Fetching data')
+                    ds = acq.get_dataset()
+                    data.append(np.asarray(ds.as_array()))
+                    logger.debug('Data retrieved. Closing dataset')
+                    ds.close()
+                else:
+                    logger.error('O3 autofocus is taking longer than expected - aborting.')
+                    microscope_operations.abort_acquisition_sequence(self.ls_acq.mmc, camera)
+                    acq.await_completion()  # Cleanup
+                    acq.get_dataset().close()  # Close dataset
+
+                microscope_operations.set_z_position(mmc, z_stage, z_range[len(z_range) // 2])
             else:
                 z_stack = microscope_operations.acquire_defocus_stack(
                     mmc, z_stage, z_range, backlash_correction_distance=KIM101_BACKLASH
@@ -888,7 +919,7 @@ class MantisAcquisition(object):
         )
 
         # Reset galvo
-        mmc.set_position(galvo, p0)
+        microscope_operations.set_z_position(mmc, galvo, p0)
 
         # Reset shutter
         microscope_operations.reset_shutter(mmc, auto_shutter_state, shutter_state)
@@ -942,6 +973,11 @@ class MantisAcquisition(object):
             galvo_range=galvo_range,
             use_pycromanager=True,
         )
+
+        # Abort if the acquisition failed
+        if not data.size > 0:
+            logger.error('No data was acquired during O3 autofocus - aborting.')
+            return success, scan_left, scan_right
 
         # Save acquired stacks in logs
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
