@@ -597,8 +597,8 @@ def autotracker_hook_fn(
                         del t_volume_t0_phase, t_volume_t1_phase
                         gc.collect(); torch.cuda.empty_cache()
                         
-                        volume_t0 = pred_t0_vs.detach().cpu().numpy()[0, 0]
-                        volume_t1 = pred_t1_vs.detach().cpu().numpy()[0, 0]
+                        volume_t0 = pred_t0_vs.detach().cpu().numpy()[0, 0] # Nuclei channel
+                        volume_t1 = pred_t1_vs.detach().cpu().numpy()[0, 0] # Nuclei channel
                         
                         del pred_t0_vs, pred_t1_vs
                         gc.collect(); torch.cuda.empty_cache()
