@@ -18,6 +18,8 @@ import tifffile
 from nidaqmx.constants import Slope
 from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, start_headless
 from waveorder.focus import focus_from_transverse_band
+from waveorder.models.phase_thick_3d import calculate_transfer_function
+
 
 from mantis import get_console_formatter
 from mantis.acquisition import microscope_operations
@@ -836,7 +838,7 @@ class MantisAcquisition(object):
         z_range: Iterable,
         galvo_range: Iterable,
         use_pycromanager: bool = False,
-    ) -> np.array:
+    ) -> np.ndarray:
         """Acquire defocus stacks at different galvo positions and return image data
 
         Parameters
@@ -855,7 +857,7 @@ class MantisAcquisition(object):
 
         Returns
         -------
-        data : np.array
+        data : np.ndarray
 
         """
         data = []
@@ -896,31 +898,54 @@ class MantisAcquisition(object):
         # acquire stacks at different galvo positions
         for p_idx, p in enumerate(galvo_range):
             # set galvo position
-            # mmc.set_position(galvo, p0 + p)
             microscope_operations.set_z_position(mmc, galvo, p0 + p)
 
             # acquire defocus stack
             if use_pycromanager:
-                # mmc.set_position(z_stage, z_range[0])  # prep o3 stage
+                global acq_finished
+                acq_finished = False
+                acq_fps = 20
+                camera = 'Prime BSI Express'
+                num_slices = len(z_range)
+                acq_duration = num_slices / acq_fps + 5  # Extra buffer time
+                def check_acq_finished(axes, dataset):
+                    global acq_finished
+                    if axes['z'] == num_slices-1:
+                        acq_finished = True
+
                 microscope_operations.set_z_position(mmc, z_stage, z_range[0])
+
                 logger.debug('Starting pycromanager O3 autofocus acquisition')
-                # TODO: may need to abort stalled acquisitions
-                with Acquisition(
-                    tempdir.name, f'ls_refocus_p{p_idx}', port=LS_ZMQ_PORT, show_display=False
-                ) as acq:
-                    acq.acquire(
-                        multi_d_acquisition_events(
-                            z_start=z_range[0],
-                            z_end=z_range[-1],
-                            z_step=z_range[1] - z_range[0],
-                        ),
-                    )
-                logger.debug('Pycromanager acquisition finished. Fetching data')
-                ds = acq.get_dataset()
-                data.append(np.asarray(ds.as_array()))
-                logger.debug('Data retrieved. Closing dataset')
-                ds.close()
-                # mmc.set_position(z_stage, z_range[len(z_range) // 2])  # reset o3 stage
+                events = multi_d_acquisition_events(
+                    z_start=z_range[0],
+                    z_end=z_range[-1],
+                    z_step=z_range[1] - z_range[0],
+                )
+                acq = Acquisition(
+                    tempdir.name,
+                    f'ls_refocus_p{p_idx}',
+                    port=LS_ZMQ_PORT,
+                    image_saved_fn=check_acq_finished,
+                    show_display=False
+                )
+                acq.acquire(events)
+                acq.mark_finished()
+                start_time = time.time()
+                while not acq_finished and time.time() - start_time < acq_duration:
+                    time.sleep(0.2)
+                if acq_finished:
+                    acq.await_completion()
+                    logger.debug('Pycromanager acquisition finished. Fetching data')
+                    ds = acq.get_dataset()
+                    data.append(np.asarray(ds.as_array()))
+                    logger.debug('Data retrieved. Closing dataset')
+                    ds.close()
+                else:
+                    logger.error('O3 autofocus is taking longer than expected - aborting.')
+                    microscope_operations.abort_acquisition_sequence(self.ls_acq.mmc, camera)
+                    acq.await_completion()  # Cleanup
+                    acq.get_dataset().close()  # Close dataset
+
                 microscope_operations.set_z_position(mmc, z_stage, z_range[len(z_range) // 2])
             else:
                 z_stack = microscope_operations.acquire_defocus_stack(
@@ -938,7 +963,6 @@ class MantisAcquisition(object):
         )
 
         # Reset galvo
-        # mmc.set_position(galvo, p0)
         microscope_operations.set_z_position(mmc, galvo, p0)
 
         # Reset shutter
@@ -993,6 +1017,11 @@ class MantisAcquisition(object):
             galvo_range=galvo_range,
             use_pycromanager=True,
         )
+
+        # Abort if the acquisition failed
+        if not data.size > 0:
+            logger.error('No data was acquired during O3 autofocus - aborting.')
+            return success, scan_left, scan_right
 
         # Save acquired stacks in logs
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -1177,6 +1206,12 @@ class MantisAcquisition(object):
 
         # TODO: implement logic for the autotracker_img_saved_hook_fn
         if self.lf_acq.microscope_settings.autotracker_config is not None:
+            phase_config = self.lf_acq.autotracker_settings.phase_config
+            if phase_config is not None:
+                yx_shape = self.lf_acq.microscope_settings.roi[-2:][::-1]
+                phase_config['transfer_function']['zyx_shape'] =  (self.lf_acq.slice_settings.num_slices, yx_shape[0], yx_shape[1])
+                transfer_function = calculate_transfer_function(**phase_config['transfer_function'])
+
             lf_image_saved_fn = partial(
                 autotracker_hook_fn,
                 'lf',
@@ -1185,6 +1220,7 @@ class MantisAcquisition(object):
                 self.lf_acq.microscope_settings.autotracker_config,
                 self.lf_acq.slice_settings,
                 self._logs_dir,
+                transfer_function,   
             )
         else:
             logger.info('No autotracker config found for LF acquisition. Using default image saved hook')

@@ -2,7 +2,7 @@ import copy
 import warnings
 
 from dataclasses import field
-from typing import Dict, List, Literal, Optional, Tuple, Union
+from typing import Dict, List, Literal, Optional, Tuple, Union, Any
 
 import numpy as np
 
@@ -212,6 +212,8 @@ class AutotrackerSettings:
     # TODO: maybe do the ROI like in the ls_microscope_settings
     template_roi_zyx: Optional[Tuple[int, int, int]] = None
     template_channel: Optional[str] = None
+    reconstruction: Optional[List[str]] = field(default_factory=list)
+    phase_config: Optional[Dict[str, Any]] = field(default_factory=dict)
 
     @validator("tracking_method")
     def check_tracking_method_options(cls, v):
