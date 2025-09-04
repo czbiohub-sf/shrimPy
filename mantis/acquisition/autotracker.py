@@ -611,7 +611,6 @@ def autotracker_hook_fn(
                     # tifffile.imwrite(f"E:\\2025_07_31_test_autotracker\\volume_{t_idx}_1.tiff", volume_t1)
                    
                         
-                   
                 # viewer = napari.Viewer()
                 # viewer.add_image(volume_t0)
                 # viewer.add_image(volume_t1)
