@@ -798,15 +798,10 @@ class MantisAcquisition(object):
 
         Parameters
         ----------
-        mmc : Core
-        mmStudio : Studio
-        z_stage : str or KinesisPiezoMotor
         z_range : Iterable
-            Provide absolute range when using pycromanager, relative range otherwise
-        galvo : str
+            Absolute range when using pycromanager, relative range otherwise
         galvo_range : Iterable
-        config_group : str, optional
-        config_name : str, optional
+            Absolute galvo range
         use_pycromanager : bool, optional
             Flag to use pycromanager for acquisition, by default False
 
@@ -837,8 +832,9 @@ class MantisAcquisition(object):
         auto_shutter_state, shutter_state = microscope_operations.get_shutter_state(mmc)
         microscope_operations.open_shutter(mmc)
 
-        # get galvo starting position
-        p0 = mmc.get_position(galvo)
+        # get galvo and z stage starting position
+        p0 = float(mmc.get_position(galvo))
+        z0 = float(mmc.get_position(z_stage))
 
         # set camera to internal trigger
         # TODO: do this properly, context manager?
@@ -853,7 +849,7 @@ class MantisAcquisition(object):
         # acquire stacks at different galvo positions
         for p_idx, p in enumerate(galvo_range):
             # set galvo position
-            microscope_operations.set_z_position(mmc, galvo, p0 + p)
+            microscope_operations.set_z_position(mmc, galvo, p)
 
             # acquire defocus stack
             if use_pycromanager:
@@ -901,8 +897,6 @@ class MantisAcquisition(object):
                     microscope_operations.abort_acquisition_sequence(self.ls_acq.mmc, camera)
                     acq.await_completion()  # Cleanup
                     acq.get_dataset().close()  # Close dataset
-
-                microscope_operations.set_z_position(mmc, z_stage, z_range[len(z_range) // 2])
             else:
                 z_stack = microscope_operations.acquire_defocus_stack(
                     mmc, z_stage, z_range, backlash_correction_distance=KIM101_BACKLASH
@@ -918,8 +912,9 @@ class MantisAcquisition(object):
             mmc, 'Prime BSI Express', 'TriggerMode', 'Edge Trigger'
         )
 
-        # Reset galvo
+        # Reset stages
         microscope_operations.set_z_position(mmc, galvo, p0)
+        microscope_operations.set_z_position(mmc, z_stage, z0)
 
         # Reset shutter
         microscope_operations.reset_shutter(mmc, auto_shutter_state, shutter_state)
@@ -967,7 +962,7 @@ class MantisAcquisition(object):
         # are acquired, here at 30%, 50%, and 70% of galvo range. Should be odd number
         galvo_scan_range = self.ls_acq.slice_settings.z_range
         len_galvo_scan_range = len(galvo_scan_range)
-        galvo_range = [
+        galvo_range_abs = [
             galvo_scan_range[int(0.3 * len_galvo_scan_range)],
             galvo_scan_range[int(0.5 * len_galvo_scan_range)],
             galvo_scan_range[int(0.7 * len_galvo_scan_range)],
@@ -976,7 +971,7 @@ class MantisAcquisition(object):
         # Acquire defocus stacks at several galvo positions
         data = self.acquire_ls_defocus_stack(
             z_range=o3_range_abs,
-            galvo_range=galvo_range,
+            galvo_range=galvo_range_abs,
             use_pycromanager=True,
         )
 
@@ -1013,7 +1008,7 @@ class MantisAcquisition(object):
             peak_indices.append(stats['peak_index'])
         logger.debug(
             'Stacks at galvo positions %s are in focus at slice %s',
-            np.round(galvo_range, 3),
+            np.round(galvo_range_abs, 3),
             focus_indices,
         )
 
