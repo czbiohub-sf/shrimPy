@@ -199,6 +199,19 @@ class AutoexposureSettings:
             attr_val = getattr(self, attr)
             if attr_val is not None:
                 setattr(self, attr, round(attr_val, 1))
+class ModelSettings:
+    class_path: str
+    init_args: dict[str, Any]
+    test_time_augmentations: bool
+    tta_type: str
+
+class VirtualStainingSettings:
+    model: ModelSettings
+    ckpt_path: str
+
+class ReconstructPhaseSettings:
+    transfer_function: dict[str, Any]
+    apply_inverse: dict[str, Any]
 
 
 @dataclass
@@ -206,15 +219,15 @@ class AutotrackerSettings:
     tracking_method: Literal['phase_cross_correlation', 'template_matching', 'multi_otsu']
     tracking_interval: Optional[int] = 1  # TODO: add units
     scale_yx: Optional[float] = 1.0  # in um per pixel
-    shift_limit: Optional[Union[Tuple[float, float, float], 'None']] = None # in um
+    shift_limit: Optional[Union[Dict[str, Tuple[float, float]], 'None']] = None # in um
     device: Optional[str] = 'cpu'
     zyx_dampening_factor: Optional[Union[Tuple[float, float, float], None]] = None
     # TODO: maybe do the ROI like in the ls_microscope_settings
     template_roi_zyx: Optional[Tuple[int, int, int]] = None
     template_channel: Optional[str] = None
-    reconstruction: Optional[List[str]] = field(default_factory=list)
-    phase_config: Optional[Dict[str, Any]] = field(default_factory=dict)
-    vs_config: Optional[Dict[str, Any]] = field(default_factory=dict)
+    reconstruction: Optional[List[str]] = None
+    phase_config: Optional[ReconstructPhaseSettings] = None
+    vs_config: Optional[VirtualStainingSettings] = None
 
     @validator("tracking_method")
     def check_tracking_method_options(cls, v):
