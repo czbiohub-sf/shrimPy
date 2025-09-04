@@ -330,7 +330,7 @@ class Autotracker(object):
     def __init__(
         self,
         tracking_method: str,
-        shift_limit: Tuple[float, float, float],
+        shift_limit_um: dict,
         scale: ArrayLike,
         zyx_dampening_factor: ArrayLike = None,
     ):
@@ -348,7 +348,7 @@ class Autotracker(object):
         """
         self.tracking_method = tracking_method
         self.zyx_dampening = zyx_dampening_factor   
-        self.shift_limit = shift_limit
+        self.shift_limit_um = shift_limit_um
         self.scale = scale
         self.shifts_zyx = None
         
@@ -381,8 +381,23 @@ class Autotracker(object):
         # shifts_zyx in px to shifts_zyx in um
         shifts_zyx_um = np.array(shifts_zyx_pix) * self.scale
 
-        # Limit the shifts_zyx, preserving the sign of the shift
-        self.shifts_zyx = np.sign(shifts_zyx_um) * np.minimum(np.abs(shifts_zyx_um), self.shift_limit)
+        ### HARDCODED shifting
+        if abs(shifts_zyx[0]) < self.shift_limit_um['z'][0]:
+            shifts_zyx[0] = 0
+        if abs(shifts_zyx[1]) < self.shift_limit_um['y'][0]:
+            shifts_zyx[1] = 0
+        if abs(shifts_zyx[2]) < self.shift_limit_um['x'][0]:
+            shifts_zyx[2] = 0
+
+        if abs(shifts_zyx[0]) > self.shift_limit_um['z'][1]:
+            shifts_zyx[0] = 0
+        if abs(shifts_zyx[1]) > self.shift_limit_um['y'][1]:
+            shifts_zyx[1] = 0
+        if abs(shifts_zyx[2]) > self.shift_limit_um['x'][1]:
+            shifts_zyx[2] = 0
+
+        
+        
         if any(self.shifts_zyx != shifts_zyx_um):
             logger.debug('Shifts_zyx limited to %s', self.shifts_zyx)
 
@@ -522,7 +537,7 @@ def autotracker_hook_fn(
     z_range = z_slice_settings.z_range
     num_slices = z_slice_settings.num_slices
     scale = autotracker_settings.scale_yx
-    shift_limit = autotracker_settings.shift_limit
+    shift_limit_um = autotracker_settings.shift_limit_um
     tracking_method = autotracker_settings.tracking_method
     tracking_interval = autotracker_settings.tracking_interval
     tracking_channel = channel_config.config_name
@@ -541,7 +556,7 @@ def autotracker_hook_fn(
     tracker = Autotracker(
         tracking_method=tracking_method,
         scale=scale,
-        shift_limit=shift_limit,
+        shift_limit_um=shift_limit_um,
         zyx_dampening_factor=zyx_dampening_factor,
     )
     # Get the z_max
@@ -618,21 +633,6 @@ def autotracker_hook_fn(
                 # Reference and moving volumes
                 
                 shifts_zyx = tracker.estimate_shift(volume_t0, volume_t1)
-
-                ### HARDCODED shifting
-                if abs(shifts_zyx[0]) < 0.5:
-                    shifts_zyx[0] = 0
-                if abs(shifts_zyx[1]) < 2:
-                    shifts_zyx[1] = 0
-                if abs(shifts_zyx[2]) < 2:
-                    shifts_zyx[2] = 0
-
-                if abs(shifts_zyx[0]) > 2:
-                    shifts_zyx[0] = 0
-                if abs(shifts_zyx[1]) > 10:
-                    shifts_zyx[1] = 0
-                if abs(shifts_zyx[2]) > 10:
-                    shifts_zyx[2] = 0
 
                 del volume_t0, volume_t1
                 #shifts_zyx = shifts_zyx.cpu().numpy()
