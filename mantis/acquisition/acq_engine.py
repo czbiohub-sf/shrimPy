@@ -938,6 +938,7 @@ class MantisAcquisition(object):
         # The stack starts close to O2 and moves away
         o3_z_stage = self.ls_acq.o3_stage
         o3_position = float(self.ls_acq.mmc.get_property(o3_z_stage, 'Position'))
+        logger.debug(f'Starting O3 position: {o3_position} um')
 
         o3_z_start = -3.3
         o3_z_end = 3.3
@@ -950,11 +951,16 @@ class MantisAcquisition(object):
             o3_z_end *= 2
         o3_range_rel = np.arange(o3_z_start, o3_z_end + o3_z_step, o3_z_step)
         o3_range_abs = o3_range_rel + o3_position
-        o3_range_rel = o3_range_rel[
-            (o3_range_abs >= o3_low_limit) & (o3_range_abs <= o3_high_limit)
-        ]
-        if o3_range_rel.size == 0:
-            logger.error('Invalid O3 travel range. Aborting O3 refocus.')
+
+        valid_indices = (o3_range_abs >= o3_low_limit) & (o3_range_abs <= o3_high_limit)
+        o3_range_rel = o3_range_rel[valid_indices]
+        o3_range_abs = o3_range_abs[valid_indices]
+        if not all(valid_indices):
+            logger.warning(
+                'Some O3 positions are outside the valid range. Truncating O3 travel range.'
+            )
+        if o3_range_rel.size < 3:
+            logger.error('Insufficient O3 travel range. Aborting O3 refocus.')
             return success, scan_left, scan_right
 
         # Define galvo range, i.e. galvo positions at which O3 defocus stacks
@@ -1020,6 +1026,7 @@ class MantisAcquisition(object):
             o3_position_abs = o3_range_abs[focus_idx]
 
             logger.info(f'Moving O3 by {o3_position_rel} um')
+            logger.debug(f'Moving O3 to {o3_position_abs} um')
             microscope_operations.set_z_position(self.ls_acq.mmc, o3_z_stage, o3_position_abs)
             success = True
         else:
