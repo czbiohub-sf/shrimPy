@@ -330,7 +330,7 @@ class Autotracker(object):
     def __init__(
         self,
         tracking_method: str,
-        shift_limit_um: dict,
+        shift_limit_um: dict[str, tuple[float, float]],
         scale: ArrayLike,
         zyx_dampening_factor: ArrayLike = None,
     ):
@@ -381,22 +381,10 @@ class Autotracker(object):
         # shifts_zyx in px to shifts_zyx in um
         shifts_zyx_um = np.array(shifts_zyx_pix) * self.scale
 
-        ### HARDCODED shifting
-        if abs(shifts_zyx[0]) < self.shift_limit_um['z'][0]:
-            shifts_zyx[0] = 0
-        if abs(shifts_zyx[1]) < self.shift_limit_um['y'][0]:
-            shifts_zyx[1] = 0
-        if abs(shifts_zyx[2]) < self.shift_limit_um['x'][0]:
-            shifts_zyx[2] = 0
+        if self.shift_limit_um is not None:
+            shifts_zyx_um = self.limit_shifts_zyx(shifts_zyx_um, self.shift_limit_um)
 
-        if abs(shifts_zyx[0]) > self.shift_limit_um['z'][1]:
-            shifts_zyx[0] = 0
-        if abs(shifts_zyx[1]) > self.shift_limit_um['y'][1]:
-            shifts_zyx[1] = 0
-        if abs(shifts_zyx[2]) > self.shift_limit_um['x'][1]:
-            shifts_zyx[2] = 0
-
-        
+        self.shifts_zyx = shifts_zyx_um
         
         if any(self.shifts_zyx != shifts_zyx_um):
             logger.debug('Shifts_zyx limited to %s', self.shifts_zyx)
@@ -413,7 +401,7 @@ class Autotracker(object):
         output_file: str,
         position_id: int,
         timepoint_id: int,
-        shifts_zyx: Tuple[int, int, int] = None,
+        shifts_zyx: np.ndarray = None,
         stage_coords: Tuple[int, int, int] = None,
         overwrite: bool = False,
     ) -> None:
@@ -424,7 +412,7 @@ class Autotracker(object):
         ----------
         output_file : str
             Path to the output CSV file.
-        shifts_zyx : Tuple[int, int, int]
+        shifts_zyx : np.ndarray
             The computed shifts_zyx (Z, Y, X).
         position_id : int
             Identifier for the position.
@@ -460,27 +448,31 @@ class Autotracker(object):
             df.to_csv(output_path, mode='a', header=False, index=False)
 
     def limit_shifts_zyx(
-        self, shifts_zyx: Tuple[int, int, int], limits: Tuple[int, int, int] = (5, 5, 5)
-    ) -> Tuple[int, int, int]:
+        self, shifts_zyx: np.ndarray, limits: dict[str, tuple[float, float]]
+    ) -> np.ndarray:
         """
         Limits the shifts_zyx to the specified limits.
 
         Parameters
         ----------
-        shifts_zyx : Tuple[int, int, int]
+        shifts_zyx : np.ndarray
             The computed shifts_zyx (Z, Y, X).
-        limits : Tuple[int, int, int]
-            The limits for the shifts_zyx (Z, Y, X).
+        limits : dict[str, tuple[float, float]]
+            The limits for the shifts_zyx 'z': (lower, upper), 'y': (lower, upper), 'x': (lower, upper).
 
         Returns
         -------
-        Tuple[int, int, int]
+        np.ndarray
             The limited shifts_zyx.
         """
-        shifts_zyx = np.array(shifts_zyx)
-        limits = np.array(limits)
-        shifts_zyx = np.where(np.abs(shifts_zyx) > limits, 0, shifts_zyx)
-        return tuple(shifts_zyx)
+        for i, axis in enumerate(['z', 'y', 'x']):
+            lower, upper = limits[axis]
+            if abs(shifts_zyx[i]) < lower or abs(shifts_zyx[i]) > upper:
+                shifts_zyx[i] = 0
+                logger.debug(f'Shifts_zyx {axis} limited to {lower} or {upper} um, appling 0 shift')
+            else:
+                shifts_zyx[i] = shifts_zyx[i]
+        return shifts_zyx
 
 
 # TODO: logic for handling which t_idx to grab as reference. If the volume changes
@@ -576,7 +568,7 @@ def autotracker_hook_fn(
             logger.debug('Instantiating autotracker')
             if globals.demo_run:
                 # Random shifting for demo purposes
-                shifts_zyx = np.random.randint(-50, 50, 3)
+                shifts_zyx = np.random.randint(-50, 50, 3).astype(np.float32)
                 sleep(3)
                 logger.info(
                     'shifts_zyx (z,y,x): %f,%f,%f', shifts_zyx[0], shifts_zyx[1], shifts_zyx[2]

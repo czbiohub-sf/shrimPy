@@ -152,9 +152,9 @@ autotracker_settings:
   reconstruction: ['phase', 'vs'] ##list of reconstruction methods to apply before tracking
   tracking_interval: 1
   shift_limit_um:
-    z:[0.5,2]
-    y:[2,10]
-    x:[2,10]
+    z: [0.5,2]
+    y: [2,10]
+    x: [2,10]
   device: 'cpu'
   scale_yx: 0.075
   phase_config: # apply phase reconstruction before tracking
