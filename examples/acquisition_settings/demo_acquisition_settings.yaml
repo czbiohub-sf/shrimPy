@@ -6,7 +6,7 @@ time_settings:
   time_interval_s: 5
 
 lf_channel_settings:
-  default_exposure_times_ms: [10, 10]
+  default_exposure_times_ms: [5, 5]
   channel_group: 'Channel-Multiband'
   channels: ['DAPI', 'FITC']
   use_sequencing: True
@@ -30,6 +30,8 @@ lf_microscope_settings:
   channel_sequencing_settings:
     - ['LED', 'Sequence', 'On']
   use_autofocus: False
+  autotracker_config: ['Channel-Multiband', 'DAPI']
+
 
 ls_channel_settings:
   default_exposure_times_ms: [20, 30]
@@ -56,3 +58,14 @@ ls_microscope_settings:
     - ['Camera', 'BitDepth', '11']
   z_sequencing_settings:
     - ['Z', 'UseSequences', 'Yes']
+
+ls_autoexposure_settings:
+  autoexposure_method: 'manual'
+  rerun_each_timepoint: True
+
+autotracker_settings:
+  tracking_method: 'phase_cross_correlation'
+  tracking_interval: 1
+  shift_limit: [30,200,200]
+  device: 'cpu'
+  scale_yx: 0.075
