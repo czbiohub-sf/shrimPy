@@ -1245,6 +1245,7 @@ class MantisAcquisition(object):
             # ls_image_saved_fn = check_ls_acq_finished
             self.ls_acq.mmc.mda.events.eventStarted.connect(ls_post_hardware_hook_fn)
             daq_counter_tasks.append(self._ls_z_ctr_task)
+            self.ls_acq.mmc.events.sequenceAcquisitionStarted.connect(ls_post_camera_hook_fn)
 
         if len(daq_counter_tasks) > 0:
             lf_post_camera_hook_fn = partial(start_daq_counters, daq_counter_tasks)
