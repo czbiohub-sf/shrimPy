@@ -628,11 +628,20 @@ def autotracker_hook_fn(
                     shifts_zyx[2] = 0
 
                 if abs(shifts_zyx[0]) > 2:
-                    shifts_zyx[0] = 0
+                    if shifts_zyx[0] > 0:
+                        shifts_zyx[0] = 2
+                    else:
+                        shifts_zyx[0] = -2
                 if abs(shifts_zyx[1]) > 10:
-                    shifts_zyx[1] = 0
+                    if shifts_zyx[1] > 0:
+                        shifts_zyx[1] = 10
+                    else:
+                        shifts_zyx[1] = -10
                 if abs(shifts_zyx[2]) > 10:
-                    shifts_zyx[2] = 0
+                    if shifts_zyx[2] > 0:
+                        shifts_zyx[2] = 10
+                    else:
+                        shifts_zyx[2] = -10
 
                 del volume_t0, volume_t1
                 #shifts_zyx = shifts_zyx.cpu().numpy()
