@@ -99,7 +99,7 @@ def run_acquisition(
         ls_config_file=ls_config_filepath,
         lf_config_file=lf_config_filepath,
         demo_run=demo_run,
-        enable_ls_acq=False,
+        enable_ls_acq=True,
         verbose=False,
     ) as acq:
         acq.time_settings = time_settings
