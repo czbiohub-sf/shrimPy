@@ -11,7 +11,7 @@ from tempfile import TemporaryDirectory
 from threading import Thread
 from typing import Iterable, Union
 
-import acquire_zarr as aqz
+from acquire_zarr import ArraySettings, StreamSettings, ZarrStream, Dimension, DimensionType, DataType, ZarrVersion
 import copylot
 import nidaqmx
 import numpy as np
@@ -286,56 +286,66 @@ class BaseChannelSliceAcquisition(object):
             y_size = self.mmc.getImageHeight()
 
             if output_path:
-                zarr_settings = aqz.StreamSettings(
+                # Create dimensions list for the array
+                dimensions = [
+                    Dimension(
+                        name='t',
+                        array_size_px=0,  # zero denotes the append dimension in acquire
+                        chunk_size_px=1,
+                        shard_size_chunks=1,
+                        kind=DimensionType.TIME,
+                    ),
+                    Dimension(
+                        name='z',
+                        array_size_px=self.slice_settings.num_slices,
+                        chunk_size_px=max(1, int(self.slice_settings.num_slices / z_n_chunks)),
+                        shard_size_chunks=1,
+                        kind=DimensionType.SPACE,
+                    ),
+                    Dimension(
+                        name='y',
+                        array_size_px=y_size,
+                        chunk_size_px=max(1, int(y_size / xy_n_chunks)),
+                        shard_size_chunks=1,
+                        kind=DimensionType.SPACE,
+                    ),
+                    Dimension(
+                        name='x',
+                        array_size_px=x_size,
+                        chunk_size_px=max(1, int(x_size / xy_n_chunks)),
+                        shard_size_chunks=1,
+                        kind=DimensionType.SPACE,
+                    ),
+                ]
+
+                if self.channel_settings.num_channels > 1:
+                    dimensions.insert(
+                        1,
+                        Dimension(
+                            name='c',
+                            array_size_px=self.channel_settings.num_channels,
+                            chunk_size_px=self.channel_settings.num_channels,
+                            shard_size_chunks=1,
+                            kind=DimensionType.CHANNEL,
+                        ),
+                    )
+
+                # Create array settings
+                array_settings = ArraySettings(
+                    dimensions=dimensions,
+                    data_type=DataType.UINT16,  # FIXME: hardcoded for now, should be set from acquisition settings
+                )
+
+                # Create stream settings with the array
+                zarr_settings = StreamSettings(
                     store_path=output_path,
-                    dtype=aqz.DataType.UINT16,  # FIXME: hardcoded for now, should be set from acquisition settings
-                    dimensions=[
-                        aqz.Dimension(
-                            name='t',
-                            array_size_px=0,
-                            chunk_size_px=1,
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.TIME,
-                        ),  # zero denotes the append dimension in acquire
-                        aqz.Dimension(
-                            name='z',
-                            array_size_px=self.slice_settings.num_slices,
-                            chunk_size_px=int(self.slice_settings.num_slices / z_n_chunks),
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.SPACE,
-                        ),
-                        aqz.Dimension(
-                            name='y',
-                            array_size_px=y_size,
-                            chunk_size_px=int(y_size / xy_n_chunks),
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.SPACE,
-                        ),
-                        aqz.Dimension(
-                            name='x',
-                            array_size_px=x_size,
-                            chunk_size_px=int(x_size / xy_n_chunks),
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.SPACE,
-                        ),
-                    ],
-                    muiltscale=False,
-                    version=aqz.ZarrVersion.V3,
+                    arrays=[array_settings],
+                    multiscale=False,
+                    version=ZarrVersion.V3,
                     max_threads=0,
                 )
 
-                if self.channel_settings.num_channels > 1:
-                    zarr_settings.dimensions.insert(
-                        1,
-                        aqz.Dimension(
-                            name='c',
-                            array_size_px=self.channel_settings.num_channels,
-                            chunk_size_px=int(self.channel_settings.num_channels),
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.CHANNEL,
-                        ),
-                    )
-                self._zarr_writer = aqz.ZarrStream(zarr_settings)
+                self._zarr_writer = ZarrStream(zarr_settings)
 
                 self.mmc.mda.events.frameReady.connect(self.write_data)
 
