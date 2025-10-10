@@ -11,7 +11,7 @@ from tempfile import TemporaryDirectory
 from threading import Thread
 from typing import Iterable, Union
 
-from acquire_zarr import ArraySettings, StreamSettings, ZarrStream, Dimension, DimensionType, DataType, ZarrVersion
+from acquire_zarr import ArraySettings, StreamSettings, ZarrStream, Dimension, DimensionType
 import copylot
 import nidaqmx
 import numpy as np
@@ -37,6 +37,7 @@ from mantis.acquisition.AcquisitionSettings import (
     SliceSettings,
     MicroscopeSettings,
     AutoexposureSettings,
+    ZarrSettings,
 )
 
 
@@ -113,6 +114,7 @@ class BaseChannelSliceAcquisition(object):
         self._slice_settings = SliceSettings()
         self._microscope_settings = MicroscopeSettings()
         self._autoexposure_settings = AutoexposureSettings()
+        self._zarr_settings = ZarrSettings()
         self._z0 = None
         self.headless = True  # JGE False if mm_app_path is None else True
         self.type = 'light-sheet' if self.headless else 'label-free'
@@ -182,6 +184,10 @@ class BaseChannelSliceAcquisition(object):
     def autoexposure_settings(self):
         return self._autoexposure_settings
 
+    @property
+    def zarr_settings(self):
+        return self._zarr_settings
+
     @channel_settings.setter
     def channel_settings(self, settings: ChannelSettings):
         if settings is None:
@@ -220,6 +226,15 @@ class BaseChannelSliceAcquisition(object):
             f"{self.type.capitalize()} acquisition will have the following settings:{asdict(settings)}"
         )
         self._autoexposure_settings = settings
+
+    @zarr_settings.setter
+    def zarr_settings(self, settings: ZarrSettings):
+        if settings is None:
+            return
+        logger.debug(
+            f"{self.type.capitalize()} acquisition will have the following zarr settings: {asdict(settings)}"
+        )
+        self._zarr_settings = settings
 
     def setup(self, output_path: Union[str, os.PathLike] = None):
         """
@@ -278,42 +293,38 @@ class BaseChannelSliceAcquisition(object):
                         settings.property_value,
                     )
 
-            # arbitrary chunking constants (todo: make configurable)
-            xy_n_chunks = 16
-            z_n_chunks = 1
-
             x_size = self.mmc.getImageWidth()
             y_size = self.mmc.getImageHeight()
 
             if output_path:
-                # Create dimensions list for the array
+                # Create dimensions list for the array using ZarrSettings
                 dimensions = [
                     Dimension(
                         name='t',
                         array_size_px=0,  # zero denotes the append dimension in acquire
-                        chunk_size_px=1,
-                        shard_size_chunks=1,
+                        chunk_size_px=self.zarr_settings.t_chunk_size,
+                        shard_size_chunks=self.zarr_settings.shard_size_chunks,
                         kind=DimensionType.TIME,
                     ),
                     Dimension(
                         name='z',
                         array_size_px=self.slice_settings.num_slices,
-                        chunk_size_px=max(1, int(self.slice_settings.num_slices / z_n_chunks)),
-                        shard_size_chunks=1,
+                        chunk_size_px=min(self.zarr_settings.z_chunk_size, max(1, self.slice_settings.num_slices)),
+                        shard_size_chunks=self.zarr_settings.shard_size_chunks,
                         kind=DimensionType.SPACE,
                     ),
                     Dimension(
                         name='y',
                         array_size_px=y_size,
-                        chunk_size_px=max(1, int(y_size / xy_n_chunks)),
-                        shard_size_chunks=1,
+                        chunk_size_px=min(self.zarr_settings.xy_chunk_size, max(1, y_size)),
+                        shard_size_chunks=self.zarr_settings.shard_size_chunks,
                         kind=DimensionType.SPACE,
                     ),
                     Dimension(
                         name='x',
                         array_size_px=x_size,
-                        chunk_size_px=max(1, int(x_size / xy_n_chunks)),
-                        shard_size_chunks=1,
+                        chunk_size_px=min(self.zarr_settings.xy_chunk_size, max(1, x_size)),
+                        shard_size_chunks=self.zarr_settings.shard_size_chunks,
                         kind=DimensionType.SPACE,
                     ),
                 ]
@@ -324,28 +335,32 @@ class BaseChannelSliceAcquisition(object):
                         Dimension(
                             name='c',
                             array_size_px=self.channel_settings.num_channels,
-                            chunk_size_px=self.channel_settings.num_channels,
-                            shard_size_chunks=1,
+                            chunk_size_px=min(self.zarr_settings.c_chunk_size, max(1, self.channel_settings.num_channels)),
+                            shard_size_chunks=self.zarr_settings.shard_size_chunks,
                             kind=DimensionType.CHANNEL,
                         ),
                     )
 
-                # Create array settings
+                # Create array settings using ZarrSettings
                 array_settings = ArraySettings(
                     dimensions=dimensions,
-                    data_type=DataType.UINT16,  # FIXME: hardcoded for now, should be set from acquisition settings
+                    data_type=self.zarr_settings.get_data_type_enum(),
                 )
+
+                # Set store path in zarr_settings if not already set
+                if self.zarr_settings.store_path is None:
+                    self.zarr_settings.store_path = str(output_path)
 
                 # Create stream settings with the array
-                zarr_settings = StreamSettings(
-                    store_path=output_path,
+                stream_settings = StreamSettings(
+                    store_path=self.zarr_settings.store_path,
                     arrays=[array_settings],
-                    multiscale=False,
-                    version=ZarrVersion.V3,
-                    max_threads=0,
+                    multiscale=self.zarr_settings.multiscale,
+                    version=self.zarr_settings.get_zarr_version_enum(),
+                    max_threads=self.zarr_settings.max_threads,
                 )
 
-                self._zarr_writer = ZarrStream(zarr_settings)
+                self._zarr_writer = ZarrStream(stream_settings)
 
                 self.mmc.mda.events.frameReady.connect(self.write_data)
 

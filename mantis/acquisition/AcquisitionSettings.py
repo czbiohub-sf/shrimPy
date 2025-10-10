@@ -5,7 +5,7 @@ from typing import Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 
-from pydantic.v1 import ConfigDict, NonNegativeFloat, NonNegativeInt, validator
+from pydantic.v1 import ConfigDict, NonNegativeFloat, NonNegativeInt, PositiveInt, validator
 from pydantic.v1.dataclasses import dataclass
 
 config = ConfigDict(extra='forbid')
@@ -195,3 +195,73 @@ class AutoexposureSettings:
             attr_val = getattr(self, attr)
             if attr_val is not None:
                 setattr(self, attr, round(attr_val, 1))
+
+
+@dataclass(config=config)
+class ZarrSettings:
+    """Settings for Zarr output configuration using acquire-zarr."""
+    
+    # Data type for the Zarr array
+    data_type: Literal['UINT8', 'UINT16', 'UINT32', 'INT8', 'INT16', 'INT32', 'FLOAT32', 'FLOAT64'] = 'UINT16'
+    
+    # Enable multiscale (pyramids)
+    multiscale: bool = False
+    
+    # Maximum number of threads for writing
+    max_threads: NonNegativeInt = 0  # 0 means use all available
+    
+    # Chunking settings
+    xy_chunk_size: PositiveInt = 64  # Default chunk size for X and Y dimensions
+    z_chunk_size: PositiveInt = 1    # Default chunk size for Z dimension
+    t_chunk_size: PositiveInt = 1    # Default chunk size for time dimension
+    c_chunk_size: PositiveInt = 1    # Default chunk size for channel dimension
+    
+    # Sharding settings (Zarr V3 only)
+    shard_size_chunks: PositiveInt = 1
+    
+    # Compression settings
+    compression_codec: Optional[Literal['blosc', 'gzip', 'lz4', 'zstd']] = None
+    compression_level: Optional[int] = None
+    
+    # Store settings
+    store_path: Optional[str] = None
+    overwrite_existing: bool = False
+    
+    @validator("compression_level")
+    def validate_compression_level(cls, v, values):
+        """Validate compression level based on codec."""
+        if v is not None:
+            codec = values.get('compression_codec')
+            if codec is None:
+                raise ValueError("compression_level requires compression_codec to be set")
+            
+            # Validate compression level ranges for different codecs
+            if codec == 'gzip' and not (1 <= v <= 9):
+                raise ValueError("gzip compression_level must be between 1 and 9")
+            elif codec == 'blosc' and not (1 <= v <= 9):
+                raise ValueError("blosc compression_level must be between 1 and 9")
+            elif codec == 'lz4' and not (1 <= v <= 9):
+                raise ValueError("lz4 compression_level must be between 1 and 9")
+            elif codec == 'zstd' and not (1 <= v <= 22):
+                raise ValueError("zstd compression_level must be between 1 and 22")
+        return v
+    
+    
+    def __post_init__(self):
+        """Post-initialization validation and setup."""
+        # Ensure chunk sizes are reasonable
+        if self.xy_chunk_size > 2048:
+            warnings.warn(f"Large XY chunk size ({self.xy_chunk_size}) may impact performance")
+        
+        if self.z_chunk_size > 512:
+            warnings.warn(f"Large Z chunk size ({self.z_chunk_size}) may impact performance")
+    
+    def get_zarr_version_enum(self):
+        """Get the appropriate ZarrVersion enum value for acquire-zarr."""
+        from acquire_zarr import ZarrVersion
+        return ZarrVersion.V3
+    
+    def get_data_type_enum(self):
+        """Get the appropriate DataType enum value for acquire-zarr."""
+        from acquire_zarr import DataType
+        return getattr(DataType, self.data_type)
