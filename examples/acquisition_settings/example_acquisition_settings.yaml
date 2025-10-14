@@ -150,10 +150,13 @@ lf_zarr_settings:
   data_type: 'UINT16'
   multiscale: false
   max_threads: 0  # 0 means use all available cores
-  xy_chunk_size: 64  # chunk size for X and Y dimensions
-  z_chunk_size: 1   # chunk size for Z dimension
-  t_chunk_size: 1   # chunk size for time dimension
-  c_chunk_size: 1   # chunk size for channel dimension
+  chunk_sizes:
+    x: 64
+    y: 64
+    z: 1
+    c: 1
+    p: 1
+    t: 1
   shard_size_chunks: 1  # Zarr V3 sharding
   compression_codec: 'blosc'  # compression algorithm (blosc, gzip, lz4, zstd, or null)
   compression_level: 1  # compression level (1-9 for most codecs)
@@ -164,10 +167,13 @@ ls_zarr_settings:
   data_type: 'UINT16'
   multiscale: false
   max_threads: 0  # 0 means use all available cores
-  xy_chunk_size: 128  # larger chunks for light-sheet data
-  z_chunk_size: 1    # chunk size for Z dimension
-  t_chunk_size: 1    # chunk size for time dimension
-  c_chunk_size: 1    # chunk size for channel dimension
+  chunk_sizes:
+    x: 128
+    y: 128
+    z: 1
+    c: 1
+    p: 1
+    t: 1
   shard_size_chunks: 1  # Zarr V3 sharding
   compression_codec: 'blosc'  # compression algorithm
   compression_level: 1  # compression level

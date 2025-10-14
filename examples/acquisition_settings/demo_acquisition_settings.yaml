@@ -72,10 +72,13 @@ lf_zarr_settings:
   data_type: 'UINT16'
   multiscale: false
   max_threads: 2  # limit threads for demo
-  xy_chunk_size: 32  # smaller chunks for demo data
-  z_chunk_size: 1
-  t_chunk_size: 1
-  c_chunk_size: 1
+  chunk_sizes:
+    x: 64
+    y: 64
+    z: 1
+    c: 1
+    p: 1
+    t: 1
   shard_size_chunks: 1
   compression_codec: 'gzip'  # simple compression for demo
   compression_level: 3
@@ -86,10 +89,13 @@ ls_zarr_settings:
   data_type: 'UINT16'
   multiscale: false
   max_threads: 2  # limit threads for demo
-  xy_chunk_size: 64  # moderate chunks for demo data
-  z_chunk_size: 1
-  t_chunk_size: 1
-  c_chunk_size: 1
+  chunk_sizes:
+    x: 64
+    y: 64
+    z: 1
+    c: 1
+    p: 1
+    t: 1
   shard_size_chunks: 1
   compression_codec: 'gzip'  # simple compression for demo
   compression_level: 3

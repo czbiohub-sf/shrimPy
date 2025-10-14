@@ -210,11 +210,15 @@ class ZarrSettings:
     # Maximum number of threads for writing
     max_threads: NonNegativeInt = 0  # 0 means use all available
     
-    # Chunking settings
-    xy_chunk_size: PositiveInt = 64  # Default chunk size for X and Y dimensions
-    z_chunk_size: PositiveInt = 1    # Default chunk size for Z dimension
-    t_chunk_size: PositiveInt = 1    # Default chunk size for time dimension
-    c_chunk_size: PositiveInt = 1    # Default chunk size for channel dimension
+    # Chunking settings as dictionary
+    chunk_sizes: Dict[str, PositiveInt] = field(default_factory=lambda: {
+        'x': 64,
+        'y': 64,
+        'z': 1,
+        'c': 1,
+        'p': 1,
+        't': 1
+    })
     
     # Sharding settings (Zarr V3 only)
     shard_size_chunks: PositiveInt = 1
@@ -227,6 +231,24 @@ class ZarrSettings:
     store_path: Optional[str] = None
     overwrite_existing: bool = False
     
+    @validator("chunk_sizes")
+    def validate_chunk_sizes(cls, v):
+        """Validate chunk_sizes dictionary contains required keys."""
+        required_keys = {'x', 'y', 'z', 'c', 'p', 't'}
+        if not isinstance(v, dict):
+            raise ValueError("chunk_sizes must be a dictionary")
+        
+        missing_keys = required_keys - set(v.keys())
+        if missing_keys:
+            raise ValueError(f"chunk_sizes is missing required keys: {missing_keys}")
+        
+        # Ensure all values are positive integers
+        for key, value in v.items():
+            if not isinstance(value, int) or value <= 0:
+                raise ValueError(f"chunk_sizes['{key}'] must be a positive integer, got {value}")
+        
+        return v
+
     @validator("compression_level")
     def validate_compression_level(cls, v, values):
         """Validate compression level based on codec."""
@@ -250,11 +272,35 @@ class ZarrSettings:
     def __post_init__(self):
         """Post-initialization validation and setup."""
         # Ensure chunk sizes are reasonable
-        if self.xy_chunk_size > 2048:
-            warnings.warn(f"Large XY chunk size ({self.xy_chunk_size}) may impact performance")
+        if self.chunk_sizes['x'] > 2048:
+            warnings.warn(f"Large X chunk size ({self.chunk_sizes['x']}) may impact performance")
         
-        if self.z_chunk_size > 512:
-            warnings.warn(f"Large Z chunk size ({self.z_chunk_size}) may impact performance")
+        if self.chunk_sizes['y'] > 2048:
+            warnings.warn(f"Large Y chunk size ({self.chunk_sizes['y']}) may impact performance")
+        
+        if self.chunk_sizes['z'] > 512:
+            warnings.warn(f"Large Z chunk size ({self.chunk_sizes['z']}) may impact performance")
+    
+    # Backward compatibility properties
+    @property
+    def xy_chunk_size(self) -> int:
+        """Backward compatibility: returns x chunk size for legacy code that assumes x==y."""
+        return self.chunk_sizes['x']
+    
+    @property
+    def z_chunk_size(self) -> int:
+        """Backward compatibility: returns z chunk size."""
+        return self.chunk_sizes['z']
+    
+    @property
+    def t_chunk_size(self) -> int:
+        """Backward compatibility: returns t chunk size."""
+        return self.chunk_sizes['t']
+    
+    @property
+    def c_chunk_size(self) -> int:
+        """Backward compatibility: returns c chunk size."""
+        return self.chunk_sizes['c']
     
     def get_zarr_version_enum(self):
         """Get the appropriate ZarrVersion enum value for acquire-zarr."""
