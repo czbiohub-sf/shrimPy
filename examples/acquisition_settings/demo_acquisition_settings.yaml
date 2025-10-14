@@ -72,14 +72,20 @@ lf_zarr_settings:
   data_type: 'UINT16'
   multiscale: false
   max_threads: 2  # limit threads for demo
-  chunk_sizes:
+  chunk_sizes:  # unit: pixels per chunk
     x: 64
     y: 64
     z: 1
     c: 1
     p: 1
     t: 1
-  shard_size_chunks: 1
+  shard_sizes:  # unit: chunks per shard
+    x: 1
+    y: 1
+    z: 1
+    c: 1
+    p: 1
+    t: 1
   compression_codec: 'gzip'  # simple compression for demo
   compression_level: 3
   overwrite_existing: true  # allow overwriting for demos
@@ -89,14 +95,20 @@ ls_zarr_settings:
   data_type: 'UINT16'
   multiscale: false
   max_threads: 2  # limit threads for demo
-  chunk_sizes:
+  chunk_sizes:  # unit: pixels per chunk
     x: 64
     y: 64
     z: 1
     c: 1
     p: 1
     t: 1
-  shard_size_chunks: 1
+  shard_sizes:  # unit: chunks per shard
+    x: 1
+    y: 1
+    z: 1
+    c: 1
+    p: 1
+    t: 1
   compression_codec: 'gzip'  # simple compression for demo
   compression_level: 3
   overwrite_existing: true  # allow overwriting for demos

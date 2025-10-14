@@ -210,18 +210,25 @@ class ZarrSettings:
     # Maximum number of threads for writing
     max_threads: NonNegativeInt = 0  # 0 means use all available
     
-    # Chunking settings as dictionary
+    # Chunking settings as dictionary - unit: pixels per chunk
     chunk_sizes: Dict[str, PositiveInt] = field(default_factory=lambda: {
-        'x': 64,
-        'y': 64,
+        'x': 64,  # pixels per chunk in X dimension
+        'y': 64,  # pixels per chunk in Y dimension
+        'z': 1,   # pixels per chunk in Z dimension
+        'c': 1,   # pixels per chunk in channel dimension
+        'p': 1,   # pixels per chunk in position dimension
+        't': 1    # pixels per chunk in time dimension
+    })
+    
+    # Sharding settings (Zarr V3 only) - unit is chunks per shard
+    shard_sizes: Dict[str, PositiveInt] = field(default_factory=lambda: {
+        'x': 1,
+        'y': 1,
         'z': 1,
         'c': 1,
         'p': 1,
         't': 1
     })
-    
-    # Sharding settings (Zarr V3 only)
-    shard_size_chunks: PositiveInt = 1
     
     # Compression settings
     compression_codec: Optional[Literal['blosc', 'gzip', 'lz4', 'zstd']] = None
@@ -246,6 +253,24 @@ class ZarrSettings:
         for key, value in v.items():
             if not isinstance(value, int) or value <= 0:
                 raise ValueError(f"chunk_sizes['{key}'] must be a positive integer, got {value}")
+        
+        return v
+
+    @validator("shard_sizes")
+    def validate_shard_sizes(cls, v):
+        """Validate shard_sizes dictionary contains required keys."""
+        required_keys = {'x', 'y', 'z', 'c', 'p', 't'}
+        if not isinstance(v, dict):
+            raise ValueError("shard_sizes must be a dictionary")
+        
+        missing_keys = required_keys - set(v.keys())
+        if missing_keys:
+            raise ValueError(f"shard_sizes is missing required keys: {missing_keys}")
+        
+        # Ensure all values are positive integers
+        for key, value in v.items():
+            if not isinstance(value, int) or value <= 0:
+                raise ValueError(f"shard_sizes['{key}'] must be a positive integer (chunks per shard), got {value}")
         
         return v
 
@@ -301,6 +326,11 @@ class ZarrSettings:
     def c_chunk_size(self) -> int:
         """Backward compatibility: returns c chunk size."""
         return self.chunk_sizes['c']
+    
+    @property
+    def shard_size_chunks(self) -> int:
+        """Backward compatibility: returns x shard size for legacy code."""
+        return self.shard_sizes['x']
     
     def get_zarr_version_enum(self):
         """Get the appropriate ZarrVersion enum value for acquire-zarr."""

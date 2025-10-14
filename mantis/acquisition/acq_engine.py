@@ -303,28 +303,28 @@ class BaseChannelSliceAcquisition(object):
                         name='t',
                         array_size_px=0,  # zero denotes the append dimension in acquire
                         chunk_size_px=self.zarr_settings.chunk_sizes['t'],
-                        shard_size_chunks=self.zarr_settings.shard_size_chunks,
+                        shard_size_chunks=self.zarr_settings.shard_sizes['t'],
                         kind=DimensionType.TIME,
                     ),
                     Dimension(
                         name='z',
                         array_size_px=self.slice_settings.num_slices,
                         chunk_size_px=min(self.zarr_settings.chunk_sizes['z'], max(1, self.slice_settings.num_slices)),
-                        shard_size_chunks=self.zarr_settings.shard_size_chunks,
+                        shard_size_chunks=self.zarr_settings.shard_sizes['z'],
                         kind=DimensionType.SPACE,
                     ),
                     Dimension(
                         name='y',
                         array_size_px=y_size,
                         chunk_size_px=min(self.zarr_settings.chunk_sizes['y'], max(1, y_size)),
-                        shard_size_chunks=self.zarr_settings.shard_size_chunks,
+                        shard_size_chunks=self.zarr_settings.shard_sizes['y'],
                         kind=DimensionType.SPACE,
                     ),
                     Dimension(
                         name='x',
                         array_size_px=x_size,
                         chunk_size_px=min(self.zarr_settings.chunk_sizes['x'], max(1, x_size)),
-                        shard_size_chunks=self.zarr_settings.shard_size_chunks,
+                        shard_size_chunks=self.zarr_settings.shard_sizes['x'],
                         kind=DimensionType.SPACE,
                     ),
                 ]
@@ -336,7 +336,7 @@ class BaseChannelSliceAcquisition(object):
                             name='c',
                             array_size_px=self.channel_settings.num_channels,
                             chunk_size_px=min(self.zarr_settings.chunk_sizes['c'], max(1, self.channel_settings.num_channels)),
-                            shard_size_chunks=self.zarr_settings.shard_size_chunks,
+                            shard_size_chunks=self.zarr_settings.shard_sizes['c'],
                             kind=DimensionType.CHANNEL,
                         ),
                     )
