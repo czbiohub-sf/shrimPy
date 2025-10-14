@@ -167,6 +167,10 @@ lf_zarr_settings:
   compression_codec: 'blosc'  # compression algorithm (blosc, gzip, lz4, zstd, or null)
   compression_level: 1  # compression level (1-9 for most codecs)
   overwrite_existing: false
+  # HCS (High Content Screening) settings - uncomment to enable
+  # use_hcs_layout: true
+  # plate_name: "Plate_001"
+  # plate_description: "Example HCS plate acquisition"
 
 # Zarr output settings for the light-sheet acquisition  
 ls_zarr_settings:
@@ -190,3 +194,7 @@ ls_zarr_settings:
   compression_codec: 'blosc'  # compression algorithm
   compression_level: 1  # compression level
   overwrite_existing: false
+  # HCS (High Content Screening) settings - uncomment to enable
+  # use_hcs_layout: true
+  # plate_name: "Plate_001"
+  # plate_description: "Example HCS plate acquisition"

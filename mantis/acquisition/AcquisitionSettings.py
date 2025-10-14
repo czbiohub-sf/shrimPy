@@ -238,6 +238,11 @@ class ZarrSettings:
     store_path: Optional[str] = None
     overwrite_existing: bool = False
     
+    # HCS (High Content Screening) settings
+    use_hcs_layout: bool = False  # Enable HCS zarr structure with wells/plates
+    plate_name: Optional[str] = None  # Name of the plate (e.g., "Plate_001")
+    plate_description: Optional[str] = None  # Description of the plate
+    
     @validator("chunk_sizes")
     def validate_chunk_sizes(cls, v):
         """Validate chunk_sizes dictionary contains required keys."""
@@ -272,6 +277,14 @@ class ZarrSettings:
             if not isinstance(value, int) or value <= 0:
                 raise ValueError(f"shard_sizes['{key}'] must be a positive integer (chunks per shard), got {value}")
         
+        return v
+
+    @validator("plate_name")
+    def validate_plate_name(cls, v, values):
+        """Validate plate_name is provided when using HCS layout."""
+        use_hcs = values.get('use_hcs_layout', False)
+        if use_hcs and v is None:
+            raise ValueError("plate_name is required when use_hcs_layout is True")
         return v
 
     @validator("compression_level")

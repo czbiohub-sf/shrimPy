@@ -11,7 +11,7 @@ from tempfile import TemporaryDirectory
 from threading import Thread
 from typing import Iterable, Union
 
-from acquire_zarr import ArraySettings, StreamSettings, ZarrStream, Dimension, DimensionType
+from acquire_zarr import ArraySettings, StreamSettings, ZarrStream, Dimension, DimensionType, Plate, Well
 import copylot
 import nidaqmx
 import numpy as np
@@ -352,13 +352,40 @@ class BaseChannelSliceAcquisition(object):
                     self.zarr_settings.store_path = str(output_path)
 
                 # Create stream settings with the array
-                stream_settings = StreamSettings(
-                    store_path=self.zarr_settings.store_path,
-                    arrays=[array_settings],
-                    multiscale=self.zarr_settings.multiscale,
-                    version=self.zarr_settings.get_zarr_version_enum(),
-                    max_threads=self.zarr_settings.max_threads,
-                )
+                if self.zarr_settings.use_hcs_layout:
+                    # Create HCS layout with plate and wells
+                    plate = Plate(
+                        name=self.zarr_settings.plate_name,
+                        description=self.zarr_settings.plate_description or "",
+                    )
+                    
+                    # Create wells from position settings
+                    wells = []
+                    for well_id in set(self.position_settings.well_ids):
+                        well = Well(
+                            name=well_id,
+                            row=well_id[0] if len(well_id) > 0 else "A",  # Extract row letter
+                            column=well_id[1:] if len(well_id) > 1 else "1",  # Extract column number
+                        )
+                        wells.append(well)
+                    plate.wells = wells
+                    
+                    stream_settings = StreamSettings(
+                        store_path=self.zarr_settings.store_path,
+                        arrays=[array_settings],
+                        multiscale=self.zarr_settings.multiscale,
+                        version=self.zarr_settings.get_zarr_version_enum(),
+                        max_threads=self.zarr_settings.max_threads,
+                        plate=plate,
+                    )
+                else:
+                    stream_settings = StreamSettings(
+                        store_path=self.zarr_settings.store_path,
+                        arrays=[array_settings],
+                        multiscale=self.zarr_settings.multiscale,
+                        version=self.zarr_settings.get_zarr_version_enum(),
+                        max_threads=self.zarr_settings.max_threads,
+                    )
 
                 self._zarr_writer = ZarrStream(stream_settings)
 
