@@ -11,7 +11,15 @@ from tempfile import TemporaryDirectory
 from threading import Thread
 from typing import Iterable, Union
 
-from acquire_zarr import ArraySettings, StreamSettings, ZarrStream, Dimension, DimensionType, Plate, Well
+from acquire_zarr import (
+    ArraySettings,
+    StreamSettings,
+    ZarrStream,
+    Dimension,
+    DimensionType,
+    Plate,
+    Well,
+)
 import copylot
 import nidaqmx
 import numpy as np
@@ -309,7 +317,10 @@ class BaseChannelSliceAcquisition(object):
                     Dimension(
                         name='z',
                         array_size_px=self.slice_settings.num_slices,
-                        chunk_size_px=min(self.zarr_settings.chunk_sizes['z'], max(1, self.slice_settings.num_slices)),
+                        chunk_size_px=min(
+                            self.zarr_settings.chunk_sizes['z'],
+                            max(1, self.slice_settings.num_slices),
+                        ),
                         shard_size_chunks=self.zarr_settings.shard_sizes['z'],
                         kind=DimensionType.SPACE,
                     ),
@@ -335,7 +346,10 @@ class BaseChannelSliceAcquisition(object):
                         Dimension(
                             name='c',
                             array_size_px=self.channel_settings.num_channels,
-                            chunk_size_px=min(self.zarr_settings.chunk_sizes['c'], max(1, self.channel_settings.num_channels)),
+                            chunk_size_px=min(
+                                self.zarr_settings.chunk_sizes['c'],
+                                max(1, self.channel_settings.num_channels),
+                            ),
                             shard_size_chunks=self.zarr_settings.shard_sizes['c'],
                             kind=DimensionType.CHANNEL,
                         ),
@@ -358,18 +372,20 @@ class BaseChannelSliceAcquisition(object):
                         name=self.zarr_settings.plate_name,
                         description=self.zarr_settings.plate_description or "",
                     )
-                    
+
                     # Create wells from position settings
                     wells = []
                     for well_id in set(self.position_settings.well_ids):
                         well = Well(
                             name=well_id,
                             row=well_id[0] if len(well_id) > 0 else "A",  # Extract row letter
-                            column=well_id[1:] if len(well_id) > 1 else "1",  # Extract column number
+                            column=(
+                                well_id[1:] if len(well_id) > 1 else "1"
+                            ),  # Extract column number
                         )
                         wells.append(well)
                     plate.wells = wells
-                    
+
                     stream_settings = StreamSettings(
                         store_path=self.zarr_settings.store_path,
                         arrays=[array_settings],
@@ -890,19 +906,19 @@ class MantisAcquisition(object):
                 )
                 if ts2_ttl_state == 32:
                     # State 32 corresponds to illumination with 488 laser
-                    self.ls_acq.channel_settings.light_sources[
-                        channel_idx
-                    ] = microscope_operations.setup_vortran_laser(VORTRAN_488_COM_PORT)
+                    self.ls_acq.channel_settings.light_sources[channel_idx] = (
+                        microscope_operations.setup_vortran_laser(VORTRAN_488_COM_PORT)
+                    )
                 elif ts2_ttl_state == 64:
                     # State 64 corresponds to illumination with 561 laser
-                    self.ls_acq.channel_settings.light_sources[
-                        channel_idx
-                    ] = microscope_operations.setup_vortran_laser(VORTRAN_561_COM_PORT)
+                    self.ls_acq.channel_settings.light_sources[channel_idx] = (
+                        microscope_operations.setup_vortran_laser(VORTRAN_561_COM_PORT)
+                    )
                 elif ts2_ttl_state == 128:
                     # State 128 corresponds to illumination with 639 laser
-                    self.ls_acq.channel_settings.light_sources[
-                        channel_idx
-                    ] = microscope_operations.setup_vortran_laser(VORTRAN_639_COM_PORT)
+                    self.ls_acq.channel_settings.light_sources[channel_idx] = (
+                        microscope_operations.setup_vortran_laser(VORTRAN_639_COM_PORT)
+                    )
                 else:
                     logger.error(
                         'Unknown TTL state {} for channel {} in config group {}'.format(
@@ -1348,10 +1364,10 @@ class MantisAcquisition(object):
                         )
                         continue
                     else:
-                        self.position_settings.xyz_positions[p_idx][
-                            2
-                        ] = self.lf_acq.mmc.getPosition(
-                            self.lf_acq.microscope_settings.autofocus_stage
+                        self.position_settings.xyz_positions[p_idx][2] = (
+                            self.lf_acq.mmc.getPosition(
+                                self.lf_acq.microscope_settings.autofocus_stage
+                            )
                         )
                         logger.debug(
                             f'Autofocus successful. Z position updated to {self.position_settings.xyz_positions[p_idx][2]} at position {p_label}'
