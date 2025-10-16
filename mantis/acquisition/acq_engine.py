@@ -48,7 +48,7 @@ from mantis.acquisition.AcquisitionSettings import (
 # )
 from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
     # log_acquisition_start,
-    # update_ls_hardware,
+    update_ls_hardware,
     update_laser_power,
 )
 
@@ -1350,23 +1350,19 @@ class MantisAcquisition(object):
         # lf_post_hardware_hook_fn = log_acquisition_start
         # lf_image_saved_fn = check_lf_acq_finished
 
-        # # define LS hook functions
-        # if self._demo_run:
-        #     ls_pre_hardware_hook_fn = None
-        #     ls_post_hardware_hook_fn = None
-        #     ls_post_camera_hook_fn = None
-        # else:
-        #     ls_pre_hardware_hook_fn = partial(
-        #         ls_pre_hardware_hook_function, [self._ls_z_ctr_task]
-        #     )
-        #     ls_post_hardware_hook_fn = partial(
-        #         update_ls_hardware,
-        #         self._ls_z_ctr_task,
-        #         self.ls_acq.channel_settings.light_sources,
-        #         self.ls_acq.channel_settings.channels,
-        #     )
-        #     ls_post_camera_hook_fn = partial(start_daq_counters, [self._ls_z_ctr_task])
-        # ls_image_saved_fn = check_ls_acq_finished
+        # define LS hook functions
+        if self.ls_acq.enabled and not self._demo_run:
+            ls_post_hardware_hook_fn = partial(
+                update_ls_hardware,
+                self._ls_z_ctr_task,
+                self.ls_acq.channel_settings.light_sources,
+                self.ls_acq.channel_settings.channels,
+            )
+            ls_post_camera_hook_fn = partial(start_daq_counters, [self._ls_z_ctr_task])
+            
+            # Connect to eventStarted to trigger for each new channel/event
+            self.ls_acq.mmc.mda.events.eventStarted.connect(ls_post_hardware_hook_fn)
+            self.ls_acq.mmc.events.sequenceAcquisitionStarted.connect(ls_post_camera_hook_fn)
 
         # Generate LF MDA
         lf_cz_events = _generate_channel_slice_mda_seq(
