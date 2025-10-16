@@ -285,7 +285,7 @@ class BaseChannelSliceAcquisition(object):
             x_size = self.mmc.getImageWidth()
             y_size = self.mmc.getImageHeight()
 
-            if False: #output_path:
+            if False:  # output_path:
                 zarr_settings = aqz.StreamSettings(
                     store_path=output_path,
                     dtype=aqz.DataType.UINT16,  # FIXME: hardcoded for now, should be set from acquisition settings
@@ -1008,9 +1008,9 @@ class MantisAcquisition(object):
         microscope_operations.set_property(
             mmc, 'Prime BSI Express', 'TriggerMode', 'Internal Trigger'
         )
-        
+
         galvo_stacks = []  # List containing list of z-stacks at different galvo positions
-        
+
         if use_pymmcore_plus:
             tempdir = TemporaryDirectory()
             focus_stage = mmc.getProperty('Core', 'Focus')
@@ -1020,7 +1020,7 @@ class MantisAcquisition(object):
             for p_idx, p in enumerate(galvo_range):
                 # acquire z stack
                 if use_pymmcore_plus:
-                    z_stack=[]
+                    z_stack = []
 
                     global acq_finished
                     acq_finished = False
@@ -1066,14 +1066,16 @@ class MantisAcquisition(object):
                         acq.await_completion()  # Cleanup
                         acq.get_dataset().close()  # Close dataset
                     """
-                    
+
                     microscope_operations.set_z_position(mmc, z_stage, z_range[0])
 
                     logger.debug('Starting pymmcore-plus O3 autofocus acquisition')
-                    
-                    mda = useq.MDASequence(z_plan=useq.ZAbsolutePositions(absolute=z_range),
+
+                    mda = useq.MDASequence(
+                        z_plan=useq.ZAbsolutePositions(absolute=z_range),
                         axis_order="z",
-                        min_start_time=0)
+                        min_start_time=0,
+                    )
 
                     # append data as its acquired.
                     def append_data(img: np.ndarray, event: useq.MDAEvent):
@@ -1086,12 +1088,14 @@ class MantisAcquisition(object):
                     mmc.mda.events.frameReady.disconnect(append_data)
 
                     mmc.setPosition(z_stage, z_range[len(z_range) // 2])  # reset o3 stage
-                    
-                    # set galvo position 
+
+                    # set galvo position
                     microscope_operations.set_z_position(mmc, galvo, p0 + p)
                 else:
                     # Not ported to pymmcore-plus.  Requires Studio.  Seems hard-coded to not be done.
-                    raise NotImplementedError("Acquiring defocus-stack without pymmcore-plus is no longer supported")
+                    raise NotImplementedError(
+                        "Acquiring defocus-stack without pymmcore-plus is no longer supported"
+                    )
 
                     z_stack = microscope_operations.acquire_defocus_stack(
                         mmc, z_stage, z_range, backlash_correction_distance=KIM101_BACKLASH
@@ -1113,7 +1117,7 @@ class MantisAcquisition(object):
 
         # Reset shutter
         microscope_operations.reset_shutter(mmc, auto_shutter_state, shutter_state)
-        
+
         return np.asarray(galvo_stacks)
 
     def refocus_ls_path(
@@ -1357,7 +1361,7 @@ class MantisAcquisition(object):
                 self._ls_z_ctr_task,
             )
             ls_post_camera_hook_fn = partial(start_daq_counters, [self._ls_z_ctr_task])
-            
+
             # Connect to eventStarted to trigger for each new channel/event
             self.ls_acq.mmc.mda.events.eventStarted.connect(ls_post_hardware_hook_fn)
             self.ls_acq.mmc.events.sequenceAcquisitionStarted.connect(ls_post_camera_hook_fn)

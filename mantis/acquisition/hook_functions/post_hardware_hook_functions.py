@@ -50,10 +50,7 @@ def update_laser_power(lasers, c_idx: int):
         laser.pulse_power = laser_power
 
 
-def update_ls_hardware(
-    z_ctr_task: nidaqmx.Task, 
-    event: useq.MDAEvent
-) -> useq.MDAEvent:
+def update_ls_hardware(z_ctr_task: nidaqmx.Task, event: useq.MDAEvent) -> useq.MDAEvent:
     if not event:
         logger.debug('Acquisition event is not valid.')
         return
