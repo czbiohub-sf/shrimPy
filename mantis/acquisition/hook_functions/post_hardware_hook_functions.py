@@ -1,4 +1,6 @@
 import logging
+import nidaqmx
+import useq
 
 from . import globals
 
@@ -48,16 +50,18 @@ def update_laser_power(lasers, c_idx: int):
         laser.pulse_power = laser_power
 
 
-def update_ls_hardware(z_ctr_task, lasers, channels: list, events):
-    if not events:
-        logger.debug('Acquisition events are not valid.')
+def update_ls_hardware(
+    z_ctr_task: nidaqmx.Task, 
+    event: useq.MDAEvent
+) -> useq.MDAEvent:
+    if not event:
+        logger.debug('Acquisition event is not valid.')
         return
 
-    _event = get_first_acquisition_event(events)
-    c_idx = channels.index(_event['axes']['channel'])
+    c_idx = event.index['c']
 
     update_daq_freq(z_ctr_task, c_idx)
     # As a hack, setting laser power after call to `run_autoexposure`
     # update_laser_power(lasers, c_idx)
 
-    return events
+    return event
