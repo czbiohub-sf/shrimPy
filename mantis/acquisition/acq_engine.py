@@ -46,6 +46,7 @@ from mantis.acquisition.AcquisitionSettings import (
 #     lf_pre_hardware_hook_function,
 #     ls_pre_hardware_hook_function,
 # )
+
 from mantis.acquisition.hook_functions.post_hardware_hook_functions import (
     # log_acquisition_start,
     update_ls_hardware,
@@ -389,6 +390,7 @@ class BaseChannelSliceAcquisition(object):
         event : useq.Event
             The event containing metadata about the acquisition.
         """
+        logger.info(data[0][0])
         self._zarr_writer.append(data)
 
 
@@ -1337,20 +1339,14 @@ class MantisAcquisition(object):
         """
 
         # define LF hook functions
+        daq_counter_tasks = []
         if self._demo_run:
             # lf_pre_hardware_hook_fn = log_preparing_acquisition
             # lf_post_camera_hook_fn = None
             pass
         else:
-            # lf_pre_hardware_hook_fn = partial(
-            #     lf_pre_hardware_hook_function,
-            #     [self._lf_z_ctr_task, self._lf_channel_ctr_task],
-            # )
-            lf_post_camera_hook_fn = partial(
-                start_daq_counters, [self._lf_z_ctr_task, self._lf_channel_ctr_task]
-            )
-            self.lf_acq.mmc.events.sequenceAcquisitionStarted.connect(lf_post_camera_hook_fn)
-
+            daq_counter_tasks.append(self._lf_z_ctr_task)
+            daq_counter_tasks.append(self._lf_channel_ctr_task)
         # lf_post_hardware_hook_fn = log_acquisition_start
         # lf_image_saved_fn = check_lf_acq_finished
 
@@ -1362,9 +1358,14 @@ class MantisAcquisition(object):
             )
             ls_post_camera_hook_fn = partial(start_daq_counters, [self._ls_z_ctr_task])
 
-            # Connect to eventStarted to trigger for each new channel/event
+            # ls_image_saved_fn = check_ls_acq_finished
             self.ls_acq.mmc.mda.events.eventStarted.connect(ls_post_hardware_hook_fn)
+            daq_counter_tasks.append(self._ls_z_ctr_task)
             self.ls_acq.mmc.events.sequenceAcquisitionStarted.connect(ls_post_camera_hook_fn)
+
+        if len(daq_counter_tasks) > 0:
+            lf_post_camera_hook_fn = partial(start_daq_counters, daq_counter_tasks)
+            self.lf_acq.mmc.events.sequenceAcquisitionStarted.connect(lf_post_camera_hook_fn)
 
         # Generate LF MDA
         lf_cz_events = _generate_channel_slice_mda_seq(
@@ -1600,8 +1601,8 @@ class MantisAcquisition(object):
 
         t_start = time.time()
 
-        while lf_acq_aborted := self.lf_acq.mmc.isSequenceRunning() or (
-            ls_acq_aborted := (self.ls_acq.enabled and self.ls_acq.mmc.isSequenceRunning())
+        while lf_acq_still_running := self.lf_acq.mmc.mda.is_running() or (
+            ls_acq_still_running := (self.ls_acq.enabled and self.ls_acq.mmc.mda.is_running())
         ):
 
             remaining_time = buffer_time - (time.time() - t_start)
@@ -1616,7 +1617,7 @@ class MantisAcquisition(object):
             time.sleep(0.2)
 
         # TODO: a lot of hardcoded values here
-        if lf_acq_aborted:
+        if lf_acq_still_running:
             # abort LF acq
             camera = self.lf_acq.mmc.getCameraDevice()
             sequenced_stages = []
@@ -1635,7 +1636,7 @@ class MantisAcquisition(object):
             # set a flag to clear any remaining events
             globals.lf_acq_aborted = True
 
-        if ls_acq_aborted:
+        if ls_acq_still_running:
             # abort LS acq
             camera = 'Camera' if self._demo_run else 'Prime BSI Express'
             sequenced_stages = []
@@ -1650,7 +1651,7 @@ class MantisAcquisition(object):
             # set a flag to clear any remaining events
             globals.ls_acq_aborted = True
 
-        return lf_acq_aborted, ls_acq_aborted
+        return lf_acq_still_running, ls_acq_still_running
 
 
 def _generate_channel_slice_mda_seq(
