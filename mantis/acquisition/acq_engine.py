@@ -1355,6 +1355,7 @@ class MantisAcquisition(object):
             ls_post_hardware_hook_fn = partial(
                 update_ls_hardware,
                 self._ls_z_ctr_task,
+                self.ls_acq.channel_settings.channels,
             )
             ls_post_camera_hook_fn = partial(start_daq_counters, [self._ls_z_ctr_task])
 
