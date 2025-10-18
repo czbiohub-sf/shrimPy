@@ -219,14 +219,12 @@ class ZarrSettings:
             'y': 64,  # pixels per chunk in Y dimension
             'z': 1,  # pixels per chunk in Z dimension
             'c': 1,  # pixels per chunk in channel dimension
-            'p': 1,  # pixels per chunk in position dimension
-            't': 1,  # pixels per chunk in time dimension
         }
     )
 
     # Sharding settings (Zarr V3 only) - unit is chunks per shard
     shard_sizes: Dict[str, PositiveInt] = field(
-        default_factory=lambda: {'x': 1, 'y': 1, 'z': 1, 'c': 1, 'p': 1, 't': 1}
+        default_factory=lambda: {'x': 1, 'y': 1, 'z': 1, 'c': 1}
     )
 
     # Compression settings
@@ -245,13 +243,19 @@ class ZarrSettings:
     @validator("chunk_sizes")
     def validate_chunk_sizes(cls, v):
         """Validate chunk_sizes dictionary contains required keys."""
-        required_keys = {'x', 'y', 'z', 'c', 'p', 't'}
+        required_keys = {'x', 'y', 'z', 'c'}
         if not isinstance(v, dict):
             raise ValueError("chunk_sizes must be a dictionary")
 
         missing_keys = required_keys - set(v.keys())
         if missing_keys:
             raise ValueError(f"chunk_sizes is missing required keys: {missing_keys}")
+
+        # Reject position (p) and time (t) dimensions
+        forbidden_keys = {'p', 't'}
+        present_forbidden = forbidden_keys & set(v.keys())
+        if present_forbidden:
+            raise ValueError(f"Position (p) and time (t) dimension chunking is not allowed. Remove keys: {present_forbidden}")
 
         # Ensure all values are positive integers
         for key, value in v.items():
@@ -265,13 +269,19 @@ class ZarrSettings:
     @validator("shard_sizes")
     def validate_shard_sizes(cls, v):
         """Validate shard_sizes dictionary contains required keys."""
-        required_keys = {'x', 'y', 'z', 'c', 'p', 't'}
+        required_keys = {'x', 'y', 'z', 'c'}
         if not isinstance(v, dict):
             raise ValueError("shard_sizes must be a dictionary")
 
         missing_keys = required_keys - set(v.keys())
         if missing_keys:
             raise ValueError(f"shard_sizes is missing required keys: {missing_keys}")
+
+        # Reject position (p) and time (t) dimensions
+        forbidden_keys = {'p', 't'}
+        present_forbidden = forbidden_keys & set(v.keys())
+        if present_forbidden:
+            raise ValueError(f"Position (p) and time (t) dimension sharding is not allowed. Remove keys: {present_forbidden}")
 
         # Ensure all values are positive integers
         for key, value in v.items():

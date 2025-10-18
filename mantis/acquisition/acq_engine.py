@@ -310,8 +310,8 @@ class BaseChannelSliceAcquisition(object):
                     Dimension(
                         name='t',
                         array_size_px=0,  # zero denotes the append dimension in acquire
-                        chunk_size_px=self.zarr_settings.chunk_sizes['t'],
-                        shard_size_chunks=self.zarr_settings.shard_sizes['t'],
+                        chunk_size_px=1,  # don't chunk in time dimension
+                        shard_size_chunks=1,  # don't shard in time dimension
                         kind=DimensionType.TIME,
                     ),
                     Dimension(
