@@ -1025,13 +1025,14 @@ class MantisAcquisition(object):
                     z_stack = []
 
                     global acq_finished
+                    """
+
                     acq_finished = False
                     acq_fps = 20  # TODO: hardcoded for now
                     camera = 'Prime BSI Express'
                     num_slices = len(z_range)
                     acq_duration = num_slices / acq_fps + 5  # Extra buffer time
 
-                    """
 
                     def check_acq_finished(axes, dataset):
                         global acq_finished
