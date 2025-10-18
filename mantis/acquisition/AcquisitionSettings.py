@@ -57,12 +57,12 @@ class PositionSettings:
 
 @dataclass(config=config)
 class ChannelSettings:
-    default_exposure_times_ms: Union[NonNegativeFloat, List[NonNegativeFloat], None] = (
-        None  # in ms
-    )
-    default_laser_powers: Union[NonNegativeFloat, List[NonNegativeFloat], List[None], None] = (
-        None
-    )
+    default_exposure_times_ms: Union[
+        NonNegativeFloat, List[NonNegativeFloat], None
+    ] = None  # in ms
+    default_laser_powers: Union[
+        NonNegativeFloat, List[NonNegativeFloat], List[None], None
+    ] = None
     channel_group: Optional[str] = None
     channels: List[str] = field(default_factory=list)
     use_sequencing: bool = False
@@ -255,7 +255,9 @@ class ZarrSettings:
         forbidden_keys = {'p', 't'}
         present_forbidden = forbidden_keys & set(v.keys())
         if present_forbidden:
-            raise ValueError(f"Position (p) and time (t) dimension chunking is not allowed. Remove keys: {present_forbidden}")
+            raise ValueError(
+                f"Position (p) and time (t) dimension chunking is not allowed. Remove keys: {present_forbidden}"
+            )
 
         # Ensure all values are positive integers
         for key, value in v.items():
@@ -281,7 +283,9 @@ class ZarrSettings:
         forbidden_keys = {'p', 't'}
         present_forbidden = forbidden_keys & set(v.keys())
         if present_forbidden:
-            raise ValueError(f"Position (p) and time (t) dimension sharding is not allowed. Remove keys: {present_forbidden}")
+            raise ValueError(
+                f"Position (p) and time (t) dimension sharding is not allowed. Remove keys: {present_forbidden}"
+            )
 
         # Ensure all values are positive integers
         for key, value in v.items():
