@@ -53,13 +53,19 @@ def update_laser_power(lasers, c_idx: int):
 
 
 def update_ls_hardware(z_ctr_task: nidaqmx.Task, channels: List[str], event: useq.MDAEvent) -> useq.MDAEvent:
-    if not event:
-        logger.debug('Acquisition event is not valid.')
-        return
 
-    c_idx = channels.index(event.channel.config)
+    try:
+        # skip this if there's no channel index in the event
+        # for example, during autoexposure runs
+        c_idx = channels.index(event.channel.config)
 
-    update_daq_freq(z_ctr_task, c_idx)
+        logger.info(f'Updating hardware for channel index {c_idx}')
+        update_daq_freq(z_ctr_task, c_idx)
+
+    except AttributeError:
+        #logger.warning('No channel index found in event; skipping hardware update')
+        return event
+
     # As a hack, setting laser power after call to `run_autoexposure`
     # update_laser_power(lasers, c_idx)
 
