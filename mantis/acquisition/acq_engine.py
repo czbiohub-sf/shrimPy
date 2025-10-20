@@ -11,21 +11,21 @@ from tempfile import TemporaryDirectory
 from threading import Thread
 from typing import Iterable, Union
 
-from acquire_zarr import (
-    ArraySettings,
-    StreamSettings,
-    ZarrStream,
-    Dimension,
-    DimensionType,
-    Plate,
-    Well,
-)
 import copylot
 import nidaqmx
 import numpy as np
 import tifffile
 import useq
 
+from acquire_zarr import (
+    ArraySettings,
+    Dimension,
+    DimensionType,
+    Plate,
+    StreamSettings,
+    Well,
+    ZarrStream,
+)
 from nidaqmx.constants import Slope
 from pymmcore_plus import CMMCorePlus
 from waveorder.focus import focus_from_transverse_band
