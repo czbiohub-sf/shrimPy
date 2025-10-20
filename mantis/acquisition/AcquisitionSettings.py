@@ -325,21 +325,7 @@ class ZarrSettings:
 
     def __post_init__(self):
         """Post-initialization validation and setup."""
-        # Ensure chunk sizes are reasonable
-        if self.chunk_sizes['x'] > 2048:
-            warnings.warn(
-                f"Large X chunk size ({self.chunk_sizes['x']}) may impact performance"
-            )
-
-        if self.chunk_sizes['y'] > 2048:
-            warnings.warn(
-                f"Large Y chunk size ({self.chunk_sizes['y']}) may impact performance"
-            )
-
-        if self.chunk_sizes['z'] > 512:
-            warnings.warn(
-                f"Large Z chunk size ({self.chunk_sizes['z']}) may impact performance"
-            )
+        pass
 
     # Backward compatibility properties
     @property
