@@ -939,8 +939,11 @@ class MantisAcquisition(object):
                 else:
                     logger.error('O3 autofocus is taking longer than expected - aborting.')
                     microscope_operations.abort_acquisition_sequence(self.ls_acq.mmc, camera)
-                    acq.await_completion()  # Cleanup
+                    logger.debug('Would have waited for acquisition to complete')
+                    # acq.await_completion()  # Cleanup
+                    logger.debug('Closing dataset')
                     acq.get_dataset().close()  # Close dataset
+                    logger.debug('Acquisition aborted')
             else:
                 z_stack = microscope_operations.acquire_defocus_stack(
                     mmc, z_stage, z_range, backlash_correction_distance=KIM101_BACKLASH
@@ -979,8 +982,8 @@ class MantisAcquisition(object):
         o3_position = float(self.ls_acq.mmc.get_property(o3_z_stage, 'Position'))
         logger.debug(f'Starting O3 position: {o3_position} um')
 
-        o3_z_start = -3.3
-        o3_z_end = 3.3
+        o3_z_start = -5.0
+        o3_z_end = 5.0
         o3_z_step = 0.3
         if scan_left:
             logger.info('O3 refocus will scan further to the left')
@@ -1016,7 +1019,7 @@ class MantisAcquisition(object):
         data = self.acquire_ls_defocus_stack(
             z_range=o3_range_abs,
             galvo_range=galvo_range_abs,
-            use_pycromanager=True,
+            use_pycromanager=False,
         )
 
         # Abort if the acquisition failed
@@ -1426,7 +1429,7 @@ class MantisAcquisition(object):
         time.sleep(wait_time)
 
     def abort_stalled_acquisition(self):
-        buffer_time = 5
+        buffer_time = 10
         lf_acq_aborted = False
         ls_acq_aborted = False
 

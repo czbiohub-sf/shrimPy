@@ -337,6 +337,7 @@ def acquire_defocus_stack(
     backlash_correction_distance: int = 0,
 ):
     """Snap image at every z position and put image in a Micro-manager datastore
+    Note: KinesisPiezoMotor stage is deprecated
 
     Parameters
     ----------
@@ -361,19 +362,20 @@ def acquire_defocus_stack(
 
     """
     data = []
-    relative_z_steps = np.hstack((z_range[0], np.diff(z_range)))
+    # relative_z_steps = np.hstack((z_range[0], np.diff(z_range)))
 
     # get z0 and define move_z callable for the given stage
     if isinstance(z_stage, str):
         # this is a MM stage
-        move_z = partial(mmc.set_relative_position, z_stage)  # test if this works
+        move_z = partial(mmc.set_position, z_stage)  # test if this works
     elif isinstance(z_stage, KinesisPiezoMotor):
         # this is a pylablib stage
         move_z = partial(set_relative_kim101_position, z_stage)
     else:
         raise RuntimeError(f'Unknown z stage: {z_stage}')
 
-    for z_ind, rel_z in enumerate(relative_z_steps):
+    move_z(z_range[0]); time.sleep(0.3)
+    for z_ind, rel_z in enumerate(z_range):
         # set z position
         move_z(rel_z)
 
@@ -400,7 +402,7 @@ def acquire_defocus_stack(
             datastore.put_image(image)
 
     # reset z stage
-    move_z(-relative_z_steps.sum() + backlash_correction_distance)
+    # move_z(-relative_z_steps.sum() + backlash_correction_distance)
 
     return np.asarray(data)
 
@@ -553,8 +555,11 @@ def abort_acquisition_sequence(
     """
 
     for stage in sequenced_stages:
+        logger.debug(f'Stopping sequence on stage {stage}')
         mmc.stop_stage_sequence(stage)
+    logger.debug('Stopping camera sequence acquisition')
     mmc.stop_sequence_acquisition(camera)
+    logger.debug('Clearing circular buffer')
     mmc.clear_circular_buffer()
 
 
