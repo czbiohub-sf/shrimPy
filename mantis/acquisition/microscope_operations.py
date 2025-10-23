@@ -387,6 +387,7 @@ def acquire_defocus_stack(
     backlash_correction_distance: int = 0,
 ):
     """Snap image at every z position and put image in a Micro-manager datastore
+    Note: KinesisPiezoMotor stage is deprecated
 
     Parameters
     ----------
