@@ -301,111 +301,114 @@ class BaseChannelSliceAcquisition(object):
                         settings.property_value,
                     )
 
-            x_size = self.mmc.getImageWidth()
-            y_size = self.mmc.getImageHeight()
+        self.initialize_zarr_store(output_path)
 
-            if output_path:
-                # Create dimensions list for the array using ZarrSettings
-                dimensions = [
-                    Dimension(
-                        name='t',
-                        array_size_px=0,  # zero denotes the append dimension in acquire
-                        chunk_size_px=1,  # don't chunk in time dimension
-                        shard_size_chunks=1,  # don't shard in time dimension
-                        kind=DimensionType.TIME,
-                    ),
-                    Dimension(
-                        name='z',
-                        array_size_px=self.slice_settings.num_slices,
-                        chunk_size_px=min(
-                            self.zarr_settings.chunk_sizes['z'],
-                            max(1, self.slice_settings.num_slices),
-                        ),
-                        shard_size_chunks=self.zarr_settings.shard_sizes['z'],
-                        kind=DimensionType.SPACE,
-                    ),
-                    Dimension(
-                        name='y',
-                        array_size_px=y_size,
-                        chunk_size_px=min(self.zarr_settings.chunk_sizes['y'], max(1, y_size)),
-                        shard_size_chunks=self.zarr_settings.shard_sizes['y'],
-                        kind=DimensionType.SPACE,
-                    ),
-                    Dimension(
-                        name='x',
-                        array_size_px=x_size,
-                        chunk_size_px=min(self.zarr_settings.chunk_sizes['x'], max(1, x_size)),
-                        shard_size_chunks=self.zarr_settings.shard_sizes['x'],
-                        kind=DimensionType.SPACE,
-                    ),
-                ]
+    def initialize_zarr_store(self, output_path: Union[str, os.PathLike] = None):
+        if not self.enabled or output_path is None:
+            return
 
-                if self.channel_settings.num_channels > 1:
-                    dimensions.insert(
-                        1,
-                        Dimension(
-                            name='c',
-                            array_size_px=self.channel_settings.num_channels,
-                            chunk_size_px=min(
-                                self.zarr_settings.chunk_sizes['c'],
-                                max(1, self.channel_settings.num_channels),
-                            ),
-                            shard_size_chunks=self.zarr_settings.shard_sizes['c'],
-                            kind=DimensionType.CHANNEL,
-                        ),
-                    )
+        x_size = self.mmc.getImageWidth()
+        y_size = self.mmc.getImageHeight()
 
-                # Create array settings using ZarrSettings
-                array_settings = ArraySettings(
-                    dimensions=dimensions,
-                    data_type=self.zarr_settings.get_data_type_enum(),
+        # Create dimensions list for the array using ZarrSettings
+        dimensions = [
+            Dimension(
+                name='t',
+                array_size_px=0,  # zero denotes the append dimension in acquire
+                chunk_size_px=1,  # don't chunk in time dimension
+                shard_size_chunks=1,  # don't shard in time dimension
+                kind=DimensionType.TIME,
+            ),
+            Dimension(
+                name='z',
+                array_size_px=self.slice_settings.num_slices,
+                chunk_size_px=min(
+                    self.zarr_settings.chunk_sizes['z'],
+                    max(1, self.slice_settings.num_slices),
+                ),
+                shard_size_chunks=self.zarr_settings.shard_sizes['z'],
+                kind=DimensionType.SPACE,
+            ),
+            Dimension(
+                name='y',
+                array_size_px=y_size,
+                chunk_size_px=min(self.zarr_settings.chunk_sizes['y'], max(1, y_size)),
+                shard_size_chunks=self.zarr_settings.shard_sizes['y'],
+                kind=DimensionType.SPACE,
+            ),
+            Dimension(
+                name='x',
+                array_size_px=x_size,
+                chunk_size_px=min(self.zarr_settings.chunk_sizes['x'], max(1, x_size)),
+                shard_size_chunks=self.zarr_settings.shard_sizes['x'],
+                kind=DimensionType.SPACE,
+            ),
+        ]
+
+        if self.channel_settings.num_channels > 1:
+            dimensions.insert(
+                1,
+                Dimension(
+                    name='c',
+                    array_size_px=self.channel_settings.num_channels,
+                    chunk_size_px=min(
+                        self.zarr_settings.chunk_sizes['c'],
+                        max(1, self.channel_settings.num_channels),
+                    ),
+                    shard_size_chunks=self.zarr_settings.shard_sizes['c'],
+                    kind=DimensionType.CHANNEL,
+                ),
+            )
+
+        # Create array settings using ZarrSettings
+        array_settings = ArraySettings(
+            dimensions=dimensions,
+            data_type=self.zarr_settings.get_data_type_enum(),
+        )
+
+        # Set store path in zarr_settings if not already set
+        if self.zarr_settings.store_path is None:
+            self.zarr_settings.store_path = str(output_path)
+
+        # Create stream settings with the array
+        if self.zarr_settings.use_hcs_layout:
+            # Create HCS layout with plate and wells
+            plate = Plate(
+                name=self.zarr_settings.plate_name,
+                description=self.zarr_settings.plate_description or "",
+            )
+
+            # Create wells from position settings
+            wells = []
+            for well_id in set(self.position_settings.well_ids):
+                well = Well(
+                    name=well_id,
+                    row=well_id[0] if len(well_id) > 0 else "A",  # Extract row letter
+                    column=(well_id[1:] if len(well_id) > 1 else "1"),  # Extract column number
                 )
+                wells.append(well)
+            plate.wells = wells
 
-                # Set store path in zarr_settings if not already set
-                if self.zarr_settings.store_path is None:
-                    self.zarr_settings.store_path = str(output_path)
+            stream_settings = StreamSettings(
+                store_path=self.zarr_settings.store_path,
+                arrays=[array_settings],
+                multiscale=self.zarr_settings.multiscale,
+                version=self.zarr_settings.get_zarr_version_enum(),
+                max_threads=self.zarr_settings.max_threads,
+                plate=plate,
+            )
+        else:
+            stream_settings = StreamSettings(
+                store_path=self.zarr_settings.store_path,
+                arrays=[array_settings],
+                multiscale=self.zarr_settings.multiscale,
+                version=self.zarr_settings.get_zarr_version_enum(),
+                max_threads=self.zarr_settings.max_threads,
+            )
 
-                # Create stream settings with the array
-                if self.zarr_settings.use_hcs_layout:
-                    # Create HCS layout with plate and wells
-                    plate = Plate(
-                        name=self.zarr_settings.plate_name,
-                        description=self.zarr_settings.plate_description or "",
-                    )
+        self._zarr_writer = ZarrStream(stream_settings)
 
-                    # Create wells from position settings
-                    wells = []
-                    for well_id in set(self.position_settings.well_ids):
-                        well = Well(
-                            name=well_id,
-                            row=well_id[0] if len(well_id) > 0 else "A",  # Extract row letter
-                            column=(
-                                well_id[1:] if len(well_id) > 1 else "1"
-                            ),  # Extract column number
-                        )
-                        wells.append(well)
-                    plate.wells = wells
-
-                    stream_settings = StreamSettings(
-                        store_path=self.zarr_settings.store_path,
-                        arrays=[array_settings],
-                        multiscale=self.zarr_settings.multiscale,
-                        version=self.zarr_settings.get_zarr_version_enum(),
-                        max_threads=self.zarr_settings.max_threads,
-                        plate=plate,
-                    )
-                else:
-                    stream_settings = StreamSettings(
-                        store_path=self.zarr_settings.store_path,
-                        arrays=[array_settings],
-                        multiscale=self.zarr_settings.multiscale,
-                        version=self.zarr_settings.get_zarr_version_enum(),
-                        max_threads=self.zarr_settings.max_threads,
-                    )
-
-                self._zarr_writer = ZarrStream(stream_settings)
-
-                self.mmc.mda.events.frameReady.connect(self.write_data)
+        self.mmc.mda.events.frameReady.connect(self.write_data)
 
     def reset(self):
         """
