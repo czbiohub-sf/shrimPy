@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import time
 
 from copy import deepcopy
@@ -613,6 +614,11 @@ class MantisAcquisition(object):
         self.close()
 
     def close(self):
+        # Log final O3 stage position
+        if self.ls_acq.o3_stage and self.ls_acq.mmc:
+            _pos = float(self.ls_acq.mmc.getPosition(self.ls_acq.o3_stage))
+            logger.debug(f'Final O3 stage position: {_pos:.3f} um')
+
         # Shut down DAQ
         if not self._demo_run:
             self.cleanup_daq()
@@ -929,6 +935,44 @@ class MantisAcquisition(object):
                         )
                     )
 
+    def setup_o3_refocus(self):
+        """
+        The position of the O3 refocus stage resets between chunks in a chunked acquisition.
+        Here we'll read the final position of the O3 refocus stage from the log file of the
+        previous chunk and set the O3 refocus stage to that position at the start of the current chunk.
+        """
+        if not self.ls_acq.microscope_settings.use_o3_refocus:
+            return
+
+        acq_name_parts = self._acq_dir.name.split('_')
+        acq_name = '_'.join(acq_name_parts[:-1])
+        prev_chunk = int(acq_name_parts[-1]) - 1
+        prev_logs_dir = self._root_dir / f'{acq_name}_{prev_chunk}' / 'logs'
+        prev_log_file = list(prev_logs_dir.glob('mantis_acquisition_log_*.txt'))
+        if not prev_log_file:
+            logger.debug(
+                'No log files from a previous acquisition found. Will not change O3 stage position.'
+            )
+            return
+
+        o3_position = None
+        with open(prev_log_file[0], 'r') as f:
+            for line in reversed(f.readlines()):
+                match = re.search(r"Final O3 stage position: ([-\d\.]+) um", line)
+                if match:
+                    o3_position = float(match.group(1))
+                    break
+        if o3_position is None:
+            logger.debug(
+                "The final O3 stage position was not found in the previous log file. Will not change O3 stage position."
+            )
+            return
+
+        logger.debug(f'Updating O3 stage position to {o3_position:.3f} um')
+        microscope_operations.set_z_position(
+            self.ls_acq.mmc, self.ls_acq.o3_stage, o3_position
+        )
+
     def go_to_position(self, position_index: int):
         # Move slowly for short distances such that autofocus can stay engaged.
         # Autofocus typically fails when moving long distances, so we can move
@@ -986,17 +1030,16 @@ class MantisAcquisition(object):
         z_range: Iterable,
         galvo_range: Iterable,
         use_pymmcore_plus: bool = False,
-    ) -> np.array:
+    ) -> np.ndarray:
         """Acquire defocus stacks at different galvo positions and return image data
 
         Parameters
         ----------
         mmc : CMMCorePlus
         mmStudio : Studio
-        z_stage : str or KinesisPiezoMotor
+        # z_stage : str or KinesisPiezoMotor
         z_range : Iterable
-            Provide absolute range when using pycromanager, relative range otherwise
-        galvo : str
+            Absolute range when using pycromanager, relative range otherwise
         galvo_range : Iterable
         config_group : str, optional
         config_name : str, optional
@@ -1005,10 +1048,9 @@ class MantisAcquisition(object):
 
         Returns
         -------
-        data : np.array
+        data : np.ndarray
 
         """
-        data = []
         mmc = self.ls_acq.mmc
         config_group = self.ls_acq.microscope_settings.o3_refocus_config.config_group
         config_name = self.ls_acq.microscope_settings.o3_refocus_config.config_name
@@ -1031,47 +1073,108 @@ class MantisAcquisition(object):
         microscope_operations.open_shutter(mmc)
 
         # get galvo starting position
-        p0 = mmc.getPosition(galvo)
+        p0 = float(mmc.getPosition(galvo))
+        z0 = float(mmc.getPosition(z_stage))
 
         # set camera to internal trigger
         # TODO: do this properly, context manager?
         microscope_operations.set_property(
             mmc, 'Prime BSI Express', 'TriggerMode', 'Internal Trigger'
         )
+
+        galvo_stacks = []  # List containing list of z-stacks at different galvo positions
+
         if use_pymmcore_plus:
             tempdir = TemporaryDirectory()
             focus_stage = mmc.getProperty('Core', 'Focus')
             microscope_operations.set_property(mmc, 'Core', 'Focus', z_stage)
 
-        # acquire stacks at different galvo positions
-        for p_idx, p in enumerate(galvo_range):
-            # set galvo position
-            mmc.setPosition(galvo, p0 + p)
+            # acquire stacks at different galvo positions
+            for p_idx, p in enumerate(galvo_range):
+                # acquire z stack
+                if use_pymmcore_plus:
+                    z_stack = []
 
-            # acquire defocus stack
-            if use_pymmcore_plus:
-                mmc.setPosition(z_stage, z_range[0])  # prep o3 stage
+                    global acq_finished
+                    """
 
-                # acquire defocus stack
-                mda = useq.MDASequence(z_plan=useq.ZAbsolutePositions(z_range))
+                    acq_finished = False
+                    acq_fps = 20  # TODO: hardcoded for now
+                    camera = 'Prime BSI Express'
+                    num_slices = len(z_range)
+                    acq_duration = num_slices / acq_fps + 5  # Extra buffer time
 
-                # append data as its acquired.
-                def append_data(img: np.ndarray, event: useq.MDAEvent):
-                    data.append(img)
 
-                mmc.mda.events.frameReady.connect(append_data)
+                    def check_acq_finished(axes, dataset):
+                        global acq_finished
+                        if axes['z'] == num_slices - 1:
+                            acq_finished = True
 
-                # run the acquisition, and wait for it to finish
-                mmc.run_mda(mda)
-                mmc.waitForAcquisition()
-                mmc.mda.events.frameReady.disconnect(append_data)
+                    events = multi_d_acquisition_events(
+                        z_start=z_range[0],
+                        z_end=z_range[-1],
+                        z_step=z_range[1] - z_range[0],
+                    )
+                    acq = Acquisition(
+                        tempdir.name,
+                        f'ls_refocus_p{p_idx}',
+                        port=LS_ZMQ_PORT,
+                        image_saved_fn=check_acq_finished,
+                        show_display=False,
+                    )
+                    acq.acquire(events)
+                    acq.mark_finished()
+                    start_time = time.time()
+                    while not acq_finished and time.time() - start_time < acq_duration:
+                        time.sleep(0.2)
+                    if acq_finished:
+                        acq.await_completion()
+                        logger.debug('Pycromanager acquisition finished. Fetching data')
+                        ds = acq.get_dataset()
+                        data.append(np.asarray(ds.as_array()))
+                        logger.debug('Data retrieved. Closing dataset')
+                        ds.close()
+                    else:
+                        logger.error('O3 autofocus is taking longer than expected - aborting.')
+                        microscope_operations.abort_acquisition_sequence(self.ls_acq.mmc, camera)
+                        acq.await_completion()  # Cleanup
+                        acq.get_dataset().close()  # Close dataset
+                    """
 
-                mmc.setPosition(z_stage, z_range[len(z_range) // 2])  # reset o3 stage
-            else:
-                z_stack = microscope_operations.acquire_defocus_stack(
-                    mmc, z_stage, z_range, backlash_correction_distance=KIM101_BACKLASH
-                )
-                data.append(z_stack)
+                    microscope_operations.set_z_position(mmc, z_stage, z_range[0])
+
+                    logger.debug('Starting pymmcore-plus O3 autofocus acquisition')
+
+                    mda = useq.MDASequence(
+                        z_plan=useq.ZAbsolutePositions(absolute=z_range),
+                        axis_order="z",
+                        min_start_time=0,
+                    )
+
+                    # append data as its acquired.
+                    def append_data(img: np.ndarray, event: useq.MDAEvent):
+                        z_stack.append(img)
+
+                    mmc.mda.events.frameReady.connect(append_data)
+
+                    # run the acquisition, and wait for it to finish
+                    mmc.run_mda(mda, block=True)
+                    mmc.mda.events.frameReady.disconnect(append_data)
+
+                    mmc.setPosition(z_stage, z_range[len(z_range) // 2])  # reset o3 stage
+
+                    # set galvo position
+                    microscope_operations.set_z_position(mmc, galvo, p0 + p)
+                else:
+                    # Not ported to pymmcore-plus.  Requires Studio.  Seems hard-coded to not be done.
+                    raise NotImplementedError(
+                        "Acquiring defocus-stack without pymmcore-plus is no longer supported"
+                    )
+
+                    z_stack = microscope_operations.acquire_defocus_stack(
+                        mmc, z_stage, z_range, backlash_correction_distance=KIM101_BACKLASH
+                    )
+                galvo_stacks.append(z_stack)
 
         if use_pymmcore_plus:
             microscope_operations.set_property(mmc, 'Core', 'Focus', focus_stage)
@@ -1082,13 +1185,14 @@ class MantisAcquisition(object):
             mmc, 'Prime BSI Express', 'TriggerMode', 'Edge Trigger'
         )
 
-        # Reset galvo
-        mmc.setPosition(galvo, p0)
+        # Reset stages
+        microscope_operations.set_z_position(mmc, galvo, p0)
+        microscope_operations.set_z_position(mmc, z_stage, z0)
 
         # Reset shutter
         microscope_operations.reset_shutter(mmc, auto_shutter_state, shutter_state)
 
-        return np.asarray(data)
+        return np.asarray(galvo_stacks)
 
     def refocus_ls_path(
         self, scan_left: bool = False, scan_right: bool = False
@@ -1102,6 +1206,7 @@ class MantisAcquisition(object):
         # The stack starts close to O2 and moves away
         o3_z_stage = self.ls_acq.o3_stage
         o3_position = float(self.ls_acq.mmc.getProperty(o3_z_stage, 'Position'))
+        logger.debug(f'Starting O3 position: {o3_position} um')
 
         o3_z_start = -3.3
         o3_z_end = 3.3
@@ -1114,18 +1219,23 @@ class MantisAcquisition(object):
             o3_z_end *= 2
         o3_range_rel = np.arange(o3_z_start, o3_z_end + o3_z_step, o3_z_step)
         o3_range_abs = o3_range_rel + o3_position
-        o3_range_rel = o3_range_rel[
-            (o3_range_abs >= o3_low_limit) & (o3_range_abs <= o3_high_limit)
-        ]
-        if o3_range_rel.size == 0:
-            logger.error('Invalid O3 travel range. Aborting O3 refocus.')
+
+        valid_indices = (o3_range_abs >= o3_low_limit) & (o3_range_abs <= o3_high_limit)
+        o3_range_rel = o3_range_rel[valid_indices]
+        o3_range_abs = o3_range_abs[valid_indices]
+        if not all(valid_indices):
+            logger.warning(
+                'Some O3 positions are outside the valid range. Truncating O3 travel range.'
+            )
+        if o3_range_rel.size < 3:
+            logger.error('Insufficient O3 travel range. Aborting O3 refocus.')
             return success, scan_left, scan_right
 
         # Define galvo range, i.e. galvo positions at which O3 defocus stacks
         # are acquired, here at 30%, 50%, and 70% of galvo range. Should be odd number
         galvo_scan_range = self.ls_acq.slice_settings.z_range
         len_galvo_scan_range = len(galvo_scan_range)
-        galvo_range = [
+        galvo_range_abs = [
             galvo_scan_range[int(0.3 * len_galvo_scan_range)],
             galvo_scan_range[int(0.5 * len_galvo_scan_range)],
             galvo_scan_range[int(0.7 * len_galvo_scan_range)],
@@ -1134,9 +1244,14 @@ class MantisAcquisition(object):
         # Acquire defocus stacks at several galvo positions
         data = self.acquire_ls_defocus_stack(
             z_range=o3_range_abs,
-            galvo_range=galvo_range,
+            galvo_range=galvo_range_abs,
             use_pymmcore_plus=True,
         )
+
+        # Abort if the acquisition failed
+        if not data.size > 0:
+            logger.error('No data was acquired during O3 autofocus - aborting.')
+            return success, scan_left, scan_right
 
         # Save acquired stacks in logs
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -1166,7 +1281,7 @@ class MantisAcquisition(object):
             peak_indices.append(stats['peak_index'])
         logger.debug(
             'Stacks at galvo positions %s are in focus at slice %s',
-            np.round(galvo_range, 3),
+            np.round(galvo_range_abs, 3),
             focus_indices,
         )
 
@@ -1179,6 +1294,7 @@ class MantisAcquisition(object):
             o3_position_abs = o3_range_abs[focus_idx]
 
             logger.info(f'Moving O3 by {o3_position_rel} um')
+            logger.debug(f'Moving O3 to {o3_position_abs} um')
             microscope_operations.set_z_position(self.ls_acq.mmc, o3_z_stage, o3_position_abs)
             success = True
         else:
@@ -1285,6 +1401,9 @@ class MantisAcquisition(object):
         logger.debug('Setting up autoexposure')
         self.setup_autoexposure()
 
+        logger.debug('Setting up O3 refocus')
+        self.setup_o3_refocus()
+
     def acquire(self):
         """
         Simultaneously acquire label-free and light-sheet data over multiple
@@ -1303,12 +1422,11 @@ class MantisAcquisition(object):
         # lf_post_hardware_hook_fn = log_acquisition_start
         # lf_image_saved_fn = check_lf_acq_finished
 
-        # # define LS hook functions
+        # define LS hook functions
         if self.ls_acq.enabled and not self._demo_run:
             ls_post_hardware_hook_fn = partial(
                 update_ls_hardware,
                 self._ls_z_ctr_task,
-                self.ls_acq.channel_settings.light_sources,
                 self.ls_acq.channel_settings.channels,
             )
             ls_post_camera_hook_fn = partial(start_daq_counters, [self._ls_z_ctr_task])
@@ -1647,7 +1765,7 @@ def _generate_channel_slice_mda_seq(
 
 
 def _create_acquisition_directory(root_dir: Path, acq_name: str, idx=1) -> Path:
-    acq_dir = root_dir / f'{acq_name}_{idx}'
+    acq_dir = Path(root_dir) / f'{acq_name}_{idx}'
     # 10000 4 GB files would be 40 TB, which should be plenty
     _ndtif_filename = (
         acq_dir
