@@ -383,8 +383,8 @@ class BaseChannelSliceAcquisition(object):
             for well_id in set(self.position_settings.well_ids):
                 well = Well(
                     name=well_id,
-                    row=well_id[0] if len(well_id) > 0 else "A",  # Extract row letter
-                    column=(well_id[1:] if len(well_id) > 1 else "1"),  # Extract column number
+                    row=well_id[0] if len(well_id) > 0 else "0",  # Extract row letter
+                    column=(well_id[1:] if len(well_id) > 1 else "0"),  # Extract column number
                 )
                 wells.append(well)
             plate.wells = wells
