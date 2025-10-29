@@ -144,3 +144,57 @@ ls_microscope_settings:
 ls_autoexposure_settings:
   autoexposure_method: 'manual'
   rerun_each_timepoint: True
+
+# Zarr output settings for the label-free acquisition
+lf_zarr_settings:
+  data_type: 'UINT16'
+  multiscale: false
+  max_threads: 0  # 0 means use all available cores
+  chunk_sizes:  # unit: pixels per chunk
+    x: 64
+    y: 64
+    z: 1
+    c: 1
+    p: 1
+    t: 1
+  shard_sizes:  # Zarr V3 sharding - unit: chunks per shard
+    x: 1
+    y: 1
+    z: 1
+    c: 1
+    p: 1
+    t: 1
+  compression_codec: 'blosc'  # compression algorithm (blosc, gzip, lz4, zstd, or null)
+  compression_level: 1  # compression level (1-9 for most codecs)
+  overwrite_existing: false
+  # HCS (High Content Screening) settings - uncomment to enable
+  # use_hcs_layout: true
+  # plate_name: "Plate_001"
+  # plate_description: "Example HCS plate acquisition"
+
+# Zarr output settings for the light-sheet acquisition  
+ls_zarr_settings:
+  data_type: 'UINT16'
+  multiscale: false
+  max_threads: 0  # 0 means use all available cores
+  chunk_sizes:
+    x: 128
+    y: 128
+    z: 1
+    c: 1
+    p: 1
+    t: 1
+  shard_sizes:  # Zarr V3 sharding - unit: chunks per shard
+    x: 1
+    y: 1
+    z: 1
+    c: 1
+    p: 1
+    t: 1
+  compression_codec: 'blosc'  # compression algorithm
+  compression_level: 1  # compression level
+  overwrite_existing: false
+  # HCS (High Content Screening) settings - uncomment to enable
+  # use_hcs_layout: true
+  # plate_name: "Plate_001"
+  # plate_description: "Example HCS plate acquisition"

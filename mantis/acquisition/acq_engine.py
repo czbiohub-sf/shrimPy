@@ -12,13 +12,21 @@ from tempfile import TemporaryDirectory
 from threading import Thread
 from typing import Iterable, Union
 
-import acquire_zarr as aqz
 import copylot
 import nidaqmx
 import numpy as np
 import tifffile
 import useq
 
+from acquire_zarr import (
+    ArraySettings,
+    Dimension,
+    DimensionType,
+    Plate,
+    StreamSettings,
+    Well,
+    ZarrStream,
+)
 from nidaqmx.constants import Slope
 from pymmcore_plus import CMMCorePlus
 from waveorder.focus import focus_from_transverse_band
@@ -38,6 +46,7 @@ from mantis.acquisition.AcquisitionSettings import (
     SliceSettings,
     MicroscopeSettings,
     AutoexposureSettings,
+    ZarrSettings,
 )
 
 
@@ -114,6 +123,7 @@ class BaseChannelSliceAcquisition(object):
         self._slice_settings = SliceSettings()
         self._microscope_settings = MicroscopeSettings()
         self._autoexposure_settings = AutoexposureSettings()
+        self._zarr_settings = ZarrSettings()
         self._z0 = None
         self.headless = True  # JGE False if mm_app_path is None else True
         self.type = 'light-sheet' if self.headless else 'label-free'
@@ -183,6 +193,10 @@ class BaseChannelSliceAcquisition(object):
     def autoexposure_settings(self):
         return self._autoexposure_settings
 
+    @property
+    def zarr_settings(self):
+        return self._zarr_settings
+
     @channel_settings.setter
     def channel_settings(self, settings: ChannelSettings):
         if settings is None:
@@ -221,6 +235,15 @@ class BaseChannelSliceAcquisition(object):
             f"{self.type.capitalize()} acquisition will have the following settings:{asdict(settings)}"
         )
         self._autoexposure_settings = settings
+
+    @zarr_settings.setter
+    def zarr_settings(self, settings: ZarrSettings):
+        if settings is None:
+            return
+        logger.debug(
+            f"{self.type.capitalize()} acquisition will have the following zarr settings: {asdict(settings)}"
+        )
+        self._zarr_settings = settings
 
     def setup(self, output_path: Union[str, os.PathLike] = None):
         """
@@ -279,66 +302,114 @@ class BaseChannelSliceAcquisition(object):
                         settings.property_value,
                     )
 
-            # arbitrary chunking constants (todo: make configurable)
-            xy_n_chunks = 16
-            z_n_chunks = 1
+        self.initialize_zarr_store(output_path)
 
-            x_size = self.mmc.getImageWidth()
-            y_size = self.mmc.getImageHeight()
+    def initialize_zarr_store(self, output_path: Union[str, os.PathLike] = None):
+        if not self.enabled or output_path is None:
+            return
 
-            if False:  # output_path:
-                zarr_settings = aqz.StreamSettings(
-                    store_path=output_path,
-                    dtype=aqz.DataType.UINT16,  # FIXME: hardcoded for now, should be set from acquisition settings
-                    dimensions=[
-                        aqz.Dimension(
-                            name='t',
-                            array_size_px=0,
-                            chunk_size_px=1,
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.TIME,
-                        ),  # zero denotes the append dimension in acquire
-                        aqz.Dimension(
-                            name='z',
-                            array_size_px=self.slice_settings.num_slices,
-                            chunk_size_px=int(self.slice_settings.num_slices / z_n_chunks),
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.SPACE,
-                        ),
-                        aqz.Dimension(
-                            name='y',
-                            array_size_px=y_size,
-                            chunk_size_px=int(y_size / xy_n_chunks),
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.SPACE,
-                        ),
-                        aqz.Dimension(
-                            name='x',
-                            array_size_px=x_size,
-                            chunk_size_px=int(x_size / xy_n_chunks),
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.SPACE,
-                        ),
-                    ],
-                    muiltscale=False,
-                    version=aqz.ZarrVersion.V3,
-                    max_threads=0,
+        x_size = self.mmc.getImageWidth()
+        y_size = self.mmc.getImageHeight()
+
+        # Create dimensions list for the array using ZarrSettings
+        dimensions = [
+            Dimension(
+                name='t',
+                array_size_px=0,  # zero denotes the append dimension in acquire
+                chunk_size_px=1,  # don't chunk in time dimension
+                shard_size_chunks=1,  # don't shard in time dimension
+                kind=DimensionType.TIME,
+            ),
+            Dimension(
+                name='z',
+                array_size_px=self.slice_settings.num_slices,
+                chunk_size_px=min(
+                    self.zarr_settings.chunk_sizes['z'],
+                    max(1, self.slice_settings.num_slices),
+                ),
+                shard_size_chunks=self.zarr_settings.shard_sizes['z'],
+                kind=DimensionType.SPACE,
+            ),
+            Dimension(
+                name='y',
+                array_size_px=y_size,
+                chunk_size_px=min(self.zarr_settings.chunk_sizes['y'], max(1, y_size)),
+                shard_size_chunks=self.zarr_settings.shard_sizes['y'],
+                kind=DimensionType.SPACE,
+            ),
+            Dimension(
+                name='x',
+                array_size_px=x_size,
+                chunk_size_px=min(self.zarr_settings.chunk_sizes['x'], max(1, x_size)),
+                shard_size_chunks=self.zarr_settings.shard_sizes['x'],
+                kind=DimensionType.SPACE,
+            ),
+        ]
+
+        if self.channel_settings.num_channels > 1:
+            dimensions.insert(
+                1,
+                Dimension(
+                    name='c',
+                    array_size_px=self.channel_settings.num_channels,
+                    chunk_size_px=min(
+                        self.zarr_settings.chunk_sizes['c'],
+                        max(1, self.channel_settings.num_channels),
+                    ),
+                    shard_size_chunks=self.zarr_settings.shard_sizes['c'],
+                    kind=DimensionType.CHANNEL,
+                ),
+            )
+
+        # Create array settings using ZarrSettings
+        array_settings = ArraySettings(
+            dimensions=dimensions,
+            data_type=self.zarr_settings.get_data_type_enum(),
+        )
+
+        # Set store path in zarr_settings if not already set
+        if self.zarr_settings.store_path is None:
+            self.zarr_settings.store_path = str(output_path)
+
+        # Create stream settings with the array
+        if self.zarr_settings.use_hcs_layout:
+            # Create HCS layout with plate and wells
+            plate = Plate(
+                name=self.zarr_settings.plate_name,
+                description=self.zarr_settings.plate_description or "",
+            )
+
+            # Create wells from position settings
+            wells = []
+            for well_id in set(self.position_settings.well_ids):
+                well = Well(
+                    name=well_id,
+                    row=well_id[0] if len(well_id) > 0 else "0",  # Extract row letter
+                    column=(well_id[1:] if len(well_id) > 1 else "0"),  # Extract column number
                 )
+                wells.append(well)
+            plate.wells = wells
 
-                if self.channel_settings.num_channels > 1:
-                    zarr_settings.dimensions.insert(
-                        1,
-                        aqz.Dimension(
-                            name='c',
-                            array_size_px=self.channel_settings.num_channels,
-                            chunk_size_px=int(self.channel_settings.num_channels),
-                            shard_size_chunks=1,
-                            kind=aqz.DimensionType.CHANNEL,
-                        ),
-                    )
-                self._zarr_writer = aqz.ZarrStream(zarr_settings)
+            stream_settings = StreamSettings(
+                store_path=self.zarr_settings.store_path,
+                arrays=[array_settings],
+                multiscale=self.zarr_settings.multiscale,
+                version=self.zarr_settings.get_zarr_version_enum(),
+                max_threads=self.zarr_settings.max_threads,
+                plate=plate,
+            )
+        else:
+            stream_settings = StreamSettings(
+                store_path=self.zarr_settings.store_path,
+                arrays=[array_settings],
+                multiscale=self.zarr_settings.multiscale,
+                version=self.zarr_settings.get_zarr_version_enum(),
+                max_threads=self.zarr_settings.max_threads,
+            )
 
-                self.mmc.mda.events.frameReady.connect(self.write_data)
+        self._zarr_writer = ZarrStream(stream_settings)
+
+        self.mmc.mda.events.frameReady.connect(self.write_data)
 
     def reset(self):
         """

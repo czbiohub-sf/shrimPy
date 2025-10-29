@@ -20,6 +20,7 @@ classifiers = [
 
 # list package dependencies here
 dependencies = [
+  "acquire-zarr>=0.6.0",
   "copylot @ git+https://github.com/czbiohub-sf/coPylot",
   "ndtiff==2.2.1",
   "nidaqmx",
