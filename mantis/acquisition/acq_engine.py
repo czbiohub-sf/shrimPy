@@ -245,7 +245,7 @@ class BaseChannelSliceAcquisition(object):
         )
         self._zarr_settings = settings
 
-    def setup(self, output_path: Union[str, os.PathLike] = None):
+    def setup(self):
         """
         Apply acquisition settings as specified by the class properties
         """
@@ -1384,10 +1384,10 @@ class MantisAcquisition(object):
         logger.info('Setting up acquisition')
 
         logger.debug('Setting up label-free acquisition')
-        self.lf_acq.setup(output_path=f'{self._acq_dir}/{self._acq_name}_{LF_ACQ_LABEL}')
+        self.lf_acq.setup()
 
         logger.debug('Setting up light-sheet acquisition')
-        self.ls_acq.setup(output_path=f'{self._acq_dir}/{self._acq_name}_{LS_ACQ_LABEL}')
+        self.ls_acq.setup()
 
         logger.debug('Setting up DAQ')
         self.setup_daq()
@@ -1400,9 +1400,9 @@ class MantisAcquisition(object):
 
         logger.debug('Initializing zarr stores')
         if self.lf_acq.enabled:
-            self.lf_acq.initialize_zarr_store(output_path, self.position_settings)
+            self.lf_acq.initialize_zarr_store(f'{self._acq_dir}/{self._acq_name}_{LF_ACQ_LABEL}', self.position_settings)
         if self.ls_acq.enabled:
-            self.ls_acq.initialize_zarr_store(output_path, self.position_settings)
+            self.ls_acq.initialize_zarr_store(f'{self._acq_dir}/{self._acq_name}_{LS_ACQ_LABEL}', self.position_settings)
 
         logger.debug('Setting up autoexposure')
         self.setup_autoexposure()
