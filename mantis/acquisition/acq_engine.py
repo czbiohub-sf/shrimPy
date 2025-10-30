@@ -393,16 +393,14 @@ class BaseChannelSliceAcquisition(object):
             stream_settings = StreamSettings(
                 store_path=self.zarr_settings.store_path,
                 arrays=[array_settings],
-                multiscale=self.zarr_settings.multiscale,
                 version=self.zarr_settings.get_zarr_version_enum(),
                 max_threads=self.zarr_settings.max_threads,
-                plate=plate,
+                hcs_plates=[plate],
             )
         else:
             stream_settings = StreamSettings(
                 store_path=self.zarr_settings.store_path,
                 arrays=[array_settings],
-                multiscale=self.zarr_settings.multiscale,
                 version=self.zarr_settings.get_zarr_version_enum(),
                 max_threads=self.zarr_settings.max_threads,
             )
