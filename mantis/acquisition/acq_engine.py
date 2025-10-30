@@ -302,9 +302,9 @@ class BaseChannelSliceAcquisition(object):
                         settings.property_value,
                     )
 
-        self.initialize_zarr_store(output_path)
+        # Zarr store will be initialized by MantisAcquisition after position_settings are updated
 
-    def initialize_zarr_store(self, output_path: Union[str, os.PathLike] = None):
+    def initialize_zarr_store(self, output_path: Union[str, os.PathLike] = None, position_settings: PositionSettings = None):
         if not self.enabled or output_path is None:
             return
 
@@ -381,7 +381,7 @@ class BaseChannelSliceAcquisition(object):
 
             # Create wells from position settings
             wells = []
-            for well_id in set(self.position_settings.well_ids):
+            for well_id in set(position_settings.well_ids if position_settings else []):
                 well = Well(
                     name=well_id,
                     row=well_id[0] if len(well_id) > 0 else "0",  # Extract row letter
@@ -1397,6 +1397,12 @@ class MantisAcquisition(object):
 
         logger.debug('Updating position settings')
         self.update_position_settings()
+
+        logger.debug('Initializing zarr stores')
+        if self.lf_acq.enabled:
+            self.lf_acq.initialize_zarr_store(output_path, self.position_settings)
+        if self.ls_acq.enabled:
+            self.ls_acq.initialize_zarr_store(output_path, self.position_settings)
 
         logger.debug('Setting up autoexposure')
         self.setup_autoexposure()
