@@ -365,6 +365,7 @@ class BaseChannelSliceAcquisition(object):
         array_settings = ArraySettings(
             dimensions=dimensions,
             data_type=self.zarr_settings.get_data_type_enum(),
+            compression=self.zarr_settings.get_compression_settings(),
         )
 
         # Set store path in zarr_settings if not already set

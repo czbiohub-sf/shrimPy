@@ -160,7 +160,7 @@ lf_zarr_settings:
     y: 1
     z: 1
     c: 1
-  compression_codec: 'blosc'  # compression algorithm (blosc, gzip, lz4, zstd, or null)
+  compression_codec: 'blosc'  # compression algorithm (blosc, gzip, lz4, zstd, or 'off' to disable)
   compression_level: 1  # compression level (1-9 for most codecs)
   overwrite_existing: false
   # HCS (High Content Screening) settings - uncomment to enable
