@@ -911,7 +911,7 @@ class MantisAcquisition(object):
                 config_group = self.ls_acq.channel_settings.channel_group
                 config = self.ls_acq.mmc.getConfigData(config_group, config_name)
                 ts2_ttl_state = int(
-                    config.get_setting('TS2_TTL1-8', 'State').get_property_value()
+                    config.getSetting('TS2_TTL1-8', 'State').getPropertyValue()
                 )
                 if ts2_ttl_state == 32:
                     # State 32 corresponds to illumination with 488 laser
