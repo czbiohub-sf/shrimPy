@@ -155,15 +155,11 @@ lf_zarr_settings:
     y: 64
     z: 1
     c: 1
-    p: 1
-    t: 1
   shard_sizes:  # Zarr V3 sharding - unit: chunks per shard
     x: 1
     y: 1
     z: 1
     c: 1
-    p: 1
-    t: 1
   compression_codec: 'blosc'  # compression algorithm (blosc, gzip, lz4, zstd, or null)
   compression_level: 1  # compression level (1-9 for most codecs)
   overwrite_existing: false
@@ -182,15 +178,11 @@ ls_zarr_settings:
     y: 128
     z: 1
     c: 1
-    p: 1
-    t: 1
   shard_sizes:  # Zarr V3 sharding - unit: chunks per shard
     x: 1
     y: 1
     z: 1
     c: 1
-    p: 1
-    t: 1
   compression_codec: 'blosc'  # compression algorithm
   compression_level: 1  # compression level
   overwrite_existing: false

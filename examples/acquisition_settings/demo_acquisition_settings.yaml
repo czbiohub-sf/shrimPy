@@ -77,15 +77,11 @@ lf_zarr_settings:
     y: 64
     z: 1
     c: 1
-    p: 1
-    t: 1
   shard_sizes:  # unit: chunks per shard
     x: 1
     y: 1
     z: 1
     c: 1
-    p: 1
-    t: 1
   compression_codec: 'gzip'  # simple compression for demo
   compression_level: 3
   overwrite_existing: true  # allow overwriting for demos
@@ -104,15 +100,11 @@ ls_zarr_settings:
     y: 64
     z: 1
     c: 1
-    p: 1
-    t: 1
   shard_sizes:  # unit: chunks per shard
     x: 1
     y: 1
     z: 1
     c: 1
-    p: 1
-    t: 1
   compression_codec: 'gzip'  # simple compression for demo
   compression_level: 3
   overwrite_existing: true  # allow overwriting for demos
