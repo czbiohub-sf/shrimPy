@@ -28,6 +28,7 @@ from mantis.acquisition.autotracker import autotracker_hook_fn
 from mantis.acquisition.autoexposure import load_manual_illumination_settings
 from mantis.acquisition.hook_functions import globals
 from mantis.acquisition.logger import configure_debug_logger, log_conda_environment
+from mantis.acquisition.autotracker import Autotracker
 
 # isort: off
 from mantis.acquisition.AcquisitionSettings import (
@@ -1264,16 +1265,24 @@ class MantisAcquisition(object):
                 yx_shape = self.lf_acq.microscope_settings.roi[-2:][::-1]
                 phase_config['transfer_function']['zyx_shape'] =  (self.lf_acq.slice_settings.num_slices, yx_shape[0], yx_shape[1])
                 transfer_function = calculate_transfer_function(**phase_config['transfer_function'])
-
+            else:
+                transfer_function = None
+            tracker = Autotracker(
+                    tracking_method=self.lf_acq.autotracker_settings.tracking_method,
+                    scale= self.lf_acq.autotracker_settings.scale_yx,
+                    shift_limit=self.lf_acq.autotracker_settings.shift_limit,
+                    zyx_dampening_factor=self.lf_acq.autotracker_settings.zyx_dampening_factor,
+                    transfer_function=transfer_function,
+                )
             lf_image_saved_fn = partial(
                 autotracker_hook_fn,
                 'lf',
+                tracker,
                 self.lf_acq.autotracker_settings,
                 self._position_settings,
                 self.lf_acq.microscope_settings.autotracker_config,
                 self.lf_acq.slice_settings,
-                self._logs_dir,
-                transfer_function,   
+                self._logs_dir,   
             )
         else:
             logger.info('No autotracker config found for LF acquisition. Using default image saved hook')
@@ -1310,15 +1319,23 @@ class MantisAcquisition(object):
 
         # TODO: implement logic for the autotracker_img_saved_hook_fn
         if self.ls_acq.microscope_settings.autotracker_config is not None:
+            tracker = Autotracker(
+                tracking_method=self.ls_acq.autotracker_settings.tracking_method,
+                scale= self.ls_acq.autotracker_settings.scale_yx,
+                shift_limit=self.ls_acq.autotracker_settings.shift_limit,
+                zyx_dampening_factor=self.ls_acq.autotracker_settings.zyx_dampening_factor,
+                transfer_function= None,
+            )
             ls_image_saved_fn = partial(
                 autotracker_hook_fn,
                 'ls',
+                tracker,
                 self.ls_acq.autotracker_settings,
                 self._position_settings,
-                self.ls_acq.microscope_settings.autotracker_config,
+                self.ls_acq.microscope_settings,
                 self.ls_acq.slice_settings,
                 self._logs_dir,
-            )
+            )   
         else:
             logger.info('No autotracker config found for LS acquisition. Using default image saved hook')
             ls_image_saved_fn = check_ls_acq_finished

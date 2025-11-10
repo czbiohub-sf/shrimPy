@@ -205,6 +205,7 @@ class AutoexposureSettings:
 class AutotrackerSettings:
     tracking_method: Literal['phase_cross_correlation', 'template_matching', 'multi_otsu']
     tracking_interval: Optional[int] = 1  # TODO: add units
+    shift_estimation_channel: Literal['phase', 'vs_nuclei', 'vs_membrane', 'bf'] = 'bf'
     scale_yx: Optional[float] = 1.0  # in um per pixel
     shift_limit: Optional[Union[Tuple[float, float, float], 'None']] = None # in um
     device: Optional[str] = 'cpu'
