@@ -370,7 +370,10 @@ class BaseChannelSliceAcquisition(object):
 
         # Set store path in zarr_settings if not already set
         if self.zarr_settings.store_path is None:
-            self.zarr_settings.store_path = str(output_path)
+            zarr_path = str(output_path)
+            if not zarr_path.endswith('.zarr'):
+                zarr_path += '.zarr'
+            self.zarr_settings.store_path = zarr_path
 
         # Create stream settings with the array
         if self.zarr_settings.use_hcs_layout:
