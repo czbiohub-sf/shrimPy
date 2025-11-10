@@ -1262,15 +1262,19 @@ class MantisAcquisition(object):
         if self.lf_acq.microscope_settings.autotracker_config is not None:
             phase_config = self.lf_acq.autotracker_settings.phase_config
             if phase_config is not None:
+                logger.info("Calculating transfer function...")
                 yx_shape = self.lf_acq.microscope_settings.roi[-2:][::-1]
                 phase_config['transfer_function']['zyx_shape'] =  (self.lf_acq.slice_settings.num_slices, yx_shape[0], yx_shape[1])
                 transfer_function = calculate_transfer_function(**phase_config['transfer_function'])
             else:
+                logger.info("No phase config found for LF acquisition.")
                 transfer_function = None
+
+            logger.info("Instantiating autotracker...")
             tracker = Autotracker(
                     tracking_method=self.lf_acq.autotracker_settings.tracking_method,
                     scale= self.lf_acq.autotracker_settings.scale_yx,
-                    shift_limit=self.lf_acq.autotracker_settings.shift_limit,
+                    absolute_shift_limits_um=self.lf_acq.autotracker_settings.absolute_shift_limits_um,
                     zyx_dampening_factor=self.lf_acq.autotracker_settings.zyx_dampening_factor,
                     transfer_function=transfer_function,
                 )

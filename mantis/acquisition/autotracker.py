@@ -635,10 +635,14 @@ def autotracker_hook_fn(
                 )
             else:
                 if autotracker.ref_volume is None:
+                    logger.info("Reading reference volume...")
                     volume_ref = get_volume(dataset, volume_ref_axes)
                     autotracker.ref_volume = data_preprocessing_labelfree(volume_ref, autotracker.transfer_function, autotracker_settings)
                     del volume_ref
+                else:
+                    logger.info("Reference volume in memory, skipping...")
 
+                logger.info(f"Reading moving volume {t_idx}...")
                 volume_mov = get_volume(dataset, volume_mov_axes)
                 volume_mov = data_preprocessing_labelfree(volume_mov, autotracker.transfer_function, autotracker_settings)
 
