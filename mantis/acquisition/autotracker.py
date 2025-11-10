@@ -331,10 +331,10 @@ class Autotracker(object):
     def __init__(
         self,
         tracking_method: str,
-        shift_limit: Tuple[float, float, float],
         scale: ArrayLike,
         zyx_dampening_factor: ArrayLike = None,
         transfer_function: ArrayLike = None,
+        absolute_shift_limits_um: dict[str, Tuple[float, float]] = {'z': (0.5, 2), 'y': (2, 10), 'x': (2, 10)},
     ):
         """
         Autotracker object
@@ -346,11 +346,13 @@ class Autotracker(object):
         scale : ArrayLike[float, float, float]
             Scale factor to convert shifts_zyx from px to um
         xy_dampening : tuple[int]
+        absolute_shift_limits_um : dict[str, Tuple[float, float]]
+            Absolute shift limits in um for each axis
             Dampening factor for xy shifts_zyx
         """
         self.tracking_method = tracking_method
         self.zyx_dampening = zyx_dampening_factor   
-        self.shift_limit = shift_limit
+        self.absolute_shift_limits_um = absolute_shift_limits_um
         self.scale = scale
         self.shifts_zyx = None
         self.transfer_function = transfer_function
@@ -382,17 +384,22 @@ class Autotracker(object):
 
         shifts_zyx_pix = autofocus_method_func(ref_img=ref_img, mov_img=mov_img, **kwargs)
 
+        logger.debug(f'Shifts (z,y,x) pix: {shifts_zyx_pix}')
+        logger.debug(f'Scale (um/px): {self.scale}')
+        logger.debug(f'Dampening (z,y,x) factor: {self.zyx_dampening}')
+
         # shifts_zyx in px to shifts_zyx in um
         shifts_zyx_um = np.array(shifts_zyx_pix) * self.scale
 
-        # Limit the shifts_zyx, preserving the sign of the shift
-        self.shifts_zyx = np.sign(shifts_zyx_um) * np.minimum(np.abs(shifts_zyx_um), self.shift_limit)
-        if any(self.shifts_zyx != shifts_zyx_um):
-            logger.debug('Shifts_zyx limited to %s', self.shifts_zyx)
+        shifts_zyx_um_limited = self.limit_shifts_zyx(shifts_zyx_um)
+       
+        self.shifts_zyx = shifts_zyx_um_limited
+        if any(self.shifts_zyx != shifts_zyx_um_limited):
+            logger.debug('Shifts (z,y,x) limited to %s', shifts_zyx_um_limited)
 
         if self.zyx_dampening is not None:
             self.shifts_zyx = self.shifts_zyx * self.zyx_dampening
-        logger.info(f'shifts_zyx (z,y,x): {self.shifts_zyx}')
+        logger.info(f'Shifts (z,y,x) dampened: {self.shifts_zyx}')
 
         return self.shifts_zyx
 
@@ -449,7 +456,7 @@ class Autotracker(object):
             df.to_csv(output_path, mode='a', header=False, index=False)
 
     def limit_shifts_zyx(
-        self, shifts_zyx: Tuple[int, int, int], limits: Tuple[int, int, int] = (5, 5, 5)
+        self, shifts_zyx: Tuple[int, int, int],
     ) -> Tuple[int, int, int]:
         """
         Limits the shifts_zyx to the specified limits.
@@ -466,9 +473,22 @@ class Autotracker(object):
         Tuple[int, int, int]
             The limited shifts_zyx.
         """
-        shifts_zyx = np.array(shifts_zyx)
-        limits = np.array(limits)
-        shifts_zyx = np.where(np.abs(shifts_zyx) > limits, 0, shifts_zyx)
+        # Map axis order (Z,Y,X) to indices
+        axes = ["z", "y", "x"]
+       
+        # Clamp and threshold shifts automatically
+        for i, axis in enumerate(axes):
+            min_limit, max_limit = self.absolute_shift_limits_um[axis]
+            # Zero out small shifts (below min physical stage threshold)
+            if abs(shifts_zyx[i]) < min_limit:
+                logger.debug(f'Shifts ({axis}) = {shifts_zyx[i]} is below the min limit {min_limit}, setting to 0')
+                shifts_zyx[i] = 0
+                
+            # Clip large shifts (above max threshold)
+            elif abs(shifts_zyx[i]) > max_limit:
+                logger.debug(f'Shifts ({axis}) = {shifts_zyx[i]} is above the max limit {max_limit}, setting to {np.sign(shifts_zyx[i]) * max_limit}')
+                shifts_zyx[i] = np.sign(shifts_zyx[i]) * max_limit
+
         return tuple(shifts_zyx)
 
 
@@ -633,31 +653,6 @@ def autotracker_hook_fn(
                 # Reference and moving volumes
                 
                 shifts_zyx = autotracker.estimate_shift(autotracker.ref_volume, volume_mov)
-
-                ### HARDCODED shifting
-                if abs(shifts_zyx[0]) < 0.5:
-                    shifts_zyx[0] = 0
-                if abs(shifts_zyx[1]) < 2:
-                    shifts_zyx[1] = 0
-                if abs(shifts_zyx[2]) < 2:
-                    shifts_zyx[2] = 0
-
-                if abs(shifts_zyx[0]) > 2:
-                    if shifts_zyx[0] > 0:
-                        shifts_zyx[0] = 2
-                    else:
-                        shifts_zyx[0] = -2
-                if abs(shifts_zyx[1]) > 10:
-                    if shifts_zyx[1] > 0:
-                        shifts_zyx[1] = 10
-                    else:
-                        shifts_zyx[1] = -10
-                if abs(shifts_zyx[2]) > 10:
-                    if shifts_zyx[2] > 0:
-                        shifts_zyx[2] = 10
-                    else:
-                        shifts_zyx[2] = -10
-
                 del volume_mov
                 #shifts_zyx = shifts_zyx.cpu().numpy()
 

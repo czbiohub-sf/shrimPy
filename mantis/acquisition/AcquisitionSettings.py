@@ -207,7 +207,7 @@ class AutotrackerSettings:
     tracking_interval: Optional[int] = 1  # TODO: add units
     shift_estimation_channel: Literal['phase', 'vs_nuclei', 'vs_membrane', 'bf'] = 'bf'
     scale_yx: Optional[float] = 1.0  # in um per pixel
-    shift_limit: Optional[Union[Tuple[float, float, float], 'None']] = None # in um
+    absolute_shift_limits_um: dict[str, Tuple[float, float]] = {'z': (0.5, 2), 'y': (2, 10), 'x': (2, 10)} # in um
     device: Optional[str] = 'cpu'
     zyx_dampening_factor: Optional[Union[Tuple[float, float, float], None]] = None
     # TODO: maybe do the ROI like in the ls_microscope_settings
