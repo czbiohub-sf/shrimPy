@@ -397,6 +397,7 @@ class Autotracker(object):
         if any(self.shifts_zyx != shifts_zyx_um_limited):
             logger.debug('Shifts (z,y,x) limited to %s', shifts_zyx_um_limited)
 
+        # Apply dampening if specified
         if self.zyx_dampening is not None:
             self.shifts_zyx = self.shifts_zyx * self.zyx_dampening
         logger.info(f'Shifts (z,y,x) dampened: {self.shifts_zyx}')
@@ -456,8 +457,8 @@ class Autotracker(object):
             df.to_csv(output_path, mode='a', header=False, index=False)
 
     def limit_shifts_zyx(
-        self, shifts_zyx: Tuple[int, int, int],
-    ) -> Tuple[int, int, int]:
+        self, shifts_zyx: np.ndarray,
+    ) -> np.ndarray:
         """
         Limits the shifts_zyx to the specified limits.
 
@@ -473,6 +474,8 @@ class Autotracker(object):
         Tuple[int, int, int]
             The limited shifts_zyx.
         """
+        shifts_zyx = np.array(shifts_zyx, dtype=float)
+        
         # Map axis order (Z,Y,X) to indices
         axes = ["z", "y", "x"]
        
@@ -481,15 +484,15 @@ class Autotracker(object):
             min_limit, max_limit = self.absolute_shift_limits_um[axis]
             # Zero out small shifts (below min physical stage threshold)
             if abs(shifts_zyx[i]) < min_limit:
-                logger.debug(f'Shifts ({axis}) = {shifts_zyx[i]} is below the min limit {min_limit}, setting to 0')
+                logger.debug(f'Shifts ({axis}) = {shifts_zyx[i]:.3f} is below the min limit {min_limit}, setting to 0')
                 shifts_zyx[i] = 0
                 
             # Clip large shifts (above max threshold)
             elif abs(shifts_zyx[i]) > max_limit:
-                logger.debug(f'Shifts ({axis}) = {shifts_zyx[i]} is above the max limit {max_limit}, setting to {np.sign(shifts_zyx[i]) * max_limit}')
+                logger.debug(f'Shifts ({axis}) = {shifts_zyx[i]:.3f} is above the max limit {max_limit}, setting to {np.sign(shifts_zyx[i]) * max_limit:.3f}')
                 shifts_zyx[i] = np.sign(shifts_zyx[i]) * max_limit
 
-        return tuple(shifts_zyx)
+        return shifts_zyx
 
 
 # TODO: logic for handling which t_idx to grab as reference. If the volume changes
