@@ -13,6 +13,8 @@ import tifffile
 import importlib
 
 from mantis.acquisition.AcquisitionSettings import AutotrackerSettings
+from waveorder.models.phase_thick_3d import calculate_transfer_function
+
 from viscy.translation.engine import AugmentedPredictionVSUNet
 
 from scipy.fftpack import next_fast_len
@@ -338,7 +340,6 @@ class Autotracker(object):
         channel_config,
         output_shift_path,
         settings,
-        transfer_function,
     ):
         """
         Autotracker object
@@ -361,7 +362,7 @@ class Autotracker(object):
         self.absolute_shift_limits_um = settings.absolute_shift_limits_um
         self.scale = settings.scale_yx
         self.shifts_zyx = None  
-        self.transfer_function = transfer_function
+        self.transfer_function = None
         self.ref_volume = None
         self.arm = arm
         self.position_settings = position_settings
@@ -545,6 +546,13 @@ class Autotracker(object):
         """
         reconstruction_pipeline = self.settings.reconstruction
         if 'phase' in reconstruction_pipeline:
+            if self.transfer_function is None:
+                logger.info("Calculating transfer function...")
+                self.settings.phase_config['transfer_function']['zyx_shape'] = self.zyx_shape
+                self.transfer_function = calculate_transfer_function(**self.settings.phase_config['transfer_function'])
+            else:
+                logger.info("Transfer function in memory, skipping...")
+            
             logger.info("Reconstructing Phase...")
             tf_tensor = tuple(tf.to(DEVICE) for tf in self.transfer_function)
             t_volume_bf = torch.as_tensor(volume_bf, device=DEVICE, dtype=torch.float32)
@@ -552,6 +560,7 @@ class Autotracker(object):
             volume_phase = t_volume_phase.detach().cpu().numpy()
             del t_volume_bf, tf_tensor
             gc.collect(); torch.cuda.empty_cache()
+
             if 'vs' in reconstruction_pipeline:
                 logger.info("Predicting VS...")
                 t_volume_vs = vs_inference_t2t(t_volume_phase.unsqueeze(0).unsqueeze(0), self.settings.vs_config)
@@ -562,6 +571,7 @@ class Autotracker(object):
                 volume_membrane = t_volume_vs.detach().cpu().numpy()[0, 1]
                 del t_volume_vs
                 gc.collect(); torch.cuda.empty_cache()
+                
             else:
                 volume_phase = t_volume_phase.detach().cpu().numpy()
                 del t_volume_phase
@@ -578,7 +588,6 @@ class Autotracker(object):
             return volume_bf
         else:
             raise ValueError(f"Invalid channel: {shift_estimation_channel}")
-
 
     def track(
         self,
