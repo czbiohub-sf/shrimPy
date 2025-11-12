@@ -332,8 +332,14 @@ class Autotracker(object):
 
     def __init__(
         self,
+        position_settings,
+        channel_config,
+        z_slice_settings,
+        output_shift_path,
         transfer_function: ArrayLike = None,
         settings: AutotrackerSettings = None,
+        arm: str = None,
+        
     ):
         """
         Autotracker object
@@ -359,7 +365,11 @@ class Autotracker(object):
         self.shifts_zyx = None  
         self.transfer_function = transfer_function
         self.ref_volume = None
-        
+        self.arm = arm
+        self.position_settings = position_settings
+        self.channel_config = channel_config
+        self.z_slice_settings = z_slice_settings
+        self.output_shift_path = output_shift_path
     def estimate_shift(self, ref_img: ArrayLike, mov_img: ArrayLike, **kwargs) -> np.ndarray:
         """
         Estimates the shift between two images using the specified autofocus method.
@@ -570,13 +580,8 @@ class Autotracker(object):
             raise ValueError(f"Invalid channel: {shift_estimation_channel}")
 
 
-    def autotracker_hook_fn(
+    def track(
         self,
-        arm,
-        position_settings,
-        channel_config,
-        z_slice_settings,
-        output_shift_path,
         axes,
         dataset,
     ) -> None:
@@ -591,24 +596,24 @@ class Autotracker(object):
         # logger.info('Autotracker hook function called for axes %s', axes)
 
         # TODO: handle the lf acq or ls_a
-        if arm == 'lf':
-            if axes == globals.lf_last_img_idx:
-                globals.lf_acq_finished = True
-        elif arm == 'ls':
-            if axes == globals.ls_last_img_idx:
-                globals.ls_acq_finished = True
+        if self.arm == 'lf':
+            if axes == self.lf_last_img_idx:
+                self.lf_acq_finished = True
+        elif self.arm == 'ls':
+            if axes == self.ls_last_img_idx:
+                self.ls_acq_finished = True
 
         # Get reference to the acquisition engine and it's settings
         # TODO: This is a placeholder, the actual implementation will be different
-        z_range = z_slice_settings.z_range
-        num_slices = z_slice_settings.num_slices
+        z_range = self.z_slice_settings.z_range
+        num_slices = self.z_slice_settings.num_slices
         tracking_interval = self.settings.tracking_interval
-        tracking_channel = channel_config.config_name
-        output_shift_path = Path(output_shift_path)
+        tracking_channel = self.channel_config.config_name
+        output_shift_path = Path(self.output_shift_path)
     
         # Get axes info
         p_label = axes['position']
-        p_idx = position_settings.position_labels.index(p_label)
+        p_idx = self.position_settings.position_labels.index(p_label)
         t_idx = axes['time']
         channel = axes['channel']
         z_idx = axes['z']
@@ -639,7 +644,7 @@ class Autotracker(object):
                 else:
                     if self.ref_volume is None:
                         logger.info("Reading reference volume...")
-                        volume_ref = self.  get_volume(dataset, volume_ref_axes)
+                        volume_ref = self.get_volume(dataset, volume_ref_axes)
                         self.ref_volume = self.data_preprocessing_labelfree(volume_ref)
                         del volume_ref
                     else:
@@ -671,21 +676,21 @@ class Autotracker(object):
                 prev_shifts = prev_shifts.iloc[-1]
 
                 # Read the previous shifts_zyx
-                prev_x = position_settings.xyz_positions_shift[p_idx][0]
-                prev_y = position_settings.xyz_positions_shift[p_idx][1]
+                prev_x = self.position_settings.xyz_positions_shift[p_idx][0]
+                prev_y = self.position_settings.xyz_positions_shift[p_idx][1]
                 prev_z = None
                 # Update Z shifts_zyx if available
-                if position_settings.xyz_positions_shift[p_idx][2] is not None:
-                    prev_z = position_settings.xyz_positions_shift[p_idx][2]
+                if self.position_settings.xyz_positions_shift[p_idx][2] is not None:
+                    prev_z = self.position_settings.xyz_positions_shift[p_idx][2]
                 logger.info('Previous shifts (x, y, z): %f, %f, %f', prev_x, prev_y, prev_z)
                 # Update the event coordinates
-                position_settings.xyz_positions_shift[p_idx][0] = prev_x + shifts_zyx[-1]
-                position_settings.xyz_positions_shift[p_idx][1] = prev_y + shifts_zyx[-2]
+                self.position_settings.xyz_positions_shift[p_idx][0] = prev_x + shifts_zyx[-1]
+                self.position_settings.xyz_positions_shift[p_idx][1] = prev_y + shifts_zyx[-2]
                 # Update Z shifts_zyx if available
-                if position_settings.xyz_positions_shift[p_idx][2] is not None:
-                    position_settings.xyz_positions_shift[p_idx][2] = prev_z + shifts_zyx[-3]
+                if self.position_settings.xyz_positions_shift[p_idx][2] is not None:
+                    self.position_settings.xyz_positions_shift[p_idx][2] = prev_z + shifts_zyx[-3]
                 logger.info(
-                    'New positions (x, y, z): %f, %f, %f', *position_settings.xyz_positions_shift[p_idx]
+                    'New positions (x, y, z): %f, %f, %f', *self.position_settings.xyz_positions_shift[p_idx]
                 )
                 # Save the shifts_zyx
                 self.save_shifts_to_file(
@@ -694,19 +699,19 @@ class Autotracker(object):
                     timepoint_id=t_idx,
                     shifts_zyx=shifts_zyx,
                     stage_coords=(
-                        position_settings.xyz_positions_shift[p_idx][2],
-                        position_settings.xyz_positions_shift[p_idx][1],
-                        position_settings.xyz_positions_shift[p_idx][0],
+                        self.position_settings.xyz_positions_shift[p_idx][2],
+                        self.position_settings.xyz_positions_shift[p_idx][1],
+                        self.position_settings.xyz_positions_shift[p_idx][0],
                     ),
                 )
             else:
                 # Save the positions at t=0
                 csv_log_filename = f"autotracker_fov_{axes['position']}.csv"
                 shift_coord_output = output_shift_path / csv_log_filename
-                prev_y = position_settings.xyz_positions_shift[p_idx][1]
-                prev_x = position_settings.xyz_positions_shift[p_idx][0]
-                if position_settings.xyz_positions_shift[p_idx][2] is not None:
-                    prev_z = position_settings.xyz_positions_shift[p_idx][2]
+                prev_y = self.position_settings.xyz_positions_shift[p_idx][1]
+                prev_x = self.position_settings.xyz_positions_shift[p_idx][0]
+                if self.position_settings.xyz_positions_shift[p_idx][2] is not None:
+                    prev_z = self.position_settings.xyz_positions_shift[p_idx][2]
                 else:
                     prev_z = None
                 self.save_shifts_to_file(

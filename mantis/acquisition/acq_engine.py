@@ -1271,19 +1271,17 @@ class MantisAcquisition(object):
                 transfer_function = None
 
             logger.info("Instantiating autotracker...")
-            tracker = Autotracker(
+            autotracker = Autotracker(
+                position_settings=self._position_settings,
+                channel_config=self.lf_acq.microscope_settings.autotracker_config,
+                z_slice_settings=self.lf_acq.slice_settings,
+                output_shift_path=self._logs_dir,
                 autotracker_settings=self.lf_acq.autotracker_settings,
                 transfer_function=transfer_function,
                 )
-            lf_image_saved_fn = partial(
-                tracker.autotracker_hook_fn,
-                'lf',
-                self.lf_acq.autotracker_settings,
-                self._position_settings,
-                self.lf_acq.microscope_settings.autotracker_config,
-                self.lf_acq.slice_settings,
-                self._logs_dir,   
-            )
+            lf_image_saved_fn = autotracker.track,
+               
+    
         else:
             logger.info('No autotracker config found for LF acquisition. Using default image saved hook')
             lf_image_saved_fn = check_lf_acq_finished
@@ -1319,19 +1317,16 @@ class MantisAcquisition(object):
 
         # TODO: implement logic for the autotracker_img_saved_hook_fn
         if self.ls_acq.microscope_settings.autotracker_config is not None:
-            tracker = Autotracker(
+            autotracker = Autotracker(
+                position_settings=self._position_settings,
+                channel_config=self.ls_acq.microscope_settings.autotracker_config,
+                z_slice_settings=self.ls_acq.slice_settings,
+                output_shift_path=self._logs_dir,
                 settings=self.ls_acq.autotracker_settings,
                 transfer_function= None,
             )
-            ls_image_saved_fn = partial(
-                tracker.autotracker_hook_fn,
-                'ls',
-                self.ls_acq.autotracker_settings,
-                self._position_settings,
-                self.ls_acq.microscope_settings,
-                self.ls_acq.slice_settings,
-                self._logs_dir,
-            )   
+            ls_image_saved_fn = autotracker.track,
+               
         else:
             logger.info('No autotracker config found for LS acquisition. Using default image saved hook')
             ls_image_saved_fn = check_ls_acq_finished
