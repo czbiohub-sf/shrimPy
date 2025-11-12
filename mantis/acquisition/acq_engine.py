@@ -1260,11 +1260,12 @@ class MantisAcquisition(object):
 
         # TODO: implement logic for the autotracker_img_saved_hook_fn
         if self.lf_acq.microscope_settings.autotracker_config is not None:
+            zyx_shape = (self.lf_acq.slice_settings.num_slices,) + tuple(self.lf_acq.microscope_settings.roi[-2:][::-1])
             phase_config = self.lf_acq.autotracker_settings.phase_config
             if phase_config is not None:
                 logger.info("Calculating transfer function...")
                 yx_shape = self.lf_acq.microscope_settings.roi[-2:][::-1]
-                phase_config['transfer_function']['zyx_shape'] =  (self.lf_acq.slice_settings.num_slices, yx_shape[0], yx_shape[1])
+                phase_config['transfer_function']['zyx_shape'] = zyx_shape
                 transfer_function = calculate_transfer_function(**phase_config['transfer_function'])
             else:
                 logger.info("No phase config found for LF acquisition.")
@@ -1272,6 +1273,8 @@ class MantisAcquisition(object):
 
             logger.info("Instantiating autotracker...")
             autotracker = Autotracker(
+                arm='lf',
+                zyx_shape=zyx_shape,
                 position_settings=self._position_settings,
                 channel_config=self.lf_acq.microscope_settings.autotracker_config,
                 z_slice_settings=self.lf_acq.slice_settings,
@@ -1317,10 +1320,12 @@ class MantisAcquisition(object):
 
         # TODO: implement logic for the autotracker_img_saved_hook_fn
         if self.ls_acq.microscope_settings.autotracker_config is not None:
+            zyx_shape = (self.ls_acq.slice_settings.num_slices,) + tuple(self.ls_acq.microscope_settings.roi[-2:][::-1])
             autotracker = Autotracker(
+                zyx_shape=zyx_shape,
+                arm='ls',
                 position_settings=self._position_settings,
                 channel_config=self.ls_acq.microscope_settings.autotracker_config,
-                z_slice_settings=self.ls_acq.slice_settings,
                 output_shift_path=self._logs_dir,
                 settings=self.ls_acq.autotracker_settings,
                 transfer_function= None,

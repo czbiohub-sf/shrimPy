@@ -332,14 +332,13 @@ class Autotracker(object):
 
     def __init__(
         self,
+        zyx_shape,
+        arm,
         position_settings,
         channel_config,
-        z_slice_settings,
         output_shift_path,
-        transfer_function: ArrayLike = None,
-        settings: AutotrackerSettings = None,
-        arm: str = None,
-        
+        settings,
+        transfer_function,
     ):
         """
         Autotracker object
@@ -355,8 +354,7 @@ class Autotracker(object):
             Absolute shift limits in um for each axis
             Dampening factor for xy shifts_zyx
         """
-        if settings is None:
-            raise ValueError("Autotracker settings are not provided")
+
         self.settings = settings 
         self.tracking_method = settings.tracking_method
         self.zyx_dampening = settings.zyx_dampening_factor   
@@ -368,8 +366,10 @@ class Autotracker(object):
         self.arm = arm
         self.position_settings = position_settings
         self.channel_config = channel_config
-        self.z_slice_settings = z_slice_settings
         self.output_shift_path = output_shift_path
+        self.zyx_shape = zyx_shape
+
+
     def estimate_shift(self, ref_img: ArrayLike, mov_img: ArrayLike, **kwargs) -> np.ndarray:
         """
         Estimates the shift between two images using the specified autofocus method.
@@ -605,8 +605,8 @@ class Autotracker(object):
 
         # Get reference to the acquisition engine and it's settings
         # TODO: This is a placeholder, the actual implementation will be different
-        z_range = self.z_slice_settings.z_range
-        num_slices = self.z_slice_settings.num_slices
+ 
+        num_slices = self.zyx_shape[0]
         tracking_interval = self.settings.tracking_interval
         tracking_channel = self.channel_config.config_name
         output_shift_path = Path(self.output_shift_path)
@@ -630,8 +630,8 @@ class Autotracker(object):
 
                 # Logic to get the volumes
                 
-                volume_ref_axes = (p_idx, 0, tracking_channel, range(len(z_range)))
-                volume_mov_axes = (p_idx, t_idx, tracking_channel, range(len(z_range)))
+                volume_ref_axes = (p_idx, 0, tracking_channel, range(num_slices))
+                volume_mov_axes = (p_idx, t_idx, tracking_channel, range(num_slices))
                 # Compute the shifts_zyx
                 logger.debug('Instantiating autotracker')
                 if globals.demo_run:
