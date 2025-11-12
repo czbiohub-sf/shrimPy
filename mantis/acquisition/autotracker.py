@@ -12,6 +12,7 @@ import gc
 import tifffile
 import importlib
 
+from mantis.acquisition.AcquisitionSettings import AutotrackerSettings
 from viscy.translation.engine import AugmentedPredictionVSUNet
 
 from scipy.fftpack import next_fast_len
@@ -75,6 +76,7 @@ def vs_inference_t2t(x: torch.Tensor, cfg: dict, gpu: bool = True) -> torch.Tens
 
     wrapper.on_predict_start()
     return wrapper.predict_sliding_windows(x)
+
 def calc_weighted_center(labeled_im):
     """calculates weighted centroid based on the area of the regions
 
@@ -330,11 +332,8 @@ class Autotracker(object):
 
     def __init__(
         self,
-        tracking_method: str,
-        scale: ArrayLike,
-        zyx_dampening_factor: ArrayLike = None,
         transfer_function: ArrayLike = None,
-        absolute_shift_limits_um: dict[str, Tuple[float, float]] = {'z': (0.5, 2), 'y': (2, 10), 'x': (2, 10)},
+        settings: AutotrackerSettings = None,
     ):
         """
         Autotracker object
@@ -350,11 +349,14 @@ class Autotracker(object):
             Absolute shift limits in um for each axis
             Dampening factor for xy shifts_zyx
         """
-        self.tracking_method = tracking_method
-        self.zyx_dampening = zyx_dampening_factor   
-        self.absolute_shift_limits_um = absolute_shift_limits_um
-        self.scale = scale
-        self.shifts_zyx = None
+        if settings is None:
+            raise ValueError("Autotracker settings are not provided")
+        self.settings = settings 
+        self.tracking_method = settings.tracking_method
+        self.zyx_dampening = settings.zyx_dampening_factor   
+        self.absolute_shift_limits_um = settings.absolute_shift_limits_um
+        self.scale = settings.scale_yx
+        self.shifts_zyx = None  
         self.transfer_function = transfer_function
         self.ref_volume = None
         
@@ -498,221 +500,219 @@ class Autotracker(object):
 # TODO: logic for handling which t_idx to grab as reference. If the volume changes
 # Drastically, we may need to grab the previous timepoint as reference
 
-
-def get_volume(dataset, axes):
-    p_idx, t_idx, autotrack_channel, z_idx = axes
-    images = []
-    logger.debug(
-        f"Getting z-stack for p:{p_idx}, t:{t_idx}, c:{autotrack_channel}, z:{z_idx}"
-    )
-    for _z in z_idx:
-        images.append(
-            dataset.read_image(
-                **{'channel': autotrack_channel, 'z': _z, 'time': t_idx, 'position': p_idx}
-            )
+    @staticmethod
+    def get_volume(dataset, axes):
+        p_idx, t_idx, autotrack_channel, z_idx = axes
+        images = []
+        logger.debug(
+            f"Getting z-stack for p:{p_idx}, t:{t_idx}, c:{autotrack_channel}, z:{z_idx}"
         )
-    return np.stack(images)
+        for _z in z_idx:
+            images.append(
+                dataset.read_image(
+                    **{'channel': autotrack_channel, 'z': _z, 'time': t_idx, 'position': p_idx}
+                )
+            )
+        return np.stack(images)
 
-def data_preprocessing_labelfree(volume_bf: np.ndarray, transfer_function:np.ndarray, autotracker_settings) -> np.ndarray:
-    """
-    Preprocesses the volume for the autotracker.
+    def data_preprocessing_labelfree(self, volume_bf: np.ndarray) -> np.ndarray:
+        """
+        Preprocesses the volume for the autotracker.
 
-    Parameters
-    ----------
-    volume_bf : np.ndarray
-        The volume to preprocess.
-    transfer_function : np.ndarray
-        The transfer function to use for the phase reconstruction.
-    autotracker_settings : AutotrackerSettings
-        The autotracker settings.
+        Parameters
+        ----------
+        volume_bf : np.ndarray
+            The volume to preprocess.
+        transfer_function : np.ndarray
+            The transfer function to use for the phase reconstruction.
+        settings : AutotrackerSettings
+            The autotracker settings.
 
-    Returns
-    -------
-    np.ndarray
-        The preprocessed volume.
-    """
-    reconstruction_pipeline = autotracker_settings.reconstruction
-    if 'phase' in reconstruction_pipeline:
-        logger.info("Reconstructing Phase...")
-        tf_tensor = tuple(tf.to(DEVICE) for tf in transfer_function)
-        t_volume_bf = torch.as_tensor(volume_bf, device=DEVICE, dtype=torch.float32)
-        t_volume_phase = apply_inverse_transfer_function(t_volume_bf, *tf_tensor, **autotracker_settings.phase_config['apply_inverse'], z_padding=autotracker_settings.phase_config['transfer_function']['z_padding'])
-        volume_phase = t_volume_phase.detach().cpu().numpy()
-        del t_volume_bf, tf_tensor
-        gc.collect(); torch.cuda.empty_cache()
-        if 'vs' in reconstruction_pipeline:
-            logger.info("Predicting VS...")
-            t_volume_vs = vs_inference_t2t(t_volume_phase.unsqueeze(0).unsqueeze(0), autotracker_settings.vs_config)
-            del t_volume_phase
-            gc.collect(); torch.cuda.empty_cache()
-
-            volume_nuclei = t_volume_vs.detach().cpu().numpy()[0, 0]
-            volume_membrane = t_volume_vs.detach().cpu().numpy()[0, 1]
-            del t_volume_vs
-            gc.collect(); torch.cuda.empty_cache()
-        else:
+        Returns
+        -------
+        np.ndarray
+            The preprocessed volume.
+        """
+        reconstruction_pipeline = self.settings.reconstruction
+        if 'phase' in reconstruction_pipeline:
+            logger.info("Reconstructing Phase...")
+            tf_tensor = tuple(tf.to(DEVICE) for tf in self.transfer_function)
+            t_volume_bf = torch.as_tensor(volume_bf, device=DEVICE, dtype=torch.float32)
+            t_volume_phase = apply_inverse_transfer_function(t_volume_bf, *tf_tensor, **self.settings.phase_config['apply_inverse'], z_padding=self.settings.phase_config['transfer_function']['z_padding'])
             volume_phase = t_volume_phase.detach().cpu().numpy()
-            del t_volume_phase
+            del t_volume_bf, tf_tensor
             gc.collect(); torch.cuda.empty_cache()
+            if 'vs' in reconstruction_pipeline:
+                logger.info("Predicting VS...")
+                t_volume_vs = vs_inference_t2t(t_volume_phase.unsqueeze(0).unsqueeze(0), self.settings.vs_config)
+                del t_volume_phase
+                gc.collect(); torch.cuda.empty_cache()
 
-    shift_estimation_channel = autotracker_settings.shift_estimation_channel
-    if shift_estimation_channel == 'phase':
-        return volume_phase
-    elif shift_estimation_channel == 'vs_nuclei':
-        return volume_nuclei
-    elif shift_estimation_channel == 'vs_membrane':
-        return volume_membrane
-    elif shift_estimation_channel == 'bf':
-        return volume_bf
-    else:
-        raise ValueError(f"Invalid channel: {shift_estimation_channel}")
+                volume_nuclei = t_volume_vs.detach().cpu().numpy()[0, 0]
+                volume_membrane = t_volume_vs.detach().cpu().numpy()[0, 1]
+                del t_volume_vs
+                gc.collect(); torch.cuda.empty_cache()
+            else:
+                volume_phase = t_volume_phase.detach().cpu().numpy()
+                del t_volume_phase
+                gc.collect(); torch.cuda.empty_cache()
+
+        shift_estimation_channel = self.settings.shift_estimation_channel
+        if shift_estimation_channel == 'phase':
+            return volume_phase
+        elif shift_estimation_channel == 'vs_nuclei':
+            return volume_nuclei
+        elif shift_estimation_channel == 'vs_membrane':
+            return volume_membrane
+        elif shift_estimation_channel == 'bf':
+            return volume_bf
+        else:
+            raise ValueError(f"Invalid channel: {shift_estimation_channel}")
 
 
-def autotracker_hook_fn(
-    arm,
-    autotracker_settings,
-    position_settings,
-    channel_config,
-    z_slice_settings,
-    output_shift_path,
-    axes,
-    dataset,
-    autotracker: Autotracker,
+    def autotracker_hook_fn(
+        self,
+        arm,
+        position_settings,
+        channel_config,
+        z_slice_settings,
+        output_shift_path,
+        axes,
+        dataset,
+    ) -> None:
+        """
+        Pycromanager hook function that is called when an image is saved.
 
-) -> None:
-    """
-    Pycromanager hook function that is called when an image is saved.
+        Parameters
+        ----------
+        axes : Position, Time, Channel, Z_slice
+        dataset: Dataset saved in disk
+        """
+        # logger.info('Autotracker hook function called for axes %s', axes)
 
-    Parameters
-    ----------
-    axes : Position, Time, Channel, Z_slice
-    dataset: Dataset saved in disk
-    """
-    # logger.info('Autotracker hook function called for axes %s', axes)
+        # TODO: handle the lf acq or ls_a
+        if arm == 'lf':
+            if axes == globals.lf_last_img_idx:
+                globals.lf_acq_finished = True
+        elif arm == 'ls':
+            if axes == globals.ls_last_img_idx:
+                globals.ls_acq_finished = True
 
-    # TODO: handle the lf acq or ls_a
-    if arm == 'lf':
-        if axes == globals.lf_last_img_idx:
-            globals.lf_acq_finished = True
-    elif arm == 'ls':
-        if axes == globals.ls_last_img_idx:
-            globals.ls_acq_finished = True
+        # Get reference to the acquisition engine and it's settings
+        # TODO: This is a placeholder, the actual implementation will be different
+        z_range = z_slice_settings.z_range
+        num_slices = z_slice_settings.num_slices
+        tracking_interval = self.settings.tracking_interval
+        tracking_channel = channel_config.config_name
+        output_shift_path = Path(output_shift_path)
+    
+        # Get axes info
+        p_label = axes['position']
+        p_idx = position_settings.position_labels.index(p_label)
+        t_idx = axes['time']
+        channel = axes['channel']
+        z_idx = axes['z']
 
-    # Get reference to the acquisition engine and it's settings
-    # TODO: This is a placeholder, the actual implementation will be different
-    z_range = z_slice_settings.z_range
-    num_slices = z_slice_settings.num_slices
-    tracking_interval = autotracker_settings.tracking_interval
-    tracking_channel = channel_config.config_name
-    output_shift_path = Path(output_shift_path)
-   
-    # Get axes info
-    p_label = axes['position']
-    p_idx = position_settings.position_labels.index(p_label)
-    t_idx = axes['time']
-    channel = axes['channel']
-    z_idx = axes['z']
+        # Get the z_max
+        if channel == tracking_channel and z_idx == (num_slices - 1):
+            # Skip the 1st timepoint
+            if t_idx >= 1:
+                if t_idx % tracking_interval != 0:
+                    logger.debug('Skipping autotracking t %d', t_idx)
+                    return
+                logger.debug("WELCOME TO THE FOCUS ZONE")
+                # logger.debug('Curr axes :P:%s, T:%d, C:%s, Z:%d', p_idx, t_idx, channel, z_idx)
 
-    # Get the z_max
-    if channel == tracking_channel and z_idx == (num_slices - 1):
-        # Skip the 1st timepoint
-        if t_idx >= 1:
-            if t_idx % tracking_interval != 0:
-                logger.debug('Skipping autotracking t %d', t_idx)
-                return
-            logger.debug("WELCOME TO THE FOCUS ZONE")
-            # logger.debug('Curr axes :P:%s, T:%d, C:%s, Z:%d', p_idx, t_idx, channel, z_idx)
+                # Logic to get the volumes
+                
+                volume_ref_axes = (p_idx, 0, tracking_channel, range(len(z_range)))
+                volume_mov_axes = (p_idx, t_idx, tracking_channel, range(len(z_range)))
+                # Compute the shifts_zyx
+                logger.debug('Instantiating autotracker')
+                if globals.demo_run:
+                    # Random shifting for demo purposes
+                    shifts_zyx = np.random.randint(-50, 50, 3)
+                    sleep(3)
+                    logger.info(
+                        'shifts_zyx (z,y,x): %f,%f,%f', shifts_zyx[0], shifts_zyx[1], shifts_zyx[2]
+                    )
+                else:
+                    if self.ref_volume is None:
+                        logger.info("Reading reference volume...")
+                        volume_ref = self.  get_volume(dataset, volume_ref_axes)
+                        self.ref_volume = self.data_preprocessing_labelfree(volume_ref)
+                        del volume_ref
+                    else:
+                        logger.info("Reference volume in memory, skipping...")
 
-            # Logic to get the volumes
-            
-            volume_ref_axes = (p_idx, 0, tracking_channel, range(len(z_range)))
-            volume_mov_axes = (p_idx, t_idx, tracking_channel, range(len(z_range)))
-            # Compute the shifts_zyx
-            logger.debug('Instantiating autotracker')
-            if globals.demo_run:
-                # Random shifting for demo purposes
-                shifts_zyx = np.random.randint(-50, 50, 3)
-                sleep(3)
+                    logger.info(f"Reading moving volume {t_idx}...")
+                    volume_mov = self.get_volume(dataset, volume_mov_axes)
+                    volume_mov = self.data_preprocessing_labelfree(volume_mov)
+
+                    # tifffile.imwrite(f"E:\\2025_07_31_test_autotracker\\volume_{t_idx}_0.tiff", volume_t0)
+                    # tifffile.imwrite(f"E:\\2025_07_31_test_autotracker\\volume_{t_idx}_1.tiff", volume_t1)
+                    
+                            
+                    # viewer = napari.Viewer()
+                    # viewer.add_image(volume_t0)
+                    # viewer.add_image(volume_t1)
+
+                    # Reference and moving volumes
+                    
+                    shifts_zyx = self.estimate_shift(self.ref_volume, volume_mov)
+                    del volume_mov
+                    #shifts_zyx = shifts_zyx.cpu().numpy()
+
+                csv_log_filename = f"autotracker_fov_{axes['position']}.csv"
+                shift_coord_output = output_shift_path / csv_log_filename
+
+                # Read the previous shifts_zyx and coords
+                prev_shifts = pd.read_csv(shift_coord_output)
+                prev_shifts = prev_shifts.iloc[-1]
+
+                # Read the previous shifts_zyx
+                prev_x = position_settings.xyz_positions_shift[p_idx][0]
+                prev_y = position_settings.xyz_positions_shift[p_idx][1]
+                prev_z = None
+                # Update Z shifts_zyx if available
+                if position_settings.xyz_positions_shift[p_idx][2] is not None:
+                    prev_z = position_settings.xyz_positions_shift[p_idx][2]
+                logger.info('Previous shifts (x, y, z): %f, %f, %f', prev_x, prev_y, prev_z)
+                # Update the event coordinates
+                position_settings.xyz_positions_shift[p_idx][0] = prev_x + shifts_zyx[-1]
+                position_settings.xyz_positions_shift[p_idx][1] = prev_y + shifts_zyx[-2]
+                # Update Z shifts_zyx if available
+                if position_settings.xyz_positions_shift[p_idx][2] is not None:
+                    position_settings.xyz_positions_shift[p_idx][2] = prev_z + shifts_zyx[-3]
                 logger.info(
-                    'shifts_zyx (z,y,x): %f,%f,%f', shifts_zyx[0], shifts_zyx[1], shifts_zyx[2]
+                    'New positions (x, y, z): %f, %f, %f', *position_settings.xyz_positions_shift[p_idx]
+                )
+                # Save the shifts_zyx
+                self.save_shifts_to_file(
+                    shift_coord_output,
+                    position_id=p_label,
+                    timepoint_id=t_idx,
+                    shifts_zyx=shifts_zyx,
+                    stage_coords=(
+                        position_settings.xyz_positions_shift[p_idx][2],
+                        position_settings.xyz_positions_shift[p_idx][1],
+                        position_settings.xyz_positions_shift[p_idx][0],
+                    ),
                 )
             else:
-                if autotracker.ref_volume is None:
-                    logger.info("Reading reference volume...")
-                    volume_ref = get_volume(dataset, volume_ref_axes)
-                    autotracker.ref_volume = data_preprocessing_labelfree(volume_ref, autotracker.transfer_function, autotracker_settings)
-                    del volume_ref
+                # Save the positions at t=0
+                csv_log_filename = f"autotracker_fov_{axes['position']}.csv"
+                shift_coord_output = output_shift_path / csv_log_filename
+                prev_y = position_settings.xyz_positions_shift[p_idx][1]
+                prev_x = position_settings.xyz_positions_shift[p_idx][0]
+                if position_settings.xyz_positions_shift[p_idx][2] is not None:
+                    prev_z = position_settings.xyz_positions_shift[p_idx][2]
                 else:
-                    logger.info("Reference volume in memory, skipping...")
-
-                logger.info(f"Reading moving volume {t_idx}...")
-                volume_mov = get_volume(dataset, volume_mov_axes)
-                volume_mov = data_preprocessing_labelfree(volume_mov, autotracker.transfer_function, autotracker_settings)
-
-                # tifffile.imwrite(f"E:\\2025_07_31_test_autotracker\\volume_{t_idx}_0.tiff", volume_t0)
-                # tifffile.imwrite(f"E:\\2025_07_31_test_autotracker\\volume_{t_idx}_1.tiff", volume_t1)
-                   
-                        
-                # viewer = napari.Viewer()
-                # viewer.add_image(volume_t0)
-                # viewer.add_image(volume_t1)
-
-                # Reference and moving volumes
-                
-                shifts_zyx = autotracker.estimate_shift(autotracker.ref_volume, volume_mov)
-                del volume_mov
-                #shifts_zyx = shifts_zyx.cpu().numpy()
-
-            csv_log_filename = f"autotracker_fov_{axes['position']}.csv"
-            shift_coord_output = output_shift_path / csv_log_filename
-
-            # Read the previous shifts_zyx and coords
-            prev_shifts = pd.read_csv(shift_coord_output)
-            prev_shifts = prev_shifts.iloc[-1]
-
-            # Read the previous shifts_zyx
-            prev_x = position_settings.xyz_positions_shift[p_idx][0]
-            prev_y = position_settings.xyz_positions_shift[p_idx][1]
-            prev_z = None
-            # Update Z shifts_zyx if available
-            if position_settings.xyz_positions_shift[p_idx][2] is not None:
-                prev_z = position_settings.xyz_positions_shift[p_idx][2]
-            logger.info('Previous shifts (x, y, z): %f, %f, %f', prev_x, prev_y, prev_z)
-            # Update the event coordinates
-            position_settings.xyz_positions_shift[p_idx][0] = prev_x + shifts_zyx[-1]
-            position_settings.xyz_positions_shift[p_idx][1] = prev_y + shifts_zyx[-2]
-            # Update Z shifts_zyx if available
-            if position_settings.xyz_positions_shift[p_idx][2] is not None:
-                position_settings.xyz_positions_shift[p_idx][2] = prev_z + shifts_zyx[-3]
-            logger.info(
-                'New positions (x, y, z): %f, %f, %f', *position_settings.xyz_positions_shift[p_idx]
-            )
-            # Save the shifts_zyx
-            autotracker.save_shifts_to_file(
-                shift_coord_output,
-                position_id=p_label,
-                timepoint_id=t_idx,
-                shifts_zyx=shifts_zyx,
-                stage_coords=(
-                    position_settings.xyz_positions_shift[p_idx][2],
-                    position_settings.xyz_positions_shift[p_idx][1],
-                    position_settings.xyz_positions_shift[p_idx][0],
-                ),
-            )
-        else:
-            # Save the positions at t=0
-            csv_log_filename = f"autotracker_fov_{axes['position']}.csv"
-            shift_coord_output = output_shift_path / csv_log_filename
-            prev_y = position_settings.xyz_positions_shift[p_idx][1]
-            prev_x = position_settings.xyz_positions_shift[p_idx][0]
-            if position_settings.xyz_positions_shift[p_idx][2] is not None:
-                prev_z = position_settings.xyz_positions_shift[p_idx][2]
-            else:
-                prev_z = None
-            autotracker.save_shifts_to_file(
-                shift_coord_output,
-                position_id=p_label,
-                timepoint_id=t_idx,
-                shifts_zyx=(0, 0, 0),
-                stage_coords=(prev_z, prev_y, prev_x),
-            )
+                    prev_z = None
+                self.save_shifts_to_file(
+                    shift_coord_output,
+                    position_id=p_label,
+                    timepoint_id=t_idx,
+                    shifts_zyx=(0, 0, 0),
+                    stage_coords=(prev_z, prev_y, prev_x),
+                )

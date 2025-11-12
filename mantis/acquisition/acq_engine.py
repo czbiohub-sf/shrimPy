@@ -1272,16 +1272,12 @@ class MantisAcquisition(object):
 
             logger.info("Instantiating autotracker...")
             tracker = Autotracker(
-                    tracking_method=self.lf_acq.autotracker_settings.tracking_method,
-                    scale= self.lf_acq.autotracker_settings.scale_yx,
-                    absolute_shift_limits_um=self.lf_acq.autotracker_settings.absolute_shift_limits_um,
-                    zyx_dampening_factor=self.lf_acq.autotracker_settings.zyx_dampening_factor,
-                    transfer_function=transfer_function,
+                autotracker_settings=self.lf_acq.autotracker_settings,
+                transfer_function=transfer_function,
                 )
             lf_image_saved_fn = partial(
-                autotracker_hook_fn,
+                tracker.autotracker_hook_fn,
                 'lf',
-                tracker,
                 self.lf_acq.autotracker_settings,
                 self._position_settings,
                 self.lf_acq.microscope_settings.autotracker_config,
@@ -1324,16 +1320,12 @@ class MantisAcquisition(object):
         # TODO: implement logic for the autotracker_img_saved_hook_fn
         if self.ls_acq.microscope_settings.autotracker_config is not None:
             tracker = Autotracker(
-                tracking_method=self.ls_acq.autotracker_settings.tracking_method,
-                scale= self.ls_acq.autotracker_settings.scale_yx,
-                shift_limit=self.ls_acq.autotracker_settings.shift_limit,
-                zyx_dampening_factor=self.ls_acq.autotracker_settings.zyx_dampening_factor,
+                settings=self.ls_acq.autotracker_settings,
                 transfer_function= None,
             )
             ls_image_saved_fn = partial(
-                autotracker_hook_fn,
+                tracker.autotracker_hook_fn,
                 'ls',
-                tracker,
                 self.ls_acq.autotracker_settings,
                 self._position_settings,
                 self.ls_acq.microscope_settings,
