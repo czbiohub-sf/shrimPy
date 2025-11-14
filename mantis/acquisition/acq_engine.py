@@ -1262,14 +1262,13 @@ class MantisAcquisition(object):
             zyx_shape = (self.lf_acq.slice_settings.num_slices,) + tuple(self.lf_acq.microscope_settings.roi[-2:][::-1])
             tracker = Autotracker(
                 settings= self.lf_acq.autotracker_settings,
-                zyx_shape = zyx_shape
+                zyx_shape = zyx_shape,
+                arm='lf',     
             )
             lf_image_saved_fn = partial(
                 tracker.track,
-                'lf',
-                self._position_settings,
-                self.lf_acq.microscope_settings.autotracker_config,
-                self.lf_acq.slice_settings,
+                self.position_settings,
+                self.lf_acq.microscope_settings.autotracker_config.config_name,
                 self._logs_dir,
             )
         else:
@@ -1307,21 +1306,18 @@ class MantisAcquisition(object):
 
         # TODO: implement logic for the autotracker_img_saved_hook_fn
         if self.ls_acq.microscope_settings.autotracker_config is not None:
-            # tracker = Autotracker(
-            #     tracking_method=self.ls_acq.autotracker_settings.tracking_method,
-            #     scale=self.ls_acq.autotracker_settings.scale_yx,
-            #     shift_limit=self.ls_acq.autotracker_settings.shift_limit,
-            #     zyx_dampening_factor=self.ls_acq.autotracker_settings.zyx_dampening_factor,
-            # )
-            # ls_image_saved_fn = partial(
-            #     tracker.track,
-            #     'ls',
-            #     self.ls_acq.autotracker_settings,
-            #     self._position_settings,
-            #     self.ls_acq.microscope_settings.autotracker_config,
-            #     self.ls_acq.slice_settings,
-            #     self._logs_dir,
-            # )
+            zyx_shape = (self.ls_acq.slice_settings.num_slices,) + tuple(self.ls_acq.microscope_settings.roi[-2:][::-1])
+            tracker = Autotracker(
+                settings= self.ls_acq.autotracker_settings,
+                zyx_shape = zyx_shape,
+                arm='ls',     
+            )
+            ls_image_saved_fn = partial(
+                tracker.track,
+                self.position_settings,
+                self.ls_acq.microscope_settings.autotracker_config.config_name,
+                self._logs_dir,
+            )
             ls_image_saved_fn = check_ls_acq_finished
         else:
             logger.info('No autotracker config found for LS acquisition. Using default image saved hook')

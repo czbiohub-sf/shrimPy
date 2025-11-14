@@ -331,6 +331,8 @@ class Autotracker(object):
         self,
         zyx_shape,
         settings,
+        arm,
+
     ):
         """
         Autotracker object
@@ -346,10 +348,8 @@ class Autotracker(object):
         """
         self.settings = settings
         self.zyx_shape = zyx_shape
-        self.tracking_method = settings.tracking_method
-        self.zyx_dampening = settings.zyx_dampening_factor   
-        self.absolute_shift_limits_um = settings.absolute_shift_limits_um
-        self.scale = settings.scale_yx
+        self.arm = arm  
+        
         self.shifts_zyx = None
         self.transfer_function = None
         self.ref_volume = None
@@ -373,27 +373,27 @@ class Autotracker(object):
             The estimated shift in scale provided by the user (typically um).
         """
 
-        autofocus_method_func = self._TRACKING_METHODS.get(self.tracking_method)
+        autofocus_method_func = self._TRACKING_METHODS.get(self.settings.tracking_method)
 
         if not autofocus_method_func:
-            raise ValueError(f'Unknown autofocus method: {self.tracking_method}')
+            raise ValueError(f'Unknown autofocus method: {self.settings.tracking_method}')
 
         shifts_zyx_pix = autofocus_method_func(ref_img=ref_img, mov_img=mov_img, **kwargs)
         
         logger.debug(f'Shifts (z,y,x) pix: {shifts_zyx_pix}')
-        logger.debug(f'Scale (um/px): {self.scale}')
-        logger.debug(f'Dampening (z,y,x) factor: {self.zyx_dampening}')
+        logger.debug(f'Scale (um/px): {self.settings.scale_yx}')
+        logger.debug(f'Dampening (z,y,x) factor: {self.settings.zyx_dampening_factor}')
         
         # shifts_zyx in px to shifts_zyx in um
-        shifts_zyx_um = np.array(shifts_zyx_pix) * self.scale
+        shifts_zyx_um = np.array(shifts_zyx_pix) * self.settings.scale_yx
 
         # Limit the shifts_zyx, preserving the sign of the shift
         self.shifts_zyx = self.limit_shifts_zyx(shifts_zyx_um)
         if any(self.shifts_zyx != shifts_zyx_um):
             logger.debug('Shifts (z,y,x) limited to %s', self.shifts_zyx)
 
-        if self.zyx_dampening is not None:
-            self.shifts_zyx = self.shifts_zyx * self.zyx_dampening
+        if self.settings.zyx_dampening_factor is not None:
+            self.shifts_zyx = self.shifts_zyx * self.settings.zyx_dampening_factor
         logger.info(f'Shifts (z,y,x) dampened: {self.shifts_zyx}')
 
         return self.shifts_zyx
@@ -475,7 +475,7 @@ class Autotracker(object):
        
         # Clamp and threshold shifts automatically
         for i, axis in enumerate(axes):
-            min_limit, max_limit = self.absolute_shift_limits_um[axis]
+            min_limit, max_limit = self.settings.absolute_shift_limits_um[axis]
             logger.debug(f"{axis} Limit: [{min_limit}, {max_limit}]")
             # Zero out small shifts (below min physical stage threshold)
             if abs(shifts_zyx[i]) < min_limit:
@@ -489,16 +489,76 @@ class Autotracker(object):
 
         return shifts_zyx
     
+    def data_preprocessing_labelfree(self, volume_bf: np.ndarray) -> np.ndarray:
+        """
+        Preprocesses the volume for the autotracker.
+
+        Parameters
+        ----------
+        volume_bf : np.ndarray
+            The volume to preprocess.
+        transfer_function : np.ndarray
+            The transfer function to use for the phase reconstruction.
+        settings : AutotrackerSettings
+            The autotracker settings.
+
+        Returns
+        -------
+        np.ndarray
+            The preprocessed volume.
+        """
+        reconstruction_pipeline = self.settings.reconstruction
+        if 'phase' in reconstruction_pipeline:
+            if self.transfer_function is None:
+                logger.info("Calculating transfer function")
+                self.settings.phase_config['transfer_function']['zyx_shape'] = self.zyx_shape
+                self.transfer_function = calculate_transfer_function(**self.settings.phase_config['transfer_function'])
+            else:
+                logger.info("Transfer function in memory, skipping")
+            
+            logger.info("Reconstructing Phase")
+            tf_tensor = tuple(tf.to(DEVICE) for tf in self.transfer_function)
+            t_volume_bf = torch.as_tensor(volume_bf, device=DEVICE, dtype=torch.float32)
+            t_volume_phase = apply_inverse_transfer_function(t_volume_bf, *tf_tensor, **self.settings.phase_config['apply_inverse'], z_padding=self.settings.phase_config['transfer_function']['z_padding'])
+            volume_phase = t_volume_phase.detach().cpu().numpy()
+            del t_volume_bf, tf_tensor
+            gc.collect(); torch.cuda.empty_cache()
+
+            if 'vs' in reconstruction_pipeline:
+                logger.info("Predicting VS")
+                t_volume_vs = vs_inference_t2t(t_volume_phase.unsqueeze(0).unsqueeze(0), self.settings.vs_config)
+                del t_volume_phase
+                gc.collect(); torch.cuda.empty_cache()
+
+                volume_nuclei = t_volume_vs.detach().cpu().numpy()[0, 0]
+                volume_membrane = t_volume_vs.detach().cpu().numpy()[0, 1]
+                del t_volume_vs
+                gc.collect(); torch.cuda.empty_cache()
+                
+            else:
+                volume_phase = t_volume_phase.detach().cpu().numpy()
+                del t_volume_phase
+                gc.collect(); torch.cuda.empty_cache()
+
+        shift_estimation_channel = self.settings.shift_estimation_channel
+        if shift_estimation_channel == 'phase':
+            return volume_phase
+        elif shift_estimation_channel == 'vs_nuclei':
+            return volume_nuclei
+        elif shift_estimation_channel == 'vs_membrane':
+            return volume_membrane
+        elif shift_estimation_channel == 'bf':
+            return volume_bf
+        else:
+            raise ValueError(f"Invalid channel: {shift_estimation_channel}")
+        
     def track(
         self, 
-        arm,
         position_settings,
-        channel_config,
-        z_slice_settings,
+        tracking_channel,
         output_shift_path,
         axes,
         dataset,
-
     ) -> None:
         """
         Pycromanager hook function that is called when an image is saved.
@@ -511,10 +571,10 @@ class Autotracker(object):
         # logger.info('Autotracker hook function called for axes %s', axes)
 
         # TODO: handle the lf acq or ls_a
-        if arm == 'lf':
+        if self.arm == 'lf':
             if axes == globals.lf_last_img_idx:
                 globals.lf_acq_finished = True
-        elif arm == 'ls':
+        elif self.arm == 'ls':
             if axes == globals.ls_last_img_idx:
                 globals.ls_acq_finished = True
 
@@ -522,9 +582,6 @@ class Autotracker(object):
         # TODO: This is a placeholder, the actual implementation will be different
         num_slices = self.zyx_shape[0]
         tracking_interval = self.settings.tracking_interval
-        tracking_channel = channel_config.config_name
-        phase_config = self.settings.phase_config
-        vs_config = self.settings.vs_config
         output_shift_path = Path(output_shift_path)
     
         # Get axes info
@@ -546,8 +603,8 @@ class Autotracker(object):
                 # logger.debug('Curr axes :P:%s, T:%d, C:%s, Z:%d', p_idx, t_idx, channel, z_idx)
 
                 # Logic to get the volumes
-                volume_t0_axes = (p_idx, 0, tracking_channel, range(num_slices))
-                volume_t1_axes = (p_idx, t_idx, tracking_channel, range(num_slices))
+                volume_ref_axes = (p_idx, 0, tracking_channel, range(num_slices))
+                volume_mov_axes = (p_idx, t_idx, tracking_channel, range(num_slices))
                 # Compute the shifts_zyx
                 logger.debug('Instantiating autotracker')
                 if globals.demo_run:
@@ -558,51 +615,20 @@ class Autotracker(object):
                         'shifts_zyx (z,y,x): %f,%f,%f', shifts_zyx[0], shifts_zyx[1], shifts_zyx[2]
                     )
                 else:
-                    volume_t0 = get_volume(dataset, volume_t0_axes)
-                    volume_t1 = get_volume(dataset, volume_t1_axes)
+                    if self.ref_volume is None:
+                        logger.info("Reading reference volume")
+                        volume_ref = get_volume(dataset, volume_ref_axes)
+                        self.ref_volume = self.data_preprocessing_labelfree(volume_ref)
+                        del volume_ref
+                    else:
+                        logger.info("Reference volume in memory, skipping")
 
-                    if phase_config is not None:
-                        logger.info("Predicting Phase...")
-                        if self.transfer_function == None:
-                            phase_config['transfer_function']['zyx_shape'] =  self.zyx_shape
-                            self.transfer_function = calculate_transfer_function(**phase_config['transfer_function'])
+                    logger.info(f"Reading moving volume {t_idx}")
+                    volume_mov = get_volume(dataset, volume_mov_axes)
+                    volume_mov = self.data_preprocessing_labelfree(volume_mov)
 
-                        tf_tensor = tuple(tf.to(DEVICE) for tf in self.transfer_function)
-                        
-                        t_volume_t0_bf = torch.as_tensor(volume_t0, device=DEVICE, dtype=torch.float32)
-                        t_volume_t0_phase = apply_inverse_transfer_function(t_volume_t0_bf, *tf_tensor, **phase_config['apply_inverse'], z_padding=phase_config['transfer_function']['z_padding'])
-                        del t_volume_t0_bf
-                        gc.collect(); torch.cuda.empty_cache()
-                        
-                        t_volume_t1_bf = torch.as_tensor(volume_t1, device=DEVICE, dtype=torch.float32)
-                        t_volume_t1_phase = apply_inverse_transfer_function(t_volume_t1_bf, *tf_tensor, **phase_config['apply_inverse'], z_padding=phase_config['transfer_function']['z_padding'])
-                        del t_volume_t1_bf, tf_tensor
-                        gc.collect(); torch.cuda.empty_cache()
-
-                        #tifffile.imwrite(f"E:\\2025_08_22_76hpf_cldnb-she-myo6b\\volume_{t_idx}_0.tiff", volume_t0)
-                        #tifffile.imwrite(f"E:\\2025_08_22_76hpf_cldnb-she-myo6b\\volume_{t_idx}_1.tiff", volume_t1)
-                        if vs_config is not None:
-                            logger.info("Predicting VS...")
-                            
-                            pred_t0_vs = vs_inference_t2t(t_volume_t0_phase.unsqueeze(0).unsqueeze(0), vs_config)
-                            pred_t1_vs = vs_inference_t2t(t_volume_t1_phase.unsqueeze(0).unsqueeze(0), vs_config)
-                            del t_volume_t0_phase, t_volume_t1_phase
-                            gc.collect(); torch.cuda.empty_cache()
-                            
-                            volume_t0 = pred_t0_vs.detach().cpu().numpy()[0, 0]
-                            volume_t1 = pred_t1_vs.detach().cpu().numpy()[0, 0]
-                            
-                            del pred_t0_vs, pred_t1_vs
-                            gc.collect(); torch.cuda.empty_cache()
-                            
-                        else:  
-                            volume_t0 = t_volume_t0_phase.detach().cpu().numpy()
-                            volume_t1 = t_volume_t1_phase.detach().cpu().numpy()
-                            del t_volume_t0_phase, t_volume_t1_phase
-                            gc.collect(); torch.cuda.empty_cache()
-
-                        # tifffile.imwrite(f"E:\\2025_07_31_test_autotracker\\volume_{t_idx}_0.tiff", volume_t0)
-                        # tifffile.imwrite(f"E:\\2025_07_31_test_autotracker\\volume_{t_idx}_1.tiff", volume_t1)
+                    # tifffile.imwrite(f"E:\\2025_07_31_test_autotracker\\volume_{t_idx}_0.tiff", volume_t0)
+                    # tifffile.imwrite(f"E:\\2025_07_31_test_autotracker\\volume_{t_idx}_1.tiff", volume_t1)
                     
                             
                     # viewer = napari.Viewer()
@@ -611,10 +637,8 @@ class Autotracker(object):
 
                     # Reference and moving volumes
                     
-                    shifts_zyx = self.estimate_shift(volume_t0, volume_t1)
-
-                    del volume_t0, volume_t1
-                    #shifts_zyx = shifts_zyx.cpu().numpy()
+                    shifts_zyx = self.estimate_shift(self.ref_volume, volume_mov)
+                    del volume_mov
 
                 csv_log_filename = f"autotracker_fov_{axes['position']}.csv"
                 shift_coord_output = output_shift_path / csv_log_filename
