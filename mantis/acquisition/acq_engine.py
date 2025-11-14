@@ -1263,7 +1263,7 @@ class MantisAcquisition(object):
             tracker = Autotracker(
                 tracking_method=self.lf_acq.autotracker_settings.tracking_method,
                 scale=self.lf_acq.autotracker_settings.scale_yx,
-                shift_limit=self.lf_acq.autotracker_settings.shift_limit,
+                absolute_shift_limits_um=self.lf_acq.autotracker_settings.absolute_shift_limits_um,
                 zyx_dampening_factor=self.lf_acq.autotracker_settings.zyx_dampening_factor,
                 zyx_shape = zyx_shape
             )

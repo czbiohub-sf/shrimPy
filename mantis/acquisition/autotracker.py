@@ -331,7 +331,7 @@ class Autotracker(object):
         self,
         zyx_shape,
         tracking_method: str,
-        shift_limit: Tuple[float, float, float],
+        absolute_shift_limits_um,
         scale: ArrayLike,
         zyx_dampening_factor: ArrayLike = None,
     ):
@@ -350,7 +350,7 @@ class Autotracker(object):
         self.zyx_shape = zyx_shape
         self.tracking_method = tracking_method
         self.zyx_dampening = zyx_dampening_factor   
-        self.shift_limit = shift_limit
+        self.absolute_shift_limits_um = absolute_shift_limits_um
         self.scale = scale
         self.shifts_zyx = None
         self.transfer_function = None
@@ -381,18 +381,22 @@ class Autotracker(object):
             raise ValueError(f'Unknown autofocus method: {self.tracking_method}')
 
         shifts_zyx_pix = autofocus_method_func(ref_img=ref_img, mov_img=mov_img, **kwargs)
-
+        
+        logger.debug(f'Shifts (z,y,x) pix: {shifts_zyx_pix}')
+        logger.debug(f'Scale (um/px): {self.scale}')
+        logger.debug(f'Dampening (z,y,x) factor: {self.zyx_dampening}')
+        
         # shifts_zyx in px to shifts_zyx in um
         shifts_zyx_um = np.array(shifts_zyx_pix) * self.scale
 
         # Limit the shifts_zyx, preserving the sign of the shift
-        self.shifts_zyx = np.sign(shifts_zyx_um) * np.minimum(np.abs(shifts_zyx_um), self.shift_limit)
+        self.shifts_zyx = self.limit_shifts_zyx(shifts_zyx_um)
         if any(self.shifts_zyx != shifts_zyx_um):
-            logger.debug('Shifts_zyx limited to %s', self.shifts_zyx)
+            logger.debug('Shifts (z,y,x) limited to %s', self.shifts_zyx)
 
         if self.zyx_dampening is not None:
             self.shifts_zyx = self.shifts_zyx * self.zyx_dampening
-        logger.info(f'shifts_zyx (z,y,x): {self.shifts_zyx}')
+        logger.info(f'Shifts (z,y,x) dampened: {self.shifts_zyx}')
 
         return self.shifts_zyx
 
@@ -449,8 +453,8 @@ class Autotracker(object):
             df.to_csv(output_path, mode='a', header=False, index=False)
 
     def limit_shifts_zyx(
-        self, shifts_zyx: Tuple[int, int, int], limits: Tuple[int, int, int] = (5, 5, 5)
-    ) -> Tuple[int, int, int]:
+        self, shifts_zyx: np.ndarray,
+    ) -> np.ndarray:
         """
         Limits the shifts_zyx to the specified limits.
 
@@ -466,10 +470,26 @@ class Autotracker(object):
         Tuple[int, int, int]
             The limited shifts_zyx.
         """
-        shifts_zyx = np.array(shifts_zyx)
-        limits = np.array(limits)
-        shifts_zyx = np.where(np.abs(shifts_zyx) > limits, 0, shifts_zyx)
-        return tuple(shifts_zyx)
+        shifts_zyx = np.array(shifts_zyx, dtype=float)
+        
+        # Map axis order (Z,Y,X) to indices
+        axes = ["z", "y", "x"]
+       
+        # Clamp and threshold shifts automatically
+        for i, axis in enumerate(axes):
+            min_limit, max_limit = self.absolute_shift_limits_um[axis]
+            logger.debug(f"{axis} Limit: [{min_limit}, {max_limit}]")
+            # Zero out small shifts (below min physical stage threshold)
+            if abs(shifts_zyx[i]) < min_limit:
+                logger.debug(f'Shifts ({axis}) = {shifts_zyx[i]:.3f} is below the min limit {min_limit}, setting to 0')
+                shifts_zyx[i] = 0
+                
+            # Clip large shifts (above max threshold)
+            elif abs(shifts_zyx[i]) > max_limit:
+                logger.debug(f'Shifts ({axis}) = {shifts_zyx[i]:.3f} is above the max limit {max_limit}, setting to {np.sign(shifts_zyx[i]) * max_limit:.3f}')
+                shifts_zyx[i] = np.sign(shifts_zyx[i]) * max_limit
+
+        return shifts_zyx
     
     def track(
         self, 
@@ -596,30 +616,6 @@ class Autotracker(object):
                     # Reference and moving volumes
                     
                     shifts_zyx = self.estimate_shift(volume_t0, volume_t1)
-
-                    ### HARDCODED shifting
-                    if abs(shifts_zyx[0]) < 0.5:
-                        shifts_zyx[0] = 0
-                    if abs(shifts_zyx[1]) < 2:
-                        shifts_zyx[1] = 0
-                    if abs(shifts_zyx[2]) < 2:
-                        shifts_zyx[2] = 0
-
-                    if abs(shifts_zyx[0]) > 2:
-                        if shifts_zyx[0] > 0:
-                            shifts_zyx[0] = 2
-                        else:
-                            shifts_zyx[0] = -2
-                    if abs(shifts_zyx[1]) > 10:
-                        if shifts_zyx[1] > 0:
-                            shifts_zyx[1] = 10
-                        else:
-                            shifts_zyx[1] = -10
-                    if abs(shifts_zyx[2]) > 10:
-                        if shifts_zyx[2] > 0:
-                            shifts_zyx[2] = 10
-                        else:
-                            shifts_zyx[2] = -10
 
                     del volume_t0, volume_t1
                     #shifts_zyx = shifts_zyx.cpu().numpy()
