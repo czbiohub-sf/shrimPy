@@ -1261,16 +1261,12 @@ class MantisAcquisition(object):
 
             zyx_shape = (self.lf_acq.slice_settings.num_slices,) + tuple(self.lf_acq.microscope_settings.roi[-2:][::-1])
             tracker = Autotracker(
-                tracking_method=self.lf_acq.autotracker_settings.tracking_method,
-                scale=self.lf_acq.autotracker_settings.scale_yx,
-                absolute_shift_limits_um=self.lf_acq.autotracker_settings.absolute_shift_limits_um,
-                zyx_dampening_factor=self.lf_acq.autotracker_settings.zyx_dampening_factor,
+                settings= self.lf_acq.autotracker_settings,
                 zyx_shape = zyx_shape
             )
             lf_image_saved_fn = partial(
                 tracker.track,
                 'lf',
-                self.lf_acq.autotracker_settings,
                 self._position_settings,
                 self.lf_acq.microscope_settings.autotracker_config,
                 self.lf_acq.slice_settings,

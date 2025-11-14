@@ -330,10 +330,7 @@ class Autotracker(object):
     def __init__(
         self,
         zyx_shape,
-        tracking_method: str,
-        absolute_shift_limits_um,
-        scale: ArrayLike,
-        zyx_dampening_factor: ArrayLike = None,
+        settings,
     ):
         """
         Autotracker object
@@ -347,11 +344,12 @@ class Autotracker(object):
         xy_dampening : tuple[int]
             Dampening factor for xy shifts_zyx
         """
+        self.settings = settings
         self.zyx_shape = zyx_shape
-        self.tracking_method = tracking_method
-        self.zyx_dampening = zyx_dampening_factor   
-        self.absolute_shift_limits_um = absolute_shift_limits_um
-        self.scale = scale
+        self.tracking_method = settings.tracking_method
+        self.zyx_dampening = settings.zyx_dampening_factor   
+        self.absolute_shift_limits_um = settings.absolute_shift_limits_um
+        self.scale = settings.scale_yx
         self.shifts_zyx = None
         self.transfer_function = None
         self.ref_volume = None
@@ -494,7 +492,6 @@ class Autotracker(object):
     def track(
         self, 
         arm,
-        autotracker_settings,
         position_settings,
         channel_config,
         z_slice_settings,
@@ -523,12 +520,11 @@ class Autotracker(object):
 
         # Get reference to the acquisition engine and it's settings
         # TODO: This is a placeholder, the actual implementation will be different
-        z_range = z_slice_settings.z_range
-        num_slices = z_slice_settings.num_slices
-        tracking_interval = autotracker_settings.tracking_interval
+        num_slices = self.zyx_shape[0]
+        tracking_interval = self.settings.tracking_interval
         tracking_channel = channel_config.config_name
-        phase_config = autotracker_settings.phase_config
-        vs_config = autotracker_settings.vs_config
+        phase_config = self.settings.phase_config
+        vs_config = self.settings.vs_config
         output_shift_path = Path(output_shift_path)
     
         # Get axes info
@@ -550,8 +546,8 @@ class Autotracker(object):
                 # logger.debug('Curr axes :P:%s, T:%d, C:%s, Z:%d', p_idx, t_idx, channel, z_idx)
 
                 # Logic to get the volumes
-                volume_t0_axes = (p_idx, 0, tracking_channel, range(len(z_range)))
-                volume_t1_axes = (p_idx, t_idx, tracking_channel, range(len(z_range)))
+                volume_t0_axes = (p_idx, 0, tracking_channel, range(num_slices))
+                volume_t1_axes = (p_idx, t_idx, tracking_channel, range(num_slices))
                 # Compute the shifts_zyx
                 logger.debug('Instantiating autotracker')
                 if globals.demo_run:
