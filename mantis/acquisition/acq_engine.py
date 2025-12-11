@@ -245,7 +245,7 @@ class BaseChannelSliceAcquisition(object):
         )
         self._zarr_settings = settings
 
-    def setup(self, output_path: Union[str, os.PathLike] = None):
+    def setup(self):
         """
         Apply acquisition settings as specified by the class properties
         """
@@ -302,9 +302,9 @@ class BaseChannelSliceAcquisition(object):
                         settings.property_value,
                     )
 
-        self.initialize_zarr_store(output_path)
+        # Zarr store will be initialized by MantisAcquisition after position_settings are updated
 
-    def initialize_zarr_store(self, output_path: Union[str, os.PathLike] = None):
+    def initialize_zarr_store(self, output_path: Union[str, os.PathLike] = None, position_settings: PositionSettings = None):
         if not self.enabled or output_path is None:
             return
 
@@ -365,23 +365,27 @@ class BaseChannelSliceAcquisition(object):
         array_settings = ArraySettings(
             dimensions=dimensions,
             data_type=self.zarr_settings.get_data_type_enum(),
+            compression=self.zarr_settings.get_compression_settings(),
         )
 
         # Set store path in zarr_settings if not already set
         if self.zarr_settings.store_path is None:
-            self.zarr_settings.store_path = str(output_path)
+            zarr_path = str(output_path)
+            if not zarr_path.endswith('.zarr'):
+                zarr_path += '.zarr'
+            self.zarr_settings.store_path = zarr_path
 
         # Create stream settings with the array
         if self.zarr_settings.use_hcs_layout:
             # Create HCS layout with plate and wells
             plate = Plate(
-                name=self.zarr_settings.plate_name,
-                description=self.zarr_settings.plate_description or "",
+                path=self.zarr_settings.plate_name,
+                #description=self.zarr_settings.plate_description or "",
             )
 
             # Create wells from position settings
             wells = []
-            for well_id in set(self.position_settings.well_ids):
+            for well_id in set(position_settings.well_ids if position_settings else []):
                 well = Well(
                     name=well_id,
                     row=well_id[0] if len(well_id) > 0 else "0",  # Extract row letter
@@ -393,16 +397,14 @@ class BaseChannelSliceAcquisition(object):
             stream_settings = StreamSettings(
                 store_path=self.zarr_settings.store_path,
                 arrays=[array_settings],
-                multiscale=self.zarr_settings.multiscale,
                 version=self.zarr_settings.get_zarr_version_enum(),
                 max_threads=self.zarr_settings.max_threads,
-                plate=plate,
+                hcs_plates=[plate],
             )
         else:
             stream_settings = StreamSettings(
                 store_path=self.zarr_settings.store_path,
                 arrays=[array_settings],
-                multiscale=self.zarr_settings.multiscale,
                 version=self.zarr_settings.get_zarr_version_enum(),
                 max_threads=self.zarr_settings.max_threads,
             )
@@ -911,7 +913,7 @@ class MantisAcquisition(object):
                 config_group = self.ls_acq.channel_settings.channel_group
                 config = self.ls_acq.mmc.getConfigData(config_group, config_name)
                 ts2_ttl_state = int(
-                    config.get_setting('TS2_TTL1-8', 'State').get_property_value()
+                    config.getSetting('TS2_TTL1-8', 'State').getPropertyValue()
                 )
                 if ts2_ttl_state == 32:
                     # State 32 corresponds to illumination with 488 laser
@@ -1384,10 +1386,10 @@ class MantisAcquisition(object):
         logger.info('Setting up acquisition')
 
         logger.debug('Setting up label-free acquisition')
-        self.lf_acq.setup(output_path=f'{self._acq_dir}/{self._acq_name}_{LF_ACQ_LABEL}')
+        self.lf_acq.setup()
 
         logger.debug('Setting up light-sheet acquisition')
-        self.ls_acq.setup(output_path=f'{self._acq_dir}/{self._acq_name}_{LS_ACQ_LABEL}')
+        self.ls_acq.setup()
 
         logger.debug('Setting up DAQ')
         self.setup_daq()
@@ -1397,6 +1399,12 @@ class MantisAcquisition(object):
 
         logger.debug('Updating position settings')
         self.update_position_settings()
+
+        logger.debug('Initializing zarr stores')
+        if self.lf_acq.enabled:
+            self.lf_acq.initialize_zarr_store(f'{self._acq_dir}/{self._acq_name}_{LF_ACQ_LABEL}', self.position_settings)
+        if self.ls_acq.enabled:
+            self.ls_acq.initialize_zarr_store(f'{self._acq_dir}/{self._acq_name}_{LS_ACQ_LABEL}', self.position_settings)
 
         logger.debug('Setting up autoexposure')
         self.setup_autoexposure()
