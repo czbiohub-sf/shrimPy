@@ -22,19 +22,20 @@ def _create_acquisition_directory(root_dir: Path, acq_name: str, idx=1) -> Path:
 USE_HW_SEQUENCING = False
 DEBUG = False
 PIEZO_STEP_TIME_S = 0.05
+NUM_RETRY = 3
 mmc = Core()
 
 acquisition_directory = Path(r'G:\OPS')
-acquisition_name = 'OPS0083'
-start_time = '2025-09-02 04:00:00'
+acquisition_name = 'OPS0111'
+start_time = '2025-12-12 05:15:00'
 # start_time = 'now'
 well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
 min_fov_distance_from_well_edge = 800  # in um
 #TODO:uncomment this after this acquisition -EH
 well_centers = {
-    'A1': (430, 6, 7802),
-    'A2': (39770, 6, 7896),
-    'A3': (79110, 6, 8065),
+    'A1': (1413, 50, 6405),
+    'A2': (40753, 50, 6412),
+    'A3': (80093, 50, 6496),
 }  # (x, y, z) in um
 
 phenotyping_magnification = 20
@@ -45,11 +46,13 @@ image_size = (2048, 2048)
 pixel_size = 6.5  # in um
 
 phenotyping_channel_group = 'Channels'
+# phenotyping_channel = '5-MultiCam_GFP_Cy5_BF'
 # phenotyping_channel = '5-MultiCam_GFP_mCherry_BF'
-# phenotyping_channel = '4-MultiCam_GFP_BF'
+phenotyping_channel = '4-MultiCam_GFP_BF'
 # phenotyping_channel = '4-MultiCam_CL488_BF'
 # phenotyping_channel = '4-MultiCam_mCherry_BF'
-phenotyping_channel = '1-Zyla_BF'
+# phenotyping_channel = '4-MultiCam_Cy5_BF'
+# phenotyping_channel = '1-Zyla_BF'
 tracking_channel_group = 'Channels'
 tracking_channel = '1-Zyla_BF'
 
@@ -99,16 +102,25 @@ def change_magnification_phenotyping():
     if DEBUG:
         mmc.set_config('Objective', '20X')
     else:
+        ap_stop_position = '24'
         if USE_HW_SEQUENCING:
             mmc.set_property('Core', 'Focus', 'TS_PiezoZ')
         else:
             mmc.set_property('Core', 'Focus', 'TS_PiezoZ')
             # mmc.set_property('Core', 'Focus', 'PiezoZ')
         mmc.set_property('ObjectiveTurret', 'Label', '3-20x'); time.sleep(5)
-        mmc.set_property('TL-ApertureDiaphragm', 'Position', '24')
+        mmc.set_property('TL-ApertureDiaphragm', 'Position', ap_stop_position); time.sleep(1)
         # turn AFC back on
         mmc.set_property('Adaptive Focus Control', 'DichroicMirrorIn', '1'); time.sleep(5)
-        
+        # DEBUG, check that AP is set correctly and retry if not
+        for _ in range(NUM_RETRY):
+            _val = mmc.get_property('TL-ApertureDiaphragm', 'Position')
+            if _val != ap_stop_position:
+                logger.warning('Aperture stop was not successfully set, retrying.')
+                mmc.set_property('TL-ApertureDiaphragm', 'Position', ap_stop_position); time.sleep(1)
+            else:
+                logger.debug('Aperture stop is successfully set.')
+                break
 
 
 def change_magnification_tracking():
@@ -118,9 +130,21 @@ def change_magnification_tracking():
     if DEBUG:
         mmc.set_config('Objective', '10X')
     else:
+        ap_stop_position = '4'
         mmc.set_property('Core', 'Focus', 'FocusDrive')
         mmc.set_property('ObjectiveTurret', 'Label', '1-5x'); time.sleep(5)
-        mmc.set_property('TL-ApertureDiaphragm', 'Position', '4')
+        mmc.set_property('TL-ApertureDiaphragm', 'Position', ap_stop_position); time.sleep(1)
+        # DEBUG, set it twice for good measure
+        mmc.set_property('TL-ApertureDiaphragm', 'Position', ap_stop_position); time.sleep(1)
+        # DEBUG, check that AP is set correctly and retry if not
+        for _ in range(NUM_RETRY):
+            _val = mmc.get_property('TL-ApertureDiaphragm', 'Position')
+            if _val != ap_stop_position:
+                logger.warning('Aperture stop was not successfully set, retrying.')
+                mmc.set_property('TL-ApertureDiaphragm', 'Position', ap_stop_position); time.sleep(1)
+            else:
+                logger.debug('Aperture stop is successfully set.')
+                break
 
 
 def setup_acquisition():
