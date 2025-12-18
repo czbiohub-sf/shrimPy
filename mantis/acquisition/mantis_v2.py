@@ -2,15 +2,14 @@ from __future__ import annotations
 
 from useq import MDASequence
 
-from pymmcore_plus import CMMCorePlus
+from pymmcore_plus.experimental.unicore import UniMMCore
 from pymmcore_plus.mda import mda_listeners_connected
 from pymmcore_plus.mda.handlers import OMETiffWriter, OMEZarrWriter
-import time
 
 mmconfig_file = "C:\\Users\\Cameron\\justin\\shrimPy\\CompMicro_MMConfigs\\Dev_Computer\\mantis2-demo.cfg"
 mda_sequence_file = "C:\\Users\\Cameron\\justin\\shrimPy\\examples\\acquisition_settings\\example_mda_sequence.yaml"
 
-core = CMMCorePlus.instance()
+core = UniMMCore()
 core.loadSystemConfiguration(mmconfig_file)
 #core.setPixelSizeConfig("Res40x")
 
