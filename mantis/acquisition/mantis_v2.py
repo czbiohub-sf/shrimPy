@@ -21,24 +21,42 @@ class MantisEngine(MDAEngine):
     """
     
     def setup_sequence(self, sequence: MDASequence) -> SummaryMetaV1 | None:
-        """Setup mantis-specific hardware before the sequence starts."""
+        """Setup mantis-specific hardware before the sequence starts.
+        
+        Reads mantis-specific settings from sequence.metadata['mantis'] if present,
+        otherwise uses default values.
+        """
         # Call parent setup first
         summary = super().setup_sequence(sequence)
         
-        # Mantis-specific hardware setup
+        # Extract mantis settings from metadata
+        mantis_meta = sequence.metadata.get('mantis', {}) if sequence.metadata else {}
+        
         core = self.mmcore
         
-        # Set the ROI for label-free acquisition
-        core.setROI(0, 512, 2048, 256)
+        # Apply ROI settings
+        if roi := mantis_meta.get('roi'):
+            core.setROI(*roi)
+        else:
+            # Default ROI for label-free acquisition
+            core.setROI(0, 512, 2048, 256)
         
-        # Enable TriggerScope sequencing
-        core.setProperty("TS_DAC01", "Sequence", "On")
+        # Apply TriggerScope settings
+        if ts := mantis_meta.get('trigger_scope'):
+            if dac := ts.get('dac_sequencing'):
+                core.setProperty(dac, "Sequence", "On")
+            if ttl := ts.get('ttl_blanking'):
+                core.setProperty(ttl, "Blanking", "On")
+        else:
+            # Default TriggerScope settings
+            core.setProperty("TS_DAC01", "Sequence", "On")
+            core.setProperty("TS_TTL1-8", "Blanking", "On")
         
-        # Set the focus device to the Axial Piezo (AP Galvo)
-        core.setProperty("Core", "Focus", "AP Galvo")
+        # Set focus device
+        focus_device = mantis_meta.get('focus_device', 'AP Galvo')
+        core.setProperty("Core", "Focus", focus_device)
         
-        # Enable TTL blanking
-        core.setProperty("TS_TTL1-8", "Blanking", "On")
+        core.events.XYStagePositionChanged.connect(self.on_xy_stage_moved)
         
         return summary
     
@@ -51,20 +69,63 @@ class MantisEngine(MDAEngine):
         
         # Custom post-setup logic could go here
 
+    def on_xy_stage_moved(self, x: float, y: float) -> None:
+        """Handle XY stage movement events."""
+        print(f"XY Stage moved to X: {x}, Y: {y}")
+
+
+def initialize_mantis_core(config_path: str | None = None) -> UniMMCore:
+    """Initialize and configure the UniMMCore instance for Mantis.
+    
+    Parameters
+    ----------
+    config_path : str | None
+        Path to the Micro-Manager configuration file. If None, uses default demo config.
+    
+    Returns
+    -------
+    UniMMCore
+        Configured core instance ready for use.
+    """
+    core = UniMMCore()
+    
+    if config_path is None:
+        config_path = "C:\\Users\\Cameron\\justin\\shrimPy\\CompMicro_MMConfigs\\Dev_Computer\\mantis2-demo.cfg"
+    
+    core.loadSystemConfiguration(config_path)
+    # core.setPixelSizeConfig("Res40x")  # Uncomment if needed
+    
+    return core
+
+
+def create_mantis_engine(core: UniMMCore, use_hardware_sequencing: bool = True) -> MantisEngine:
+    """Create and register a MantisEngine with the core.
+    
+    Parameters
+    ----------
+    core : UniMMCore
+        The core instance to attach the engine to.
+    use_hardware_sequencing : bool
+        Whether to enable hardware sequencing (default: True).
+    
+    Returns
+    -------
+    MantisEngine
+        The created and registered engine instance.
+    """
+    engine = MantisEngine(core, use_hardware_sequencing=use_hardware_sequencing)
+    core.mda.set_engine(engine)
+    return engine
+
 
 # Main execution code
 if __name__ == "__main__":
     mmconfig_file = "C:\\Users\\Cameron\\justin\\shrimPy\\CompMicro_MMConfigs\\Dev_Computer\\mantis2-demo.cfg"
     mda_sequence_file = "C:\\Users\\Cameron\\justin\\shrimPy\\examples\\acquisition_settings\\example_mda_sequence.yaml"
 
-    # Create and configure core
-    core = UniMMCore()
-    core.loadSystemConfiguration(mmconfig_file)
-    # core.setPixelSizeConfig("Res40x")
-
-    # Create and register the custom Mantis engine
-    mantis_engine = MantisEngine(core)
-    core.mda.set_engine(mantis_engine)
+    # Initialize core and engine using common functions
+    core = initialize_mantis_core(mmconfig_file)
+    mantis_engine = create_mantis_engine(core)
 
     # Load the sequence
     sequence = MDASequence.from_file(mda_sequence_file)
