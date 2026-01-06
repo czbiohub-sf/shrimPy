@@ -278,7 +278,7 @@ def initialize_mantis_core(config_path: str | None = None) -> UniMMCore:
     UniMMCore
         Configured core instance ready for use.
     """
-    core = UniMMCore()
+    core = UniMMCore().instance()
     
     if config_path is None:
         config_path = "C:\\Users\\Cameron\\justin\\shrimPy\\CompMicro_MMConfigs\\Dev_Computer\\mantis2-demo.cfg"

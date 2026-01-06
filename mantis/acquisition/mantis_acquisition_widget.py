@@ -11,7 +11,14 @@ from typing import Any, Dict
 
 import yaml
 from pymmcore_plus.experimental.unicore import UniMMCore
-from pymmcore_widgets import MDAWidget
+from pymmcore_widgets import (
+    MDAWidget,
+    ImagePreview,
+    StageWidget,
+    LiveButton,
+    SnapButton,
+    CameraRoiWidget,
+)
 from qtpy.QtCore import Qt, Signal
 from qtpy.QtWidgets import (
     QCheckBox,
@@ -267,11 +274,6 @@ class MantisSettingsWidget(QWidget):
         # Create tab widget for organized settings
         self.tabs = QTabWidget()
 
-        # ROI settings tab
-        self.roi_widget = ROISettingsWidget()
-        self.roi_widget.valueChanged.connect(self.valueChanged.emit)
-        self.tabs.addTab(self.roi_widget, "ROI")
-
         # TriggerScope settings tab
         self.triggerscope_widget = TriggerScopeSettingsWidget()
         self.triggerscope_widget.valueChanged.connect(self.valueChanged.emit)
@@ -287,15 +289,12 @@ class MantisSettingsWidget(QWidget):
     def value(self) -> dict[str, Any]:
         """Get all mantis settings as a dictionary."""
         return {
-            'roi': self.roi_widget.value(),
             'trigger_scope': self.triggerscope_widget.value(),
             **self.microscope_widget.value(),
         }
 
     def setValue(self, settings: dict[str, Any]):
         """Set all mantis settings from a dictionary."""
-        if roi := settings.get('roi'):
-            self.roi_widget.setValue(roi)
         if ts := settings.get('trigger_scope'):
             self.triggerscope_widget.setValue(ts)
         self.microscope_widget.setValue(settings)
@@ -322,7 +321,81 @@ class MantisAcquisitionWidget(QWidget):
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
-        # Main content in tabs
+        # Main horizontal layout with three columns: preview, stage control, and tabs
+        main_content = QHBoxLayout()
+
+        # Left column: Image preview and ROI
+        left_column = QVBoxLayout()
+        
+        preview_group = QGroupBox("Image Preview")
+        preview_layout = QVBoxLayout()
+        
+        self.image_preview = ImagePreview()
+        preview_layout.addWidget(self.image_preview)
+        
+        # Snap/Live buttons
+        preview_buttons = QHBoxLayout()
+        self.snap_button = SnapButton()
+        self.live_button = LiveButton()
+        preview_buttons.addWidget(self.snap_button)
+        preview_buttons.addWidget(self.live_button)
+        preview_buttons.addStretch()
+        
+        preview_layout.addLayout(preview_buttons)
+        preview_group.setLayout(preview_layout)
+        left_column.addWidget(preview_group, stretch=3)
+        
+        # ROI settings
+        roi_group = QGroupBox("ROI Settings")
+        roi_layout = QVBoxLayout()
+        self.roi_widget = CameraRoiWidget()
+        roi_layout.addWidget(self.roi_widget)
+        roi_group.setLayout(roi_layout)
+        left_column.addWidget(roi_group, stretch=1)
+        
+        main_content.addLayout(left_column, stretch=1)
+
+        # Middle column: Stage control
+        stage_group = QGroupBox("Stage Control")
+        stage_layout = QVBoxLayout()
+        
+        # XY Stage control
+        try:
+            from pymmcore_plus import DeviceType
+            if self._mmc is not None:
+                xy_stages = list(self._mmc.getLoadedDevicesOfType(DeviceType.XYStage))
+                z_stages = list(self._mmc.getLoadedDevicesOfType(DeviceType.Stage))
+                
+                if xy_stages:
+                    xy_label = QLabel("<b>XY Stage</b>")
+                    stage_layout.addWidget(xy_label)
+                    self.xy_stage_widget = StageWidget(device=xy_stages[0], position_label_below=True)
+                    stage_layout.addWidget(self.xy_stage_widget)
+                
+                if z_stages:
+                    z_label = QLabel("<b>Z Stage</b>")
+                    stage_layout.addWidget(z_label)
+                    self.z_stage_widget = StageWidget(device=z_stages[0], position_label_below=True)
+                    stage_layout.addWidget(self.z_stage_widget)
+                
+                if not xy_stages and not z_stages:
+                    no_stage_label = QLabel("No stages detected")
+                    no_stage_label.setStyleSheet("color: gray; font-style: italic;")
+                    stage_layout.addWidget(no_stage_label)
+            else:
+                no_core_label = QLabel("No core instance loaded")
+                no_core_label.setStyleSheet("color: gray; font-style: italic;")
+                stage_layout.addWidget(no_core_label)
+        except Exception as e:
+            error_label = QLabel(f"Stage initialization error: {str(e)}")
+            error_label.setStyleSheet("color: red; font-size: 10px;")
+            stage_layout.addWidget(error_label)
+        
+        stage_layout.addStretch()
+        stage_group.setLayout(stage_layout)
+        main_content.addWidget(stage_group, stretch=1)
+
+        # Right column: Main content in tabs
         self.main_tabs = QTabWidget()
 
         # Standard MDA widget
@@ -334,7 +407,9 @@ class MantisAcquisitionWidget(QWidget):
         #self.mantis_settings = MantisSettingsWidget()
         self.main_tabs.addTab(self.mantis_settings, "Mantis Settings")
 
-        layout.addWidget(self.main_tabs)
+        main_content.addWidget(self.main_tabs, stretch=2)
+
+        layout.addLayout(main_content)
 
         # Control buttons
         button_layout = QHBoxLayout()
@@ -376,6 +451,17 @@ class MantisAcquisitionWidget(QWidget):
 
             # Add mantis metadata to the sequence
             mantis_settings = self.mantis_settings.value()
+            # CameraRoiWidget manages ROI directly with the camera, but we can still save it
+            # Get ROI from camera if available
+            if self._mmc is not None:
+                try:
+                    x = self._mmc.getROI()[0]
+                    y = self._mmc.getROI()[1]
+                    w = self._mmc.getROI()[2]
+                    h = self._mmc.getROI()[3]
+                    mantis_settings['roi'] = [x, y, w, h]
+                except Exception:
+                    pass
             sequence.metadata = sequence.metadata or {}
             sequence.metadata['mantis'] = mantis_settings
 
@@ -414,6 +500,16 @@ class MantisAcquisitionWidget(QWidget):
                 # Get MDA sequence and add mantis metadata
                 sequence = self.mda_widget.value()
                 mantis_settings = self.mantis_settings.value()
+                # Get current ROI from camera
+                if self._mmc is not None:
+                    try:
+                        x = self._mmc.getROI()[0]
+                        y = self._mmc.getROI()[1]
+                        w = self._mmc.getROI()[2]
+                        h = self._mmc.getROI()[3]
+                        mantis_settings['roi'] = [x, y, w, h]
+                    except Exception:
+                        pass
 
                 # Create combined settings dictionary
                 sequence_dict = sequence.dict()
@@ -475,7 +571,16 @@ class MantisAcquisitionWidget(QWidget):
 
                 # Extract and set mantis settings from metadata
                 if sequence.metadata and 'mantis' in sequence.metadata:
-                    self.mantis_settings.setValue(sequence.metadata['mantis'])
+                    mantis_meta = sequence.metadata['mantis']
+                    self.mantis_settings.setValue(mantis_meta)
+                    # Apply ROI to camera if available
+                    if 'roi' in mantis_meta and self._mmc is not None:
+                        try:
+                            roi = mantis_meta['roi']
+                            if len(roi) == 4:
+                                self._mmc.setROI(*roi)
+                        except Exception as e:
+                            print(f"Could not set ROI: {e}")
 
                 self.status_label.setText(f"Settings loaded from {Path(filename).name}")
                 self.status_label.setStyleSheet("QLabel { color: green; }")
@@ -503,7 +608,7 @@ if __name__ == "__main__":
     # Create and show widget with the core instance
     widget = MantisAcquisitionWidget(core=core)
     widget.setWindowTitle("Mantis Acquisition Control")
-    widget.resize(800, 600)
+    widget.resize(1400, 800)  # Larger size to accommodate image preview and stage control
     widget.show()
 
     app.exec()
