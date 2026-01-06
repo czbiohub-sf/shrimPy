@@ -307,7 +307,7 @@ class MantisAcquisitionWidget(QWidget):
     This widget combines the standard pymmcore-widgets MDAWidget with
     mantis-specific configuration options.
     """
-core: UniMMCore | None = None, parent: QWidget | None = None):
+    def __init__(self, core: UniMMCore | None = None, parent: QWidget | None = None):
         super().__init__(parent)
         self._mmc = core
         self._mantis_engine: MantisEngine | None = None
@@ -330,8 +330,8 @@ core: UniMMCore | None = None, parent: QWidget | None = None):
         self.main_tabs.addTab(self.mda_widget, "Acquisition Sequence")
 
         # Mantis-specific settings
-        self.mantis_settings = MantisSettingsWidget(core=self._mmc
-        self.mantis_settings = MantisSettingsWidget()
+        self.mantis_settings = MantisSettingsWidget(core=self._mmc)
+        #self.mantis_settings = MantisSettingsWidget()
         self.main_tabs.addTab(self.mantis_settings, "Mantis Settings")
 
         layout.addWidget(self.main_tabs)
@@ -490,7 +490,7 @@ if __name__ == "__main__":
     from qtpy.QtWidgets import QApplication
 
     app = QApplication([])
-Initialize core using common function
+    #Initialize core using common function
     demo_config = r"C:\Users\Cameron\justin\shrimPy\CompMicro_MMConfigs\Dev_Computer\mantis2-demo.cfg"
     try:
         core = initialize_mantis_core(demo_config)
@@ -501,8 +501,7 @@ Initialize core using common function
         core = None
 
     # Create and show widget with the core instance
-    widget = MantisAcquisitionWidget(core=core
-    widget = MantisAcquisitionWidget()
+    widget = MantisAcquisitionWidget(core=core)
     widget.setWindowTitle("Mantis Acquisition Control")
     widget.resize(800, 600)
     widget.show()
