@@ -8,6 +8,7 @@ from useq import MDASequence, MDAEvent
 
 from pymmcore_plus._logger import logger
 from pymmcore_plus.experimental.unicore import UniMMCore
+from pymmcore_plus.core import CMMCorePlus
 from pymmcore_plus.mda import MDAEngine, mda_listeners_connected
 from pymmcore_plus.mda.handlers import OMETiffWriter, OMEZarrWriter
 from pymmcore_plus.metadata import SummaryMetaV1
@@ -25,12 +26,12 @@ class MantisEngine(MDAEngine):
     - Autofocus after XY stage movements
     """
     
-    def __init__(self, mmc: UniMMCore, *args, **kwargs):
+    def __init__(self, mmc: CMMCorePlus, *args, **kwargs):
         """Initialize the MantisEngine.
         
         Parameters
         ----------
-        mmc : UniMMCore
+        mmc : CMMCorePlus
             The Micro-Manager core instance
         """
         super().__init__(mmc, *args, **kwargs)
@@ -265,8 +266,8 @@ class MantisEngine(MDAEngine):
         print(f"XY Stage moved to X: {x}, Y: {y}")
 
 
-def initialize_mantis_core(config_path: str | None = None) -> UniMMCore:
-    """Initialize and configure the UniMMCore instance for Mantis.
+def initialize_mantis_core(config_path: str | None = None) -> CMMCorePlus:
+    """Initialize and configure the Core instance for Mantis.
     
     Parameters
     ----------
@@ -278,7 +279,7 @@ def initialize_mantis_core(config_path: str | None = None) -> UniMMCore:
     UniMMCore
         Configured core instance ready for use.
     """
-    core = UniMMCore().instance()
+    core = CMMCorePlus().instance()
     
     if config_path is None:
         config_path = "C:\\Users\\Cameron\\justin\\shrimPy\\CompMicro_MMConfigs\\Dev_Computer\\mantis2-demo.cfg"

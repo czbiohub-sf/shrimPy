@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 import yaml
+from pymmcore_plus import CMMCorePlus
 from pymmcore_plus.experimental.unicore import UniMMCore
 from pymmcore_widgets import (
     MDAWidget,
@@ -37,6 +38,56 @@ from qtpy.QtWidgets import (
 from useq import MDASequence
 
 from mantis.acquisition.mantis_v2 import MantisEngine, initialize_mantis_core, create_mantis_engine
+
+
+class CustomCameraRoiWidget(CameraRoiWidget):
+    """CameraRoiWidget that doesn't use snap() - uses continuous acquisition instead.
+    
+    This subclass overrides the auto-snap functionality to work around PVCAM camera 
+    buffer issues when using snap() command. Instead of snap(), it uses continuous
+    acquisition to capture a single frame.
+    """
+    
+    def _on_roi_set(self, camera: str, x: int, y: int, width: int, height: int) -> None:
+        """Handle the ROI set event without calling snap()."""
+        if camera != self.camera:
+            self._update_unselected_camera_info(camera, x, y, width, height)
+            return
+
+        # if the roi is not centered, uncheck the center checkbox
+        from superqt.utils import signals_blocked
+        centered = (
+            x == (self._cameras[camera].pixel_width - width) // 2
+            and y == (self._cameras[camera].pixel_height - height) // 2
+        )
+        with signals_blocked(self.center_checkbox):
+            self.center_checkbox.setChecked(centered)
+
+        # update the roi values in the spinboxes
+        from pymmcore_widgets.control._camera_roi_widget import ROI
+        self._update_roi_values(ROI(x, y, width, height, centered))
+
+        # update the crop mode combo box text to match the set roi (this is mainly
+        # needed when the roi is set from the core)
+        crop_mode = self._get_updated_crop_mode(camera, *self._get_roi_values())
+        with signals_blocked(self.camera_roi_combo):
+            self.camera_roi_combo.setCurrentText(crop_mode)
+
+        # update the stored camera info
+        self._cameras[camera] = self._cameras[camera].replace(
+            crop_mode=crop_mode, roi=ROI(x, y, width, height, centered)
+        )
+
+        self._custom_roi_wdg.setEnabled(crop_mode == "Custom ROI")
+        self.crop_btn.setEnabled(crop_mode == "Custom ROI")
+
+        self._update_lbl_info()
+
+        # REMOVED: Auto-snap functionality (causes buffer issues with PVCAM cameras)
+        # if self.snap_checkbox.isChecked() and self.snap_checkbox.isVisible():
+        #     self._mmc.snap()
+
+        self.roiChanged.emit(x, y, width, height, crop_mode)
 
 
 class ROISettingsWidget(QWidget):
@@ -180,7 +231,7 @@ class MicroscopeSettingsWidget(QWidget):
 
     valueChanged = Signal()
 
-    def __init__(self, core: UniMMCore | None = None, parent: QWidget | None = None):
+    def __init__(self, core: CMMCorePlus | None = None, parent: QWidget | None = None):
         super().__init__(parent)
         self._mmc = core
         self._setup_ui()
@@ -263,7 +314,7 @@ class MantisSettingsWidget(QWidget):
 
     valueChanged = Signal()
 
-    def __init__(self, core: UniMMCore | None = None, parent: QWidget | None = None):
+    def __init__(self, core: CMMCorePlus | None = None, parent: QWidget | None = None):
         super().__init__(parent)
         self._core = core
         self._setup_ui()
@@ -306,9 +357,10 @@ class MantisAcquisitionWidget(QWidget):
     This widget combines the standard pymmcore-widgets MDAWidget with
     mantis-specific configuration options.
     """
-    def __init__(self, core: UniMMCore | None = None, parent: QWidget | None = None):
+    def __init__(self, core: CMMCorePlus | None = None, parent: QWidget | None = None):
         super().__init__(parent)
-        self._mmc = core
+        # If no core provided, get or create the singleton instance
+        self._mmc = core if core is not None else CMMCorePlus.instance()
         self._mantis_engine: MantisEngine | None = None
         self._setup_ui()
         self._connect_signals()
@@ -321,6 +373,33 @@ class MantisAcquisitionWidget(QWidget):
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
+        # Check if camera is available and warn if not
+        camera_available = False
+        camera_warning = None
+        if self._mmc is not None:
+            try:
+                camera = self._mmc.getCameraDevice()
+                camera_available = bool(camera)
+                # Test if camera can actually snap
+                if camera_available:
+                    try:
+                        # Quick test - try to get exposure (doesn't trigger camera)
+                        _ = self._mmc.getExposure()
+                    except Exception as e:
+                        camera_warning = f"Camera '{camera}' detected but may not be functional: {str(e)}"
+            except Exception as e:
+                camera_warning = f"Camera detection failed: {str(e)}"
+        
+        if not camera_available or camera_warning:
+            msg = camera_warning if camera_warning else "⚠️ Warning: No camera device detected. Image acquisition will not work."
+            warning_label = QLabel(msg)
+            warning_label.setStyleSheet(
+                "QLabel { background-color: #FFF3CD; color: #856404; "
+                "padding: 8px; border: 1px solid #FFC107; border-radius: 4px; }"
+            )
+            warning_label.setWordWrap(True)
+            layout.addWidget(warning_label)
+
         # Main horizontal layout with three columns: preview, stage control, and tabs
         main_content = QHBoxLayout()
 
@@ -330,13 +409,16 @@ class MantisAcquisitionWidget(QWidget):
         preview_group = QGroupBox("Image Preview")
         preview_layout = QVBoxLayout()
         
-        self.image_preview = ImagePreview()
+        self.image_preview = ImagePreview(mmcore=self._mmc)
         preview_layout.addWidget(self.image_preview)
         
         # Snap/Live buttons
         preview_buttons = QHBoxLayout()
-        self.snap_button = SnapButton()
-        self.live_button = LiveButton()
+        self.snap_button = SnapButton(mmcore=self._mmc)
+        # Override snap button behavior for PVCAM cameras that don't support standard snap()
+        self.snap_button.clicked.disconnect()
+        self.snap_button.clicked.connect(self._custom_snap)
+        self.live_button = LiveButton(mmcore=self._mmc)
         preview_buttons.addWidget(self.snap_button)
         preview_buttons.addWidget(self.live_button)
         preview_buttons.addStretch()
@@ -348,7 +430,7 @@ class MantisAcquisitionWidget(QWidget):
         # ROI settings
         roi_group = QGroupBox("ROI Settings")
         roi_layout = QVBoxLayout()
-        self.roi_widget = CameraRoiWidget()
+        self.roi_widget = CustomCameraRoiWidget(mmcore=self._mmc)
         roi_layout.addWidget(self.roi_widget)
         roi_group.setLayout(roi_layout)
         left_column.addWidget(roi_group, stretch=1)
@@ -369,13 +451,13 @@ class MantisAcquisitionWidget(QWidget):
                 if xy_stages:
                     xy_label = QLabel("<b>XY Stage</b>")
                     stage_layout.addWidget(xy_label)
-                    self.xy_stage_widget = StageWidget(device=xy_stages[0], position_label_below=True)
+                    self.xy_stage_widget = StageWidget(device=xy_stages[0], position_label_below=True, mmcore=self._mmc)
                     stage_layout.addWidget(self.xy_stage_widget)
                 
                 if z_stages:
                     z_label = QLabel("<b>Z Stage</b>")
                     stage_layout.addWidget(z_label)
-                    self.z_stage_widget = StageWidget(device=z_stages[0], position_label_below=True)
+                    self.z_stage_widget = StageWidget(device=z_stages[0], position_label_below=True, mmcore=self._mmc)
                     stage_layout.addWidget(self.z_stage_widget)
                 
                 if not xy_stages and not z_stages:
@@ -399,7 +481,7 @@ class MantisAcquisitionWidget(QWidget):
         self.main_tabs = QTabWidget()
 
         # Standard MDA widget
-        self.mda_widget = MDAWidget()
+        self.mda_widget = MDAWidget(mmcore=self._mmc)
         self.main_tabs.addTab(self.mda_widget, "Acquisition Sequence")
 
         # Mantis-specific settings
@@ -438,6 +520,54 @@ class MantisAcquisitionWidget(QWidget):
         self.load_btn.clicked.connect(self._load_settings)
         self.save_btn.clicked.connect(self._save_settings)
         self.run_btn.clicked.connect(self._run_acquisition)
+
+    def _custom_snap(self):
+        """Custom snap implementation using continuous acquisition.
+        
+        This is needed for PVCAM cameras (like Prime BSI Express) that have issues
+        with the standard snap() command due to buffer management problems in the
+        PVCAM adapter. The camera works perfectly in continuous mode, so we use
+        that to acquire a single frame.
+        
+        Root cause: The PVCAM adapter's SnapImage() completes but GetImageBuffer()
+        fails to return valid data from singleFrameBufFinal_, likely due to buffer
+        initialization issues when CircularBufferEnabled is ON.
+        """
+        if self._mmc is None:
+            return
+            
+        try:
+            import time
+            
+            # Stop any running sequence
+            if self._mmc.isSequenceRunning():
+                self._mmc.stopSequenceAcquisition()
+                time.sleep(0.05)
+            
+            # Use continuous acquisition to get a single frame
+            self._mmc.initializeCircularBuffer()
+            self._mmc.startContinuousSequenceAcquisition(0)
+            time.sleep(0.1)  # Wait for at least one frame
+            
+            # Check if we got an image
+            if self._mmc.getRemainingImageCount() > 0:
+                # Get the image from the buffer before stopping
+                img = self._mmc.getLastImage()
+                
+                # Stop the sequence now that we have the image
+                self._mmc.stopSequenceAcquisition()
+                
+                # Directly update the ImagePreview instead of emitting signal
+                # This avoids the signal handler trying to call getImage() which expects snap mode
+                self.image_preview._update_image(img)
+            else:
+                self._mmc.stopSequenceAcquisition()
+                print("No images in buffer")
+                
+        except Exception as e:
+            print(f"Snap failed: {e}")
+            if self._mmc.isSequenceRunning():
+                self._mmc.stopSequenceAcquisition()
 
     def _run_acquisition(self):
         """Execute the acquisition with mantis engine."""
