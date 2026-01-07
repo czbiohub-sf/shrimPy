@@ -106,7 +106,15 @@ class MantisEngine(MDAEngine):
     
     def setup_event(self, event: useq.MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
-        # Custom pre-setup logic could go here
+        # Log sequenced event details to show all channels being acquired
+        from pymmcore_plus.core._sequencing import SequencedEvent
+        if isinstance(event, SequencedEvent):
+            channels = [e.channel.config if e.channel else 'None' 
+                       for e in event.events]
+            unique_channels = list(dict.fromkeys(channels))  # preserve order, remove dupes
+            logger.info(f"Sequenced event will acquire {len(event.events)} images: "
+                       f"{len(unique_channels)} channels {unique_channels} × "
+                       f"{len(event.events)//len(unique_channels)} z-slices")
         
         # Call parent setup
         super().setup_event(event)
@@ -263,7 +271,7 @@ class MantisEngine(MDAEngine):
 
     def on_xy_stage_moved(self, x: float, y: float) -> None:
         """Handle XY stage movement events."""
-        print(f"XY Stage moved to X: {x}, Y: {y}")
+        #print(f"XY Stage moved to X: {x}, Y: {y}")
 
 
 def initialize_mantis_core(config_path: str | None = None) -> CMMCorePlus:
@@ -276,7 +284,7 @@ def initialize_mantis_core(config_path: str | None = None) -> CMMCorePlus:
     
     Returns
     -------
-    UniMMCore
+    CMMCorePlus (or UniMMCore)
         Configured core instance ready for use.
     """
     core = CMMCorePlus().instance()
@@ -290,7 +298,7 @@ def initialize_mantis_core(config_path: str | None = None) -> CMMCorePlus:
     return core
 
 
-def create_mantis_engine(core: UniMMCore, use_hardware_sequencing: bool = True) -> MantisEngine:
+def create_mantis_engine(core: CMMCorePlus, use_hardware_sequencing: bool = True) -> MantisEngine:
     """Create and register a MantisEngine with the core.
     
     Parameters
@@ -312,15 +320,28 @@ def create_mantis_engine(core: UniMMCore, use_hardware_sequencing: bool = True) 
 
 # Main execution code
 if __name__ == "__main__":
-    mmconfig_file = "C:\\Users\\Cameron\\justin\\shrimPy\\CompMicro_MMConfigs\\Dev_Computer\\mantis2-demo.cfg"
-    mda_sequence_file = "C:\\Users\\Cameron\\justin\\shrimPy\\examples\\acquisition_settings\\example_mda_sequence.yaml"
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Run Mantis microscope acquisition")
+    parser.add_argument(
+        "--mmconfig",
+        default="C:\\Users\\Cameron\\justin\\shrimPy\\CompMicro_MMConfigs\\Dev_Computer\\mantis2-demo.cfg",
+        help="Path to Micro-Manager configuration file"
+    )
+    parser.add_argument(
+        "--mda-sequence",
+        default="C:\\Users\\Cameron\\justin\\shrimPy\\examples\\acquisition_settings\\example_mda_sequence.yaml",
+        help="Path to MDA sequence YAML file"
+    )
+    
+    args = parser.parse_args()
 
     # Initialize core and engine using common functions
-    core = initialize_mantis_core(mmconfig_file)
+    core = initialize_mantis_core(args.mmconfig)
     mantis_engine = create_mantis_engine(core)
 
     # Load the sequence
-    sequence = MDASequence.from_file(mda_sequence_file)
+    sequence = MDASequence.from_file(args.mda_sequence)
 
     # Run the acquisition
     core.mda.run(sequence)
