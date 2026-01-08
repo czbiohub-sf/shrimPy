@@ -1,0 +1,64 @@
+metadata:
+  pymmcore_widgets:
+    version: 0.10.2.dev23+g22b8c0aff.d20260106
+  mantis:
+    trigger_scope:
+      dac_sequencing: TS_DAC01
+      ttl_blanking: TS_TTL1-8
+    focus_device: AP Galvo
+    autofocus:
+      enabled: true
+      method: PFS
+    use_hardware_sequencing: true
+    roi:
+    - 0
+    - 512
+    - 2048
+    - 256
+axis_order:
+- t
+- p
+- c
+- z
+stage_positions:
+- x: 0.0
+  y: 0.0
+  z: 0.0
+  name: null
+  sequence: null
+- x: -20.01
+  y: -20.01
+  z: 0.0
+  name: null
+  sequence: null
+- x: 80.04
+  y: -39.99
+  z: 0.0
+  name: null
+  sequence: null
+grid_plan: null
+channels:
+- config: BF
+  group: Channel
+  exposure: 100.0
+  do_stack: true
+  z_offset: 0.0
+  acquire_every: 1
+  camera: null
+- config: GFP
+  group: Channel
+  exposure: 100.0
+  do_stack: true
+  z_offset: 0.0
+  acquire_every: 1
+  camera: null
+time_plan:
+  prioritize_duration: true
+  interval: 5.0
+  duration: 15.0
+z_plan:
+  go_up: true
+  range: 100.0
+  step: 0.313
+autofocus_plan: null
+keep_shutter_open_across: []
