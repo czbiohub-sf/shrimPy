@@ -330,7 +330,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--mda-sequence",
-        default="C:\\Users\\Cameron\\justin\\shrimPy\\examples\\acquisition_settings\\example_mda_sequence.yaml",
+        default="C:\\Users\\Cameron\\justin\\shrimPy\\examples\\acquisition_settings\\mantis2_mda.yaml",
         help="Path to MDA sequence YAML file"
     )
     
