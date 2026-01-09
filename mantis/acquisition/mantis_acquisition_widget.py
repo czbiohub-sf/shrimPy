@@ -362,6 +362,7 @@ class MantisAcquisitionWidget(QWidget):
         # If no core provided, get or create the singleton instance
         self._mmc = core if core is not None else CMMCorePlus.instance()
         self._mantis_engine: MantisEngine | None = None
+        self._is_paused = False
         self._setup_ui()
         self._connect_signals()
 
@@ -502,10 +503,16 @@ class MantisAcquisitionWidget(QWidget):
         self.run_btn.setStyleSheet(
             "QPushButton { background-color: #4CAF50; color: white; font-weight: bold; padding: 8px; }"
         )
+        self.pause_btn = QPushButton("⏸ Pause")
+        self.pause_btn.setStyleSheet(
+            "QPushButton { background-color: #FF9800; color: white; font-weight: bold; padding: 8px; }"
+        )
+        self.pause_btn.setEnabled(False)  # Disabled until acquisition starts
 
         button_layout.addWidget(self.load_btn)
         button_layout.addWidget(self.save_btn)
         button_layout.addStretch()
+        button_layout.addWidget(self.pause_btn)
         button_layout.addWidget(self.run_btn)
 
         layout.addLayout(button_layout)
@@ -520,6 +527,13 @@ class MantisAcquisitionWidget(QWidget):
         self.load_btn.clicked.connect(self._load_settings)
         self.save_btn.clicked.connect(self._save_settings)
         self.run_btn.clicked.connect(self._run_acquisition)
+        self.pause_btn.clicked.connect(self._toggle_pause)
+
+        # Connect to MDA signals to update pause button state
+        if self._mmc is not None:
+            self._mmc.mda.events.sequenceStarted.connect(self._on_acquisition_started)
+            self._mmc.mda.events.sequenceFinished.connect(self._on_acquisition_finished)
+            self._mmc.mda.events.sequencePauseToggled.connect(self._on_pause_toggled)
 
     def _custom_snap(self):
         """Custom snap implementation using continuous acquisition.
@@ -606,16 +620,45 @@ class MantisAcquisitionWidget(QWidget):
             self.status_label.setText("Running acquisition...")
             self.status_label.setStyleSheet("QLabel { color: blue; }")
 
-            # Run the acquisition
-            self._mmc.mda.run(sequence)
-
-            self.status_label.setText("Acquisition complete!")
-            self.status_label.setStyleSheet("QLabel { color: green; }")
+            # Run the acquisition in a separate thread to keep GUI responsive
+            # The acquisition complete status will be updated by the sequenceFinished signal
+            self._mmc.run_mda(sequence, block=False)
 
         except Exception as e:
             self.status_label.setText(f"Error: {str(e)}")
             self.status_label.setStyleSheet("QLabel { color: red; }")
             raise
+
+    def _toggle_pause(self):
+        """Toggle pause/resume for the current acquisition."""
+        if self._mmc is not None:
+            self._mmc.mda.toggle_pause()
+
+    def _on_acquisition_started(self):
+        """Called when acquisition starts."""
+        self.pause_btn.setEnabled(True)
+        self._is_paused = False
+        self.pause_btn.setText("⏸ Pause")
+
+    def _on_acquisition_finished(self):
+        """Called when acquisition finishes."""
+        self.pause_btn.setEnabled(False)
+        self._is_paused = False
+        self.pause_btn.setText("⏸ Pause")
+        self.status_label.setText("Acquisition complete!")
+        self.status_label.setStyleSheet("QLabel { color: green; }")
+
+    def _on_pause_toggled(self, paused: bool):
+        """Called when acquisition is paused or resumed."""
+        self._is_paused = paused
+        if paused:
+            self.pause_btn.setText("▶ Resume")
+            self.status_label.setText("Acquisition paused")
+            self.status_label.setStyleSheet("QLabel { color: orange; }")
+        else:
+            self.pause_btn.setText("⏸ Pause")
+            self.status_label.setText("Running acquisition...")
+            self.status_label.setStyleSheet("QLabel { color: blue; }")
 
     def _save_settings(self):
         """Save current settings to a YAML file."""
