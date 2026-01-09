@@ -592,8 +592,11 @@ class MantisAcquisitionWidget(QWidget):
                     mantis_settings['roi'] = [x, y, w, h]
                 except Exception:
                     pass
-            sequence.metadata = sequence.metadata or {}
-            sequence.metadata['mantis'] = mantis_settings
+
+            # Create new sequence with updated metadata (MDASequence is frozen)
+            updated_metadata = dict(sequence.metadata or {})
+            updated_metadata['mantis'] = mantis_settings
+            sequence = sequence.model_copy(update={'metadata': updated_metadata})
 
             # Create and register mantis engine if not already done
             if self._mantis_engine is None:
