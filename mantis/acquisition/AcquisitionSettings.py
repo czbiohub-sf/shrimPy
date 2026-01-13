@@ -310,7 +310,9 @@ class ZarrSettings:
         if v is not None:
             codec = values.get('compression_codec')
             if codec is None or codec == 'off':
-                raise ValueError("compression_level requires compression_codec to be set and not 'off'")
+                raise ValueError(
+                    "compression_level requires compression_codec to be set and not 'off'"
+                )
 
             # Validate compression level ranges for different codecs
             if codec == 'gzip' and not (1 <= v <= 9):
@@ -367,16 +369,13 @@ class ZarrSettings:
 
     def get_compression_settings(self):
         """Get the appropriate CompressionSettings for acquire-zarr."""
-        from acquire_zarr import CompressionSettings, CompressionCodec, Compressor
+        from acquire_zarr import CompressionCodec, CompressionSettings, Compressor
 
         if self.compression_codec is None or self.compression_codec == 'off':
             return CompressionSettings(
-                compressor=Compressor.NONE,
-                codec=CompressionCodec.NONE,
-                level=1,
-                shuffle=0
+                compressor=Compressor.NONE, codec=CompressionCodec.NONE, level=1, shuffle=0
             )
-        
+
         # Map string codec names to acquire-zarr enums
         codec_map = {
             'blosc': CompressionCodec.BLOSC_LZ4,  # Default blosc variant
@@ -384,13 +383,13 @@ class ZarrSettings:
             'zstd': CompressionCodec.BLOSC_ZSTD,
             'gzip': CompressionCodec.BLOSC_LZ4,  # Map gzip to blosc for now
         }
-        
+
         codec = codec_map.get(self.compression_codec, CompressionCodec.BLOSC_LZ4)
         level = self.compression_level if self.compression_level is not None else 1
-        
+
         return CompressionSettings(
             compressor=Compressor.BLOSC,
             codec=codec,
             level=level,
-            shuffle=1  # Enable shuffle for better compression
+            shuffle=1,  # Enable shuffle for better compression
         )
