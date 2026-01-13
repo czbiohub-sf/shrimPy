@@ -24,7 +24,7 @@ dependencies = [
   "copylot @ git+https://github.com/czbiohub-sf/coPylot",
   # "ndtiff==2.2.1",
   # "nidaqmx",
-  "numpy<2",
+  "numpy",
   # "pycromanager==0.28.1",
   "pymmcore_plus==0.16.0",
   "pydantic>=2.0.0",
