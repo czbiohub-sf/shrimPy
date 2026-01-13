@@ -195,3 +195,204 @@ class AutoexposureSettings:
             attr_val = getattr(self, attr)
             if attr_val is not None:
                 setattr(self, attr, round(attr_val, 1))
+<<<<<<< HEAD
+=======
+
+
+@dataclass(config=config)
+class ZarrSettings:
+    """Settings for Zarr output configuration using acquire-zarr."""
+
+    # Data type for the Zarr array
+    data_type: Literal[
+        'UINT8', 'UINT16', 'UINT32', 'INT8', 'INT16', 'INT32', 'FLOAT32', 'FLOAT64'
+    ] = 'UINT16'
+
+    # Enable multiscale (pyramids)
+    multiscale: bool = False
+
+    # Maximum number of threads for writing
+    max_threads: NonNegativeInt = 0  # 0 means use all available
+
+    # Chunking settings as dictionary - unit: pixels per chunk
+    chunk_sizes: Dict[str, PositiveInt] = field(
+        default_factory=lambda: {
+            'x': 64,  # pixels per chunk in X dimension
+            'y': 64,  # pixels per chunk in Y dimension
+            'z': 1,  # pixels per chunk in Z dimension
+            'c': 1,  # pixels per chunk in channel dimension
+        }
+    )
+
+    # Sharding settings (Zarr V3 only) - unit is chunks per shard
+    shard_sizes: Dict[str, PositiveInt] = field(
+        default_factory=lambda: {'x': 1, 'y': 1, 'z': 1, 'c': 1}
+    )
+
+    # Compression settings
+    compression_codec: Optional[Literal['blosc', 'gzip', 'lz4', 'zstd', 'off']] = None
+    compression_level: Optional[int] = None
+
+    # Store settings
+    store_path: Optional[str] = None
+    overwrite_existing: bool = False
+
+    # HCS (High Content Screening) settings
+    use_hcs_layout: bool = False  # Enable HCS zarr structure with wells/plates
+    plate_name: Optional[str] = None  # Name of the plate (e.g., "Plate_001")
+    plate_description: Optional[str] = None  # Description of the plate
+
+    @validator("chunk_sizes")
+    def validate_chunk_sizes(cls, v):
+        """Validate chunk_sizes dictionary contains required keys."""
+        required_keys = {'x', 'y', 'z', 'c'}
+        if not isinstance(v, dict):
+            raise ValueError("chunk_sizes must be a dictionary")
+
+        missing_keys = required_keys - set(v.keys())
+        if missing_keys:
+            raise ValueError(f"chunk_sizes is missing required keys: {missing_keys}")
+
+        # Reject position (p) and time (t) dimensions
+        forbidden_keys = {'p', 't'}
+        present_forbidden = forbidden_keys & set(v.keys())
+        if present_forbidden:
+            raise ValueError(
+                f"Position (p) and time (t) dimension chunking is not allowed. Remove keys: {present_forbidden}"
+            )
+
+        # Ensure all values are positive integers
+        for key, value in v.items():
+            if not isinstance(value, int) or value <= 0:
+                raise ValueError(
+                    f"chunk_sizes['{key}'] must be a positive integer, got {value}"
+                )
+
+        return v
+
+    @validator("shard_sizes")
+    def validate_shard_sizes(cls, v):
+        """Validate shard_sizes dictionary contains required keys."""
+        required_keys = {'x', 'y', 'z', 'c'}
+        if not isinstance(v, dict):
+            raise ValueError("shard_sizes must be a dictionary")
+
+        missing_keys = required_keys - set(v.keys())
+        if missing_keys:
+            raise ValueError(f"shard_sizes is missing required keys: {missing_keys}")
+
+        # Reject position (p) and time (t) dimensions
+        forbidden_keys = {'p', 't'}
+        present_forbidden = forbidden_keys & set(v.keys())
+        if present_forbidden:
+            raise ValueError(
+                f"Position (p) and time (t) dimension sharding is not allowed. Remove keys: {present_forbidden}"
+            )
+
+        # Ensure all values are positive integers
+        for key, value in v.items():
+            if not isinstance(value, int) or value <= 0:
+                raise ValueError(
+                    f"shard_sizes['{key}'] must be a positive integer (chunks per shard), got {value}"
+                )
+
+        return v
+
+    @validator("plate_name")
+    def validate_plate_name(cls, v, values):
+        """Validate plate_name is provided when using HCS layout."""
+        use_hcs = values.get('use_hcs_layout', False)
+        if use_hcs and v is None:
+            raise ValueError("plate_name is required when use_hcs_layout is True")
+        return v
+
+    @validator("compression_level")
+    def validate_compression_level(cls, v, values):
+        """Validate compression level based on codec."""
+        if v is not None:
+            codec = values.get('compression_codec')
+            if codec is None or codec == 'off':
+                raise ValueError(
+                    "compression_level requires compression_codec to be set and not 'off'"
+                )
+
+            # Validate compression level ranges for different codecs
+            if codec == 'gzip' and not (1 <= v <= 9):
+                raise ValueError("gzip compression_level must be between 1 and 9")
+            elif codec == 'blosc' and not (1 <= v <= 9):
+                raise ValueError("blosc compression_level must be between 1 and 9")
+            elif codec == 'lz4' and not (1 <= v <= 9):
+                raise ValueError("lz4 compression_level must be between 1 and 9")
+            elif codec == 'zstd' and not (1 <= v <= 22):
+                raise ValueError("zstd compression_level must be between 1 and 22")
+        return v
+
+    def __post_init__(self):
+        """Post-initialization validation and setup."""
+        pass
+
+    # Backward compatibility properties
+    @property
+    def xy_chunk_size(self) -> int:
+        """Backward compatibility: returns x chunk size for legacy code that assumes x==y."""
+        return self.chunk_sizes['x']
+
+    @property
+    def z_chunk_size(self) -> int:
+        """Backward compatibility: returns z chunk size."""
+        return self.chunk_sizes['z']
+
+    @property
+    def t_chunk_size(self) -> int:
+        """Backward compatibility: returns t chunk size."""
+        return self.chunk_sizes['t']
+
+    @property
+    def c_chunk_size(self) -> int:
+        """Backward compatibility: returns c chunk size."""
+        return self.chunk_sizes['c']
+
+    @property
+    def shard_size_chunks(self) -> int:
+        """Backward compatibility: returns x shard size for legacy code."""
+        return self.shard_sizes['x']
+
+    def get_zarr_version_enum(self):
+        """Get the appropriate ZarrVersion enum value for acquire-zarr."""
+        from acquire_zarr import ZarrVersion
+
+        return ZarrVersion.V3
+
+    def get_data_type_enum(self):
+        """Get the appropriate DataType enum value for acquire-zarr."""
+        from acquire_zarr import DataType
+
+        return getattr(DataType, self.data_type)
+
+    def get_compression_settings(self):
+        """Get the appropriate CompressionSettings for acquire-zarr."""
+        from acquire_zarr import CompressionCodec, CompressionSettings, Compressor
+
+        if self.compression_codec is None or self.compression_codec == 'off':
+            return CompressionSettings(
+                compressor=Compressor.NONE, codec=CompressionCodec.NONE, level=1, shuffle=0
+            )
+
+        # Map string codec names to acquire-zarr enums
+        codec_map = {
+            'blosc': CompressionCodec.BLOSC_LZ4,  # Default blosc variant
+            'lz4': CompressionCodec.BLOSC_LZ4,
+            'zstd': CompressionCodec.BLOSC_ZSTD,
+            'gzip': CompressionCodec.BLOSC_LZ4,  # Map gzip to blosc for now
+        }
+
+        codec = codec_map.get(self.compression_codec, CompressionCodec.BLOSC_LZ4)
+        level = self.compression_level if self.compression_level is not None else 1
+
+        return CompressionSettings(
+            compressor=Compressor.BLOSC,
+            codec=codec,
+            level=level,
+            shuffle=1,  # Enable shuffle for better compression
+        )
+>>>>>>> 2b2b0f2 (Apply code formatting with black and isort)
