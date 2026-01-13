@@ -304,7 +304,11 @@ class BaseChannelSliceAcquisition(object):
 
         # Zarr store will be initialized by MantisAcquisition after position_settings are updated
 
-    def initialize_zarr_store(self, output_path: Union[str, os.PathLike] = None, position_settings: PositionSettings = None):
+    def initialize_zarr_store(
+        self,
+        output_path: Union[str, os.PathLike] = None,
+        position_settings: PositionSettings = None,
+    ):
         if not self.enabled or output_path is None:
             return
 
@@ -380,7 +384,7 @@ class BaseChannelSliceAcquisition(object):
             # Create HCS layout with plate and wells
             plate = Plate(
                 path=self.zarr_settings.plate_name,
-                #description=self.zarr_settings.plate_description or "",
+                # description=self.zarr_settings.plate_description or "",
             )
 
             # Create wells from position settings
@@ -1402,9 +1406,13 @@ class MantisAcquisition(object):
 
         logger.debug('Initializing zarr stores')
         if self.lf_acq.enabled:
-            self.lf_acq.initialize_zarr_store(f'{self._acq_dir}/{self._acq_name}_{LF_ACQ_LABEL}', self.position_settings)
+            self.lf_acq.initialize_zarr_store(
+                f'{self._acq_dir}/{self._acq_name}_{LF_ACQ_LABEL}', self.position_settings
+            )
         if self.ls_acq.enabled:
-            self.ls_acq.initialize_zarr_store(f'{self._acq_dir}/{self._acq_name}_{LS_ACQ_LABEL}', self.position_settings)
+            self.ls_acq.initialize_zarr_store(
+                f'{self._acq_dir}/{self._acq_name}_{LS_ACQ_LABEL}', self.position_settings
+            )
 
         logger.debug('Setting up autoexposure')
         self.setup_autoexposure()

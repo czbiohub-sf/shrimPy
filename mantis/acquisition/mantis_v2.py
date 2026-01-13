@@ -304,6 +304,7 @@ def initialize_mantis_core(config_path: str | None = None) -> CMMCorePlus:
 
     if config_path is None:
         logger.info("No configuration file provided. Using MMConfig_demo.cfg.")
+        config_path = "C:\\Users\\Cameron\\justin\\shrimPy\\CompMicro_MMConfigs\\Dev_Computer\\mantis2-demo.cfg"
 
     core.loadSystemConfiguration(config_path)
     # core.setPixelSizeConfig("Res40x")  # Uncomment if needed

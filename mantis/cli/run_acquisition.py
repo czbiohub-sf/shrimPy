@@ -70,7 +70,7 @@ def run_acquisition(
         SliceSettings,
         MicroscopeSettings,
         AutoexposureSettings,
-        ZarrSettings
+        ZarrSettings,
     )
 
     # isort: on
@@ -85,17 +85,17 @@ def run_acquisition(
     # Load and validate YAML settings
     time_settings = load_settings(raw_settings, 'time_settings', TimeSettings)
     position_settings = load_settings(raw_settings, 'position_settings', PositionSettings)
-    
+
     lf_channel_settings = load_settings(raw_settings, 'lf_channel_settings', ChannelSettings)
     lf_slice_settings = load_settings(raw_settings, 'lf_slice_settings', SliceSettings)
     lf_microscope_settings = load_settings(raw_settings, 'lf_microscope_settings', MicroscopeSettings)  # fmt: skip
-    lf_zarr_settings = load_settings(raw_settings, 'lf_zarr_settings', ZarrSettings) 
+    lf_zarr_settings = load_settings(raw_settings, 'lf_zarr_settings', ZarrSettings)
 
     ls_channel_settings = load_settings(raw_settings, 'ls_channel_settings', ChannelSettings)
     ls_slice_settings = load_settings(raw_settings, 'ls_slice_settings', SliceSettings)
     ls_microscope_settings = load_settings(raw_settings, 'ls_microscope_settings', MicroscopeSettings)  # fmt: skip
     ls_autoexposure_settings = load_settings(raw_settings, 'ls_autoexposure_settings', AutoexposureSettings)  # fmt: skip
-    ls_zarr_settings = load_settings(raw_settings, 'ls_zarr_settings', ZarrSettings) 
+    ls_zarr_settings = load_settings(raw_settings, 'ls_zarr_settings', ZarrSettings)
 
     with MantisAcquisition(
         acquisition_directory=acq_directory,
