@@ -26,8 +26,8 @@ time_plan:
 # Define z plan
 z_plan:
   go_up: true
-  range: 100.0
-  step: 0.313
+  range: 10.0
+  step: 1.0
 
 # Define channels
 channels:
@@ -60,17 +60,12 @@ keep_shutter_open_across: []
 metadata:
   pymmcore_widgets:
     version: 0.10.2.dev23+g22b8c0aff.d20260106
-  demo:
-    trigger_scope:
-      dac_sequencing: TS_DAC01
-      ttl_blanking: TS_TTL1-8
-    focus_device: AP Galvo
-    autofocus:
-      enabled: true
-      method: PFS
+  mantis:
+    # roi:
+    z_stage: Z
     use_hardware_sequencing: true
-    roi:
-    - 0
-    - 512
-    - 2048
-    - 256
+    # initialization_settings:
+    setup_hardware_sequencing_settings:
+      - ['Z', 'UseSequences', 'Yes']
+    reset_hardware_sequencing_settings:
+      - ['Z', 'UseSequences', 'No']

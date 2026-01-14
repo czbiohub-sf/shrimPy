@@ -5,8 +5,8 @@ import numpy as np
 import useq
 
 from pymmcore_plus.core import CMMCorePlus
-from pymmcore_plus.mda import MDAEngine
-from pymmcore_plus.mda.handlers import OMEZarrWriter
+from pymmcore_plus.mda import MDAEngine, mda_listeners_connected
+from pymmcore_plus.mda.handlers import OMETiffWriter
 from pymmcore_plus.metadata import SummaryMetaV1
 from useq import MDAEvent, MDASequence
 
@@ -53,54 +53,48 @@ class MantisEngine(MDAEngine):
         """
         # Call parent setup first
         summary = super().setup_sequence(sequence)
-
-        # Extract mantis settings from metadata
-        mantis_meta = sequence.metadata.get('mantis', {}) if sequence.metadata else {}
-
         core = self.mmcore
 
-        # Apply ROI settings
-        if roi := mantis_meta.get('roi'):
-            core.setROI(*roi)
-        else:
-            # Default ROI for label-free acquisition
-            core.setROI(0, 512, 2048, 256)
+        # Extract mantis settings from metadata
+        microscope_meta = sequence.metadata.get('mantis', {}) if sequence.metadata else {}
 
-        # Apply TriggerScope settings
-        if ts := mantis_meta.get('trigger_scope'):
-            if dac := ts.get('dac_sequencing'):
-                core.setProperty(dac, "Sequence", "On")
-            if ttl := ts.get('ttl_blanking'):
-                core.setProperty(ttl, "Blanking", "On")
-        else:
-            # Default TriggerScope settings
-            core.setProperty("TS_DAC01", "Sequence", "On")
-            core.setProperty("TS_TTL1-8", "Blanking", "On")
+        # Apply ROI settings
+        if roi := microscope_meta.get('roi'):
+            core.setROI(*roi)
+
+        # Apply initialization settings
+        # TODO: move to proper place
+        if initialization_settings := microscope_meta.get('initialization_settings'):
+            for setting in initialization_settings:
+                core.setProperty(setting[0], setting[1], setting[2])
+
+        # Apply setup hardware sequencing settings
+        # TODO: reset hardware sequencing settings after acquisition
+        if setup_hardware_sequencing_settings := microscope_meta.get(
+            'setup_hardware_sequencing_settings'
+        ):
+            for setting in setup_hardware_sequencing_settings:
+                core.setProperty(setting[0], setting[1], setting[2])
 
         # Set focus device
-        focus_device = mantis_meta.get('focus_device', 'AP Galvo')
-        core.setProperty("Core", "Focus", focus_device)
+        if z_stage := microscope_meta.get('z_stage'):
+            core.setProperty("Core", "Focus", z_stage)
 
-        core.events.XYStagePositionChanged.connect(self.on_xy_stage_moved)
+        # Set autofocus settings
+        if autofocus := microscope_meta.get('autofocus'):
+            if autofocus.get('enabled'):
+                self._use_autofocus = True
+                self._autofocus_stage = core.getFocusDevice()
+                autofocus_method = autofocus.get('method')
+                if autofocus_method:
+                    logger.debug(f'Setting autofocus method as {autofocus_method}')
+                    core.setAutoFocusDevice(autofocus_method)
 
-        # TODO: These hardcoded defaults will be replaced with proper configuration
-        # reading from sequence.metadata['mantis'] once the metadata structure is implemented
-        self._use_autofocus = True  # Enable autofocus by default
-        self._autofocus_stage = core.getFocusDevice()  # Use the default focus device
-
-        # Setup autofocus device if enabled
-        if self._use_autofocus:
-            autofocus_method = 'PFS'  # Hardcoded to Nikon PFS for now
-            logger.debug(f'Setting autofocus method as {autofocus_method}')
-            try:
-                core.setAutoFocusDevice(autofocus_method)
-            except Exception as e:
-                logger.warning(f'Could not set autofocus device: {e}')
-                self._use_autofocus = False
-        else:
+        if not self._use_autofocus:
             logger.debug('Autofocus is not enabled')
 
         # Store XY stage device name
+        core.events.XYStagePositionChanged.connect(self.on_xy_stage_moved)
         self._xy_stage_device = core.getXYStageDevice()
 
         return summary
@@ -392,13 +386,13 @@ if __name__ == "__main__":
 
     # Setup data writer
     logger.info(f'Saving acquisition data to {save_dir}')
-    writer = OMEZarrWriter(save_dir / f"{args.acquisition_name}.zarr")
-    core.mda.events.frameReady.connect(writer)
+    # writer = OMEZarrWriter(save_dir / f"{args.acquisition_name}.zarr")
+    writer = OMETiffWriter(save_dir / f"{args.acquisition_name}.ome.tiff")
 
     # Run the acquisition
-    logger.info('Starting acquisition')
-    core.mda.run(sequence)
+    with mda_listeners_connected(writer):
+        logger.info('Starting acquisition')
+        core.mda.run(sequence)
 
     # Cleanup
-    writer.close()
     logger.info('Acquisition completed')

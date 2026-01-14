@@ -61,17 +61,22 @@ metadata:
   pymmcore_widgets:
     version: 0.10.2.dev23+g22b8c0aff.d20260106
   mantis:
-    trigger_scope:
-      dac_sequencing: TS_DAC01
-      ttl_blanking: TS_TTL1-8
-    focus_device: AP Galvo
+    roi: [0, 512, 2048, 256]
+    z_stage: AP Galvo
+    use_hardware_sequencing: true
+    initialization_settings:
+      - ['Prime BSI Express', 'ReadoutRate', '200MHz 11bit']
+      - ['Prime BSI Express', 'Gain', '1-Full well']
+      - ['Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter']
+    setup_hardware_sequencing_settings:
+      - ['Prime BSI Express', 'TriggerMode', 'Edge Trigger']
+      - ['TS2_TTL1-8', 'Blanking', 'On']
+      - ['TS_DAC01', 'Sequence', 'On']
+    reset_hardware_sequencing_settings:
+      - ['Prime BSI Express', 'TriggerMode', 'Internal Trigger']
+      - ['TS2_TTL1-8', 'Blanking', 'Off']
+      - ['TS_DAC01', 'Sequence', 'Off']
     autofocus:
       enabled: true
       method: PFS
-    use_hardware_sequencing: true
-    roi:
-    - 0
-    - 512
-    - 2048
-    - 256
   
