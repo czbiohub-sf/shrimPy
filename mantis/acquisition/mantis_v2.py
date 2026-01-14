@@ -51,6 +51,8 @@ class MantisEngine(MDAEngine):
         Reads mantis-specific settings from sequence.metadata['mantis'] if present,
         otherwise uses default values.
         """
+        logger.info('Setting up Mantis-specific hardware for acquisition sequence')
+
         # Call parent setup first
         summary = super().setup_sequence(sequence)
         core = self.mmcore
@@ -60,25 +62,43 @@ class MantisEngine(MDAEngine):
 
         # Apply ROI settings
         if roi := microscope_meta.get('roi'):
+            logger.info(
+                f'Setting ROI to: x={roi[0]}, y={roi[1]}, width={roi[2]}, height={roi[3]}'
+            )
             core.setROI(*roi)
+        else:
+            logger.debug('No ROI settings specified in metadata')
 
         # Apply initialization settings
         # TODO: move to proper place
         if initialization_settings := microscope_meta.get('initialization_settings'):
+            logger.info(f'Applying {len(initialization_settings)} initialization settings')
             for setting in initialization_settings:
+                logger.debug(f'  Setting {setting[0]}.{setting[1]} = {setting[2]}')
                 core.setProperty(setting[0], setting[1], setting[2])
+        else:
+            logger.debug('No initialization settings specified')
 
         # Apply setup hardware sequencing settings
         # TODO: reset hardware sequencing settings after acquisition
         if setup_hardware_sequencing_settings := microscope_meta.get(
             'setup_hardware_sequencing_settings'
         ):
+            logger.info(
+                f'Applying {len(setup_hardware_sequencing_settings)} hardware sequencing settings'
+            )
             for setting in setup_hardware_sequencing_settings:
+                logger.debug(f'  Setting {setting[0]}.{setting[1]} = {setting[2]}')
                 core.setProperty(setting[0], setting[1], setting[2])
+        else:
+            logger.debug('No hardware sequencing settings specified')
 
         # Set focus device
         if z_stage := microscope_meta.get('z_stage'):
+            logger.info(f'Setting focus device to: {z_stage}')
             core.setProperty("Core", "Focus", z_stage)
+        else:
+            logger.debug(f'Using default focus device: {core.getFocusDevice()}')
 
         # Set autofocus settings
         if autofocus := microscope_meta.get('autofocus'):
@@ -87,15 +107,22 @@ class MantisEngine(MDAEngine):
                 self._autofocus_stage = core.getFocusDevice()
                 autofocus_method = autofocus.get('method')
                 if autofocus_method:
-                    logger.debug(f'Setting autofocus method as {autofocus_method}')
+                    logger.info(f'Enabling autofocus with method: {autofocus_method}')
                     core.setAutoFocusDevice(autofocus_method)
+                else:
+                    logger.info(
+                        f'Enabling autofocus with default device: {self._autofocus_stage}'
+                    )
 
         if not self._use_autofocus:
-            logger.debug('Autofocus is not enabled')
+            logger.info('Autofocus is disabled for this acquisition')
 
         # Store XY stage device name
         core.events.XYStagePositionChanged.connect(self.on_xy_stage_moved)
         self._xy_stage_device = core.getXYStageDevice()
+        logger.debug(f'XY stage device: {self._xy_stage_device}')
+
+        logger.info('Mantis hardware setup completed successfully')
 
         return summary
 
@@ -104,6 +131,7 @@ class MantisEngine(MDAEngine):
         # Log sequenced event details to show all channels being acquired
         from pymmcore_plus.core._sequencing import SequencedEvent
 
+        # TODO: consider removing this, pymmcore_plus already logs this?
         if isinstance(event, SequencedEvent):
             channels = [e.channel.config if e.channel else 'None' for e in event.events]
             unique_channels = list(dict.fromkeys(channels))  # preserve order, remove dupes
@@ -169,6 +197,9 @@ class MantisEngine(MDAEngine):
         if self._last_xy_position is not None and np.allclose(
             [target_x, target_y], self._last_xy_position, rtol=0, atol=0.01
         ):
+            logger.debug(
+                f'Stage position unchanged ({target_x:.2f}, {target_y:.2f}), skipping move'
+            )
             return
 
         # Adjust stage speed based on distance (only if using autofocus)
@@ -278,7 +309,7 @@ class MantisEngine(MDAEngine):
 
     def on_xy_stage_moved(self, x: float, y: float) -> None:
         """Handle XY stage movement events."""
-        # print(f"XY Stage moved to X: {x}, Y: {y}")
+        logger.debug(f"XY stage position changed: ({x:.2f}, {y:.2f})")
 
 
 def initialize_mantis_core(config_path: str | None = None) -> CMMCorePlus:
@@ -294,13 +325,16 @@ def initialize_mantis_core(config_path: str | None = None) -> CMMCorePlus:
     CMMCorePlus (or UniMMCore)
         Configured core instance ready for use.
     """
+    logger.info('Initializing Micro-Manager core')
     core = CMMCorePlus().instance()
 
     if config_path is None:
         logger.info("No configuration file provided. Using MMConfig_demo.cfg.")
-        config_path = "C:\\Users\\Cameron\\justin\\shrimPy\\CompMicro_MMConfigs\\Dev_Computer\\mantis2-demo.cfg"
+    else:
+        logger.info(f"Loading Micro-Manager configuration from: {config_path}")
 
     core.loadSystemConfiguration(config_path)
+    logger.info('Micro-Manager core initialized successfully')
     # core.setPixelSizeConfig("Res40x")  # Uncomment if needed
 
     return core
@@ -323,6 +357,7 @@ def create_mantis_engine(
     MantisEngine
         The created and registered engine instance.
     """
+    logger.info(f'Creating MantisEngine (hardware_sequencing={use_hardware_sequencing})')
     engine = MantisEngine(core, use_hardware_sequencing=use_hardware_sequencing)
     core.mda.set_engine(engine)
     return engine
@@ -376,7 +411,6 @@ if __name__ == "__main__":
         logger.error(errors.decode('ascii'))
 
     # Initialize core and engine using common functions
-    logger.info('Initializing Mantis acquisition engine')
     core = initialize_mantis_core(args.mmconfig)
     mantis_engine = create_mantis_engine(core)
 
@@ -385,14 +419,14 @@ if __name__ == "__main__":
     sequence = MDASequence.from_file(args.mda_sequence)
 
     # Setup data writer
-    logger.info(f'Saving acquisition data to {save_dir}')
-    # writer = OMEZarrWriter(save_dir / f"{args.acquisition_name}.zarr")
-    writer = OMETiffWriter(save_dir / f"{args.acquisition_name}.ome.tiff")
+    data_path = save_dir / f"{args.acquisition_name}.ome.tiff"
+    logger.info(f'Initializing OME-TIFF writer at {data_path}')
+    writer = OMETiffWriter(data_path)
 
     # Run the acquisition
     with mda_listeners_connected(writer):
-        logger.info('Starting acquisition')
+        logger.info('Starting MDA acquisition sequence')
         core.mda.run(sequence)
 
     # Cleanup
-    logger.info('Acquisition completed')
+    logger.info('Acquisition completed successfully')
