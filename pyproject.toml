@@ -2,8 +2,8 @@
 requires = ["setuptools >= 61", "setuptools_scm[toml]>=3.4", "wheel"]
 
 [project]
-name = "mantis"
-description = "Acquisition engine for collecting data on the mantis microscope"
+name = "shrimpy"
+description = "Custom acquisition engines for optical microscopes based on pymmcore-plus"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10, <4.0"
@@ -45,18 +45,18 @@ dev = [
 build = ["build", "twine"]
 
 [project.scripts]
-mantis = "mantis.cli.main:cli"
+shrimpy = "shrimpy.cli.main:cli"
 
 [tool.setuptools]
 # explicitly specify the package name
 # TODO: is there a better way to do this?
-packages = ["mantis"]
+packages = ["shrimpy"]
 
 # allow use of __file__ to load data files included in the package
 zip-safe = false
 
 [tool.setuptools.dynamic]
-version = { attr = "mantis.__version__" }
+version = { attr = "shrimpy.__version__" }
 
 [tool.black]
 line-length = 95
@@ -79,6 +79,7 @@ exclude = '''
     | ignore
     | examples
     | scripts
+    | archive
   )/
 )
 '''
@@ -90,7 +91,7 @@ lines_between_types = 1
 default_section = "THIRDPARTY"
 no_lines_before = ["STDLIB"]
 ensure_newline_before_comments = true
-skip_glob = ["examples/*", "scripts/*"]
+skip_glob = ["examples/*", "scripts/*", "**/archive/*"]
 
 [tool.pylint]
 # disable all conventions, refactors, warnings (C, R, W) and the following:
@@ -101,4 +102,4 @@ msg-template = "{line},{column},{category},{symbol}:{msg}"
 reports = "n"
 
 [tool.pytest.ini_options]
-addopts = "--ignore scripts/"
+addopts = "--ignore scripts/ --ignore-glob=**/archive/"
