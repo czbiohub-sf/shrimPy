@@ -309,7 +309,9 @@ class MantisEngine(MDAEngine):
 
     def on_xy_stage_moved(self, x: float, y: float) -> None:
         """Handle XY stage movement events."""
-        logger.debug(f"XY stage position changed: ({x:.2f}, {y:.2f})")
+        # TODO: throws error, x = 'XY' rather than float
+        pass
+        # logger.debug(f"XY stage position changed: ({x:.2f}, {y:.2f})")
 
 
 def initialize_mantis_core(config_path: str | None = None) -> CMMCorePlus:
