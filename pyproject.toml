@@ -6,7 +6,7 @@ name = "mantis"
 description = "Acquisition engine for collecting data on the mantis microscope"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.10, <4.0"
+requires-python = ">=3.11, <4.0"
 
 # the dynamically determined project metadata attributes
 dynamic = ["version"]
@@ -15,7 +15,7 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
 ]
 
 # list package dependencies here
@@ -62,7 +62,7 @@ version = { attr = "mantis.__version__" }
 
 [tool.black]
 line-length = 95
-target-version = ['py310']
+target-version = ['py311']
 include = '\.pyi?$'
 skip-string-normalization = true
 exclude = '''
