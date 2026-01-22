@@ -276,6 +276,124 @@ class BaseChannelSliceAcquisition(object):
                         settings.property_value,
                     )
 
+<<<<<<< HEAD
+=======
+        # Zarr store will be initialized by MantisAcquisition after position_settings are updated
+
+    def initialize_zarr_store(
+        self,
+        output_path: Union[str, os.PathLike] = None,
+        position_settings: PositionSettings = None,
+    ):
+        if not self.enabled or output_path is None:
+            return
+
+        x_size = self.mmc.getImageWidth()
+        y_size = self.mmc.getImageHeight()
+
+        # Create dimensions list for the array using ZarrSettings
+        dimensions = [
+            Dimension(
+                name='t',
+                array_size_px=0,  # zero denotes the append dimension in acquire
+                chunk_size_px=1,  # don't chunk in time dimension
+                shard_size_chunks=1,  # don't shard in time dimension
+                kind=DimensionType.TIME,
+            ),
+            Dimension(
+                name='z',
+                array_size_px=self.slice_settings.num_slices,
+                chunk_size_px=min(
+                    self.zarr_settings.chunk_sizes['z'],
+                    max(1, self.slice_settings.num_slices),
+                ),
+                shard_size_chunks=self.zarr_settings.shard_sizes['z'],
+                kind=DimensionType.SPACE,
+            ),
+            Dimension(
+                name='y',
+                array_size_px=y_size,
+                chunk_size_px=min(self.zarr_settings.chunk_sizes['y'], max(1, y_size)),
+                shard_size_chunks=self.zarr_settings.shard_sizes['y'],
+                kind=DimensionType.SPACE,
+            ),
+            Dimension(
+                name='x',
+                array_size_px=x_size,
+                chunk_size_px=min(self.zarr_settings.chunk_sizes['x'], max(1, x_size)),
+                shard_size_chunks=self.zarr_settings.shard_sizes['x'],
+                kind=DimensionType.SPACE,
+            ),
+        ]
+
+        if self.channel_settings.num_channels > 1:
+            dimensions.insert(
+                1,
+                Dimension(
+                    name='c',
+                    array_size_px=self.channel_settings.num_channels,
+                    chunk_size_px=min(
+                        self.zarr_settings.chunk_sizes['c'],
+                        max(1, self.channel_settings.num_channels),
+                    ),
+                    shard_size_chunks=self.zarr_settings.shard_sizes['c'],
+                    kind=DimensionType.CHANNEL,
+                ),
+            )
+
+        # Create array settings using ZarrSettings
+        array_settings = ArraySettings(
+            dimensions=dimensions,
+            data_type=self.zarr_settings.get_data_type_enum(),
+            compression=self.zarr_settings.get_compression_settings(),
+        )
+
+        # Set store path in zarr_settings if not already set
+        if self.zarr_settings.store_path is None:
+            zarr_path = str(output_path)
+            if not zarr_path.endswith('.zarr'):
+                zarr_path += '.zarr'
+            self.zarr_settings.store_path = zarr_path
+
+        # Create stream settings with the array
+        if self.zarr_settings.use_hcs_layout:
+            # Create HCS layout with plate and wells
+            plate = Plate(
+                path=self.zarr_settings.plate_name,
+                # description=self.zarr_settings.plate_description or "",
+            )
+
+            # Create wells from position settings
+            wells = []
+            for well_id in set(position_settings.well_ids if position_settings else []):
+                well = Well(
+                    name=well_id,
+                    row=well_id[0] if len(well_id) > 0 else "0",  # Extract row letter
+                    column=(well_id[1:] if len(well_id) > 1 else "0"),  # Extract column number
+                )
+                wells.append(well)
+            plate.wells = wells
+
+            stream_settings = StreamSettings(
+                store_path=self.zarr_settings.store_path,
+                arrays=[array_settings],
+                version=self.zarr_settings.get_zarr_version_enum(),
+                max_threads=self.zarr_settings.max_threads,
+                hcs_plates=[plate],
+            )
+        else:
+            stream_settings = StreamSettings(
+                store_path=self.zarr_settings.store_path,
+                arrays=[array_settings],
+                version=self.zarr_settings.get_zarr_version_enum(),
+                max_threads=self.zarr_settings.max_threads,
+            )
+
+        self._zarr_writer = ZarrStream(stream_settings)
+
+        self.mmc.mda.events.frameReady.connect(self.write_data)
+
+>>>>>>> 2b2b0f2 (Apply code formatting with black and isort)
     def reset(self):
         """
         Reset the microscope device properties, typically at the end of the acquisition
@@ -1172,6 +1290,19 @@ class MantisAcquisition(object):
         logger.debug('Updating position settings')
         self.update_position_settings()
 
+<<<<<<< HEAD
+=======
+        logger.debug('Initializing zarr stores')
+        if self.lf_acq.enabled:
+            self.lf_acq.initialize_zarr_store(
+                f'{self._acq_dir}/{self._acq_name}_{LF_ACQ_LABEL}', self.position_settings
+            )
+        if self.ls_acq.enabled:
+            self.ls_acq.initialize_zarr_store(
+                f'{self._acq_dir}/{self._acq_name}_{LS_ACQ_LABEL}', self.position_settings
+            )
+
+>>>>>>> 2b2b0f2 (Apply code formatting with black and isort)
         logger.debug('Setting up autoexposure')
         self.setup_autoexposure()
 
