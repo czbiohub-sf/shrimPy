@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-import useq
-from useq import MDASequence
+import time
 
+import numpy as np
+import useq
+from useq import MDASequence, MDAEvent
+
+from pymmcore_plus._logger import logger
 from pymmcore_plus.experimental.unicore import UniMMCore
 from pymmcore_plus.mda import MDAEngine, mda_listeners_connected
 from pymmcore_plus.mda.handlers import OMETiffWriter, OMEZarrWriter
@@ -18,7 +22,26 @@ class MantisEngine(MDAEngine):
     - ROI setup
     - Axial Piezo (AP Galvo) focus control
     - TTL blanking
+    - Autofocus after XY stage movements
     """
+    
+    def __init__(self, mmc: UniMMCore, *args, **kwargs):
+        """Initialize the MantisEngine.
+        
+        Parameters
+        ----------
+        mmc : UniMMCore
+            The Micro-Manager core instance
+        """
+        super().__init__(mmc, *args, **kwargs)
+        self._use_autofocus = False
+        self._autofocus_stage = None
+        self._xy_stage_device = None
+        self._last_xy_position = None
+        self._slow_speed = 2.0  # mm/s for short distances
+        self._fast_speed = 5.75  # mm/s for long distances
+        self._short_distance_threshold = 2000  # um
+
     
     def setup_sequence(self, sequence: MDASequence) -> SummaryMetaV1 | None:
         """Setup mantis-specific hardware before the sequence starts.
@@ -58,6 +81,26 @@ class MantisEngine(MDAEngine):
         
         core.events.XYStagePositionChanged.connect(self.on_xy_stage_moved)
         
+        # TODO: These hardcoded defaults will be replaced with proper configuration
+        # reading from sequence.metadata['mantis'] once the metadata structure is implemented
+        self._use_autofocus = True  # Enable autofocus by default
+        self._autofocus_stage = core.getFocusDevice()  # Use the default focus device
+        
+        # Setup autofocus device if enabled
+        if self._use_autofocus:
+            autofocus_method = 'PFS'  # Hardcoded to Nikon PFS for now
+            logger.debug(f'Setting autofocus method as {autofocus_method}')
+            try:
+                core.setAutoFocusDevice(autofocus_method)
+            except Exception as e:
+                logger.warning(f'Could not set autofocus device: {e}')
+                self._use_autofocus = False
+        else:
+            logger.debug('Autofocus is not enabled')
+        
+        # Store XY stage device name
+        self._xy_stage_device = core.getXYStageDevice()
+        
         return summary
     
     def setup_event(self, event: useq.MDAEvent) -> None:
@@ -68,6 +111,154 @@ class MantisEngine(MDAEngine):
         super().setup_event(event)
         
         # Custom post-setup logic could go here
+    
+    def _set_event_xy_position(self, event: MDAEvent) -> None:
+        """Override XY position setting to handle autofocus after stage movement.
+        
+        Changes from default MDAEngine behavior:
+        1. SPEED ADJUSTMENT: Sets stage speed based on distance before movement
+           - Default: Uses pre-configured stage speed
+           - Mantis: 2.0 mm/s for <2000 um, 5.75 mm/s for longer moves
+           - Reason: Slow speed keeps continuous autofocus engaged during short moves
+        
+        2. EXPLICIT WAIT: Calls core.waitForDevice() after setXYPosition()
+           - Default: Does NOT wait for stage to finish moving
+           - Mantis: Waits for movement completion before proceeding
+           - Reason: Ensures stage is settled before engaging autofocus
+        
+        3. AUTOFOCUS: Engages continuous autofocus after each position change
+           - Default: No automatic autofocus behavior
+           - Mantis: Calls _engage_autofocus() with multiple Z offset attempts
+           - Reason: Re-establish Nikon PFS lock after stage movement
+        
+        4. POSITION TRACKING: Uses local _last_xy_position instead of core's cache
+           - Note: This differs from default's use of core._last_xy_position
+           - TODO: Consider using core._last_xy_position for consistency
+        """
+        event_x, event_y = event.x_pos, event.y_pos
+        
+        # If neither coordinate is provided, do nothing
+        if event_x is None and event_y is None:
+            return
+        
+        core = self.mmcore
+        
+        # Skip if no XY stage device is found
+        if not self._xy_stage_device:
+            logger.warning("No XY stage device found. Cannot set XY position.")
+            return
+        
+        # Get current position
+        try:
+            current_x, current_y = core.getXYPosition()
+        except Exception as e:
+            logger.warning(f"Failed to get current XY position: {e}")
+            current_x, current_y = 0, 0
+        
+        # Use current position if event position is None
+        target_x = current_x if event_x is None else event_x
+        target_y = current_y if event_y is None else event_y
+        
+        # Check if position actually changed
+        if (self._last_xy_position is not None and 
+            np.allclose([target_x, target_y], self._last_xy_position, rtol=0, atol=0.01)):
+            return
+        
+        # Adjust stage speed based on distance (only if using autofocus)
+        if self._use_autofocus and self._xy_stage_device:
+            distance = np.linalg.norm([target_x - current_x, target_y - current_y])
+            speed = self._slow_speed if distance < self._short_distance_threshold else self._fast_speed
+            
+            try:
+                # Set XY stage speed (mantis-specific property names)
+                core.setProperty(self._xy_stage_device, 'MotorSpeedX-S(mm/s)', speed)
+                core.setProperty(self._xy_stage_device, 'MotorSpeedY-S(mm/s)', speed)
+                logger.debug(f'Set stage speed to {speed} mm/s for distance {distance:.1f} um')
+            except Exception as e:
+                logger.debug(f'Could not set stage speed: {e}')
+        
+        # Move to the target position
+        try:
+            logger.debug(f'Moving stage to ({target_x:.2f}, {target_y:.2f})')
+            core.setXYPosition(target_x, target_y)
+            core.waitForDevice(self._xy_stage_device)
+            self._last_xy_position = [target_x, target_y]
+        except Exception as e:
+            logger.warning(f"Failed to set XY position: {e}")
+            return
+        
+        # Attempt autofocus after stage movement
+        if self._use_autofocus and self._autofocus_stage:
+            self._engage_autofocus(event)
+    
+    def _engage_autofocus(self, event: MDAEvent) -> bool:
+        """Attempt to engage continuous autofocus after stage movement.
+        
+        This method tries to engage Nikon PFS continuous autofocus, attempting
+        different Z offsets if the initial attempt fails.
+        
+        Parameters
+        ----------
+        event : MDAEvent
+            The current event being executed
+            
+        Returns
+        -------
+        bool
+            True if autofocus successfully engaged, False otherwise
+        """
+        core = self.mmcore
+        
+        # Get the starting Z position
+        try:
+            z_position = event.z_pos if event.z_pos is not None else core.getPosition(self._autofocus_stage)
+        except Exception:
+            z_position = core.getPosition(self._autofocus_stage)
+        
+        logger.debug(f'Engaging autofocus at Z position {z_position:.2f} um')
+        
+        autofocus_success = False
+        error_occurred = False
+        z_offsets = [0, -10, 10, -20, 20, -30, 30]  # in um
+        
+        # Try to engage autofocus with fullFocus
+        try:
+            core.fullFocus()
+            logger.debug('Call to fullFocus() succeeded')
+        except Exception:
+            logger.debug('Call to fullFocus() failed')
+        
+        # Check if autofocus is already engaged
+        if core.isContinuousFocusLocked():
+            autofocus_success = True
+            logger.debug('Continuous autofocus is already engaged')
+        else:
+            # Try different Z offsets
+            for z_offset in z_offsets:
+                try:
+                    core.setPosition(self._autofocus_stage, z_position + z_offset)
+                    core.waitForDevice(self._autofocus_stage)
+                    
+                    core.enableContinuousFocus(True)
+                    time.sleep(1)  # Wait for autofocus to engage
+                    
+                    if core.isContinuousFocusLocked():
+                        autofocus_success = True
+                        if error_occurred:
+                            logger.debug(f'Continuous autofocus engaged with Z offset of {z_offset} um')
+                        break
+                    else:
+                        error_occurred = True
+                        logger.debug(f'Autofocus call failed with Z offset of {z_offset} um')
+                except Exception as e:
+                    logger.debug(f'Error during autofocus attempt at offset {z_offset}: {e}')
+                    error_occurred = True
+        
+        if not autofocus_success:
+            logger.error(f'Autofocus call failed after {len(z_offsets)} attempts')
+        
+        return autofocus_success
+
 
     def on_xy_stage_moved(self, x: float, y: float) -> None:
         """Handle XY stage movement events."""
