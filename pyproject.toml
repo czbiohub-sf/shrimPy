@@ -21,18 +21,11 @@ classifiers = [
 # list package dependencies here
 dependencies = [
   "copylot @ git+https://github.com/czbiohub-sf/coPylot",
-<<<<<<< HEAD
-  "ndtiff==2.2.1",
-  "nidaqmx",
-  "numpy<2",
-  "pycromanager==0.28.1",
-=======
   # "ndtiff==2.2.1",
   # "nidaqmx",
   "numpy",
   # "pycromanager==0.28.1",
   "pymmcore_plus==0.16.0",
->>>>>>> 26226b9 (Mantis-v2-logging (#214))
   "pydantic>=2.0.0",
   "pylablib==1.4.1",
   "tifffile",
