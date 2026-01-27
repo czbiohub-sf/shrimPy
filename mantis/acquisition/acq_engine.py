@@ -1050,6 +1050,7 @@ class MantisAcquisition(object):
                 pixel_size=LS_PIXEL_SIZE,
                 threshold_FWHM=threshold_FWHM,
                 plot_path=self._logs_dir / f'ls_refocus_plot_{timestamp}_Pos{stack_idx}.png',
+                return_statistics=True,
             )
             focus_indices.append(idx)
             peak_indices.append(stats['peak_index'])
