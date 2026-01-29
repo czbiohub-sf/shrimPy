@@ -36,7 +36,7 @@ from qtpy.QtWidgets import (
 )
 from useq import MDASequence
 
-from shrimpy.mantis.mantis_v2 import MantisEngine, create_mantis_engine, initialize_mantis_core
+from shrimpy.mantis.mantis_engine import MantisEngine, create_mantis_engine, initialize_mantis_core
 
 
 class CustomCameraRoiWidget(CameraRoiWidget):

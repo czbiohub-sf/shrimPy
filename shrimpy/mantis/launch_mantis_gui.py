@@ -7,7 +7,7 @@ interface for configuring and running mantis microscope acquisitions.
 from qtpy.QtWidgets import QApplication
 
 from shrimpy.mantis.mantis_acquisition_widget import MantisAcquisitionWidget
-from shrimpy.mantis.mantis_v2 import initialize_mantis_core
+from shrimpy.mantis.mantis_engine import initialize_mantis_core
 
 if __name__ == "__main__":
     # Create Qt application
