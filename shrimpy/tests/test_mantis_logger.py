@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pymmcore_plus._logger import logger as pymmcore_logger
 
-from mantis.acquisition.mantis_logger import configure_mantis_logger, get_mantis_logger
+from shrimpy.mantis.mantis_logger import configure_mantis_logger, get_mantis_logger
 
 
 def test_get_mantis_logger():

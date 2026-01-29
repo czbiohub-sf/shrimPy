@@ -36,7 +36,7 @@ from qtpy.QtWidgets import (
 )
 from useq import MDASequence
 
-from mantis.acquisition.mantis_v2 import (
+from shrimpy.mantis.mantis_v2 import (
     MantisEngine,
     create_mantis_engine,
     initialize_mantis_core,

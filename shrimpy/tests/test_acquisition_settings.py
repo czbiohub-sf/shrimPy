@@ -1,6 +1,6 @@
 import pytest
 
-from mantis.acquisition.AcquisitionSettings import (
+from shrimpy.mantis.archive.AcquisitionSettings import (
     ChannelSettings,
     ConfigSettings,
     DevicePropertySettings,

@@ -10,7 +10,7 @@ from pymmcore_plus.mda.handlers import OMETiffWriter
 from pymmcore_plus.metadata import SummaryMetaV1
 from useq import MDAEvent, MDASequence
 
-from mantis.mantis_logger import configure_mantis_logger, get_mantis_logger
+from shrimpy.mantis.mantis_logger import configure_mantis_logger, get_mantis_logger
 
 # Get the logger instance
 logger = get_mantis_logger()
@@ -371,7 +371,7 @@ if __name__ == "__main__":
 
     from pathlib import Path
 
-    from mantis.mantis_logger import log_conda_environment
+    from shrimpy.mantis.mantis_logger import log_conda_environment
 
     parser = argparse.ArgumentParser(description="Run Mantis microscope acquisition")
     parser.add_argument(
