@@ -35,7 +35,7 @@ dependencies = [
 [project.optional-dependencies]
 # note that dev dependencies are only pinned to major versions
 dev = [
-  "black==22.3.0",
+  "black==26.1.0",
   "flake8~=5.0",
   "isort~=5.12",
   "pre-commit~=2.19",
