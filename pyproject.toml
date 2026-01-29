@@ -25,7 +25,7 @@ dependencies = [
   # "nidaqmx",
   "numpy",
   # "pycromanager==0.28.1",
-  "pymmcore_plus==0.16.0",
+  "pymmcore_plus==0.17.0",
   "pymmcore-widgets",
   # "pydantic>=2.0.0",  # only used in archive
   # "pylablib==1.4.1",  # only used in archive
