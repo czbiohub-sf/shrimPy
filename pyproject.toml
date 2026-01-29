@@ -49,12 +49,14 @@ build = ["build", "twine"]
 shrimpy = "shrimpy.cli.main:cli"
 
 [tool.setuptools]
-# explicitly specify the package name
-# TODO: is there a better way to do this?
-packages = ["shrimpy"]
-
 # allow use of __file__ to load data files included in the package
 zip-safe = false
+
+[tool.setuptools.packages.find]
+# Discover shrimpy and all subpackages (e.g., shrimpy.mantis)
+where = ["."]
+include = ["shrimpy*"]
+exclude = ["shrimpy.tests*"]
 
 [tool.setuptools.dynamic]
 version = { attr = "shrimpy.__version__" }
