@@ -20,16 +20,20 @@ classifiers = [
 
 # list package dependencies here
 dependencies = [
-  "copylot @ git+https://github.com/czbiohub-sf/coPylot",
+  # "copylot @ git+https://github.com/czbiohub-sf/coPylot",  # only used in archive
   # "ndtiff==2.2.1",
   # "nidaqmx",
   "numpy",
   # "pycromanager==0.28.1",
   "pymmcore_plus==0.16.0",
-  "pydantic>=2.0.0",
-  "pylablib==1.4.1",
-  "tifffile",
-  "waveorder @ git+https://github.com/mehta-lab/waveorder@return_peak_stats",
+  "pymmcore-widgets",
+  # "pydantic>=2.0.0",  # only used in archive
+  # "pylablib==1.4.1",  # only used in archive
+  "PyYAML",
+  "qtpy",
+  # "tifffile",  # only used in archive
+  "useq-schema",
+  # "waveorder @ git+https://github.com/mehta-lab/waveorder@return_peak_stats",  # only used in archive
 ]
 
 
