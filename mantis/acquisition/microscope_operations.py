@@ -374,7 +374,8 @@ def acquire_defocus_stack(
     else:
         raise RuntimeError(f'Unknown z stage: {z_stage}')
 
-    move_z(z_range[0]); time.sleep(0.3)
+    move_z(z_range[0])
+    time.sleep(0.3)
     for z_ind, rel_z in enumerate(z_range):
         # set z position
         move_z(rel_z)

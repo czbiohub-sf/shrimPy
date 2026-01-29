@@ -11,10 +11,10 @@ This version of the code still uses the legacy name `mantis`, which overlaps wit
 
 ## Installation
 
-We recommend using a virtual conda environment with Python 3.10:
+We recommend using a virtual conda environment with Python 3.11:
 
 ```sh
-conda create -y --name mantis python=3.10
+conda create -y --name mantis python=3.11
 conda activate mantis
 
 git clone https://github.com/czbiohub-sf/shrimPy.git
@@ -24,7 +24,7 @@ pip install ./mantis
 Optionally, you can also install the [biahub](https://github.com/czbiohub-sf/biahub) image analysis library in the same environment. `biahub` is currently used when characterizing the microscope point spread function, and will be used for real-time image processing in the future. You can install both libraries in a single step with:
 
 ```sh
-conda create -y --name mantis python=3.10
+conda create -y --name mantis python=3.11
 conda activate mantis
 
 git clone https://github.com/czbiohub-sf/shrimPy.git
