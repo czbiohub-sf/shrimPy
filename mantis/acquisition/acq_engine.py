@@ -1538,6 +1538,7 @@ class MantisAcquisition(object):
         time.sleep(wait_time)
 
     def abort_stalled_acquisition(self):
+        # TODO: buffer_time was bumped up 10x in autotracker_refactor
         buffer_time = 100
         lf_acq_aborted = False
         ls_acq_aborted = False
@@ -1547,7 +1548,6 @@ class MantisAcquisition(object):
             not all((globals.lf_acq_finished, globals.ls_acq_finished))
             and (time.time() - t_start) < buffer_time
         ):
-            print(f"in buffer globals.lf_acq_finished:{globals.lf_acq_finished}")
             time.sleep(0.2)
 
         # TODO: a lot of hardcoded values here
