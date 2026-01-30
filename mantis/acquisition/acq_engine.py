@@ -1258,19 +1258,18 @@ class MantisAcquisition(object):
 
         # TODO: implement logic for the autotracker_img_saved_hook_fn
         if self.lf_acq.microscope_settings.autotracker_config is not None:
-
             zyx_shape = (self.lf_acq.slice_settings.num_slices,) + tuple(self.lf_acq.microscope_settings.roi[-2:][::-1])
-            tracker = Autotracker(
-                settings= self.lf_acq.autotracker_settings,
-                zyx_shape = zyx_shape,
-                arm='lf',     
+            logger.info("Instantiating autotracker on lf arm...")
+            autotracker = Autotracker(
+                arm='lf',
+                zyx_shape=zyx_shape,
+                position_settings=self.position_settings,
+                channel_config=self.lf_acq.microscope_settings.autotracker_config,
+                output_shift_path=self._logs_dir,
+                settings=self.lf_acq.autotracker_settings,
             )
-            lf_image_saved_fn = partial(
-                tracker.track,
-                self.position_settings,
-                self.lf_acq.microscope_settings.autotracker_config.config_name,
-                self._logs_dir,
-            )
+            lf_image_saved_fn = autotracker.track
+    
         else:
             logger.info('No autotracker config found for LF acquisition. Using default image saved hook')
             lf_image_saved_fn = check_lf_acq_finished
@@ -1307,18 +1306,17 @@ class MantisAcquisition(object):
         # TODO: implement logic for the autotracker_img_saved_hook_fn
         if self.ls_acq.microscope_settings.autotracker_config is not None:
             zyx_shape = (self.ls_acq.slice_settings.num_slices,) + tuple(self.ls_acq.microscope_settings.roi[-2:][::-1])
-            tracker = Autotracker(
-                settings= self.ls_acq.autotracker_settings,
-                zyx_shape = zyx_shape,
-                arm='ls',     
+            logger.info("Instantiating autotracker on ls arm...")
+            autotracker = Autotracker(
+                arm='ls',
+                zyx_shape=zyx_shape,
+                position_settings=self.position_settings,
+                channel_config=self.ls_acq.microscope_settings.autotracker_config,
+                output_shift_path=self._logs_dir,
+                settings=self.ls_acq.autotracker_settings,
             )
-            ls_image_saved_fn = partial(
-                tracker.track,
-                self.position_settings,
-                self.ls_acq.microscope_settings.autotracker_config.config_name,
-                self._logs_dir,
-            )
-            ls_image_saved_fn = check_ls_acq_finished
+            ls_image_saved_fn = autotracker.track
+               
         else:
             logger.info('No autotracker config found for LS acquisition. Using default image saved hook')
             ls_image_saved_fn = check_ls_acq_finished
@@ -1540,6 +1538,7 @@ class MantisAcquisition(object):
         time.sleep(wait_time)
 
     def abort_stalled_acquisition(self):
+        # TODO: buffer_time was bumped up 10x in autotracker_refactor
         buffer_time = 100
         lf_acq_aborted = False
         ls_acq_aborted = False

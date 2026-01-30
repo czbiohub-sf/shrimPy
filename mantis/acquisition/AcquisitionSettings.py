@@ -205,13 +205,13 @@ class AutoexposureSettings:
 class AutotrackerSettings:
     tracking_method: Literal['phase_cross_correlation', 'template_matching', 'multi_otsu']
     tracking_interval: Optional[int] = 1  # TODO: add units
-    scale_yx: Optional[float] = 1.0  # in um per pixel
     shift_estimation_channel: Literal['phase', 'vs_nuclei', 'vs_membrane', 'bf'] = 'bf'
+    scale_yx: Optional[float] = 1.0  # in um per pixel
+    device: Optional[str] = 'cpu'
+    zyx_dampening_factor: Optional[Union[Tuple[float, float, float], None]] = None
     absolute_shift_limits_um: Optional[Dict[str, Tuple[float, float]]] = field(
         default_factory=lambda: {'z': (0.5, 2), 'y': (2, 10), 'x': (2, 10)}
     )  # in um
-    device: Optional[str] = 'cpu'
-    zyx_dampening_factor: Optional[Union[Tuple[float, float, float], None]] = None
     # TODO: maybe do the ROI like in the ls_microscope_settings
     template_roi_zyx: Optional[Tuple[int, int, int]] = None
     template_channel: Optional[str] = None
