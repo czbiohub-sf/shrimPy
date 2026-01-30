@@ -29,6 +29,7 @@ dependencies = [
   "pylablib==1.4.1",
   "tifffile",
   "waveorder @ git+https://github.com/mehta-lab/waveorder@focus-statistics-api",
+  "viscy"
 ]
 
 

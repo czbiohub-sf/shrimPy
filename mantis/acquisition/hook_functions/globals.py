@@ -9,3 +9,5 @@ lf_acq_aborted = False
 ls_slice_acquisition_rates = None
 ls_laser_powers = None
 new_well = False
+
+demo_run = False

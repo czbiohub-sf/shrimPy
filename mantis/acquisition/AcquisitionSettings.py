@@ -1,7 +1,8 @@
+import copy
 import warnings
 
 from dataclasses import field
-from typing import Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 
@@ -36,10 +37,12 @@ class PositionSettings:
     position_labels: List[str] = field(default_factory=list)
     num_positions: int = field(init=False, default=0)
     well_ids: List[str] = field(init=False, default_factory=list)
+    xyz_positions_shift: list = field(init=False, default_factory=list)
 
     def __post_init__(self):
         assert len(self.xyz_positions) == len(self.position_labels)
         self.num_positions = len(self.xyz_positions)
+        self.xyz_positions_shift = copy.deepcopy(self.xyz_positions)
 
         try:
             # Look for "'A1-Site_0', 'H12-Site_1', ... " format
@@ -143,6 +146,7 @@ class MicroscopeSettings:
     o3_refocus_config: Optional[ConfigSettings] = None
     o3_refocus_interval_min: Optional[int] = None
     o3_refocus_skip_wells: List[str] = field(default_factory=list)
+    autotracker_config: Optional[ConfigSettings] = None
 
 
 @dataclass
@@ -195,3 +199,32 @@ class AutoexposureSettings:
             attr_val = getattr(self, attr)
             if attr_val is not None:
                 setattr(self, attr, round(attr_val, 1))
+
+
+@dataclass
+class AutotrackerSettings:
+    tracking_method: Literal['phase_cross_correlation', 'template_matching', 'multi_otsu']
+    tracking_interval: Optional[int] = 1  # TODO: add units
+    shift_estimation_channel: Literal['phase', 'vs_nuclei', 'vs_membrane', 'bf'] = 'bf'
+    scale_yx: Optional[float] = 1.0  # in um per pixel
+    device: Optional[str] = 'cpu'
+    zyx_dampening_factor: Optional[Union[Tuple[float, float, float], None]] = None
+    absolute_shift_limits_um: Optional[Dict[str, Tuple[float, float]]] = field(
+        default_factory=lambda: {'z': (0.5, 2), 'y': (2, 10), 'x': (2, 10)}
+    )  # in um
+    # TODO: maybe do the ROI like in the ls_microscope_settings
+    template_roi_zyx: Optional[Tuple[int, int, int]] = None
+    template_channel: Optional[str] = None
+    reconstruction: Optional[List[str]] = field(default_factory=list)
+    phase_config: Optional[Dict[str, Any]] = field(default_factory=dict)
+    vs_config: Optional[Dict[str, Any]] = field(default_factory=dict)
+
+    @validator("tracking_method")
+    def check_tracking_method_options(cls, v):
+        # Check if template matching options are provided and are not None
+        if v == 'template_matching':
+            if not all([cls.template_roi_zyx, cls.template_channel]):
+                raise ValueError(
+                    'template_roi_zyx and template_channel must be provided for template matching'
+                )
+        return v
