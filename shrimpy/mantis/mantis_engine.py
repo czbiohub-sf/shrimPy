@@ -3,11 +3,12 @@ import time
 
 import numpy as np
 import useq
+import ome_writers as omew
 
 from pymmcore_plus.core import CMMCorePlus
 from pymmcore_plus.mda import MDAEngine, mda_listeners_connected
-from pymmcore_plus.mda.handlers import OMETiffWriter
-from pymmcore_plus.metadata import SummaryMetaV1
+# from pymmcore_plus.mda.handlers import OMETiffWriter
+from pymmcore_plus.metadata import SummaryMetaV1, FrameMetaV1
 from useq import MDAEvent, MDASequence
 
 from shrimpy.mantis.mantis_logger import configure_mantis_logger, get_mantis_logger
@@ -65,6 +66,7 @@ class MantisEngine(MDAEngine):
             logger.info(
                 f'Setting ROI to: x={roi[0]}, y={roi[1]}, width={roi[2]}, height={roi[3]}'
             )
+            core.clearROI()
             core.setROI(*roi)
         else:
             logger.debug('No ROI settings specified in metadata')
@@ -129,17 +131,17 @@ class MantisEngine(MDAEngine):
     def setup_event(self, event: useq.MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
         # Log sequenced event details to show all channels being acquired
-        from pymmcore_plus.core._sequencing import SequencedEvent
+        # from pymmcore_plus.core._sequencing import SequencedEvent
 
         # TODO: consider removing this, pymmcore_plus already logs this?
-        if isinstance(event, SequencedEvent):
-            channels = [e.channel.config if e.channel else 'None' for e in event.events]
-            unique_channels = list(dict.fromkeys(channels))  # preserve order, remove dupes
-            logger.info(
-                f"Sequenced event will acquire {len(event.events)} images: "
-                f"{len(unique_channels)} channels {unique_channels} × "
-                f"{len(event.events)//len(unique_channels)} z-slices"
-            )
+        # if isinstance(event, SequencedEvent):
+        #     channels = [e.channel.config if e.channel else 'None' for e in event.events]
+        #     unique_channels = list(dict.fromkeys(channels))  # preserve order, remove dupes
+        #     logger.info(
+        #         f"Sequenced event will acquire {len(event.events)} images: "
+        #         f"{len(unique_channels)} channels {unique_channels} × "
+        #         f"{len(event.events)//len(unique_channels)} z-slices"
+        #     )
 
         # Call parent setup
         super().setup_event(event)
@@ -421,14 +423,37 @@ if __name__ == "__main__":
     sequence = MDASequence.from_file(args.mda_sequence)
 
     # Setup data writer
-    data_path = save_dir / f"{args.acquisition_name}.ome.tiff"
-    logger.info(f'Initializing OME-TIFF writer at {data_path}')
-    writer = OMETiffWriter(data_path)
+    data_path = save_dir / f"{args.acquisition_name}.ome.zarr"
+    logger.info(f'Initializing OME-ZARR writer at {data_path}')
+    roi = sequence.metadata.get('mantis').get('roi')
+    dims = omew.dims_from_useq(
+        sequence, image_width=roi[-2], image_height=roi[-1]
+    )
+    stream = omew.create_stream(
+        path=str(data_path),
+        dimensions=dims,
+        dtype=np.uint16,
+        backend='tensorstore',
+        overwrite=True,
+    )
+
+    # Append frames to the stream on frameReady event
+    @core.mda.events.frameReady.connect
+    def _on_frame_ready(
+        frame: np.ndarray, event: useq.MDAEvent, frame_meta: FrameMetaV1
+    ) -> None:
+        stream.append(frame)
+
+
+    # Flush and close the stream on sequenceFinished event
+    @core.mda.events.sequenceFinished.connect
+    def _on_sequence_finished(sequence: useq.MDASequence) -> None:
+        stream.flush()
+        print("Data written successfully to", data_path)
 
     # Run the acquisition
-    with mda_listeners_connected(writer):
-        logger.info('Starting MDA acquisition sequence')
-        core.mda.run(sequence)
+    logger.info('Starting MDA acquisition sequence')
+    core.mda.run(sequence)
 
     # Cleanup
     logger.info('Acquisition completed successfully')
