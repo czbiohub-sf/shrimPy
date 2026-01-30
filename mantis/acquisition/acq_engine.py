@@ -20,13 +20,12 @@ from nidaqmx.constants import Slope
 from pycromanager import Acquisition, Core, Studio, multi_d_acquisition_events, start_headless
 from waveorder.focus import focus_from_transverse_band
 
-
 from mantis import get_console_formatter
 from mantis.acquisition import microscope_operations
 from mantis.acquisition.autoexposure import load_manual_illumination_settings
+from mantis.acquisition.autotracker import Autotracker
 from mantis.acquisition.hook_functions import globals
 from mantis.acquisition.logger import configure_debug_logger, log_conda_environment
-from mantis.acquisition.autotracker import Autotracker
 
 # isort: off
 from mantis.acquisition.AcquisitionSettings import (
@@ -109,7 +108,7 @@ class BaseChannelSliceAcquisition(object):
         self.enabled = enabled
         self._channel_settings = ChannelSettings()
         self._slice_settings = SliceSettings()
-        self._microscope_settings = MicroscopeSettings()        
+        self._microscope_settings = MicroscopeSettings()
         self._autoexposure_settings = AutoexposureSettings()
         self._autotracker_settings = None
         self._z0 = None
@@ -507,8 +506,7 @@ class MantisAcquisition(object):
 
         else:
             logger.debug('Position list is already populated and will not be updated')
-    
-    
+
     def update_mm_position_list(self):
         """
         Update the MicroManager position list with the current position settings.
@@ -523,7 +521,6 @@ class MantisAcquisition(object):
             z_stage_name=self.lf_acq.microscope_settings.autofocus_stage,
         )
 
-    
     def update_lf_acquisition_rates(self, lf_exposure_times: list):
         if self._demo_run:
             # Set approximate demo camera acquisition rate for use in await_cz_acq_completion
@@ -1241,7 +1238,12 @@ class MantisAcquisition(object):
         positions and time points.
         """
 
-        use_autotracker = any([self.lf_acq.microscope_settings.autotracker_config, self.ls_acq.microscope_settings.autotracker_config])
+        use_autotracker = any(
+            [
+                self.lf_acq.microscope_settings.autotracker_config,
+                self.ls_acq.microscope_settings.autotracker_config,
+            ]
+        )
 
         # define LF hook functions
         if self._demo_run:
@@ -1259,7 +1261,9 @@ class MantisAcquisition(object):
 
         # TODO: implement logic for the autotracker_img_saved_hook_fn
         if self.lf_acq.microscope_settings.autotracker_config is not None:
-            zyx_shape = (self.lf_acq.slice_settings.num_slices,) + tuple(self.lf_acq.microscope_settings.roi[-2:][::-1])
+            zyx_shape = (self.lf_acq.slice_settings.num_slices,) + tuple(
+                self.lf_acq.microscope_settings.roi[-2:][::-1]
+            )
             logger.info("Instantiating autotracker on lf arm...")
             autotracker = Autotracker(
                 arm='lf',
@@ -1270,9 +1274,11 @@ class MantisAcquisition(object):
                 settings=self.lf_acq.autotracker_settings,
             )
             lf_image_saved_fn = autotracker.track
-    
+
         else:
-            logger.info('No autotracker config found for LF acquisition. Using default image saved hook')
+            logger.info(
+                'No autotracker config found for LF acquisition. Using default image saved hook'
+            )
             lf_image_saved_fn = check_lf_acq_finished
 
         # define LF acquisition
@@ -1306,7 +1312,9 @@ class MantisAcquisition(object):
 
         # TODO: implement logic for the autotracker_img_saved_hook_fn
         if self.ls_acq.microscope_settings.autotracker_config is not None:
-            zyx_shape = (self.ls_acq.slice_settings.num_slices,) + tuple(self.ls_acq.microscope_settings.roi[-2:][::-1])
+            zyx_shape = (self.ls_acq.slice_settings.num_slices,) + tuple(
+                self.ls_acq.microscope_settings.roi[-2:][::-1]
+            )
             logger.info("Instantiating autotracker on ls arm...")
             autotracker = Autotracker(
                 arm='ls',
@@ -1317,9 +1325,11 @@ class MantisAcquisition(object):
                 settings=self.ls_acq.autotracker_settings,
             )
             ls_image_saved_fn = autotracker.track
-               
+
         else:
-            logger.info('No autotracker config found for LS acquisition. Using default image saved hook')
+            logger.info(
+                'No autotracker config found for LS acquisition. Using default image saved hook'
+            )
             ls_image_saved_fn = check_ls_acq_finished
 
         # define LS acquisition

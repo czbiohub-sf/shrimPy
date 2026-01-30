@@ -82,7 +82,9 @@ def run_acquisition(
     ls_slice_settings = load_settings(raw_settings, 'ls_slice_settings', SliceSettings)
     ls_microscope_settings = load_settings(raw_settings, 'ls_microscope_settings', MicroscopeSettings)  # fmt: skip
     ls_autoexposure_settings = load_settings(raw_settings, 'ls_autoexposure_settings', AutoexposureSettings)  # fmt: skip
-    autotracker_settings = load_settings(raw_settings, 'autotracker_settings', AutotrackerSettings)
+    autotracker_settings = load_settings(
+        raw_settings, 'autotracker_settings', AutotrackerSettings
+    )
 
     # Handle logic if autotracker is active in both arms
     ls_autotracker_settings = None

@@ -99,8 +99,8 @@ def update_position_list(
     mmStudio,
     xyz_positions: list,
     position_labels: list,
-    xy_stage_name: str=None,
-    z_stage_name: str=None
+    xy_stage_name: str = None,
+    z_stage_name: str = None,
 ):
     if xy_stage_name is None:
         xy_stage_name = mmc.get_xy_stage_device()
@@ -126,8 +126,8 @@ def update_position_list(
                     xyz_positions[idx][0],
                     xyz_positions[idx][1],
                     z_stage_name,
-                    xyz_positions[idx][2]
-                ]
+                    xyz_positions[idx][2],
+                ],
             )
             mm_position.set_label(position_labels[idx])
             mm_pos_list.replace_position(idx, mm_position)

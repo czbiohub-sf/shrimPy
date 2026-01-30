@@ -2,7 +2,7 @@ import copy
 import warnings
 
 from dataclasses import field
-from typing import Dict, List, Literal, Optional, Tuple, Union, Any
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 
