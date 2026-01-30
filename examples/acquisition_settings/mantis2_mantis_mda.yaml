@@ -15,19 +15,25 @@ stage_positions:
   # z: 0.0
   name: Pos2
   sequence: null
+- x: -24000.0
+  y: -9500.0
+  # z: 0.0
+  name: Pos3
+  sequence: null
 grid_plan: null
 
 # Define time plan
 time_plan:
-  prioritize_duration: true
-  interval: 5.0
-  duration: 15.0
+  prioritize_duration: false
+  interval: 120.0
+  # duration: 10.0
+  duration: "24:00:00"
 
 # Define z plan
 z_plan:
   top: 1.5
   bottom: -1.5
-  step: 0.01
+  step: 0.1
   go_up: true
 
 # Define channels
@@ -74,6 +80,7 @@ metadata:
     use_hardware_sequencing: true
     initialization_settings:
       - ['LightPath', 'Label', '2-R100']
+      - ['TS2_TTL1-8', 'Sequence', 'Off']
       - ['Core', 'Shutter', 'TS2 Shutter']
       - ['Turret1Shutter', 'State', '0']
       - ['Core', 'Camera', 'Prime BSI Express']
