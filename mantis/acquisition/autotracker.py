@@ -25,7 +25,7 @@ from skimage.exposure import rescale_intensity
 from skimage.feature import match_template
 from skimage.filters import gaussian
 from skimage.measure import label, regionprops
-from waveorder.models.phase_thick_3d import apply_inverse_transfer_function
+from waveorder.models.phase_thick_3d import apply_inverse_transfer_function, calculate_transfer_function
 
 from mantis import logger
 from mantis.acquisition.hook_functions import globals
@@ -390,10 +390,10 @@ class Autotracker(object):
             The estimated shift in scale provided by the user (typically um).
         """
 
-        autofocus_method_func = self._TRACKING_METHODS.get(self.tracking_method)
+        autofocus_method_func = self._TRACKING_METHODS.get(self.settings.tracking_method)
 
         if not autofocus_method_func:
-            raise ValueError(f'Unknown autofocus method: {self.tracking_method}')
+            raise ValueError(f'Unknown autofocus method: {self.settings.tracking_method}')
 
         shifts_zyx_pix = autofocus_method_func(ref_img=ref_img, mov_img=mov_img, **kwargs)
 
@@ -402,7 +402,7 @@ class Autotracker(object):
         logger.debug(f'Dampening (z,y,x) factor: {self.zyx_dampening}')
 
         # shifts_zyx in px to shifts_zyx in um
-        shifts_zyx_um = np.array(shifts_zyx_pix) * self.scale
+        shifts_zyx_um = np.array(shifts_zyx_pix) * self.settings.scale_yx
 
         shifts_zyx_um_limited = self.limit_shifts_zyx(shifts_zyx_um)
        

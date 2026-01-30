@@ -1259,7 +1259,7 @@ class MantisAcquisition(object):
         # TODO: implement logic for the autotracker_img_saved_hook_fn
         if self.lf_acq.microscope_settings.autotracker_config is not None:
             zyx_shape = (self.lf_acq.slice_settings.num_slices,) + tuple(self.lf_acq.microscope_settings.roi[-2:][::-1])
-            logger.info("Instantiating autotracker...")
+            logger.info("Instantiating autotracker on lf arm...")
             autotracker = Autotracker(
                 arm='lf',
                 zyx_shape=zyx_shape,
@@ -1267,9 +1267,8 @@ class MantisAcquisition(object):
                 channel_config=self.lf_acq.microscope_settings.autotracker_config,
                 output_shift_path=self._logs_dir,
                 settings=self.lf_acq.autotracker_settings,
-                )
+            )
             lf_image_saved_fn = autotracker.track
-               
     
         else:
             logger.info('No autotracker config found for LF acquisition. Using default image saved hook')
@@ -1307,9 +1306,10 @@ class MantisAcquisition(object):
         # TODO: implement logic for the autotracker_img_saved_hook_fn
         if self.ls_acq.microscope_settings.autotracker_config is not None:
             zyx_shape = (self.ls_acq.slice_settings.num_slices,) + tuple(self.ls_acq.microscope_settings.roi[-2:][::-1])
+            logger.info("Instantiating autotracker on ls arm...")
             autotracker = Autotracker(
-                zyx_shape=zyx_shape,
                 arm='ls',
+                zyx_shape=zyx_shape,
                 position_settings=self.position_settings,
                 channel_config=self.ls_acq.microscope_settings.autotracker_config,
                 output_shift_path=self._logs_dir,
