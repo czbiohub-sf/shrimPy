@@ -602,12 +602,16 @@ class Autotracker(object):
         axes : Position, Time, Channel, Z_slice
         dataset: Dataset saved in disk
         """
-        # logger.info('Autotracker hook function called for axes %s', axes)
+        logger.info('Autotracker hook function called for axes %s', axes)
 
         # TODO: handle the lf acq or ls_a
         if self.arm == 'lf':
+            print(f"axes:{axes}")
+            print(f"self.lf_last_img_idx:{self.lf_last_img_idx}")
             if axes == self.lf_last_img_idx:
                 self.lf_acq_finished = True
+                print(f"lf_acq_finished:{self.lf_acq_finished}")
+
         elif self.arm == 'ls':
             if axes == self.ls_last_img_idx:
                 self.ls_acq_finished = True

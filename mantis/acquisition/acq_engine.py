@@ -1268,7 +1268,7 @@ class MantisAcquisition(object):
                 output_shift_path=self._logs_dir,
                 settings=self.lf_acq.autotracker_settings,
                 )
-            lf_image_saved_fn = autotracker.track,
+            lf_image_saved_fn = autotracker.track
                
     
         else:
@@ -1315,7 +1315,7 @@ class MantisAcquisition(object):
                 output_shift_path=self._logs_dir,
                 settings=self.ls_acq.autotracker_settings,
             )
-            ls_image_saved_fn = autotracker.track,
+            ls_image_saved_fn = autotracker.track
                
         else:
             logger.info('No autotracker config found for LS acquisition. Using default image saved hook')
@@ -1538,7 +1538,7 @@ class MantisAcquisition(object):
         time.sleep(wait_time)
 
     def abort_stalled_acquisition(self):
-        buffer_time = 10
+        buffer_time = 100
         lf_acq_aborted = False
         ls_acq_aborted = False
 
@@ -1547,6 +1547,7 @@ class MantisAcquisition(object):
             not all((globals.lf_acq_finished, globals.ls_acq_finished))
             and (time.time() - t_start) < buffer_time
         ):
+            print(f"in buffer globals.lf_acq_finished:{globals.lf_acq_finished}")
             time.sleep(0.2)
 
         # TODO: a lot of hardcoded values here
