@@ -6,8 +6,7 @@ import useq
 import ome_writers as omew
 
 from pymmcore_plus.core import CMMCorePlus
-from pymmcore_plus.mda import MDAEngine, mda_listeners_connected
-# from pymmcore_plus.mda.handlers import OMETiffWriter
+from pymmcore_plus.mda import MDAEngine
 from pymmcore_plus.metadata import SummaryMetaV1, FrameMetaV1
 from useq import MDAEvent, MDASequence
 
