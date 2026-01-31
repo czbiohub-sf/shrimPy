@@ -7,7 +7,7 @@ import useq
 
 from pymmcore_plus.core import CMMCorePlus
 from pymmcore_plus.mda import MDAEngine
-from pymmcore_plus.metadata import SummaryMetaV1, FrameMetaV1
+from pymmcore_plus.metadata import FrameMetaV1, SummaryMetaV1
 from useq import MDAEvent, MDASequence
 
 from shrimpy.mantis.mantis_logger import configure_mantis_logger, get_mantis_logger
