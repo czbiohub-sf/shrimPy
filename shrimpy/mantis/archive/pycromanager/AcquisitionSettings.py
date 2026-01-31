@@ -1,7 +1,8 @@
+import copy
 import warnings
 
 from dataclasses import field
-from typing import Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 
@@ -36,10 +37,12 @@ class PositionSettings:
     position_labels: List[str] = field(default_factory=list)
     num_positions: int = field(init=False, default=0)
     well_ids: List[str] = field(init=False, default_factory=list)
+    xyz_positions_shift: list = field(init=False, default_factory=list)
 
     def __post_init__(self):
         assert len(self.xyz_positions) == len(self.position_labels)
         self.num_positions = len(self.xyz_positions)
+        self.xyz_positions_shift = copy.deepcopy(self.xyz_positions)
 
         try:
             # Look for "'A1-Site_0', 'H12-Site_1', ... " format
@@ -57,12 +60,12 @@ class PositionSettings:
 
 @dataclass(config=config)
 class ChannelSettings:
-    default_exposure_times_ms: Union[
-        NonNegativeFloat, List[NonNegativeFloat], None
-    ] = None  # in ms
-    default_laser_powers: Union[
-        NonNegativeFloat, List[NonNegativeFloat], List[None], None
-    ] = None
+    default_exposure_times_ms: Union[NonNegativeFloat, List[NonNegativeFloat], None] = (
+        None  # in ms
+    )
+    default_laser_powers: Union[NonNegativeFloat, List[NonNegativeFloat], List[None], None] = (
+        None
+    )
     channel_group: Optional[str] = None
     channels: List[str] = field(default_factory=list)
     use_sequencing: bool = False
@@ -143,6 +146,7 @@ class MicroscopeSettings:
     o3_refocus_config: Optional[ConfigSettings] = None
     o3_refocus_interval_min: Optional[int] = None
     o3_refocus_skip_wells: List[str] = field(default_factory=list)
+    autotracker_config: Optional[ConfigSettings] = None
 
 
 @dataclass
@@ -195,204 +199,32 @@ class AutoexposureSettings:
             attr_val = getattr(self, attr)
             if attr_val is not None:
                 setattr(self, attr, round(attr_val, 1))
-<<<<<<< HEAD
-=======
 
 
-@dataclass(config=config)
-class ZarrSettings:
-    """Settings for Zarr output configuration using acquire-zarr."""
+@dataclass
+class AutotrackerSettings:
+    tracking_method: Literal['phase_cross_correlation', 'template_matching', 'multi_otsu']
+    tracking_interval: Optional[int] = 1  # TODO: add units
+    shift_estimation_channel: Literal['phase', 'vs_nuclei', 'vs_membrane', 'bf'] = 'bf'
+    scale_yx: Optional[float] = 1.0  # in um per pixel
+    device: Optional[str] = 'cpu'
+    zyx_dampening_factor: Optional[Union[Tuple[float, float, float], None]] = None
+    absolute_shift_limits_um: Optional[Dict[str, Tuple[float, float]]] = field(
+        default_factory=lambda: {'z': (0.5, 2), 'y': (2, 10), 'x': (2, 10)}
+    )  # in um
+    # TODO: maybe do the ROI like in the ls_microscope_settings
+    template_roi_zyx: Optional[Tuple[int, int, int]] = None
+    template_channel: Optional[str] = None
+    reconstruction: Optional[List[str]] = field(default_factory=list)
+    phase_config: Optional[Dict[str, Any]] = field(default_factory=dict)
+    vs_config: Optional[Dict[str, Any]] = field(default_factory=dict)
 
-    # Data type for the Zarr array
-    data_type: Literal[
-        'UINT8', 'UINT16', 'UINT32', 'INT8', 'INT16', 'INT32', 'FLOAT32', 'FLOAT64'
-    ] = 'UINT16'
-
-    # Enable multiscale (pyramids)
-    multiscale: bool = False
-
-    # Maximum number of threads for writing
-    max_threads: NonNegativeInt = 0  # 0 means use all available
-
-    # Chunking settings as dictionary - unit: pixels per chunk
-    chunk_sizes: Dict[str, PositiveInt] = field(
-        default_factory=lambda: {
-            'x': 64,  # pixels per chunk in X dimension
-            'y': 64,  # pixels per chunk in Y dimension
-            'z': 1,  # pixels per chunk in Z dimension
-            'c': 1,  # pixels per chunk in channel dimension
-        }
-    )
-
-    # Sharding settings (Zarr V3 only) - unit is chunks per shard
-    shard_sizes: Dict[str, PositiveInt] = field(
-        default_factory=lambda: {'x': 1, 'y': 1, 'z': 1, 'c': 1}
-    )
-
-    # Compression settings
-    compression_codec: Optional[Literal['blosc', 'gzip', 'lz4', 'zstd', 'off']] = None
-    compression_level: Optional[int] = None
-
-    # Store settings
-    store_path: Optional[str] = None
-    overwrite_existing: bool = False
-
-    # HCS (High Content Screening) settings
-    use_hcs_layout: bool = False  # Enable HCS zarr structure with wells/plates
-    plate_name: Optional[str] = None  # Name of the plate (e.g., "Plate_001")
-    plate_description: Optional[str] = None  # Description of the plate
-
-    @validator("chunk_sizes")
-    def validate_chunk_sizes(cls, v):
-        """Validate chunk_sizes dictionary contains required keys."""
-        required_keys = {'x', 'y', 'z', 'c'}
-        if not isinstance(v, dict):
-            raise ValueError("chunk_sizes must be a dictionary")
-
-        missing_keys = required_keys - set(v.keys())
-        if missing_keys:
-            raise ValueError(f"chunk_sizes is missing required keys: {missing_keys}")
-
-        # Reject position (p) and time (t) dimensions
-        forbidden_keys = {'p', 't'}
-        present_forbidden = forbidden_keys & set(v.keys())
-        if present_forbidden:
-            raise ValueError(
-                f"Position (p) and time (t) dimension chunking is not allowed. Remove keys: {present_forbidden}"
-            )
-
-        # Ensure all values are positive integers
-        for key, value in v.items():
-            if not isinstance(value, int) or value <= 0:
+    @validator("tracking_method")
+    def check_tracking_method_options(cls, v):
+        # Check if template matching options are provided and are not None
+        if v == 'template_matching':
+            if not all([cls.template_roi_zyx, cls.template_channel]):
                 raise ValueError(
-                    f"chunk_sizes['{key}'] must be a positive integer, got {value}"
+                    'template_roi_zyx and template_channel must be provided for template matching'
                 )
-
         return v
-
-    @validator("shard_sizes")
-    def validate_shard_sizes(cls, v):
-        """Validate shard_sizes dictionary contains required keys."""
-        required_keys = {'x', 'y', 'z', 'c'}
-        if not isinstance(v, dict):
-            raise ValueError("shard_sizes must be a dictionary")
-
-        missing_keys = required_keys - set(v.keys())
-        if missing_keys:
-            raise ValueError(f"shard_sizes is missing required keys: {missing_keys}")
-
-        # Reject position (p) and time (t) dimensions
-        forbidden_keys = {'p', 't'}
-        present_forbidden = forbidden_keys & set(v.keys())
-        if present_forbidden:
-            raise ValueError(
-                f"Position (p) and time (t) dimension sharding is not allowed. Remove keys: {present_forbidden}"
-            )
-
-        # Ensure all values are positive integers
-        for key, value in v.items():
-            if not isinstance(value, int) or value <= 0:
-                raise ValueError(
-                    f"shard_sizes['{key}'] must be a positive integer (chunks per shard), got {value}"
-                )
-
-        return v
-
-    @validator("plate_name")
-    def validate_plate_name(cls, v, values):
-        """Validate plate_name is provided when using HCS layout."""
-        use_hcs = values.get('use_hcs_layout', False)
-        if use_hcs and v is None:
-            raise ValueError("plate_name is required when use_hcs_layout is True")
-        return v
-
-    @validator("compression_level")
-    def validate_compression_level(cls, v, values):
-        """Validate compression level based on codec."""
-        if v is not None:
-            codec = values.get('compression_codec')
-            if codec is None or codec == 'off':
-                raise ValueError(
-                    "compression_level requires compression_codec to be set and not 'off'"
-                )
-
-            # Validate compression level ranges for different codecs
-            if codec == 'gzip' and not (1 <= v <= 9):
-                raise ValueError("gzip compression_level must be between 1 and 9")
-            elif codec == 'blosc' and not (1 <= v <= 9):
-                raise ValueError("blosc compression_level must be between 1 and 9")
-            elif codec == 'lz4' and not (1 <= v <= 9):
-                raise ValueError("lz4 compression_level must be between 1 and 9")
-            elif codec == 'zstd' and not (1 <= v <= 22):
-                raise ValueError("zstd compression_level must be between 1 and 22")
-        return v
-
-    def __post_init__(self):
-        """Post-initialization validation and setup."""
-        pass
-
-    # Backward compatibility properties
-    @property
-    def xy_chunk_size(self) -> int:
-        """Backward compatibility: returns x chunk size for legacy code that assumes x==y."""
-        return self.chunk_sizes['x']
-
-    @property
-    def z_chunk_size(self) -> int:
-        """Backward compatibility: returns z chunk size."""
-        return self.chunk_sizes['z']
-
-    @property
-    def t_chunk_size(self) -> int:
-        """Backward compatibility: returns t chunk size."""
-        return self.chunk_sizes['t']
-
-    @property
-    def c_chunk_size(self) -> int:
-        """Backward compatibility: returns c chunk size."""
-        return self.chunk_sizes['c']
-
-    @property
-    def shard_size_chunks(self) -> int:
-        """Backward compatibility: returns x shard size for legacy code."""
-        return self.shard_sizes['x']
-
-    def get_zarr_version_enum(self):
-        """Get the appropriate ZarrVersion enum value for acquire-zarr."""
-        from acquire_zarr import ZarrVersion
-
-        return ZarrVersion.V3
-
-    def get_data_type_enum(self):
-        """Get the appropriate DataType enum value for acquire-zarr."""
-        from acquire_zarr import DataType
-
-        return getattr(DataType, self.data_type)
-
-    def get_compression_settings(self):
-        """Get the appropriate CompressionSettings for acquire-zarr."""
-        from acquire_zarr import CompressionCodec, CompressionSettings, Compressor
-
-        if self.compression_codec is None or self.compression_codec == 'off':
-            return CompressionSettings(
-                compressor=Compressor.NONE, codec=CompressionCodec.NONE, level=1, shuffle=0
-            )
-
-        # Map string codec names to acquire-zarr enums
-        codec_map = {
-            'blosc': CompressionCodec.BLOSC_LZ4,  # Default blosc variant
-            'lz4': CompressionCodec.BLOSC_LZ4,
-            'zstd': CompressionCodec.BLOSC_ZSTD,
-            'gzip': CompressionCodec.BLOSC_LZ4,  # Map gzip to blosc for now
-        }
-
-        codec = codec_map.get(self.compression_codec, CompressionCodec.BLOSC_LZ4)
-        level = self.compression_level if self.compression_level is not None else 1
-
-        return CompressionSettings(
-            compressor=Compressor.BLOSC,
-            codec=codec,
-            level=level,
-            shuffle=1,  # Enable shuffle for better compression
-        )
->>>>>>> 2b2b0f2 (Apply code formatting with black and isort)
