@@ -1,3 +1,20 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "acquire-zarr>=0.6.0",
+#   "copylot @ git+https://github.com/czbiohub-sf/coPylot",
+#   "ndtiff==2.2.1",
+#   "nidaqmx",
+#   "numpy<2",
+#   "pycromanager==0.28.1",
+#   "pymmcore_plus==0.13.6",
+#   "pydantic>=2.0.0",
+#   "pylablib==1.4.1",
+#   "tifffile",
+#   "waveorder @ git+https://github.com/mehta-lab/waveorder@return_peak_stats",
+# ]
+# ///
+
 import logging
 import os
 import re
