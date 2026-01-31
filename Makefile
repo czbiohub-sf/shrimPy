@@ -10,12 +10,12 @@ uninstall:
 
 .PHONY: check-format
 check-format:
-	black --check -S -t py310 .
+	black --check -S -t py311 .
 	isort --check .
 
 .PHONY: format
 format:
-	black -S -t py310 .
+	black -S -t py311 .
 	isort .
 
 .PHONY: lint

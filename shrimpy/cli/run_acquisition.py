@@ -60,6 +60,7 @@ def run_acquisition(
         SliceSettings,
         MicroscopeSettings,
         AutoexposureSettings,
+        AutotrackerSettings,
     )
 
     # isort: on
@@ -72,7 +73,6 @@ def run_acquisition(
     with open(config_filepath) as file:
         raw_settings = yaml.safe_load(file)
 
-    # Load and validate YAML settings
     time_settings = load_settings(raw_settings, 'time_settings', TimeSettings)
     position_settings = load_settings(raw_settings, 'position_settings', PositionSettings)
     lf_channel_settings = load_settings(raw_settings, 'lf_channel_settings', ChannelSettings)
@@ -82,6 +82,22 @@ def run_acquisition(
     ls_slice_settings = load_settings(raw_settings, 'ls_slice_settings', SliceSettings)
     ls_microscope_settings = load_settings(raw_settings, 'ls_microscope_settings', MicroscopeSettings)  # fmt: skip
     ls_autoexposure_settings = load_settings(raw_settings, 'ls_autoexposure_settings', AutoexposureSettings)  # fmt: skip
+    autotracker_settings = load_settings(
+        raw_settings, 'autotracker_settings', AutotrackerSettings
+    )
+
+    # Handle logic if autotracker is active in both arms
+    ls_autotracker_settings = None
+    lf_autotracker_settings = None
+    if (
+        lf_microscope_settings.autotracker_config is not None
+        and ls_microscope_settings.autotracker_config is not None
+    ):
+        raise ValueError("Autotracker is active in both arms, please specify only one arm")
+    elif lf_microscope_settings.autotracker_config is not None:
+        lf_autotracker_settings = autotracker_settings
+    elif ls_microscope_settings.autotracker_config is not None:
+        ls_autotracker_settings = autotracker_settings
 
     with MantisAcquisition(
         acquisition_directory=acq_directory,
@@ -100,6 +116,8 @@ def run_acquisition(
         acq.ls_acq.slice_settings = ls_slice_settings
         acq.ls_acq.microscope_settings = ls_microscope_settings
         acq.ls_acq.autoexposure_settings = ls_autoexposure_settings
+        acq.ls_acq.autotracker_settings = ls_autotracker_settings
+        acq.lf_acq.autotracker_settings = lf_autotracker_settings
 
         acq.setup()
         acq.acquire()

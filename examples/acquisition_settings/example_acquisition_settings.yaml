@@ -120,6 +120,8 @@ lf_microscope_settings:
   use_autofocus: True
   autofocus_stage: 'ZDrive'
   autofocus_method: 'PFS'
+  # Autotracker parameters using the label-free channel
+  autotracker_config: ['Channel - LF', 'BF']
 
 # Microscope settings which will be applied when the light-sheet acquisition is
 # initialized
@@ -144,3 +146,52 @@ ls_microscope_settings:
 ls_autoexposure_settings:
   autoexposure_method: 'manual'
   rerun_each_timepoint: True
+
+autotracker_settings:
+  tracking_method: 'phase_cross_correlation'
+  reconstruction: ['phase', 'vs'] ##list of reconstruction methods to apply before tracking
+  tracking_interval: 1
+  shift_estimation_channel: 'vs_nuclei'
+  absolute_shift_limits_um:
+    z: [0.5, 2]
+    y: [2, 10]
+    x: [2, 10]
+  device: 'cpu'
+  scale_yx: 0.075
+  phase_config: # apply phase reconstruction before tracking
+    transfer_function:
+      wavelength_illumination: 0.450
+      yx_pixel_size: 0.1494
+      z_pixel_size: 0.174
+      z_padding: 5
+      index_of_refraction_media: 1.4
+      numerical_aperture_detection: 1.35
+      numerical_aperture_illumination: 0.52
+      invert_phase_contrast: false
+    apply_inverse:
+      reconstruction_algorithm: Tikhonov
+      regularization_strength: 0.01
+      TV_rho_strength: 0.001
+      TV_iterations: 1
+  vs_config:
+    model:
+      class_path: viscy.translation.engine.VSUNet
+      init_args:
+        architecture: fcmae
+        model_config:
+          in_channels: 1
+          out_channels: 2
+          in_stack_depth: 21
+          encoder_blocks: [3, 3, 9, 3]
+          dims: [96, 192, 384, 768]
+          encoder_drop_path_rate: 0.0
+          stem_kernel_size: [7, 4, 4]
+          in_stack_depth: 21
+          decoder_conv_blocks: 2
+          pretraining: False
+          head_conv: True
+          head_conv_expansion_ratio: 4
+          head_conv_pool: False
+      test_time_augmentations: True
+      tta_type: median
+    ckpt_path: /hpc/projects/comp.micro/virtual_staining/models/fcmae-3d/fit_v2/pretrain_end2end/lightning_logs/finetune_VS_end2end_v1_test6_prefetch2_nopersistwork_restart_2/checkpoints/epoch=64-step=24960.ckpt
