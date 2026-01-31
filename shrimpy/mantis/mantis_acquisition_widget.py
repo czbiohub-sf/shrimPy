@@ -36,7 +36,11 @@ from qtpy.QtWidgets import (
 )
 from useq import MDASequence
 
-from shrimpy.mantis.mantis_engine import MantisEngine, create_mantis_engine, initialize_mantis_core
+from shrimpy.mantis.mantis_engine import (
+    MantisEngine,
+    create_mantis_engine,
+    initialize_mantis_core,
+)
 
 
 class CustomCameraRoiWidget(CameraRoiWidget):
@@ -208,12 +212,12 @@ class TriggerScopeSettingsWidget(QWidget):
     def value(self) -> dict[str, Any]:
         """Get TriggerScope settings as dictionary."""
         return {
-            'dac_sequencing': self.dac_device.text()
-            if self.enable_dac_seq.isChecked()
-            else None,
-            'ttl_blanking': self.ttl_device.text()
-            if self.enable_ttl_blanking.isChecked()
-            else None,
+            'dac_sequencing': (
+                self.dac_device.text() if self.enable_dac_seq.isChecked() else None
+            ),
+            'ttl_blanking': (
+                self.ttl_device.text() if self.enable_ttl_blanking.isChecked() else None
+            ),
         }
 
     def setValue(self, settings: dict[str, Any]):

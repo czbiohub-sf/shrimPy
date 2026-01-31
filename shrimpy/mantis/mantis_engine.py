@@ -2,13 +2,14 @@ from __future__ import annotations
 import time
 
 import numpy as np
-import useq
 import ome_writers as omew
+import useq
 
 from pymmcore_plus.core import CMMCorePlus
 from pymmcore_plus.mda import MDAEngine, mda_listeners_connected
+
 # from pymmcore_plus.mda.handlers import OMETiffWriter
-from pymmcore_plus.metadata import SummaryMetaV1, FrameMetaV1
+from pymmcore_plus.metadata import FrameMetaV1, SummaryMetaV1
 from useq import MDAEvent, MDASequence
 
 from shrimpy.mantis.mantis_logger import configure_mantis_logger, get_mantis_logger
@@ -426,9 +427,7 @@ if __name__ == "__main__":
     data_path = save_dir / f"{args.acquisition_name}.ome.zarr"
     logger.info(f'Initializing OME-ZARR writer at {data_path}')
     roi = sequence.metadata.get('mantis').get('roi')
-    dims = omew.dims_from_useq(
-        sequence, image_width=roi[-2], image_height=roi[-1]
-    )
+    dims = omew.dims_from_useq(sequence, image_width=roi[-2], image_height=roi[-1])
     stream = omew.create_stream(
         path=str(data_path),
         dimensions=dims,
@@ -443,7 +442,6 @@ if __name__ == "__main__":
         frame: np.ndarray, event: useq.MDAEvent, frame_meta: FrameMetaV1
     ) -> None:
         stream.append(frame)
-
 
     # Flush and close the stream on sequenceFinished event
     @core.mda.events.sequenceFinished.connect
