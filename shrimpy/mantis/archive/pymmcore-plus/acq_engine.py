@@ -397,7 +397,7 @@ class BaseChannelSliceAcquisition(object):
             # Create HCS layout with plate and wells
             plate = Plate(
                 path=self.zarr_settings.plate_name,
-                #description=self.zarr_settings.plate_description or "",
+                # description=self.zarr_settings.plate_description or "",
             )
 
             # Create wells from position settings
