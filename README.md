@@ -7,29 +7,29 @@ The acquisition engine synchronizes data collection using hardware triggering an
 
 The acquired multidimensional raw datasets are processed with the [biahub](https://github.com/czbiohub-sf/biahub) library to generate registered multimodal data that can be used for analysis. Raw data are first converted to the [OME-Zarr](https://ngff.openmicroscopy.org/) format using [iohub](https://github.com/czbiohub-sf/iohub) to facilitate parallel processing and metadata management. Discrete data volumes then undergo deskewing of fluorescence channels, reconstruction of phase and orientation (using [recOrder](https://github.com/mehta-lab/recOrder)), registration and virtual staining (using [VisCy](https://github.com/mehta-lab/viscy)).
 
-This version of the code still uses the legacy name `mantis`, which overlaps with the name of the microscope which is used to acquire data. In a future release we will transition the codebase to the name `shrimPy`.
+This version of the code contains an acquisition engine for the `mantis` microscope, including several archived versions. We intend to develop additional acquisition engines for the `iSIM` and `Dragonfly` microscopes within this framework. These acquisition engines are expected to have shared features but also to accommodate differences between the microscope hardware and the acquisition needs on each microscope.
 
 ## Installation
 
 We recommend using a virtual conda environment with Python 3.11:
 
 ```sh
-conda create -y --name mantis python=3.11
-conda activate mantis
+conda create -y --name shrimpy python=3.11
+conda activate shrimpy
 
 git clone https://github.com/czbiohub-sf/shrimPy.git
-pip install ./mantis
+pip install ./shrimpy
 ```
 
 Optionally, you can also install the [biahub](https://github.com/czbiohub-sf/biahub) image analysis library in the same environment. `biahub` is currently used when characterizing the microscope point spread function, and will be used for real-time image processing in the future. You can install both libraries in a single step with:
 
 ```sh
-conda create -y --name mantis python=3.11
-conda activate mantis
+conda create -y --name shrimpy python=3.11
+conda activate shrimpy
 
 git clone https://github.com/czbiohub-sf/shrimPy.git
 git clone https://github.com/czbiohub-sf/biahub.git
-pip install ./mantis ./biahub
+pip install ./shrimpy ./biahub
 ```
 
 ## Setting up the mantis microscope
@@ -44,21 +44,21 @@ Mantis acquisitions and analyses use a command-line interface.
 
 A list of `mantis` commands can be displayed with:
 ```sh
-mantis --help
+shrimpy --help
 ```
 
-Data are acquired using `mantis run-acquisition`, and a list of arguments can be displayed with:
+Data are acquired using `shrimpy acquire <microscope_name>`, and a list of arguments can be displayed with:
 
 ```sh
-mantis run-acquisition --help
+shrimpy acquire mantis --help
 ```
 
-The mantis acquisition is configured using a YAML file. An example of a configuration file can be found [here](examples/acquisition_settings/example_acquisition_settings.yaml).
+The shrimPy acquisitions is configured using a YAML file. An example of a configuration file can be found [here](examples/acquisition_settings/example_acquisition_settings.yaml).
 
-This is an example of a command which will start an acquisition on the mantis microscope:
+This is an example of a command which will start an acquisition using the mantis acquisition engine:
 
 ```pwsh
-mantis run-acquisition \
+shrimpy acquire mantis \
     --config-filepath path/to/config.yaml \
     --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name
 ```
@@ -66,7 +66,7 @@ mantis run-acquisition \
 The acquisition may also be run in "demo" mode with the Micro-manager `MMConfig_Demo.cfg` config. This does not require any microscope hardware. A demo run can be started with:
 
 ```pwsh
-mantis run-acquisition \
+shrimpy acquire mantis \
     --config-filepath path/to/config.yaml \
     --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name \
     --mm-config-filepath path/to/MMConfig_Demo.cfg
