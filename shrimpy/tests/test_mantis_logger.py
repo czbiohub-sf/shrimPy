@@ -3,8 +3,9 @@
 import logging
 import tempfile
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 from pymmcore_plus._logger import logger as pymmcore_logger
 
