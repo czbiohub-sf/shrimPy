@@ -2,192 +2,247 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## Overview
 
-shrimPy (pronounced: ʃrɪm-pai) is a pythonic framework for high-throughput smart microscopy and high-performance analysis. The codebase uses the legacy name `mantis` internally, which overlaps with the name of the microscope hardware. The mantis microscope implements simultaneous label-free and light-sheet imaging with two independent arms running separate instances of Micro-Manager and pycromanager.
+shrimPy is a Python framework for high-throughput smart microscopy that synchronizes data collection using hardware triggering and performs intelligent acquisition tasks like autofocus and autoexposure. The framework is designed to support multiple microscope platforms (mantis, iSIM, Dragonfly) through a modular, extensible architecture built on pymmcore-plus.
 
-The acquisition engine synchronizes data collection using hardware triggering and performs smart microscopy tasks (autofocus, autoexposure). Raw multidimensional datasets are processed with the biahub library to generate registered multimodal data in OME-Zarr format for analysis.
+Current status: Alpha version, actively restructuring from mantis-only to multi-microscope support (branch: `215-restructure-repository-for-multi-microscope-support`).
 
-## Development Commands
+## Common Development Commands
 
-### Environment Setup
-```sh
-# Create and activate conda environment
-conda create -y --name mantis python=3.10
-conda activate mantis
-
-# Install in development mode
+### Setup
+```bash
+# Install in development mode with dev dependencies
 pip install -e ".[dev]"
 
-# Install pre-commit hooks
+# Or using make
+make setup-develop
+
+# Install pre-commit hooks (required for contributors)
 pre-commit install
 ```
 
 ### Code Quality
-```sh
-make check-format    # Check black and isort formatting
-make format          # Apply black and isort formatting
-make lint            # Run flake8 linting
-make pre-commit      # Run pre-commit hooks on all files
+```bash
+# Format code (black + isort)
+make format
+
+# Check formatting without modifying files
+make check-format
+
+# Lint with flake8
+make lint
+
+# Run all pre-commit hooks
+make pre-commit
 ```
 
 ### Testing
-```sh
-make test            # Run pytest on all tests
-python -m pytest .   # Run pytest directly
+```bash
+# Run all tests
+make test
+
+# Or directly with pytest
+python -m pytest . --disable-pytest-warnings
+
+# Run specific test file
+pytest shrimpy/tests/test_mantis_logger.py
 ```
 
-### Acquisition Commands
-```sh
-# Show all mantis commands
-mantis --help
+### Running the Mantis GUI
+```bash
+# Launch the GUI-based acquisition interface
+python -m shrimpy.mantis.launch_mantis_gui
+```
 
-# Show acquisition arguments
-mantis run-acquisition --help
-
-# Run acquisition with config file
-mantis run-acquisition \
-    --config-filepath path/to/config.yaml \
-    --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name
-
-# Run in demo mode (no hardware required)
-mantis run-acquisition \
-    --config-filepath path/to/config.yaml \
-    --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name \
+### Demo Mode Acquisition (Legacy)
+The legacy CLI is archived but provides a pattern for programmatic acquisition:
+```bash
+shrimpy acquire mantis \
+    --config-filepath examples/acquisition_settings/example_mda_sequence.yaml \
+    --output-dirpath ./YYYY_MM_DD_experiment/acquisition_name \
     --mm-config-filepath path/to/MMConfig_Demo.cfg
 ```
 
 ## Architecture
 
-### Dual-Microscope System
-
-The mantis microscope runs two independent imaging modalities simultaneously:
-- **Label-free (LF)**: Quantitative phase and orientation imaging
-- **Light-sheet (LS)**: Fluorescence imaging
-
-Each arm runs a separate instance of Micro-Manager/pycromanager and generates independent PTCZYX datasets. The acquisition engine coordinates both arms and synchronizes hardware triggering.
-
-### Acquisition Engine (`mantis/acquisition/acq_engine.py`)
-
-The `MantisAcquisition` class orchestrates dual acquisitions:
-- Manages two sub-acquisitions (LF and LS) as independent pycromanager `Acquisition` objects
-- Coordinates hardware setup, autofocus, autoexposure, and data collection
-- Uses hardware triggering via TriggerScope and NI-DAQ for synchronization
-- Implements smart microscopy features (autofocus via PFS, autoexposure, O3 refocus)
-
-**Note**: This version uses an older version of pycromanager. API documentation is available at https://github.com/micro-manager/pycro-manager.
-
-Key workflow:
-1. `setup()` - Initialize both MM instances, configure hardware settings, setup autofocus/autoexposure
-2. `acquire()` - Execute time-lapse acquisition with position iteration
-3. Hook functions modify behavior at different stages (pre-hardware, post-hardware, post-camera, image-saved)
-
-### V2 Acquisition Engine (Branch: `212-mantis-v2-poc`)
-
-**IMPORTANT: A new version of the acquisition engine is under active development in `mantis/acquisition/mantis_v2.py`.**
-
-The V2 engine represents a significant architectural shift:
-- **Framework**: Uses the latest `pymmcore-plus` instead of `pycromanager` for Micro-Manager interface
-  - pymmcore-plus: https://github.com/pymmcore-plus/pymmcore-plus
-- **Sequence Definition**: Uses `useq-schema` (MDASequence, MDAEvent) for acquisition sequences
-- **Engine Architecture**: Implements a custom `MantisEngine` class that extends `MDAEngine`
-- **Event-Driven**: Leverages pymmcore-plus event system for hardware callbacks
-- **Data Writers**: Testing new OME writers from https://github.com/pymmcore-plus/ome-writers (OMETiffWriter, OMEZarrWriter)
-- **Simplified**: Single-arm acquisition with cleaner separation of concerns
-
-Key features of MantisEngine:
-- `setup_sequence()` - Configure mantis-specific hardware (TriggerScope, ROI, focus device)
-- `setup_event()` - Prepare hardware for each acquisition event
-- `_set_event_xy_position()` - Custom XY stage control with speed adjustment and autofocus
-- `_engage_autofocus()` - Robust Nikon PFS engagement with multiple Z offset attempts
-
-The V2 engine reads mantis-specific settings from `sequence.metadata['mantis']` and supports:
-- ROI configuration
-- TriggerScope DAC sequencing and TTL blanking
-- Focus device selection (AP Galvo for light-sheet)
-- Adaptive XY stage speed (2.0 mm/s for short moves, 5.75 mm/s for long moves)
-- Automatic autofocus engagement after position changes
-
-MDA sequences are defined in YAML format (see `examples/acquisition_settings/mantis2_mda.yaml`) and loaded with `MDASequence.from_file()`.
-
-**Current Status**: This is a proof-of-concept in active development. The V1 engine (`acq_engine.py`) remains the production version on the `main` branch.
-
-### Configuration System (`mantis/acquisition/AcquisitionSettings.py`)
-
-All acquisition parameters are defined in YAML configuration files with Pydantic validation. Settings classes include:
-- `TimeSettings` - Time-lapse parameters (shared between LF and LS)
-- `PositionSettings` - Multi-position acquisition configuration
-- `ChannelSettings` - Channel definitions and exposure times (separate for LF/LS)
-- `SliceSettings` - Z-stack parameters including sequencing (separate for LF/LS)
-- `MicroscopeSettings` - Device properties, ROI, autofocus config (separate for LF/LS)
-- `AutoexposureSettings` - Autoexposure algorithm configuration (LS only)
-
-See `examples/acquisition_settings/example_acquisition_settings.yaml` for detailed configuration structure.
-
-### Hook Functions (`mantis/acquisition/hook_functions/`)
-
-The acquisition engine uses pycromanager hooks to customize behavior at different stages:
-- `pre_hardware_hook_functions.py` - Called before hardware updates (e.g., log events, prepare DAQ sequences)
-- `post_hardware_hook_functions.py` - Called after hardware updates (e.g., update laser power, start DAQ)
-- `post_camera_hook_functions.py` - Called after camera triggering
-- `image_saved_hook_functions.py` - Called when images are saved
-
-Hook functions can access global state via `mantis.acquisition.hook_functions.globals`.
-
-### Hardware Control
-
-Hardware is controlled through multiple interfaces:
-- **Micro-Manager** - Camera, stages, microscope body (via pycromanager)
-- **coPylot** - Laser control (Vortran lasers) and stage control (Thorlabs PIA13)
-- **NI-DAQ** (nidaqmx) - Analog output sequencing for liquid crystals and galvo mirrors
-- **TriggerScope** - Digital triggering and synchronization signals
-- **waveorder** - Focus analysis for autofocus algorithms
-
-### Data Organization
-
-Raw data follows pycromanager/NDTiff structure:
+### Microscope Module Structure
 ```
-YYYY_MM_DD_<experiment_description>/
-├── <acq-name>_<n>/
-│   ├── positions.csv
-│   ├── platemap.csv
-│   ├── <acq-name>_labelfree_1/      # PTCZYX dataset
-│   │   ├── NDTiff.index
-│   │   └── <acq-name>_labelfree_NDTiffStack*.tif
-│   ├── <acq-name>_lightsheet_1/     # PTCZYX dataset
-│   │   ├── NDTiff.index
-│   │   └── <acq-name>_lightsheet_NDTiffStack*.tif
-│   └── logs/
-│       ├── mantis_acquisition_log_*.txt
-│       └── conda_environment_log_*.txt
+shrimpy/
+├── mantis/              # Label-free + Light-sheet microscope (fully implemented)
+│   ├── mantis_engine.py              # MDAEngine subclass (~455 lines)
+│   ├── mantis_acquisition_widget.py  # Qt GUI (~815 lines)
+│   ├── mantis_logger.py              # Logging configuration
+│   ├── launch_mantis_gui.py          # GUI entry point
+│   └── archive/                      # Historical implementations (pycromanager, old pymmcore-plus)
+│
+├── isim/                # iSIM microscope (placeholder for future implementation)
+├── viewer/              # Data visualization (placeholder)
+├── cli/                 # Command-line interface (in transition, currently empty)
+└── tests/               # Unit tests
 ```
 
-Processed data is converted to OME-Zarr v0.4 format using iohub for downstream processing with biahub.
+### Key Design Patterns
 
-### CLI Structure (`mantis/cli/`)
+#### 1. Engine Abstraction Pattern
+Each microscope implements a custom `MDAEngine` subclass:
+```python
+class MantisEngine(MDAEngine):
+    def setup_sequence(sequence: MDASequence) -> SummaryMetaV1:
+        # Configure hardware before acquisition starts
+        # - Set ROI, focus device, initialization settings
+        # - Configure hardware sequencing
+        # - Setup autofocus parameters
 
-The CLI uses Click with commands registered in `main.py`:
-- `run_acquisition` - Primary command for data acquisition
-- `stir_plate_cli` - Control integrated stir plate
+    def setup_event(event: MDAEvent):
+        # Prepare for each acquisition event
+        # - Configure TriggerScope if using hardware sequencing
 
-The entry point is defined in `pyproject.toml` as `mantis = "mantis.cli.main:cli"`.
+    def _set_event_xy_position(event: MDAEvent):
+        # Custom XY positioning with intelligent stage movement
+        # - Variable speed (2.0 mm/s short, 5.75 mm/s long distances)
+        # - Post-movement autofocus engagement with retry logic
+        # - Stage settlement waiting
+```
 
-### Microscope Configuration
+To add a new microscope:
+1. Create `shrimpy/<microscope_name>/` directory
+2. Subclass `MDAEngine` in `<microscope_name>_engine.py`
+3. Override `setup_sequence()`, `setup_event()`, and positioning methods as needed
+4. Define microscope-specific metadata schema
+5. Create Qt widget for GUI (optional)
 
-The recommended Micro-Manager version is defined in `mantis/__init__.py` as `__mm_version__`. The mantis microscope requires:
-- Nikon Ti2 Control (microscope body)
-- SpinView 2.3.0.77 (FLIR cameras)
-- CellDrive (Meadowlark liquid crystals)
-- TriggerScope firmware (synchronization)
-- Vortran Stradus (laser control)
-- Thorlabs Kinesis (objective positioning stages)
+#### 2. Metadata Propagation Pattern
+Configuration is passed through MDASequence metadata:
+```python
+sequence = MDASequence.from_file('config.yaml')
+sequence.metadata = {
+    'mantis': {
+        'roi': [x, y, width, height],
+        'z_stage': 'AP Galvo',
+        'initialization_settings': [[device, property, value], ...],
+        'setup_hardware_sequencing_settings': [...],
+        'autofocus': {
+            'enabled': True,
+            'stage': 'ZDrive',
+            'method': 'PFS',  # Nikon Perfect Focus System
+            'wait_after_correction': 0.5,
+            'wait_before_acquire': 0.1,
+        },
+    }
+}
+```
 
-Two Micro-Manager instances are required: one for interactive control and one for headless LS acquisition.
+#### 3. Logging Pattern
+Each microscope module uses a separate logger instance:
+```python
+from shrimpy.mantis.mantis_logger import configure_mantis_logger, get_mantis_logger
+
+# During acquisition setup
+logger = configure_mantis_logger(save_dir, 'acquisition_name')
+# Creates dual handlers:
+# - Console: INFO level
+# - File: DEBUG level (saved to logs/ subdirectory)
+
+# Also captures pymmcore-plus logger to same file
+```
+
+Use `logger.debug()` for detailed diagnostics (file only) and `logger.info()` for user-facing messages (console + file).
+
+### Configuration Files
+
+Acquisitions are configured using YAML files that define MDASequence parameters plus microscope-specific metadata. Examples in `examples/acquisition_settings/`.
+
+**Key Configuration Sections:**
+- `time_plan`: Timepoint intervals and loops
+- `channels`: Channel configurations
+- `z_plan`: Z-stack range and step size
+- `stage_positions`: XY positions (optional)
+- `metadata.mantis`: Mantis-specific settings (ROI, autofocus, hardware sequencing)
+
+See `examples/acquisition_settings/example_mda_sequence.yaml` for a minimal example.
+
+### Widget Composition (Qt GUI)
+```
+MantisAcquisitionWidget (main container)
+├── ImagePreview (from pymmcore-widgets)
+├── CustomCameraRoiWidget (workaround for camera snap issues)
+├── StageWidget (XY and Z stage control)
+├── MDAWidget (standard multi-dimensional acquisition configuration)
+└── MantisSettingsWidget
+    ├── TriggerScopeSettingsWidget (hardware triggering)
+    └── MicroscopeSettingsWidget (focus device, autofocus, hardware sequencing)
+```
+
+Widgets communicate via Qt signals/slots. Settings are propagated to MDASequence metadata before acquisition starts.
+
+## Key Dependencies
+
+- **pymmcore-plus** (0.17.0): Python bindings for Micro-Manager with MDA engine
+- **pymmcore-widgets**: Qt widgets for microscope control
+- **useq-schema**: Multi-dimensional acquisition sequence specification
+- **PyYAML**: Configuration parsing
+- **numpy**: Numerical operations
+- **qtpy**: Qt abstraction layer (PyQt5/6, PySide2/6)
+
+Optional (for analysis, not in core package):
+- **biahub**: Image analysis library (deskewing, reconstruction, registration)
+- **iohub**: OME-Zarr conversion and metadata management
+- **recOrder**: Phase and orientation reconstruction
+- **VisCy**: Virtual staining
 
 ## Code Style
 
-- Line length: 95 characters
-- Formatting: black with `skip-string-normalization = true`
-- Import sorting: isort with black profile
-- Target: Python 3.10
-- Pre-commit hooks enforce style checks before commits
+- **Formatter**: black with line length 95, Python 3.11, skip string normalization (`-S`)
+- **Import sorting**: isort (black profile)
+- **Linter**: flake8 (disabled: C, R, W, import-error, unsubscriptable-object)
+- **Pre-commit hooks**: Automatically run style checks on commit
+
+Run `make format` before committing. The pre-commit hooks will catch violations.
+
+## Testing
+
+- Framework: pytest
+- Test location: `shrimpy/tests/`
+- Ignore: `scripts/`, `**/archive/` (configured in pyproject.toml)
+- Run with: `make test` or `pytest . --disable-pytest-warnings`
+
+Current tests focus on logging infrastructure. Add tests for new microscope engines in `shrimpy/tests/test_<microscope>_*.py`.
+
+## Current Development Focus
+
+**Active restructuring** (branch `215-restructure-repository-for-multi-microscope-support`):
+- Transitioning from mantis-only to multi-microscope framework
+- Archiving legacy CLI and V1/V2 acquisition engines
+- Establishing iSIM placeholder for future work
+- Maintaining GUI-first approach with programmatic API
+
+**What's stable:**
+- Mantis acquisition engine (MantisEngine)
+- GUI-based acquisition workflow
+- Logging infrastructure
+- Configuration via YAML + metadata
+
+**What's in flux:**
+- CLI interface (currently empty, being redesigned)
+- Cross-microscope abstractions
+- iSIM implementation
+
+## Important Implementation Notes
+
+### Mantis-Specific Behavior
+- **Autofocus**: Engages Nikon PFS after XY stage movements with retry logic (up to 3 attempts, 0.5s wait between)
+- **Stage speed**: Variable speed based on distance (2.0 mm/s for <2000 µm, 5.75 mm/s for longer moves)
+- **Hardware sequencing**: TriggerScope DAC/TTL control for synchronized imaging
+- **Dual-arm imaging**: Label-free and light-sheet acquired on separate Micro-Manager instances
+
+### Extending to New Microscopes
+When adding iSIM or other microscopes:
+1. Study `shrimpy/mantis/mantis_engine.py` as the reference implementation
+2. Override only the methods that differ from default MDAEngine behavior
+3. Document microscope-specific metadata schema in docstrings
+4. Create separate logger instance following mantis_logger pattern
+5. Keep archived code in `archive/` subdirectory for reference
+
+### Data Output
+Raw data follows OME-Zarr or NDTiff format. Reconstruction workflows handled by separate biahub library. See `docs/data_structure.md` for details.
