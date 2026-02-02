@@ -73,10 +73,10 @@ def configure_mantis_logger(
 
     # Add file handler to pymmcore-plus logger to capture its events
     # Create a separate handler instance for pymmcore logger
-    # pymmcore_file_handler = logging.FileHandler(log_path)
-    # pymmcore_file_handler.setLevel(logging.DEBUG)
-    # pymmcore_file_handler.setFormatter(file_format)
-    # pymmcore_logger.addHandler(pymmcore_file_handler)
+    pymmcore_file_handler = logging.FileHandler(log_path)
+    pymmcore_file_handler.setLevel(logging.DEBUG)
+    pymmcore_file_handler.setFormatter(file_format)
+    pymmcore_logger.addHandler(pymmcore_file_handler)
 
     mantis_logger.info(f'Mantis acquisition log initialized at: {log_path}')
 

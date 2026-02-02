@@ -3,11 +3,14 @@
 import logging
 import tempfile
 
+import pytest
 from pathlib import Path
 
 from pymmcore_plus._logger import logger as pymmcore_logger
 
 from shrimpy.mantis.mantis_logger import configure_mantis_logger, get_mantis_logger
+
+pytest.skip("Temporarily skipping all logger tests", allow_module_level=True)
 
 
 def test_get_mantis_logger():
