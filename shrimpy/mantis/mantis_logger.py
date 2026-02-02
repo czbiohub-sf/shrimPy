@@ -55,9 +55,6 @@ def configure_mantis_logger(
     mantis_logger.setLevel(logging.DEBUG)
     mantis_logger.propagate = False
 
-    # Clear any existing handlers to avoid duplicates
-    mantis_logger.handlers.clear()
-
     # Configure console handler (INFO level) for mantis logger
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
