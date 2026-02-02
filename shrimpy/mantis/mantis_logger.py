@@ -45,8 +45,8 @@ def configure_mantis_logger(
     log_dir = Path(save_dir) / 'logs'
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate log filename with timestamp
-    timestamp = datetime.now().strftime('%Y%m%dT%H%M%S')
+    # Generate log filename with timestamp (including microseconds for uniqueness)
+    timestamp = datetime.now().strftime('%Y%m%dT%H%M%S_%f')
     log_filename = f'{acquisition_name}_log_{timestamp}.txt'
     log_path = log_dir / log_filename
 
@@ -112,8 +112,8 @@ def log_conda_environment(
     log_dir = Path(log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate log filename with timestamp
-    timestamp = datetime.now().strftime('%Y%m%dT%H%M%S')
+    # Generate log filename with timestamp (including microseconds for uniqueness)
+    timestamp = datetime.now().strftime('%Y%m%dT%H%M%S_%f')
     log_filename = f'conda_environment_log_{timestamp}.txt'
     log_path = log_dir / log_filename
 
