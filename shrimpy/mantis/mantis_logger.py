@@ -12,14 +12,13 @@ import os
 from datetime import datetime
 from pathlib import Path
 from subprocess import PIPE, STDOUT, Popen
-from typing import Union
 
 from pymmcore_plus._logger import logger as pymmcore_logger
 
 
 def configure_mantis_logger(
-    save_dir: Union[str, os.PathLike],
-    acquisition_name: str = 'mantis_acquisition',
+    save_dir: str | os.PathLike,
+    acquisition_name: str = "mantis_acquisition",
 ) -> logging.Logger:
     """Configure the mantis logger with console and file handlers.
 
@@ -42,23 +41,23 @@ def configure_mantis_logger(
         Configured mantis logger instance
     """
     # Create logs directory
-    log_dir = Path(save_dir) / 'logs'
+    log_dir = Path(save_dir) / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate log filename with timestamp (including microseconds for uniqueness)
-    timestamp = datetime.now().strftime('%Y%m%dT%H%M%S_%f')
-    log_filename = f'{acquisition_name}_log_{timestamp}.txt'
+    timestamp = datetime.now().strftime("%Y%m%dT%H%M%S_%f")
+    log_filename = f"{acquisition_name}_log_{timestamp}.txt"
     log_path = log_dir / log_filename
 
     # Get or create the mantis logger
-    mantis_logger = logging.getLogger('mantis')
+    mantis_logger = logging.getLogger("mantis")
     mantis_logger.setLevel(logging.DEBUG)
     mantis_logger.propagate = False
 
     # Configure console handler (INFO level) for mantis logger
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
-    console_format = logging.Formatter('%(levelname)s - %(module)s.%(funcName)s - %(message)s')
+    console_format = logging.Formatter("%(levelname)s - %(module)s.%(funcName)s - %(message)s")
     console_handler.setFormatter(console_format)
     mantis_logger.addHandler(console_handler)
 
@@ -66,7 +65,7 @@ def configure_mantis_logger(
     file_handler = logging.FileHandler(log_path)
     file_handler.setLevel(logging.DEBUG)
     file_format = logging.Formatter(
-        '%(asctime)s - %(levelname)s - %(name)s.%(module)s.%(funcName)s - %(message)s'
+        "%(asctime)s - %(levelname)s - %(name)s.%(module)s.%(funcName)s - %(message)s"
     )
     file_handler.setFormatter(file_format)
     mantis_logger.addHandler(file_handler)
@@ -78,13 +77,13 @@ def configure_mantis_logger(
     pymmcore_file_handler.setFormatter(file_format)
     pymmcore_logger.addHandler(pymmcore_file_handler)
 
-    mantis_logger.info(f'Mantis acquisition log initialized at: {log_path}')
+    mantis_logger.info(f"Mantis acquisition log initialized at: {log_path}")
 
     return mantis_logger
 
 
 def log_conda_environment(
-    log_dir: Union[str, os.PathLike], logger: logging.Logger = None
+    log_dir: str | os.PathLike, logger: logging.Logger = None
 ) -> tuple[bytes, bytes]:
     """Save a log of the current conda environment.
 
@@ -113,23 +112,23 @@ def log_conda_environment(
     log_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate log filename with timestamp (including microseconds for uniqueness)
-    timestamp = datetime.now().strftime('%Y%m%dT%H%M%S_%f')
-    log_filename = f'conda_environment_log_{timestamp}.txt'
+    timestamp = datetime.now().strftime("%Y%m%dT%H%M%S_%f")
+    log_filename = f"conda_environment_log_{timestamp}.txt"
     log_path = log_dir / log_filename
 
     # Get current conda environment
     try:
-        conda_environment = os.environ.get('CONDA_DEFAULT_ENV', 'base')
+        conda_environment = os.environ.get("CONDA_DEFAULT_ENV", "base")
     except KeyError:
-        logger.warning('CONDA_DEFAULT_ENV not found in environment variables')
-        return b'', b'No conda environment found'
+        logger.warning("CONDA_DEFAULT_ENV not found in environment variables")
+        return b"", b"No conda environment found"
 
     # Define absolute path to log_environment.ps1 script
     log_script_path = Path.home() / "log_environment.ps1"
 
     if not log_script_path.exists():
-        logger.warning(f'log_environment.ps1 script not found at {log_script_path}')
-        return b'', b'log_environment.ps1 script not found'
+        logger.warning(f"log_environment.ps1 script not found at {log_script_path}")
+        return b"", b"log_environment.ps1 script not found"
 
     # `pwsh` command launches PowerShell 7
     cmd = f"pwsh -Command conda activate {conda_environment}; {log_script_path} {log_path}"
@@ -137,11 +136,11 @@ def log_conda_environment(
     try:
         process = Popen(cmd, shell=True, stdout=PIPE, stderr=STDOUT)
         output, errors = process.communicate()
-        logger.debug(f'Conda environment log saved at: {log_path}')
+        logger.debug(f"Conda environment log saved at: {log_path}")
         return output, errors
     except Exception as e:
-        logger.error(f'Failed to log conda environment: {e}')
-        return b'', str(e).encode()
+        logger.error(f"Failed to log conda environment: {e}")
+        return b"", str(e).encode()
 
 
 def get_mantis_logger() -> logging.Logger:
@@ -155,4 +154,4 @@ def get_mantis_logger() -> logging.Logger:
     logging.Logger
         The mantis logger
     """
-    return logging.getLogger('mantis')
+    return logging.getLogger("mantis")

@@ -1,6 +1,7 @@
 """Acquisition commands for shrimpy CLI."""
 
 from __future__ import annotations
+
 from pathlib import Path
 
 import click
@@ -14,27 +15,27 @@ def acquire():
 
 @acquire.command()
 @click.option(
-    '--mmconfig',
+    "--mmconfig",
     type=click.Path(exists=True, path_type=Path),
     required=True,
-    help='Path to Micro-Manager configuration file',
+    help="Path to Micro-Manager configuration file",
 )
 @click.option(
-    '--mda-sequence',
+    "--mda-sequence",
     type=click.Path(exists=True, path_type=Path),
     required=True,
-    help='Path to MDA sequence YAML file',
+    help="Path to MDA sequence YAML file",
 )
 @click.option(
-    '--save-dir',
+    "--save-dir",
     type=click.Path(path_type=Path),
-    default='./acquisition_data',
-    help='Directory where acquisition data and logs will be saved',
+    default="./acquisition_data",
+    help="Directory where acquisition data and logs will be saved",
 )
 @click.option(
-    '--acquisition-name',
-    default='mantis_acquisition',
-    help='Name of the acquisition (used for log files)',
+    "--acquisition-name",
+    default="mantis_acquisition",
+    help="Name of the acquisition (used for log files)",
 )
 def mantis(
     mmconfig: Path,
@@ -73,7 +74,5 @@ def isim():
             --mda-sequence /path/to/sequence.yaml
     """
     click.echo(
-        click.style(
-            'iSIM acquisition is not yet implemented. Coming soon!', fg='yellow'
-        )
+        click.style("iSIM acquisition is not yet implemented. Coming soon!", fg="yellow")
     )

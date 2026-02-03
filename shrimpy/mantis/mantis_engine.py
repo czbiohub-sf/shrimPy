@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import time
 
 import numpy as np
@@ -51,79 +52,79 @@ class MantisEngine(MDAEngine):
         Reads mantis-specific settings from sequence.metadata['mantis'] if present,
         otherwise uses default values.
         """
-        logger.info('Setting up Mantis-specific hardware for acquisition sequence')
+        logger.info("Setting up Mantis-specific hardware for acquisition sequence")
 
         # Call parent setup first
         summary = super().setup_sequence(sequence)
         core = self.mmcore
 
         # Extract mantis settings from metadata
-        microscope_meta = sequence.metadata.get('mantis', {}) if sequence.metadata else {}
+        microscope_meta = sequence.metadata.get("mantis", {}) if sequence.metadata else {}
 
         # Apply ROI settings
-        if roi := microscope_meta.get('roi'):
+        if roi := microscope_meta.get("roi"):
             logger.info(
-                f'Setting ROI to: x={roi[0]}, y={roi[1]}, width={roi[2]}, height={roi[3]}'
+                f"Setting ROI to: x={roi[0]}, y={roi[1]}, width={roi[2]}, height={roi[3]}"
             )
             core.clearROI()
             core.setROI(*roi)
         else:
-            logger.debug('No ROI settings specified in metadata')
+            logger.debug("No ROI settings specified in metadata")
 
         # Apply initialization settings
         # TODO: move to proper place
-        if initialization_settings := microscope_meta.get('initialization_settings'):
-            logger.info(f'Applying {len(initialization_settings)} initialization settings')
+        if initialization_settings := microscope_meta.get("initialization_settings"):
+            logger.info(f"Applying {len(initialization_settings)} initialization settings")
             for setting in initialization_settings:
-                logger.debug(f'  Setting {setting[0]}.{setting[1]} = {setting[2]}')
+                logger.debug(f"  Setting {setting[0]}.{setting[1]} = {setting[2]}")
                 core.setProperty(setting[0], setting[1], setting[2])
         else:
-            logger.debug('No initialization settings specified')
+            logger.debug("No initialization settings specified")
 
         # Apply setup hardware sequencing settings
         # TODO: reset hardware sequencing settings after acquisition
         if setup_hardware_sequencing_settings := microscope_meta.get(
-            'setup_hardware_sequencing_settings'
+            "setup_hardware_sequencing_settings"
         ):
             logger.info(
-                f'Applying {len(setup_hardware_sequencing_settings)} hardware sequencing settings'
+                f"Applying {len(setup_hardware_sequencing_settings)} hardware sequencing settings"
             )
             for setting in setup_hardware_sequencing_settings:
-                logger.debug(f'  Setting {setting[0]}.{setting[1]} = {setting[2]}')
+                logger.debug(f"  Setting {setting[0]}.{setting[1]} = {setting[2]}")
                 core.setProperty(setting[0], setting[1], setting[2])
         else:
-            logger.debug('No hardware sequencing settings specified')
+            logger.debug("No hardware sequencing settings specified")
 
         # Set focus device
-        if z_stage := microscope_meta.get('z_stage'):
-            logger.info(f'Setting focus device to: {z_stage}')
+        if z_stage := microscope_meta.get("z_stage"):
+            logger.info(f"Setting focus device to: {z_stage}")
             core.setProperty("Core", "Focus", z_stage)
         else:
-            logger.debug(f'Using default focus device: {core.getFocusDevice()}')
+            logger.debug(f"Using default focus device: {core.getFocusDevice()}")
 
         # Set autofocus settings
-        if autofocus := microscope_meta.get('autofocus'):
-            if autofocus.get('enabled'):
+        if autofocus := microscope_meta.get("autofocus"):
+            if autofocus.get("enabled"):
                 self._use_autofocus = True
                 self._autofocus_stage = core.getFocusDevice()
-                autofocus_method = autofocus.get('method')
+                autofocus_method = autofocus.get("method")
                 if autofocus_method:
-                    logger.info(f'Enabling autofocus with method: {autofocus_method}')
+                    logger.info(f"Enabling autofocus with method: {autofocus_method}")
                     core.setAutoFocusDevice(autofocus_method)
                 else:
                     logger.info(
-                        f'Enabling autofocus with default device: {self._autofocus_stage}'
+                        f"Enabling autofocus with default device: {self._autofocus_stage}"
                     )
 
         if not self._use_autofocus:
-            logger.info('Autofocus is disabled for this acquisition')
+            logger.info("Autofocus is disabled for this acquisition")
 
         # Store XY stage device name
         core.events.XYStagePositionChanged.connect(self.on_xy_stage_moved)
         self._xy_stage_device = core.getXYStageDevice()
-        logger.debug(f'XY stage device: {self._xy_stage_device}')
+        logger.debug(f"XY stage device: {self._xy_stage_device}")
 
-        logger.info('Mantis hardware setup completed successfully')
+        logger.info("Mantis hardware setup completed successfully")
 
         return summary
 
@@ -199,7 +200,7 @@ class MantisEngine(MDAEngine):
             [target_x, target_y], self._last_xy_position, rtol=0, atol=0.01
         ):
             logger.debug(
-                f'Stage position unchanged ({target_x:.2f}, {target_y:.2f}), skipping move'
+                f"Stage position unchanged ({target_x:.2f}, {target_y:.2f}), skipping move"
             )
             return
 
@@ -214,15 +215,15 @@ class MantisEngine(MDAEngine):
 
             try:
                 # Set XY stage speed (mantis-specific property names)
-                core.setProperty(self._xy_stage_device, 'MotorSpeedX-S(mm/s)', speed)
-                core.setProperty(self._xy_stage_device, 'MotorSpeedY-S(mm/s)', speed)
-                logger.debug(f'Set stage speed to {speed} mm/s for distance {distance:.1f} um')
+                core.setProperty(self._xy_stage_device, "MotorSpeedX-S(mm/s)", speed)
+                core.setProperty(self._xy_stage_device, "MotorSpeedY-S(mm/s)", speed)
+                logger.debug(f"Set stage speed to {speed} mm/s for distance {distance:.1f} um")
             except Exception as e:
-                logger.debug(f'Could not set stage speed: {e}')
+                logger.debug(f"Could not set stage speed: {e}")
 
         # Move to the target position
         try:
-            logger.debug(f'Moving stage to ({target_x:.2f}, {target_y:.2f})')
+            logger.debug(f"Moving stage to ({target_x:.2f}, {target_y:.2f})")
             core.setXYPosition(target_x, target_y)
             core.waitForDevice(self._xy_stage_device)
             self._last_xy_position = [target_x, target_y]
@@ -262,7 +263,7 @@ class MantisEngine(MDAEngine):
         except Exception:
             z_position = core.getPosition(self._autofocus_stage)
 
-        logger.debug(f'Engaging autofocus at Z position {z_position:.2f} um')
+        logger.debug(f"Engaging autofocus at Z position {z_position:.2f} um")
 
         autofocus_success = False
         error_occurred = False
@@ -271,14 +272,14 @@ class MantisEngine(MDAEngine):
         # Try to engage autofocus with fullFocus
         try:
             core.fullFocus()
-            logger.debug('Call to fullFocus() succeeded')
+            logger.debug("Call to fullFocus() succeeded")
         except Exception:
-            logger.debug('Call to fullFocus() failed')
+            logger.debug("Call to fullFocus() failed")
 
         # Check if autofocus is already engaged
         if core.isContinuousFocusLocked():
             autofocus_success = True
-            logger.debug('Continuous autofocus is already engaged')
+            logger.debug("Continuous autofocus is already engaged")
         else:
             # Try different Z offsets
             for z_offset in z_offsets:
@@ -293,18 +294,18 @@ class MantisEngine(MDAEngine):
                         autofocus_success = True
                         if error_occurred:
                             logger.debug(
-                                f'Continuous autofocus engaged with Z offset of {z_offset} um'
+                                f"Continuous autofocus engaged with Z offset of {z_offset} um"
                             )
                         break
                     else:
                         error_occurred = True
-                        logger.debug(f'Autofocus call failed with Z offset of {z_offset} um')
+                        logger.debug(f"Autofocus call failed with Z offset of {z_offset} um")
                 except Exception as e:
-                    logger.debug(f'Error during autofocus attempt at offset {z_offset}: {e}')
+                    logger.debug(f"Error during autofocus attempt at offset {z_offset}: {e}")
                     error_occurred = True
 
         if not autofocus_success:
-            logger.error(f'Autofocus call failed after {len(z_offsets)} attempts')
+            logger.error(f"Autofocus call failed after {len(z_offsets)} attempts")
 
         return autofocus_success
 
@@ -328,7 +329,7 @@ def initialize_mantis_core(config_path: str | None = None) -> CMMCorePlus:
     CMMCorePlus (or UniMMCore)
         Configured core instance ready for use.
     """
-    logger.info('Initializing Micro-Manager core')
+    logger.info("Initializing Micro-Manager core")
     core = CMMCorePlus().instance()
 
     if config_path is None:
@@ -337,7 +338,7 @@ def initialize_mantis_core(config_path: str | None = None) -> CMMCorePlus:
         logger.info(f"Loading Micro-Manager configuration from: {config_path}")
 
     core.loadSystemConfiguration(config_path)
-    logger.info('Micro-Manager core initialized successfully')
+    logger.info("Micro-Manager core initialized successfully")
     # core.setPixelSizeConfig("Res40x")  # Uncomment if needed
 
     return core
@@ -360,7 +361,7 @@ def create_mantis_engine(
     MantisEngine
         The created and registered engine instance.
     """
-    logger.info(f'Creating MantisEngine (hardware_sequencing={use_hardware_sequencing})')
+    logger.info(f"Creating MantisEngine (hardware_sequencing={use_hardware_sequencing})")
     engine = MantisEngine(core, use_hardware_sequencing=use_hardware_sequencing)
     core.mda.set_engine(engine)
     return engine
@@ -397,31 +398,31 @@ def acquire(
     logger = configure_mantis_logger(save_dir, acquisition_name)
 
     # Log conda environment
-    log_dir = save_dir / 'logs'
+    log_dir = save_dir / "logs"
     output, errors = log_conda_environment(log_dir)
     if output:
-        logger.debug(output.decode('ascii').strip())
+        logger.debug(output.decode("ascii").strip())
     if errors:
-        logger.error(errors.decode('ascii'))
+        logger.error(errors.decode("ascii"))
 
     # Initialize core and engine using common functions
     core = initialize_mantis_core(mmconfig)
     create_mantis_engine(core)
 
     # Load the sequence
-    logger.info(f'Loading MDA sequence from {mda_sequence}')
+    logger.info(f"Loading MDA sequence from {mda_sequence}")
     sequence = MDASequence.from_file(mda_sequence)
 
     # Setup data writer
     data_path = save_dir / f"{acquisition_name}.ome.zarr"
-    logger.info(f'Initializing OME-ZARR writer at {data_path}')
-    roi = sequence.metadata.get('mantis').get('roi')
+    logger.info(f"Initializing OME-ZARR writer at {data_path}")
+    roi = sequence.metadata.get("mantis").get("roi")
     dims = omew.dims_from_useq(sequence, image_width=roi[-2], image_height=roi[-1])
     stream = omew.create_stream(
         path=str(data_path),
         dimensions=dims,
         dtype=np.uint16,
-        backend='tensorstore',
+        backend="tensorstore",
         overwrite=True,
     )
 
@@ -439,8 +440,8 @@ def acquire(
         print("Data written successfully to", data_path)
 
     # Run the acquisition
-    logger.info('Starting MDA acquisition sequence')
+    logger.info("Starting MDA acquisition sequence")
     core.mda.run(sequence)
 
     # Cleanup
-    logger.info('Acquisition completed successfully')
+    logger.info("Acquisition completed successfully")

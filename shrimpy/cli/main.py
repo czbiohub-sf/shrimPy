@@ -8,7 +8,7 @@ from shrimpy.cli.acquire import acquire
 
 
 @click.group()
-@click.version_option(package_name='shrimpy')
+@click.version_option(package_name="shrimpy")
 def cli():
     """shrimpy - Custom acquisition engines for optical microscopes.
 
@@ -21,5 +21,5 @@ def cli():
 cli.add_command(acquire)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     cli()

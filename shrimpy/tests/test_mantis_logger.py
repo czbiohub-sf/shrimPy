@@ -18,7 +18,7 @@ def test_get_mantis_logger():
     """Test that get_mantis_logger returns the mantis logger."""
     logger = get_mantis_logger()
     assert isinstance(logger, logging.Logger)
-    assert logger.name == 'mantis'
+    assert logger.name == "mantis"
 
 
 def test_configure_mantis_logger():
@@ -28,7 +28,7 @@ def test_configure_mantis_logger():
 
         # Check that logger is configured
         assert isinstance(logger, logging.Logger)
-        assert logger.name == 'mantis'
+        assert logger.name == "mantis"
         assert logger.level == logging.DEBUG
 
         # Check that mantis logger has 2 handlers (console + file)
@@ -40,11 +40,11 @@ def test_configure_mantis_logger():
         assert logging.DEBUG in handler_levels  # file handler
 
         # Check that log directory was created
-        log_dir = Path(tmpdir) / 'logs'
+        log_dir = Path(tmpdir) / "logs"
         assert log_dir.exists()
 
         # Check that log file was created
-        log_files = list(log_dir.glob('test_acquisition_log_*.txt'))
+        log_files = list(log_dir.glob("test_acquisition_log_*.txt"))
         assert len(log_files) == 1
 
 
@@ -95,8 +95,8 @@ def test_logger_file_output():
             handler.flush()
 
         # Find log file
-        log_dir = Path(tmpdir) / 'logs'
-        log_files = list(log_dir.glob('test_acquisition_log_*.txt'))
+        log_dir = Path(tmpdir) / "logs"
+        log_files = list(log_dir.glob("test_acquisition_log_*.txt"))
         assert len(log_files) == 1
 
         # Read log file
@@ -123,8 +123,8 @@ def test_pymmcore_events_captured():
             handler.flush()
 
         # Find log file
-        log_dir = Path(tmpdir) / 'logs'
-        log_files = list(log_dir.glob('test_acquisition_log_*.txt'))
+        log_dir = Path(tmpdir) / "logs"
+        log_files = list(log_dir.glob("test_acquisition_log_*.txt"))
         assert len(log_files) == 1
 
         # Read log file
