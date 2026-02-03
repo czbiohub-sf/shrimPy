@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  style:
+  lint:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -15,26 +15,22 @@ jobs:
 
     steps:
     - name: Checkout repo
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch all history for setuptools_scm
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Install the shrimpy package
+    - name: Install dependencies
       run: pip install -e ".[dev]"
 
-    - name: Check code style with Black
-      run: black --check -t py311 .
+    - name: Check code style and linting with ruff
+      run: make check
 
-    - name: Check code with Flake8
-      run: flake8 .
-
-    - name: Check code with isort
-      run: isort --check .
-
-  pytest:
+  test:
     runs-on: windows-latest
     strategy:
       matrix:
@@ -42,15 +38,17 @@ jobs:
 
     steps:
     - name: Checkout repo
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch all history for setuptools_scm
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Install the shrimpy package
+    - name: Install dependencies
       run: pip install -e ".[dev]"
 
     - name: Run tests
-      run: pytest -v
+      run: make test
