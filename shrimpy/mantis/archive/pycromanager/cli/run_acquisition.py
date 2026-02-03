@@ -3,8 +3,8 @@ from pathlib import Path
 import click
 import yaml
 
-from mantis import __mm_version__
-from mantis.cli.parsing import config_filepath, output_dirpath
+from shrimpy import __mm_version__
+from shrimpy.cli.parsing import config_filepath, output_dirpath
 
 default_mm_app_path = 'C:\\Program Files\\Micro-Manager-2.0_{}_{}_{}_2'.format(
     *__mm_version__.split('-')
@@ -50,10 +50,10 @@ def run_acquisition(
     """
 
     # These imports are placed here to accelerate CLI help calls
-    from mantis.acquisition.acq_engine import MantisAcquisition
+    from shrimpy.mantis.archive.acq_engine import MantisAcquisition
 
     # isort: off
-    from mantis.acquisition.AcquisitionSettings import (
+    from shrimpy.mantis.archive.AcquisitionSettings import (
         TimeSettings,
         PositionSettings,
         ChannelSettings,

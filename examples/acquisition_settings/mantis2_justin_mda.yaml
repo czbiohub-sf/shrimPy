@@ -1,0 +1,82 @@
+# Define stage positions
+stage_positions:
+- x: 0.0
+  y: 0.0
+  z: 0.0
+  name: null
+  sequence: null
+- x: -20.01
+  y: -20.01
+  z: 0.0
+  name: null
+  sequence: null
+- x: 80.04
+  y: -39.99
+  z: 0.0
+  name: null
+  sequence: null
+grid_plan: null
+
+# Define time plan
+time_plan:
+  prioritize_duration: true
+  interval: 5.0
+  duration: 15.0
+
+# Define z plan
+z_plan:
+  go_up: true
+  range: 100.0
+  step: 0.313
+
+# Define channels
+channels:
+- config: BF
+  group: Channel
+  exposure: 100.0
+  do_stack: true
+  z_offset: 0.0
+  acquire_every: 1
+  camera: null
+- config: GFP
+  group: Channel
+  exposure: 100.0
+  do_stack: true
+  z_offset: 0.0
+  acquire_every: 1
+  camera: null
+
+# Define axis order
+axis_order:
+- t
+- p
+- c
+- z
+
+autofocus_plan: null
+keep_shutter_open_across: []
+
+# Defien metadata per microscope
+metadata:
+  pymmcore_widgets:
+    version: 0.10.2.dev23+g22b8c0aff.d20260106
+  mantis:
+    roi: [0, 512, 2048, 256]
+    z_stage: AP Galvo
+    use_hardware_sequencing: true
+    initialization_settings:
+      - ['Prime BSI Express', 'ReadoutRate', '200MHz 11bit']
+      - ['Prime BSI Express', 'Gain', '1-Full well']
+      - ['Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter']
+    setup_hardware_sequencing_settings:
+      - ['Prime BSI Express', 'TriggerMode', 'Edge Trigger']
+      - ['TS2_TTL1-8', 'Blanking', 'On']
+      - ['TS_DAC01', 'Sequence', 'On']
+    reset_hardware_sequencing_settings:
+      - ['Prime BSI Express', 'TriggerMode', 'Internal Trigger']
+      - ['TS2_TTL1-8', 'Blanking', 'Off']
+      - ['TS_DAC01', 'Sequence', 'Off']
+    autofocus:
+      enabled: true
+      method: PFS
+  

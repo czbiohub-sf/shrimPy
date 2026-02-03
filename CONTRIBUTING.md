@@ -1,6 +1,6 @@
 # Contributing guide
 
-Thanks for your interest in contributing to `mantis`!
+Thanks for your interest in contributing to `shrimPy`!
 
 ## Getting started
 
@@ -10,10 +10,10 @@ and how you can install and use the package.
 ## Making changes
 
 Any change made to the `main` branch or release maintenance branches
-need to be proposed in a [pull request](https://github.com/czbiohub/mantis/pulls) (PR).
+need to be proposed in a [pull request](https://github.com/czbiohub/shrimPy/pulls) (PR).
 
 Follow [these instructions](https://docs.github.com/en/get-started/quickstart/fork-a-repo)
-to [fork](https://github.com/czbiohub/mantis/fork) the repository.
+to [fork](https://github.com/czbiohub/shrimPy/fork) the repository.
 
 ## Setting up a development environment
 

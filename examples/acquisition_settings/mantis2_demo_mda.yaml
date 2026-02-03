@@ -1,0 +1,71 @@
+# Define stage positions
+stage_positions:
+- x: 0.0
+  y: 0.0
+  z: 0.0
+  name: Pos0
+  sequence: null
+- x: 0.0
+  y: 1.0
+  z: 0.0
+  name: Pos1
+  sequence: null
+- x: 1.0
+  y: 0.0
+  z: 0.0
+  name: Pos2
+  sequence: null
+grid_plan: null
+
+# Define time plan
+time_plan:
+  prioritize_duration: true
+  interval: 5.0
+  duration: 15.0
+
+# Define z plan
+z_plan:
+  go_up: true
+  range: 10.0
+  step: 1.0
+
+# Define channels
+channels:
+- config: DAPI
+  group: Channel
+  exposure: 10.0
+  do_stack: true
+  z_offset: 0.0
+  acquire_every: 1
+  camera: null
+- config: FITC
+  group: Channel
+  exposure: 3.0
+  do_stack: true
+  z_offset: 0.0
+  acquire_every: 1
+  camera: null
+
+# Define axis order
+axis_order:
+- t
+- p
+- c
+- z
+
+autofocus_plan: null
+keep_shutter_open_across: []
+
+# Define metadata per microscope
+metadata:
+  pymmcore_widgets:
+    version: 0.10.2.dev23+g22b8c0aff.d20260106
+  mantis:
+    # roi:
+    z_stage: Z
+    use_hardware_sequencing: true
+    # initialization_settings:
+    setup_hardware_sequencing_settings:
+      - ['Z', 'UseSequences', 'Yes']
+    reset_hardware_sequencing_settings:
+      - ['Z', 'UseSequences', 'No']

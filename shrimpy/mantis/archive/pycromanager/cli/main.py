@@ -1,7 +1,7 @@
 import click
 
-from mantis.cli.run_acquisition import run_acquisition
-from mantis.cli.stir_plate import stir_plate_cli
+from shrimpy.cli.run_acquisition import run_acquisition
+from shrimpy.cli.stir_plate import stir_plate_cli
 
 CONTEXT = {"help_option_names": ["-h", "--help"]}
 

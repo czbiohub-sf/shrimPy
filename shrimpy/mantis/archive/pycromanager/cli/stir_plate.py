@@ -5,8 +5,8 @@ import click
 
 from pycromanager import Core, Studio
 
-from mantis.acquisition.acq_engine import LF_ZMQ_PORT
-from mantis.acquisition.microscope_operations import get_position_list, set_xy_position
+from shrimpy.mantis.archive.acq_engine import LF_ZMQ_PORT
+from shrimpy.mantis.archive.microscope_operations import get_position_list, set_xy_position
 
 logger = logging.getLogger(__name__)
 
