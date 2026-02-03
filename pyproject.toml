@@ -49,9 +49,7 @@ shrimpy = "shrimpy.cli.main:cli"
 zip-safe = false
 
 [tool.setuptools.packages.find]
-# Discover shrimpy and all subpackages (e.g., shrimpy.mantis)
-where = ["."]
-include = ["shrimpy*"]
+# Exclude tests from distribution package
 exclude = ["shrimpy.tests*"]
 
 [tool.setuptools_scm]
