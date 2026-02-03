@@ -23,6 +23,7 @@ classifiers = [
 dependencies = [
   "click",
   "numpy",
+  # TODO: replace [all] with specific writer backend
   "ome-writers[all]",
   "pymmcore_plus==0.17.0",
   "pymmcore-widgets",
