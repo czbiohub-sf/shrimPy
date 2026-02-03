@@ -366,44 +366,35 @@ def create_mantis_engine(
     return engine
 
 
-# Main execution code
-if __name__ == "__main__":
-    import argparse
+def acquire(
+    mmconfig: str,
+    mda_sequence: str,
+    save_dir: str,
+    acquisition_name: str = "mantis_acquisition",
+) -> None:
+    """Run a Mantis microscope acquisition.
 
+    Parameters
+    ----------
+    mmconfig : str
+        Path to Micro-Manager configuration file.
+    mda_sequence : str
+        Path to MDA sequence YAML file.
+    save_dir : str
+        Directory where acquisition data and logs will be saved.
+    acquisition_name : str
+        Name of the acquisition (used for log files and output).
+    """
     from pathlib import Path
 
     from shrimpy.mantis.mantis_logger import log_conda_environment
 
-    parser = argparse.ArgumentParser(description="Run Mantis microscope acquisition")
-    parser.add_argument(
-        "--mmconfig",
-        default="C:\\Users\\Cameron\\justin\\shrimPy\\CompMicro_MMConfigs\\Dev_Computer\\mantis2-demo.cfg",
-        help="Path to Micro-Manager configuration file",
-    )
-    parser.add_argument(
-        "--mda-sequence",
-        default="C:\\Users\\Cameron\\justin\\shrimPy\\examples\\acquisition_settings\\mantis2_mda.yaml",
-        help="Path to MDA sequence YAML file",
-    )
-    parser.add_argument(
-        "--save-dir",
-        default="./acquisition_data",
-        help="Directory where acquisition data and logs will be saved",
-    )
-    parser.add_argument(
-        "--acquisition-name",
-        default="mantis_acquisition",
-        help="Name of the acquisition (used for log files)",
-    )
-
-    args = parser.parse_args()
-
     # Create save directory
-    save_dir = Path(args.save_dir)
+    save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
 
     # Configure mantis logger
-    logger = configure_mantis_logger(save_dir, args.acquisition_name)
+    logger = configure_mantis_logger(save_dir, acquisition_name)
 
     # Log conda environment
     log_dir = save_dir / 'logs'
@@ -414,15 +405,15 @@ if __name__ == "__main__":
         logger.error(errors.decode('ascii'))
 
     # Initialize core and engine using common functions
-    core = initialize_mantis_core(args.mmconfig)
-    mantis_engine = create_mantis_engine(core)
+    core = initialize_mantis_core(mmconfig)
+    create_mantis_engine(core)
 
     # Load the sequence
-    logger.info(f'Loading MDA sequence from {args.mda_sequence}')
-    sequence = MDASequence.from_file(args.mda_sequence)
+    logger.info(f'Loading MDA sequence from {mda_sequence}')
+    sequence = MDASequence.from_file(mda_sequence)
 
     # Setup data writer
-    data_path = save_dir / f"{args.acquisition_name}.ome.zarr"
+    data_path = save_dir / f"{acquisition_name}.ome.zarr"
     logger.info(f'Initializing OME-ZARR writer at {data_path}')
     roi = sequence.metadata.get('mantis').get('roi')
     dims = omew.dims_from_useq(sequence, image_width=roi[-2], image_height=roi[-1])
