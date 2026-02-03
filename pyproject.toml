@@ -1,5 +1,6 @@
 [build-system]
-requires = ["setuptools >= 61", "setuptools_scm[toml]>=3.4", "wheel"]
+requires = ["setuptools >= 61", "setuptools_scm[toml]>=8.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "shrimpy"
@@ -56,8 +57,12 @@ where = ["."]
 include = ["shrimpy*"]
 exclude = ["shrimpy.tests*"]
 
-[tool.setuptools.dynamic]
-version = { attr = "shrimpy.__version__" }
+[tool.setuptools_scm]
+# Version is derived from git tags
+# Format: for tagged commits: "1.2.0"
+#         for dev commits: "1.2.0.post3+ge9f2970"
+version_scheme = "post-release"
+local_scheme = "no-local-version"
 
 [tool.black]
 line-length = 95
