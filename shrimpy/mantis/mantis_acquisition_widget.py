@@ -5,6 +5,7 @@ such as ROI settings, TriggerScope configuration, and other hardware parameters.
 """
 
 from __future__ import annotations
+
 from pathlib import Path
 from typing import Any
 
@@ -212,23 +213,23 @@ class TriggerScopeSettingsWidget(QWidget):
     def value(self) -> dict[str, Any]:
         """Get TriggerScope settings as dictionary."""
         return {
-            'dac_sequencing': (
+            "dac_sequencing": (
                 self.dac_device.text() if self.enable_dac_seq.isChecked() else None
             ),
-            'ttl_blanking': (
+            "ttl_blanking": (
                 self.ttl_device.text() if self.enable_ttl_blanking.isChecked() else None
             ),
         }
 
     def setValue(self, settings: dict[str, Any]):
         """Set TriggerScope settings from dictionary."""
-        if dac := settings.get('dac_sequencing'):
+        if dac := settings.get("dac_sequencing"):
             self.dac_device.setText(dac)
             self.enable_dac_seq.setChecked(True)
         else:
             self.enable_dac_seq.setChecked(False)
 
-        if ttl := settings.get('ttl_blanking'):
+        if ttl := settings.get("ttl_blanking"):
             self.ttl_device.setText(ttl)
             self.enable_ttl_blanking.setChecked(True)
         else:
@@ -293,29 +294,29 @@ class MicroscopeSettingsWidget(QWidget):
     def value(self) -> dict[str, Any]:
         """Get microscope settings as dictionary."""
         return {
-            'focus_device': self.focus_device.currentText(),
-            'autofocus': {
-                'enabled': self.use_autofocus.isChecked(),
-                'method': self.autofocus_method.currentText(),
+            "focus_device": self.focus_device.currentText(),
+            "autofocus": {
+                "enabled": self.use_autofocus.isChecked(),
+                "method": self.autofocus_method.currentText(),
             },
-            'use_hardware_sequencing': self.use_hw_seq.isChecked(),
+            "use_hardware_sequencing": self.use_hw_seq.isChecked(),
         }
 
     def setValue(self, settings: dict[str, Any]):
         """Set microscope settings from dictionary."""
-        if focus_dev := settings.get('focus_device'):
+        if focus_dev := settings.get("focus_device"):
             idx = self.focus_device.findText(focus_dev)
             if idx >= 0:
                 self.focus_device.setCurrentIndex(idx)
 
-        if af_settings := settings.get('autofocus'):
-            self.use_autofocus.setChecked(af_settings.get('enabled', False))
-            method = af_settings.get('method', 'PFS')
+        if af_settings := settings.get("autofocus"):
+            self.use_autofocus.setChecked(af_settings.get("enabled", False))
+            method = af_settings.get("method", "PFS")
             idx = self.autofocus_method.findText(method)
             if idx >= 0:
                 self.autofocus_method.setCurrentIndex(idx)
 
-        self.use_hw_seq.setChecked(settings.get('use_hardware_sequencing', True))
+        self.use_hw_seq.setChecked(settings.get("use_hardware_sequencing", True))
 
 
 class MantisSettingsWidget(QWidget):
@@ -349,13 +350,13 @@ class MantisSettingsWidget(QWidget):
     def value(self) -> dict[str, Any]:
         """Get all mantis settings as a dictionary."""
         return {
-            'trigger_scope': self.triggerscope_widget.value(),
+            "trigger_scope": self.triggerscope_widget.value(),
             **self.microscope_widget.value(),
         }
 
     def setValue(self, settings: dict[str, Any]):
         """Set all mantis settings from a dictionary."""
-        if ts := settings.get('trigger_scope'):
+        if ts := settings.get("trigger_scope"):
             self.triggerscope_widget.setValue(ts)
         self.microscope_widget.setValue(settings)
 
@@ -626,18 +627,18 @@ class MantisAcquisitionWidget(QWidget):
                     y = self._mmc.getROI()[1]
                     w = self._mmc.getROI()[2]
                     h = self._mmc.getROI()[3]
-                    mantis_settings['roi'] = [x, y, w, h]
+                    mantis_settings["roi"] = [x, y, w, h]
                 except Exception:
                     pass
 
             # Create new sequence with updated metadata (MDASequence is frozen)
             updated_metadata = dict(sequence.metadata or {})
-            updated_metadata['mantis'] = mantis_settings
-            sequence = sequence.model_copy(update={'metadata': updated_metadata})
+            updated_metadata["mantis"] = mantis_settings
+            sequence = sequence.model_copy(update={"metadata": updated_metadata})
 
             # Create and register mantis engine if not already done
             if self._mantis_engine is None:
-                use_hw_seq = mantis_settings.get('use_hardware_sequencing', True)
+                use_hw_seq = mantis_settings.get("use_hardware_sequencing", True)
                 self._mantis_engine = create_mantis_engine(self._mmc, use_hw_seq)
 
             self.status_label.setText("Running acquisition...")
@@ -706,20 +707,20 @@ class MantisAcquisitionWidget(QWidget):
                         y = self._mmc.getROI()[1]
                         w = self._mmc.getROI()[2]
                         h = self._mmc.getROI()[3]
-                        mantis_settings['roi'] = [x, y, w, h]
+                        mantis_settings["roi"] = [x, y, w, h]
                     except Exception:
                         pass
 
                 # Create combined settings dictionary
                 sequence_dict = sequence.dict()
-                sequence_dict['metadata'] = sequence_dict.get('metadata', {})
-                sequence_dict['metadata']['mantis'] = mantis_settings
+                sequence_dict["metadata"] = sequence_dict.get("metadata", {})
+                sequence_dict["metadata"]["mantis"] = mantis_settings
 
                 # Convert tuples to lists to avoid !!python/tuple tags
                 sequence_dict = self._sanitize_for_yaml(sequence_dict)
 
                 # Save to YAML using safe_dump to avoid Python-specific tags
-                with open(filename, 'w') as f:
+                with open(filename, "w") as f:
                     yaml.safe_dump(
                         sequence_dict,
                         f,
@@ -769,13 +770,13 @@ class MantisAcquisitionWidget(QWidget):
                 self.mda_widget.setValue(sequence)
 
                 # Extract and set mantis settings from metadata
-                if sequence.metadata and 'mantis' in sequence.metadata:
-                    mantis_meta = sequence.metadata['mantis']
+                if sequence.metadata and "mantis" in sequence.metadata:
+                    mantis_meta = sequence.metadata["mantis"]
                     self.mantis_settings.setValue(mantis_meta)
                     # Apply ROI to camera if available
-                    if 'roi' in mantis_meta and self._mmc is not None:
+                    if "roi" in mantis_meta and self._mmc is not None:
                         try:
-                            roi = mantis_meta['roi']
+                            roi = mantis_meta["roi"]
                             if len(roi) == 4:
                                 self._mmc.setROI(*roi)
                         except Exception as e:

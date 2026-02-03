@@ -72,10 +72,10 @@ YYYY_MM_DD_<experiment_description>
 |--- <acq-name>
 |    |--- <Row>
 |       |--- <Col>
-|           |--- <Pos_Label> 
+|           |--- <Pos_Label>
 |              |--- labelfree  # zarr dataset with TCZYX dimensions
 |              |--- lightsheet  # zarr dataset with TCZYX dimensions
-|           |--- <Pos_Label>  
+|           |--- <Pos_Label>
 |              |--- labelfree  # zarr dataset with TCZYX dimensions
 |              |--- lightsheet  # zarr dataset with TCZYX dimensions
 |    ...

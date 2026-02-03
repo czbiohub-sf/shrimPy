@@ -40,7 +40,7 @@ print(mantis.__mm_version__)
 ```
 
 * Download the recommended [Micro-Manager nightly build](https://download.micro-manager.org/nightly/2.0/Windows/) and install following the installer prompts in the `C:\Program Files\Micro-Manager-2.0_YYYY_MM_DD` directory.
-  
+
   * Copy the `Ti2_Mic_Driver.dll` device adapter located at `C:\Program Files\Nikon\Ti2-SDK\bin` to the Micro-manager install directory, as described [here](https://micro-manager.org/NikonTi2).
 
 * Install another copy of the recommended [Micro-Manager nightly build](https://download.micro-manager.org/nightly/2.0/Windows/) in the `C:\Program Files\Micro-Manager-2.0_YYYY_MM_DD_2` directory. This copy of Micro-manager will be used by the headless light-sheet acquisition engine.

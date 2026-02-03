@@ -1,33 +1,23 @@
 PACKAGE_NAME := shrimpy
 
-.PHONY: setup-develop
-setup-develop:
+.PHONY: install
+install:
 	pip install -e ".[dev]"
 
 .PHONY: uninstall
 uninstall:
 	pip uninstall -y $(PACKAGE_NAME)
 
-.PHONY: check-format
-check-format:
-	black --check -S -t py311 .
-	isort --check .
+.PHONY: check
+check:
+	ruff format --check .
+	ruff check .
 
 .PHONY: format
 format:
-	black -S -t py311 .
-	isort .
-
-.PHONY: lint
-lint:
-	flake8 $(PACKAGE_NAME)
-
-# run the pre-commit hooks on all files (not just staged changes)
-# (requires pre-commit to be installed)
-.PHONY: pre-commit
-pre-commit:
-	pre-commit run --all-files
+	ruff format .
+	ruff check --fix .
 
 .PHONY: test
 test:
-	python -m pytest . --disable-pytest-warnings
+	python -m pytest

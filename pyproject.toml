@@ -1,5 +1,6 @@
 [build-system]
-requires = ["setuptools >= 61", "setuptools_scm[toml]>=3.4", "wheel"]
+requires = ["setuptools >= 61", "setuptools_scm[toml]>=8.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "shrimpy"
@@ -20,32 +21,24 @@ classifiers = [
 
 # list package dependencies here
 dependencies = [
-  # "copylot @ git+https://github.com/czbiohub-sf/coPylot",  # only used in archive
-  # "ndtiff==2.2.1",
-  # "nidaqmx",
+  "click",
   "numpy",
-  # "pycromanager==0.28.1",
+  # TODO: replace [all] with specific writer backend
+  "ome-writers[all]",
   "pymmcore_plus==0.17.0",
   "pymmcore-widgets",
-  # "pydantic>=2.0.0",  # only used in archive
-  # "pylablib==1.4.1",  # only used in archive
   "PyYAML",
   "qtpy",
-  # "tifffile",  # only used in archive
   "useq-schema",
-  # "waveorder @ git+https://github.com/mehta-lab/waveorder@return_peak_stats",  # only used in archive
 ]
 
 
 [project.optional-dependencies]
 # note that dev dependencies are only pinned to major versions
 dev = [
-  "black==26.1.0",
-  "flake8~=5.0",
-  "isort~=5.12",
   "pre-commit~=2.19",
-  "pylint~=2.14",
   "pytest~=7.1",
+  "ruff~=0.8",
 ]
 build = ["build", "twine"]
 
@@ -57,56 +50,48 @@ shrimpy = "shrimpy.cli.main:cli"
 zip-safe = false
 
 [tool.setuptools.packages.find]
-# Discover shrimpy and all subpackages (e.g., shrimpy.mantis)
-where = ["."]
-include = ["shrimpy*"]
+# Exclude tests from distribution package
 exclude = ["shrimpy.tests*"]
 
-[tool.setuptools.dynamic]
-version = { attr = "shrimpy.__version__" }
+[tool.setuptools_scm]
+# Version is derived from git tags
+# Format: for tagged commits: "1.2.0"
+#         for dev commits: "1.2.0.post3+ge9f2970"
+version_scheme = "post-release"
+local_scheme = "no-local-version"
 
-[tool.black]
+[tool.ruff]
+# Ruff replaces black, isort, flake8, and pylint
 line-length = 95
-target-version = ['py311']
-include = '\.pyi?$'
-skip-string-normalization = true
-exclude = '''
-(
-  /(
-      \.eggs
-    | \.git
-    | \.hg
-    | \.mypy_cache
-    | \.tox
-    | \.venv
-    | _build
-    | build
-    | dist
-    | notebooks
-    | ignore
-    | examples
-    | scripts
-    | archive
-  )/
-)
-'''
+target-version = "py311"
 
-[tool.isort]
-profile = "black"
-line_length = 95
-lines_between_types = 1
-default_section = "THIRDPARTY"
-no_lines_before = ["STDLIB"]
-ensure_newline_before_comments = true
-skip_glob = ["examples/*", "scripts/*", "**/archive/*"]
+# Exclude non-package code
+exclude = ["archive", "examples", "scripts"]
 
-[tool.pylint]
-# disable all conventions, refactors, warnings (C, R, W) and the following:
-# E0401: unable-to-import (since it is possible that no one environment has all required packages)
-# E1136: unsubscriptable-object (anecdotal false positives for numpy objects)
-disable = ["C", "R", "W", "import-error", "unsubscriptable-object"]
-msg-template = "{line},{column},{category},{symbol}:{msg}"
-reports = "n"
+[tool.ruff.lint]
+# Enable rule sets:
+# F = pyflakes
+# E/W = pycodestyle errors/warnings
+# I = isort
+# N = pep8-naming
+# UP = pyupgrade
+# B = flake8-bugbear
+select = ["F", "E", "W", "I", "N", "UP", "B"]
+
+# Ignore rules to match current flake8 config (ignores C, R, W categories)
+ignore = [
+    "E501",  # Line too long (handled by formatter)
+    "N802",  # Function name should be lowercase (Qt uses camelCase)
+    "N815",  # Variable in class scope should not be mixedCase (Qt uses camelCase)
+]
+
+[tool.ruff.lint.isort]
+# Match current isort settings
+lines-between-types = 1
+known-first-party = ["shrimpy"]
+
+[tool.ruff.format]
+docstring-code-format = true
 
 [tool.pytest.ini_options]
-addopts = "--ignore scripts/ --ignore-glob=**/archive/"
+testpaths = ["shrimpy/tests"]
