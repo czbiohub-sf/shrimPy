@@ -36,11 +36,9 @@ The pre-commit hooks automatically run style checks (e.g. `flake8`, `black`, `is
 A [makefile](Makefile) is included to help with a few basic development commands. Currently, the following commands are available:
 
 ```sh
-make setup-develop # setup the package in development mode
+make install # install package in development mode
 make uninstall # uninstall the package
-make check-format # run black and isort format check
-make format # run black and isort formatting
-make lint # run flark8 linting
-make pre-commit # run pre-commit hooks on all files
-make test # run pytest
+make check # check formatting and linting
+make format # apply formatting and linting changes
+make test # run test
 ```
