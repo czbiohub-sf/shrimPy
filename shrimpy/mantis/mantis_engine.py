@@ -3,13 +3,17 @@ from __future__ import annotations
 import time
 
 import numpy as np
-import ome_writers as omew
+from ome_writers import (
+    AcquisitionSettings,
+    create_stream,
+    useq_to_acquisition_settings,
+)
 import useq
 
 from pymmcore_plus.core import CMMCorePlus
 from pymmcore_plus.mda import MDAEngine
 from pymmcore_plus.metadata import FrameMetaV1, SummaryMetaV1
-from useq import MDAEvent, MDASequence
+from useq import MDAEvent, MDASequence, WellPlatePlan, GridRowsColumns
 
 from shrimpy.mantis.mantis_logger import configure_mantis_logger, get_mantis_logger
 
@@ -411,37 +415,70 @@ def acquire(
 
     # Load the sequence
     logger.info(f"Loading MDA sequence from {mda_sequence}")
-    sequence = MDASequence.from_file(mda_sequence)
+    
+
+    # TODO: add stage positions manually, they are not correctly loaded 
+    # from yaml file
+    _sequence = MDASequence.from_file(mda_sequence)
+    sequence = _sequence.model_copy(
+        update={
+            'stage_positions': WellPlatePlan(
+                plate="24-well",
+                a1_center_xy=(-24210, -9500),
+                selected_wells=((0), (0)),
+                well_points_plan=GridRowsColumns(
+                    fov_width=180, fov_height=180, rows=2, columns=2, overlap=-10
+                ),
+            )
+        }
+    )
+
+
 
     # Setup data writer
     data_path = save_dir / f"{acquisition_name}.ome.zarr"
     logger.info(f"Initializing OME-ZARR writer at {data_path}")
+    
+    # Get image dimensions from core
     roi = sequence.metadata.get("mantis").get("roi")
-    dims = omew.dims_from_useq(sequence, image_width=roi[-2], image_height=roi[-1])
-    stream = omew.create_stream(
-        path=str(data_path),
-        dimensions=dims,
-        dtype=np.uint16,
-        backend="tensorstore",
-        overwrite=True,
+    image_width = roi[-2]
+    image_height = roi[-1]
+    pixel_size_um = core.getPixelSizeUm()
+    dtype = "uint16"
+    
+    # Define chunk shapes for optimal performance
+    chunk_shapes = {"t": 1, "c": 1, "z": 512, "y": image_height, "x": image_width}
+    
+    # Convert MDASequence to acquisition settings
+    acq_settings = useq_to_acquisition_settings(
+        sequence,
+        image_width=image_width,
+        image_height=image_height,
+        pixel_size_um=pixel_size_um,
+        chunk_shapes=chunk_shapes,
+    )
+    
+    # Create acquisition settings with compression
+    settings = AcquisitionSettings(
+        root_path=data_path,
+        dtype=dtype,
+        compression="blosc-zstd",
+        format="acquire-zarr",
+        overwrite=False,
+        **acq_settings,
     )
 
-    # Append frames to the stream on frameReady event
-    @core.mda.events.frameReady.connect
-    def _on_frame_ready(
-        frame: np.ndarray, event: useq.MDAEvent, frame_meta: FrameMetaV1
-    ) -> None:
-        stream.append(frame)
+    with create_stream(settings) as stream:
+        # Append frames to the stream on frameReady event
+        @core.mda.events.frameReady.connect
+        def _on_frame_ready(
+            frame: np.ndarray, event: useq.MDAEvent, metadata: dict
+        ) -> None:
+            stream.append(frame)
 
-    # Flush and close the stream on sequenceFinished event
-    @core.mda.events.sequenceFinished.connect
-    def _on_sequence_finished(sequence: useq.MDASequence) -> None:
-        stream.flush()
-        print("Data written successfully to", data_path)
+        # Run the acquisition
+        logger.info("Starting MDA acquisition sequence")
+        core.mda.run(sequence)
 
-    # Run the acquisition
-    logger.info("Starting MDA acquisition sequence")
-    core.mda.run(sequence)
-
-    # Cleanup
-    logger.info("Acquisition completed successfully")
+        # Cleanup
+        logger.info("Acquisition completed successfully")
