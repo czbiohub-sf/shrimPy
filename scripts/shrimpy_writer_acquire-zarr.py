@@ -13,9 +13,10 @@ from ome_writers import (
     AcquisitionSettings,
     create_stream,
     dims_from_useq,
+    useq_to_acquisition_settings,
 )
 
-from useq import MDASequence, MDAEvent
+from useq import MDASequence, MDAEvent, WellPlatePlan, GridRowsColumns
 from useq._position import Position
 from pymmcore_plus import CMMCorePlus
 from pymmcore_plus.mda import MDAEngine
@@ -26,33 +27,37 @@ core.loadSystemConfiguration()
 # Set realistic ROI for mantis microscope
 core.setProperty("Camera", "OnCameraCCDXSize", "2048")
 core.setProperty("Camera", "OnCameraCCDYSize", "256")
+core.setProperty("XY", "Velocity", "10000")
 # Enable Z sequencing
 core.setProperty("Z", "UseSequences", "Yes")
 
 data_dir = Path("~/Documents/test/test_14_acq_zarr").expanduser()
-if not data_dir.exists():
-    data_dir.mkdir(parents=True)
-else:
-    shutil.rmtree(data_dir)
+# stage_positions = tuple(
+#     Position(
+#         x=row, 
+#         y=col, 
+#         name=f"Pos{row * 4 + col}", 
+#         row=str(row), 
+#         col=str(col + 1)
+#     )
+#     for row in range(2)   # 2 rows
+#     for col in range(4)   # 4 columns
+# )
+
+stage_positions = WellPlatePlan(
+    plate="12-well",
+    a1_center_xy=(0, 0),
+    selected_wells=((0, 1), (0)),
+    well_points_plan=GridRowsColumns(rows=2, columns=2),
+)
 
 seq = MDASequence(
+    stage_positions=stage_positions,
+    time_plan={"interval": 1, "loops": 5},
     channels=(
         {"config": "DAPI", "exposure": 2},
         {"config": "FITC", "exposure": 10},
     ),
-    stage_positions=(
-        Position(x=0, y=0, name="Pos0", row="0", col="1"),
-        Position(x=1, y=1, name="Pos1", row="0", col="1"),
-        Position(x=0, y=1, name="Pos2", row="0", col="2"),
-        Position(x=1, y=0, name="Pos3", row="0", col="2"),
-    ),
-    # stage_positions=(
-    #     {"x": 0, "y": 0, "name": "Pos0"},
-    #     {"x": 1, "y": 1, "name": "Pos1"},
-    #     {"x": 0, "y": 1, "name": "Pos2"},
-    #     {"x": 1, "y": 0, "name": "Pos3"},
-    # ),
-    time_plan={"interval": 1, "loops": 5},
     z_plan={"range": 10, "step": 0.2},
     axis_order="tpcz",
 )
@@ -62,20 +67,14 @@ image_width = core.getImageWidth()
 image_height = core.getImageHeight()
 pixel_size_um = core.getPixelSizeUm()
 dtype = f"uint{core.getImageBitDepth()}"
+chunk_shapes = {"t": 1, "c": 1, "z": 32, "y": image_height, "x": image_width}
 BACKEND = "acquire-zarr"
 # BACKEND = "tifffile"
 suffix = ".ome.tiff" if BACKEND == "tifffile" else ".ome.zarr"
 
-# TODO: current it's not possible to convert HCS plate format from MDASequence to ome_writers dimensions
-# need to update dims_from_useq function
-dims = dims_from_useq(
-    seq, image_width=image_width, image_height=image_height, pixel_size_um=pixel_size_um
+acq_settings = useq_to_acquisition_settings(
+    seq, image_width=image_width, image_height=image_height, pixel_size_um=pixel_size_um, chunk_shapes=chunk_shapes
 )
-# Specify chunk shapes for each dimension, could be part of dims_from_useq
-chunk_shapes = {"t": 1, "c": 1, "z": 32, "y": image_height, "x": image_width}
-for dim in dims:
-    if dim.name in chunk_shapes:
-        dim.chunk_size = chunk_shapes[dim.name]
 
 skip_acquisition_indices = [
     {'t': 1, 'p': 0},
@@ -103,15 +102,19 @@ class MyEngine(MDAEngine):
         else:
             yield from super().exec_event(event)
 
+if not data_dir.exists():
+    data_dir.mkdir(parents=True)
+else:
+    shutil.rmtree(data_dir)
 
 settings = AcquisitionSettings(
     root_path=data_dir / f"example_acq{suffix}",
-    dimensions=dims,
     dtype=dtype,
     # Specify compression
     compression="blosc-zstd" if BACKEND == "acquire-zarr" else None,
-    backend=BACKEND,
+    format=BACKEND,
     overwrite=False,
+    **acq_settings,
 )
 stream = create_stream(settings)
 
@@ -124,4 +127,6 @@ start_time = time.time()
 core.mda.set_engine(MyEngine(core))
 core.mda.run(seq)
 end_time = time.time()
+
+stream.close()
 print(f"Time taken: {end_time - start_time} seconds")
