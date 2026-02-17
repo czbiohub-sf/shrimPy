@@ -56,8 +56,6 @@ class MantisEngine(MDAEngine):
         self._slow_speed = 2.0  # mm/s for short distances
         self._fast_speed = 5.75  # mm/s for long distances
         self._short_distance_threshold = 2000  # um
-        self._output_dir: Path | None = None
-        self._name: str | None = None
 
         # Register event callbacks for logging
         mmc.events.propertyChanged.connect(self._on_property_changed)
@@ -332,11 +330,13 @@ class MantisEngine(MDAEngine):
         if not self._autofocus_success:
             logger.error(f"Autofocus call failed after {len(z_offsets)} attempts")
 
-    def setup_acquisition(self, output_dir: str | Path, name: str) -> None:
-        """Prepare the output directory and resolve the acquisition name.
-
-        Stores the resolved output directory and indexed name as instance state
-        for use by :meth:`acquire`.
+    def acquire(
+        self,
+        output_dir: str | Path,
+        name: str,
+        mda_config: str | Path,
+    ) -> None:
+        """Run a Mantis microscope acquisition.
 
         Parameters
         ----------
@@ -344,29 +344,17 @@ class MantisEngine(MDAEngine):
             Directory where acquisition data will be saved.
         name : str
             Base acquisition name; an index suffix will be appended automatically.
-        """
-        self._output_dir = Path(output_dir)
-        self._output_dir.mkdir(parents=True, exist_ok=True)
-        self._name = _get_next_acquisition_name(self._output_dir, name)
-        logger.info(f"Prepared acquisition: {self._name}")
-
-    def acquire(self, mda_config: str | Path) -> None:
-        """Run a Mantis microscope acquisition.
-
-        Requires :meth:`setup_acquisition` to have been called first.
-
-        Parameters
-        ----------
         mda_config : str | Path
-            Path to MDA sequence configuration YAML file.
+            Path to the MDA sequence configuration YAML file.
         """
-        if self._output_dir is None or self._name is None:
-            raise RuntimeError("Call setup_acquisition() before acquire().")
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        name = _get_next_acquisition_name(output_dir, name)
 
         logger.info(f"Loading MDA sequence from {mda_config}")
         sequence = MDASequence.from_file(mda_config)
 
-        data_path = self._output_dir / f"{self._name}.ome.zarr"
+        data_path = output_dir / f"{name}.ome.zarr"
         logger.info(f"Initializing OME-ZARR writer at {data_path}")
 
         core = self.mmcore
@@ -404,7 +392,7 @@ class MantisEngine(MDAEngine):
             **acq_settings,
         )
 
-        logger.info(f"Starting acquisition: {self._name}")
+        logger.info(f"Starting acquisition: {name}")
         with create_stream(settings) as stream:
 
             @self.mmcore.mda.events.frameReady.connect

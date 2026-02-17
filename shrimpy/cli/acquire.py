@@ -82,8 +82,7 @@ def mantis(
 
     core = MantisEngine.initialize_core(mm_config)
     engine = MantisEngine(core)
-    engine.setup_acquisition(output_dir=output_dir, name=name)
-    engine.acquire(mda_config=mda_config)
+    engine.acquire(output_dir=output_dir, name=name, mda_config=mda_config)
 
 
 @acquire.command()
