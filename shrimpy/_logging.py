@@ -39,9 +39,10 @@ def setup_logging(
 
     if config_file.exists():
         # Load logging configuration from file
+        # Use forward slashes for cross-platform compatibility (avoids Windows backslash issues)
         logging.config.fileConfig(
             config_file,
-            defaults={"log_file": str(log_file)},
+            defaults={"log_file": log_file.as_posix()},
             disable_existing_loggers=False,
         )
     else:
