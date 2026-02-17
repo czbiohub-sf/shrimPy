@@ -15,6 +15,20 @@ def config_file() -> Path:
     return Path(__file__).parent.parent.parent / "config" / "logging.ini"
 
 
+@pytest.fixture(autouse=True)
+def cleanup_logging_handlers():
+    """Fixture to clean up logging handlers after each test.
+
+    This prevents file locking issues on Windows when temp directories are cleaned up.
+    """
+    yield
+    # Close and remove all handlers from shrimpy logger
+    shrimpy_logger = logging.getLogger("shrimpy")
+    for handler in shrimpy_logger.handlers[:]:
+        handler.close()
+        shrimpy_logger.removeHandler(handler)
+
+
 def test_logging_config_file_exists(config_file):
     """Test that logging configuration file exists."""
     assert config_file.exists(), f"Logging config not found at {config_file}"
