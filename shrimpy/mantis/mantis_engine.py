@@ -151,20 +151,6 @@ class MantisEngine(MDAEngine):
 
     def setup_event(self, event: useq.MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
-        # Log sequenced event details to show all channels being acquired
-        # from pymmcore_plus.core._sequencing import SequencedEvent
-
-        # TODO: consider removing this, pymmcore_plus already logs this?
-        # if isinstance(event, SequencedEvent):
-        #     channels = [e.channel.config if e.channel else 'None' for e in event.events]
-        #     unique_channels = list(dict.fromkeys(channels))  # preserve order, remove dupes
-        #     logger.info(
-        #         f"Sequenced event will acquire {len(event.events)} images: "
-        #         f"{len(unique_channels)} channels {unique_channels} × "
-        #         f"{len(event.events)//len(unique_channels)} z-slices"
-        #     )
-
-        # Call parent setup
         super().setup_event(event)
 
     def exec_event(self, event: MDAEvent):
