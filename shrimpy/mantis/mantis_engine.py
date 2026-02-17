@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import time
 
+from pathlib import Path
+
 import numpy as np
 import useq
 
@@ -349,12 +351,12 @@ class MantisEngine(MDAEngine):
         # logger.debug(f"XY stage position changed: ({x:.2f}, {y:.2f})")
 
 
-def initialize_mantis_core(config_path: str | None = None) -> CMMCorePlus:
+def initialize_mantis_core(mm_config: str | Path | None = None) -> CMMCorePlus:
     """Initialize and configure the Core instance for Mantis.
 
     Parameters
     ----------
-    config_path : str | None
+    mm_config : str | Path | None
         Path to the Micro-Manager configuration file. If None, uses default demo config.
 
     Returns
@@ -365,14 +367,15 @@ def initialize_mantis_core(config_path: str | None = None) -> CMMCorePlus:
     logger.info("Initializing Micro-Manager core")
     core = CMMCorePlus().instance()
 
-    if config_path is None:
+    if mm_config is None:
         logger.info("No configuration file provided. Using MMConfig_demo.cfg.")
+        _config = None
     else:
-        logger.info(f"Loading Micro-Manager configuration from: {config_path}")
+        logger.info(f"Loading Micro-Manager configuration from: {mm_config}")
+        _config = mm_config
 
-    core.loadSystemConfiguration(config_path)
+    core.loadSystemConfiguration(_config)
     logger.info("Micro-Manager core initialized successfully")
-    # core.setPixelSizeConfig("Res40x")  # Uncomment if needed
 
     return core
 
@@ -401,54 +404,56 @@ def create_mantis_engine(
 
 
 def acquire(
-    mmconfig: str,
-    mda_sequence: str,
-    save_dir: str,
-    acquisition_name: str = "mantis_acquisition",
+    mm_config: str | Path,
+    mda_config: str | Path,
+    output_dir: str | Path,
+    name: str = "mantis_acquisition",
 ) -> None:
     """Run a Mantis microscope acquisition.
 
     Parameters
     ----------
-    mmconfig : str
+    mm_config : str | Path
         Path to Micro-Manager configuration file.
-    mda_sequence : str
-        Path to MDA sequence YAML file.
-    save_dir : str
-        Directory where acquisition data and logs will be saved.
-    acquisition_name : str
+    mda_config : str | Path
+        Path to MDA sequence configuration YAML file.
+    output_dir : str | Path
+        Output directory where acquisition data and logs will be saved.
+    name : str
         Name of the acquisition (used for log files and output).
     """
-    from pathlib import Path
-
     from shrimpy.mantis.mantis_logger import log_conda_environment
 
-    # Create save directory
-    save_dir = Path(save_dir)
-    save_dir.mkdir(parents=True, exist_ok=True)
+    # Convert to Path objects
+    mm_config = Path(mm_config)
+    mda_config = Path(mda_config)
+    output_dir = Path(output_dir)
+
+    # Create output directory
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Configure mantis logger
-    logger = configure_mantis_logger(save_dir, acquisition_name)
+    logger = configure_mantis_logger(output_dir, name)
 
     # Log conda environment
-    log_dir = save_dir / "logs"
-    output, errors = log_conda_environment(log_dir)
-    if output:
-        logger.debug(output.decode("ascii").strip())
+    log_dir = output_dir / "logs"
+    output_log, errors = log_conda_environment(log_dir)
+    if output_log:
+        logger.debug(output_log.decode("ascii").strip())
     if errors:
         logger.error(errors.decode("ascii"))
 
     # Load the sequence
-    logger.info(f"Loading MDA sequence from {mda_sequence}")
-    sequence = MDASequence.from_file(mda_sequence)
+    logger.info(f"Loading MDA sequence from {mda_config}")
+    sequence = MDASequence.from_file(mda_config)
 
     # Initialize core and engine using common functions
-    core = initialize_mantis_core(mmconfig)
+    core = initialize_mantis_core(mm_config)
     use_hardware_sequencing = sequence.metadata.get("mantis").get("use_hardware_sequencing")
     create_mantis_engine(core, use_hardware_sequencing=use_hardware_sequencing)
 
     # Setup data writer
-    data_path = save_dir / f"{acquisition_name}.ome.zarr"
+    data_path = output_dir / f"{name}.ome.zarr"
     logger.info(f"Initializing OME-ZARR writer at {data_path}")
 
     # Get image dimensions from core
