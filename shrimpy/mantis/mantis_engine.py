@@ -3,18 +3,25 @@ from __future__ import annotations
 import time
 
 import numpy as np
-import ome_writers as omew
 import useq
 
+from ome_writers import (
+    AcquisitionSettings,
+    create_stream,
+    useq_to_acquisition_settings,
+)
 from pymmcore_plus.core import CMMCorePlus
+from pymmcore_plus.core._sequencing import SequencedEvent
 from pymmcore_plus.mda import MDAEngine
-from pymmcore_plus.metadata import FrameMetaV1, SummaryMetaV1
+from pymmcore_plus.metadata import SummaryMetaV1
 from useq import MDAEvent, MDASequence
 
 from shrimpy.mantis.mantis_logger import configure_mantis_logger, get_mantis_logger
 
 # Get the logger instance
 logger = get_mantis_logger()
+
+DEMO_PFS_METHOD = "demo-PFS"
 
 
 class MantisEngine(MDAEngine):
@@ -39,12 +46,33 @@ class MantisEngine(MDAEngine):
         """
         super().__init__(mmc, *args, **kwargs)
         self._use_autofocus = False
+        self._autofocus_success = False
         self._autofocus_stage = None
+        self._autofocus_method = None
         self._xy_stage_device = None
         self._last_xy_position = None
         self._slow_speed = 2.0  # mm/s for short distances
         self._fast_speed = 5.75  # mm/s for long distances
         self._short_distance_threshold = 2000  # um
+
+        # Register event callbacks for logging
+        mmc.events.propertyChanged.connect(self._on_property_changed)
+        mmc.events.roiSet.connect(self._on_roi_set)
+        mmc.events.XYStagePositionChanged.connect(self._on_xy_stage_position_changed)
+
+    def _on_property_changed(self, device: str, property_name: str, value: str) -> None:
+        """Log property changes at debug level."""
+        logger.debug(f"Property changed: {device}.{property_name} = {value}")
+
+    def _on_roi_set(self, camera: str, x: int, y: int, width: int, height: int) -> None:
+        """Log ROI changes at debug level."""
+        logger.debug(
+            f"Setting ROI on {camera} to x={x}, y={y}, width={width}, height={height}"
+        )
+
+    def _on_xy_stage_position_changed(self, device: str, x: float, y: float) -> None:
+        """Log stage position changes at debug level."""
+        logger.debug(f"XY stage position changed: device={device}, x={x:.2f}, y={y:.2f}")
 
     def setup_sequence(self, sequence: MDASequence) -> SummaryMetaV1 | None:
         """Setup mantis-specific hardware before the sequence starts.
@@ -61,16 +89,6 @@ class MantisEngine(MDAEngine):
         # Extract mantis settings from metadata
         microscope_meta = sequence.metadata.get("mantis", {}) if sequence.metadata else {}
 
-        # Apply ROI settings
-        if roi := microscope_meta.get("roi"):
-            logger.info(
-                f"Setting ROI to: x={roi[0]}, y={roi[1]}, width={roi[2]}, height={roi[3]}"
-            )
-            core.clearROI()
-            core.setROI(*roi)
-        else:
-            logger.debug("No ROI settings specified in metadata")
-
         # Apply initialization settings
         # TODO: move to proper place
         if initialization_settings := microscope_meta.get("initialization_settings"):
@@ -80,6 +98,11 @@ class MantisEngine(MDAEngine):
                 core.setProperty(setting[0], setting[1], setting[2])
         else:
             logger.debug("No initialization settings specified")
+
+        # Apply ROI settings
+        if roi := microscope_meta.get("roi"):
+            core.clearROI()
+            core.setROI(*roi)
 
         # Apply setup hardware sequencing settings
         # TODO: reset hardware sequencing settings after acquisition
@@ -106,18 +129,13 @@ class MantisEngine(MDAEngine):
         if autofocus := microscope_meta.get("autofocus"):
             if autofocus.get("enabled"):
                 self._use_autofocus = True
-                self._autofocus_stage = core.getFocusDevice()
-                autofocus_method = autofocus.get("method")
-                if autofocus_method:
-                    logger.info(f"Enabling autofocus with method: {autofocus_method}")
-                    core.setAutoFocusDevice(autofocus_method)
-                else:
-                    logger.info(
-                        f"Enabling autofocus with default device: {self._autofocus_stage}"
-                    )
-
-        if not self._use_autofocus:
-            logger.info("Autofocus is disabled for this acquisition")
+                self._autofocus_stage = autofocus.get("stage")
+                self._autofocus_method = autofocus.get("method")
+                logger.info(f"Enabling autofocus with method: {self._autofocus_method}")
+                if not self._autofocus_method == DEMO_PFS_METHOD:
+                    core.setAutoFocusDevice(self._autofocus_method)
+            else:
+                logger.info("Autofocus is disabled for this acquisition")
 
         # Store XY stage device name
         core.events.XYStagePositionChanged.connect(self.on_xy_stage_moved)
@@ -146,7 +164,20 @@ class MantisEngine(MDAEngine):
         # Call parent setup
         super().setup_event(event)
 
-        # Custom post-setup logic could go here
+    def exec_event(self, event: MDAEvent):
+        if self._use_autofocus and not self._autofocus_success:
+            # Pad zarr dataset with empty images if autofocus failed at this position
+            image_height = self.mmcore.getImageHeight()
+            image_width = self.mmcore.getImageWidth()
+            dtype = f"uint{self.mmcore.getImageBitDepth()}"
+            _img = np.zeros((image_height, image_width), dtype=dtype)
+            if isinstance(event, SequencedEvent):
+                for _event in event.events:
+                    yield (_img, _event, self.get_frame_metadata(_event))
+            else:
+                yield (_img, event, self.get_frame_metadata(event))
+        else:
+            yield from super().exec_event(event)
 
     def _set_event_xy_position(self, event: MDAEvent) -> None:
         """Override XY position setting to handle autofocus after stage movement.
@@ -232,10 +263,10 @@ class MantisEngine(MDAEngine):
             return
 
         # Attempt autofocus after stage movement
-        if self._use_autofocus and self._autofocus_stage:
+        if self._use_autofocus:
             self._engage_autofocus(event)
 
-    def _engage_autofocus(self, event: MDAEvent) -> bool:
+    def _engage_autofocus(self, event: MDAEvent):
         """Attempt to engage continuous autofocus after stage movement.
 
         This method tries to engage Nikon PFS continuous autofocus, attempting
@@ -245,11 +276,6 @@ class MantisEngine(MDAEngine):
         ----------
         event : MDAEvent
             The current event being executed
-
-        Returns
-        -------
-        bool
-            True if autofocus successfully engaged, False otherwise
         """
         core = self.mmcore
 
@@ -265,20 +291,29 @@ class MantisEngine(MDAEngine):
 
         logger.debug(f"Engaging autofocus at Z position {z_position:.2f} um")
 
-        autofocus_success = False
+        self._autofocus_success = False
         error_occurred = False
         z_offsets = [0, -10, 10, -20, 20, -30, 30]  # in um
+
+        # TODO: refactor
+        if self._autofocus_method == DEMO_PFS_METHOD:
+            self._autofocus_success = np.random.random() > 0.5  # 50% chance of failure
+            if self._autofocus_success:
+                logger.debug(f"{DEMO_PFS_METHOD} call succeeded")
+            else:
+                logger.debug(f"{DEMO_PFS_METHOD} call failed")
+            return
 
         # Try to engage autofocus with fullFocus
         try:
             core.fullFocus()
             logger.debug("Call to fullFocus() succeeded")
         except Exception:
-            logger.debug("Call to fullFocus() failed")
+            logger.error("Call to fullFocus() failed")
 
         # Check if autofocus is already engaged
         if core.isContinuousFocusLocked():
-            autofocus_success = True
+            self._autofocus_success = True
             logger.debug("Continuous autofocus is already engaged")
         else:
             # Try different Z offsets
@@ -291,7 +326,7 @@ class MantisEngine(MDAEngine):
                     time.sleep(1)  # Wait for autofocus to engage
 
                     if core.isContinuousFocusLocked():
-                        autofocus_success = True
+                        self._autofocus_success = True
                         if error_occurred:
                             logger.debug(
                                 f"Continuous autofocus engaged with Z offset of {z_offset} um"
@@ -304,10 +339,8 @@ class MantisEngine(MDAEngine):
                     logger.debug(f"Error during autofocus attempt at offset {z_offset}: {e}")
                     error_occurred = True
 
-        if not autofocus_success:
+        if not self._autofocus_success:
             logger.error(f"Autofocus call failed after {len(z_offsets)} attempts")
-
-        return autofocus_success
 
     def on_xy_stage_moved(self, x: float, y: float) -> None:
         """Handle XY stage movement events."""
@@ -405,43 +438,68 @@ def acquire(
     if errors:
         logger.error(errors.decode("ascii"))
 
-    # Initialize core and engine using common functions
-    core = initialize_mantis_core(mmconfig)
-    create_mantis_engine(core)
-
     # Load the sequence
     logger.info(f"Loading MDA sequence from {mda_sequence}")
     sequence = MDASequence.from_file(mda_sequence)
 
+    # Initialize core and engine using common functions
+    core = initialize_mantis_core(mmconfig)
+    use_hardware_sequencing = sequence.metadata.get("mantis").get("use_hardware_sequencing")
+    create_mantis_engine(core, use_hardware_sequencing=use_hardware_sequencing)
+
     # Setup data writer
     data_path = save_dir / f"{acquisition_name}.ome.zarr"
     logger.info(f"Initializing OME-ZARR writer at {data_path}")
+
+    # Get image dimensions from core
+    # TODO: we are getting the ROI from the mda config because it has not been applied yet
     roi = sequence.metadata.get("mantis").get("roi")
-    dims = omew.dims_from_useq(sequence, image_width=roi[-2], image_height=roi[-1])
-    stream = omew.create_stream(
-        path=str(data_path),
-        dimensions=dims,
-        dtype=np.uint16,
-        backend="tensorstore",
-        overwrite=True,
+    if roi:
+        image_width = roi[-2]
+        image_height = roi[-1]
+    else:
+        image_width = core.getImageWidth()
+        image_height = core.getImageHeight()
+    pixel_size_um = core.getPixelSizeUm()
+    dtype = "uint16"
+
+    # Define chunk shapes for optimal performance
+    chunk_shapes = {
+        "t": 1,
+        "c": 1,
+        "z": min(512, sequence.sizes["z"]),
+        "y": image_height,
+        "x": image_width,
+    }
+
+    # Convert MDASequence to acquisition settings
+    acq_settings = useq_to_acquisition_settings(
+        sequence,
+        image_width=image_width,
+        image_height=image_height,
+        pixel_size_um=pixel_size_um,
+        chunk_shapes=chunk_shapes,
     )
 
-    # Append frames to the stream on frameReady event
-    @core.mda.events.frameReady.connect
-    def _on_frame_ready(
-        frame: np.ndarray, event: useq.MDAEvent, frame_meta: FrameMetaV1
-    ) -> None:
-        stream.append(frame)
+    # Create acquisition settings with compression
+    settings = AcquisitionSettings(
+        root_path=data_path,
+        dtype=dtype,
+        compression="blosc-zstd",
+        format="acquire-zarr",
+        overwrite=False,
+        **acq_settings,
+    )
 
-    # Flush and close the stream on sequenceFinished event
-    @core.mda.events.sequenceFinished.connect
-    def _on_sequence_finished(sequence: useq.MDASequence) -> None:
-        stream.flush()
-        print("Data written successfully to", data_path)
+    with create_stream(settings) as stream:
+        # Append frames to the stream on frameReady event
+        @core.mda.events.frameReady.connect
+        def _on_frame_ready(frame: np.ndarray, event: useq.MDAEvent, metadata: dict) -> None:
+            stream.append(frame)
 
-    # Run the acquisition
-    logger.info("Starting MDA acquisition sequence")
-    core.mda.run(sequence)
+        # Run the acquisition
+        logger.info("Starting MDA acquisition sequence")
+        core.mda.run(sequence)
 
-    # Cleanup
-    logger.info("Acquisition completed successfully")
+        # Cleanup
+        logger.info("Acquisition completed successfully")

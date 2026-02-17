@@ -1,39 +1,41 @@
 # Define stage positions
 stage_positions:
-- x: -24600.0
-  y: -9000.0
-  # z: 0.0
-  name: Pos0
-  sequence: null
-- x: -24600.0
-  y: -9500.0
-  # z: 0.0
-  name: Pos1
-  sequence: null
-- x: -24000.0
-  y: -9000.0
-  # z: 0.0
-  name: Pos2
-  sequence: null
-- x: -24000.0
-  y: -9500.0
-  # z: 0.0
-  name: Pos3
-  sequence: null
-grid_plan: null
+  a1_center_xy: [0, 0]
+  plate:
+    columns: 6
+    name: 24-well
+    rows: 4
+    well_size:
+    - 15.6
+    - 15.6
+    well_spacing:
+    - 19.0
+    - 19.0
+  selected_wells:
+  - [0] # rows
+  - [0, 1] # columns
+  well_points_plan:
+    rows: 2
+    columns: 2
+    fov_height: 180.0
+    fov_width: 180.0
+    overlap:
+    - -10.0
+    - -10.0
 
 # Define time plan
 time_plan:
-  prioritize_duration: false
-  interval: 120.0
+  prioritize_duration: true
+  interval: "00:10:00"
+  duration: "18:00:00"
+  # interval: 8
   # duration: 10.0
-  duration: "24:00:00"
 
 # Define z plan
 z_plan:
-  top: 1.5
-  bottom: -1.5
-  step: 0.1
+  top: 89
+  bottom: -89
+  step: 0.15
   go_up: true
 
 # Define channels
@@ -52,13 +54,6 @@ channels:
   z_offset: 0.0
   acquire_every: 1
   camera: null
-- config: mCherry EX561 EM600-37
-  group: Channels - Right
-  exposure: 30.0
-  do_stack: true
-  z_offset: 0.0
-  acquire_every: 1
-  camera: null
 
 # Define axis order
 axis_order:
@@ -70,12 +65,12 @@ axis_order:
 autofocus_plan: null
 keep_shutter_open_across: []
 
-# Defien metadata per microscope
+# Define metadata per microscope
 metadata:
   pymmcore_widgets:
     version: 0.10.2.dev23+g22b8c0aff.d20260106
   mantis:
-    roi: [110, 900, 1750, 256]
+    roi: [225, 880, 1600, 256]
     z_stage: AP Galvo
     use_hardware_sequencing: true
     initialization_settings:
@@ -96,4 +91,5 @@ metadata:
     autofocus:
       enabled: false
       method: PFS
+      stage: ZDrive
   

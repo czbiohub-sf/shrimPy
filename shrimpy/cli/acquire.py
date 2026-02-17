@@ -13,9 +13,9 @@ def acquire():
     pass
 
 
-# TODO: update cli arguments, for example mm-config instead of mmconfig,
-# path instead of save-dir, name instead of acquisition-name,
-# acq-config instead of mda-sequence, etc.
+# TODO: update cli arguments, for example "mm-config" instead of mmconfig,
+# "output" instead of save-dir, "name" instead of acquisition-name,
+# "acq-config" instead of mda-sequence, etc.
 @acquire.command()
 @click.option(
     "--mmconfig",
