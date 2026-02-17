@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 
 from pathlib import Path
@@ -18,10 +19,8 @@ from pymmcore_plus.mda import MDAEngine
 from pymmcore_plus.metadata import SummaryMetaV1
 from useq import MDAEvent, MDASequence
 
-from shrimpy.mantis.mantis_logger import configure_mantis_logger, get_mantis_logger
-
-# Get the logger instance
-logger = get_mantis_logger()
+# Get the logger instance (will be configured by the CLI entry point)
+logger = logging.getLogger(__name__)
 
 DEMO_PFS_METHOD = "demo-PFS"
 
@@ -446,8 +445,6 @@ def acquire(
     name : str
         Name of the acquisition (used for log files and output).
     """
-    from shrimpy.mantis.mantis_logger import log_conda_environment
-
     # Convert to Path objects
     mm_config = Path(mm_config)
     mda_config = Path(mda_config)
@@ -459,17 +456,8 @@ def acquire(
     # Get next available acquisition name with index
     name = _get_next_acquisition_name(output_dir, name)
 
-    # Configure mantis logger (logs go in shared logs directory)
-    logger = configure_mantis_logger(output_dir, name)
+    # Log acquisition start (logger already configured by CLI)
     logger.info(f"Starting acquisition: {name}")
-
-    # Log conda environment
-    log_dir = output_dir / "logs"
-    output_log, errors = log_conda_environment(log_dir)
-    if output_log:
-        logger.debug(output_log.decode("ascii").strip())
-    if errors:
-        logger.error(errors.decode("ascii"))
 
     # Load the sequence
     logger.info(f"Loading MDA sequence from {mda_config}")

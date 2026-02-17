@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+
 from pathlib import Path
 
 import click
+
+from shrimpy._logging import log_conda_environment, setup_logging
+
+logger = logging.getLogger(__name__)
 
 
 @click.group()
@@ -55,6 +61,23 @@ def mantis(
             --output-dir ./data \\
             --name my_experiment
     """
+    # Configure logging
+    config_file = Path(__file__).parent.parent.parent / "config" / "logging.ini"
+    log_file = setup_logging(config_file, output_dir, name)
+    if config_file.exists():
+        logger.info(f"Logging configured for acquisition: {name}")
+        logger.info(f"Log file: {log_file}")
+    else:
+        logger.warning(f"Logging config not found at {config_file}, using defaults")
+
+    # Log conda environment
+    out, err = log_conda_environment(log_file.parent)
+    if err is None:
+        logger.debug(out)
+    else:
+        logger.error(err)
+
+    # Run acquisition
     from shrimpy.mantis.mantis_engine import acquire as acquire_mantis
 
     acquire_mantis(
