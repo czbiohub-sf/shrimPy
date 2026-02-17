@@ -29,9 +29,9 @@ def acquire():
 @click.option(
     "-o",
     "--output-dir",
-    type=click.Path(path_type=Path),
-    default="./acquisition_data",
-    help="Output directory where acquisition data and logs will be saved",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
+    required=True,
+    help="Output directory where acquisition data and logs will be saved (must exist)",
 )
 @click.option(
     "-n",

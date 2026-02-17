@@ -403,11 +403,35 @@ def create_mantis_engine(
     return engine
 
 
+def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
+    """Get next available acquisition name with incremented index.
+
+    Parameters
+    ----------
+    output_dir : Path
+        Output directory where acquisitions are saved.
+    name : str
+        Base acquisition name.
+
+    Returns
+    -------
+    str
+        Acquisition name with index (e.g., "acq_1", "acq_2", etc.).
+    """
+    idx = 1
+    while True:
+        indexed_name = f"{name}_{idx}"
+        data_path = output_dir / f"{indexed_name}.ome.zarr"
+        if not data_path.exists():
+            return indexed_name
+        idx += 1
+
+
 def acquire(
     mm_config: str | Path,
     mda_config: str | Path,
     output_dir: str | Path,
-    name: str = "mantis_acquisition",
+    name: str,
 ) -> None:
     """Run a Mantis microscope acquisition.
 
@@ -429,11 +453,15 @@ def acquire(
     mda_config = Path(mda_config)
     output_dir = Path(output_dir)
 
-    # Create output directory
+    # Create output directory if it doesn't exist
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Configure mantis logger
+    # Get next available acquisition name with index
+    name = _get_next_acquisition_name(output_dir, name)
+
+    # Configure mantis logger (logs go in shared logs directory)
     logger = configure_mantis_logger(output_dir, name)
+    logger.info(f"Starting acquisition: {name}")
 
     # Log conda environment
     log_dir = output_dir / "logs"
