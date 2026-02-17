@@ -38,7 +38,7 @@ class MantisEngine(MDAEngine):
     """
 
     def __init__(self, mmc: CMMCorePlus, *args, **kwargs):
-        """Initialize the MantisEngine.
+        """Initialize and register the MantisEngine with the core.
 
         Parameters
         ----------
@@ -46,6 +46,7 @@ class MantisEngine(MDAEngine):
             The Micro-Manager core instance
         """
         super().__init__(mmc, *args, **kwargs)
+        mmc.mda.set_engine(self)
         self._use_autofocus = False
         self._autofocus_success = False
         self._autofocus_stage = None
@@ -168,6 +169,7 @@ class MantisEngine(MDAEngine):
     def exec_event(self, event: MDAEvent):
         if self._use_autofocus and not self._autofocus_success:
             # Pad zarr dataset with empty images if autofocus failed at this position
+            logger.debug("Autofocus failed, padding zarr dataset with zeros")
             image_height = self.mmcore.getImageHeight()
             image_width = self.mmcore.getImageWidth()
             dtype = f"uint{self.mmcore.getImageBitDepth()}"
@@ -349,57 +351,34 @@ class MantisEngine(MDAEngine):
         pass
         # logger.debug(f"XY stage position changed: ({x:.2f}, {y:.2f})")
 
+    @staticmethod
+    def initialize_core(mm_config: str | Path | None = None) -> CMMCorePlus:
+        """Initialize and configure the Core instance for Mantis.
 
-def initialize_mantis_core(mm_config: str | Path | None = None) -> CMMCorePlus:
-    """Initialize and configure the Core instance for Mantis.
+        Parameters
+        ----------
+        mm_config : str | Path | None
+            Path to the Micro-Manager configuration file. If None, uses default demo config.
 
-    Parameters
-    ----------
-    mm_config : str | Path | None
-        Path to the Micro-Manager configuration file. If None, uses default demo config.
+        Returns
+        -------
+        CMMCorePlus (or UniMMCore)
+            Configured core instance ready for use.
+        """
+        logger.info("Initializing Micro-Manager core")
+        core = CMMCorePlus().instance()
 
-    Returns
-    -------
-    CMMCorePlus (or UniMMCore)
-        Configured core instance ready for use.
-    """
-    logger.info("Initializing Micro-Manager core")
-    core = CMMCorePlus().instance()
+        if mm_config is None:
+            logger.info("No configuration file provided. Using MMConfig_demo.cfg.")
+            _config = None
+        else:
+            logger.info(f"Loading Micro-Manager configuration from: {mm_config}")
+            _config = mm_config
 
-    if mm_config is None:
-        logger.info("No configuration file provided. Using MMConfig_demo.cfg.")
-        _config = None
-    else:
-        logger.info(f"Loading Micro-Manager configuration from: {mm_config}")
-        _config = mm_config
+        core.loadSystemConfiguration(_config)
+        logger.info("Micro-Manager core initialized successfully")
 
-    core.loadSystemConfiguration(_config)
-    logger.info("Micro-Manager core initialized successfully")
-
-    return core
-
-
-def create_mantis_engine(
-    core: CMMCorePlus, use_hardware_sequencing: bool = True
-) -> MantisEngine:
-    """Create and register a MantisEngine with the core.
-
-    Parameters
-    ----------
-    core : UniMMCore
-        The core instance to attach the engine to.
-    use_hardware_sequencing : bool
-        Whether to enable hardware sequencing (default: True).
-
-    Returns
-    -------
-    MantisEngine
-        The created and registered engine instance.
-    """
-    logger.info(f"Creating MantisEngine (hardware_sequencing={use_hardware_sequencing})")
-    engine = MantisEngine(core, use_hardware_sequencing=use_hardware_sequencing)
-    core.mda.set_engine(engine)
-    return engine
+        return core
 
 
 def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
@@ -463,10 +442,10 @@ def acquire(
     logger.info(f"Loading MDA sequence from {mda_config}")
     sequence = MDASequence.from_file(mda_config)
 
-    # Initialize core and engine using common functions
-    core = initialize_mantis_core(mm_config)
+    # Initialize core and engine
+    core = MantisEngine.initialize_core(mm_config)
     use_hardware_sequencing = sequence.metadata.get("mantis").get("use_hardware_sequencing")
-    create_mantis_engine(core, use_hardware_sequencing=use_hardware_sequencing)
+    MantisEngine(core, use_hardware_sequencing=use_hardware_sequencing)
 
     # Setup data writer
     data_path = output_dir / f"{name}.ome.zarr"

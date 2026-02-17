@@ -37,11 +37,7 @@ from qtpy.QtWidgets import (
 )
 from useq import MDASequence
 
-from shrimpy.mantis.mantis_engine import (
-    MantisEngine,
-    create_mantis_engine,
-    initialize_mantis_core,
-)
+from shrimpy.mantis.mantis_engine import MantisEngine
 
 
 class CustomCameraRoiWidget(CameraRoiWidget):
@@ -639,7 +635,9 @@ class MantisAcquisitionWidget(QWidget):
             # Create and register mantis engine if not already done
             if self._mantis_engine is None:
                 use_hw_seq = mantis_settings.get("use_hardware_sequencing", True)
-                self._mantis_engine = create_mantis_engine(self._mmc, use_hw_seq)
+                self._mantis_engine = MantisEngine(
+                    self._mmc, use_hardware_sequencing=use_hw_seq
+                )
 
             self.status_label.setText("Running acquisition...")
             self.status_label.setStyleSheet("QLabel { color: blue; }")
@@ -800,7 +798,7 @@ if __name__ == "__main__":
         r"C:\Users\Cameron\justin\shrimPy\CompMicro_MMConfigs\Dev_Computer\mantis2-demo.cfg"
     )
     try:
-        core = initialize_mantis_core(demo_config)
+        core = MantisEngine.initialize_core(demo_config)
         print(f"Loaded configuration: {demo_config}")
     except Exception as e:
         print(f"Could not load config: {e}")
