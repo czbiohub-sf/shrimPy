@@ -142,7 +142,6 @@ class MantisEngine(MDAEngine):
                 logger.info("Autofocus is disabled for this acquisition")
 
         # Store XY stage device name
-        core.events.XYStagePositionChanged.connect(self.on_xy_stage_moved)
         self._xy_stage_device = core.getXYStageDevice()
         logger.debug(f"XY stage device: {self._xy_stage_device}")
 
@@ -346,12 +345,6 @@ class MantisEngine(MDAEngine):
 
         if not self._autofocus_success:
             logger.error(f"Autofocus call failed after {len(z_offsets)} attempts")
-
-    def on_xy_stage_moved(self, x: float, y: float) -> None:
-        """Handle XY stage movement events."""
-        # TODO: throws error, x = 'XY' rather than float
-        pass
-        # logger.debug(f"XY stage position changed: ({x:.2f}, {y:.2f})")
 
     def setup_acquisition(self, output_dir: str | Path, name: str) -> None:
         """Prepare the output directory and resolve the acquisition name.
