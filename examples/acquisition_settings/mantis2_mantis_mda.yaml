@@ -90,4 +90,5 @@ metadata:
     autofocus:
       enabled: false
       method: PFS
+      stage: ZDrive
   

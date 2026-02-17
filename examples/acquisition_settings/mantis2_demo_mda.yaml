@@ -13,7 +13,7 @@ stage_positions:
     - 19.0
   selected_wells:
   - [0] # rows
-  - [0] # columns
+  - [0, 1] # columns
   well_points_plan:
     rows: 2
     columns: 2
@@ -71,11 +71,16 @@ metadata:
     roi: [225, 880, 1600, 256]
     z_stage: Z
     use_hardware_sequencing: true
-    # initialization_settings:
-    setup_hardware_sequencing_settings:
+    initialization_settings:
       - ['Camera', 'OnCameraCCDXSize', '2048']
       - ['Camera', 'OnCameraCCDYSize', '2048']
       - ['Camera', 'PixelType', '16bit']
+      - ['XY', 'Velocity', '10000']
+    setup_hardware_sequencing_settings:
       - ['Z', 'UseSequences', 'Yes']
     reset_hardware_sequencing_settings:
       - ['Z', 'UseSequences', 'No']
+    autofocus:
+      enabled: true
+      method: demo-PFS
+      stage: Z
