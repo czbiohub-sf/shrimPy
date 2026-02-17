@@ -77,15 +77,13 @@ def mantis(
     else:
         logger.error(err)
 
-    # Run acquisition
-    from shrimpy.mantis.mantis_engine import acquire as acquire_mantis
+    # Initialize core and engine, then run acquisition
+    from shrimpy.mantis.mantis_engine import MantisEngine
 
-    acquire_mantis(
-        mm_config=mm_config,
-        mda_config=mda_config,
-        output_dir=output_dir,
-        name=name,
-    )
+    core = MantisEngine.initialize_core(mm_config)
+    engine = MantisEngine(core)
+    engine.setup_acquisition(output_dir=output_dir, name=name)
+    engine.acquire(mda_config=mda_config)
 
 
 @acquire.command()

@@ -56,6 +56,8 @@ class MantisEngine(MDAEngine):
         self._slow_speed = 2.0  # mm/s for short distances
         self._fast_speed = 5.75  # mm/s for long distances
         self._short_distance_threshold = 2000  # um
+        self._output_dir: Path | None = None
+        self._name: str | None = None
 
         # Register event callbacks for logging
         mmc.events.propertyChanged.connect(self._on_property_changed)
@@ -351,6 +353,90 @@ class MantisEngine(MDAEngine):
         pass
         # logger.debug(f"XY stage position changed: ({x:.2f}, {y:.2f})")
 
+    def setup_acquisition(self, output_dir: str | Path, name: str) -> None:
+        """Prepare the output directory and resolve the acquisition name.
+
+        Stores the resolved output directory and indexed name as instance state
+        for use by :meth:`acquire`.
+
+        Parameters
+        ----------
+        output_dir : str | Path
+            Directory where acquisition data will be saved.
+        name : str
+            Base acquisition name; an index suffix will be appended automatically.
+        """
+        self._output_dir = Path(output_dir)
+        self._output_dir.mkdir(parents=True, exist_ok=True)
+        self._name = _get_next_acquisition_name(self._output_dir, name)
+        logger.info(f"Prepared acquisition: {self._name}")
+
+    def acquire(self, mda_config: str | Path) -> None:
+        """Run a Mantis microscope acquisition.
+
+        Requires :meth:`setup_acquisition` to have been called first.
+
+        Parameters
+        ----------
+        mda_config : str | Path
+            Path to MDA sequence configuration YAML file.
+        """
+        if self._output_dir is None or self._name is None:
+            raise RuntimeError("Call setup_acquisition() before acquire().")
+
+        logger.info(f"Loading MDA sequence from {mda_config}")
+        sequence = MDASequence.from_file(mda_config)
+
+        data_path = self._output_dir / f"{self._name}.ome.zarr"
+        logger.info(f"Initializing OME-ZARR writer at {data_path}")
+
+        core = self.mmcore
+        # TODO: ROI is read from metadata because it has not been applied yet
+        roi = sequence.metadata.get("mantis", {}).get("roi")
+        if roi:
+            image_width, image_height = roi[-2], roi[-1]
+        else:
+            image_width = core.getImageWidth()
+            image_height = core.getImageHeight()
+        pixel_size_um = core.getPixelSizeUm()
+
+        chunk_shapes = {
+            "t": 1,
+            "c": 1,
+            "z": min(512, sequence.sizes["z"]),
+            "y": image_height,
+            "x": image_width,
+        }
+
+        acq_settings = useq_to_acquisition_settings(
+            sequence,
+            image_width=image_width,
+            image_height=image_height,
+            pixel_size_um=pixel_size_um,
+            chunk_shapes=chunk_shapes,
+        )
+
+        settings = AcquisitionSettings(
+            root_path=data_path,
+            dtype="uint16",
+            compression="blosc-zstd",
+            format="acquire-zarr",
+            overwrite=False,
+            **acq_settings,
+        )
+
+        logger.info(f"Starting acquisition: {self._name}")
+        with create_stream(settings) as stream:
+
+            @self.mmcore.mda.events.frameReady.connect
+            def _on_frame_ready(frame: np.ndarray, _event: useq.MDAEvent, _meta: dict) -> None:
+                stream.append(frame)
+
+            logger.info("Starting MDA acquisition sequence")
+            self.mmcore.mda.run(sequence)
+
+        logger.info("Acquisition completed successfully")
+
     @staticmethod
     def initialize_core(mm_config: str | Path | None = None) -> CMMCorePlus:
         """Initialize and configure the Core instance for Mantis.
@@ -403,103 +489,3 @@ def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
         if not data_path.exists():
             return indexed_name
         idx += 1
-
-
-def acquire(
-    mm_config: str | Path,
-    mda_config: str | Path,
-    output_dir: str | Path,
-    name: str,
-) -> None:
-    """Run a Mantis microscope acquisition.
-
-    Parameters
-    ----------
-    mm_config : str | Path
-        Path to Micro-Manager configuration file.
-    mda_config : str | Path
-        Path to MDA sequence configuration YAML file.
-    output_dir : str | Path
-        Output directory where acquisition data and logs will be saved.
-    name : str
-        Name of the acquisition (used for log files and output).
-    """
-    # Convert to Path objects
-    mm_config = Path(mm_config)
-    mda_config = Path(mda_config)
-    output_dir = Path(output_dir)
-
-    # Create output directory if it doesn't exist
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Get next available acquisition name with index
-    name = _get_next_acquisition_name(output_dir, name)
-
-    # Log acquisition start (logger already configured by CLI)
-    logger.info(f"Starting acquisition: {name}")
-
-    # Load the sequence
-    logger.info(f"Loading MDA sequence from {mda_config}")
-    sequence = MDASequence.from_file(mda_config)
-
-    # Initialize core and engine
-    core = MantisEngine.initialize_core(mm_config)
-    use_hardware_sequencing = sequence.metadata.get("mantis").get("use_hardware_sequencing")
-    MantisEngine(core, use_hardware_sequencing=use_hardware_sequencing)
-
-    # Setup data writer
-    data_path = output_dir / f"{name}.ome.zarr"
-    logger.info(f"Initializing OME-ZARR writer at {data_path}")
-
-    # Get image dimensions from core
-    # TODO: we are getting the ROI from the mda config because it has not been applied yet
-    roi = sequence.metadata.get("mantis").get("roi")
-    if roi:
-        image_width = roi[-2]
-        image_height = roi[-1]
-    else:
-        image_width = core.getImageWidth()
-        image_height = core.getImageHeight()
-    pixel_size_um = core.getPixelSizeUm()
-    dtype = "uint16"
-
-    # Define chunk shapes for optimal performance
-    chunk_shapes = {
-        "t": 1,
-        "c": 1,
-        "z": min(512, sequence.sizes["z"]),
-        "y": image_height,
-        "x": image_width,
-    }
-
-    # Convert MDASequence to acquisition settings
-    acq_settings = useq_to_acquisition_settings(
-        sequence,
-        image_width=image_width,
-        image_height=image_height,
-        pixel_size_um=pixel_size_um,
-        chunk_shapes=chunk_shapes,
-    )
-
-    # Create acquisition settings with compression
-    settings = AcquisitionSettings(
-        root_path=data_path,
-        dtype=dtype,
-        compression="blosc-zstd",
-        format="acquire-zarr",
-        overwrite=False,
-        **acq_settings,
-    )
-
-    with create_stream(settings) as stream:
-        # Append frames to the stream on frameReady event
-        @core.mda.events.frameReady.connect
-        def _on_frame_ready(frame: np.ndarray, event: useq.MDAEvent, metadata: dict) -> None:
-            stream.append(frame)
-
-        # Run the acquisition
-        logger.info("Starting MDA acquisition sequence")
-        core.mda.run(sequence)
-
-        # Cleanup
-        logger.info("Acquisition completed successfully")
