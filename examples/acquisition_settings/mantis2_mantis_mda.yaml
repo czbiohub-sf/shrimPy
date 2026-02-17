@@ -1,26 +1,27 @@
 # Define stage positions
-# # stage_positions:
-# - x: -24600.0
-#   y: -9000.0
-#   # z: 0.0
-#   name: Pos0
-#   sequence: null
-# - x: -24600.0
-#   y: -9500.0
-#   # z: 0.0
-#   name: Pos1
-#   sequence: null
-# - x: -24000.0
-#   y: -9000.0
-#   # z: 0.0
-#   name: Pos2
-#   sequence: null
-# - x: -24000.0
-#   y: -9500.0
-#   # z: 0.0
-#   name: Pos3
-#   sequence: null
-# grid_plan: null
+stage_positions:
+  a1_center_xy: [0, 0]
+  plate:
+    columns: 6
+    name: 24-well
+    rows: 4
+    well_size:
+    - 15.6
+    - 15.6
+    well_spacing:
+    - 19.0
+    - 19.0
+  selected_wells:
+  - [0] # rows
+  - [0, 1] # columns
+  well_points_plan:
+    rows: 2
+    columns: 2
+    fov_height: 180.0
+    fov_width: 180.0
+    overlap:
+    - -10.0
+    - -10.0
 
 # Define time plan
 time_plan:
