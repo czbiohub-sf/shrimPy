@@ -8,7 +8,7 @@ from pathlib import Path
 
 import click
 
-from shrimpy._logging import log_conda_environment, setup_logging
+from shrimpy._logging import configure_logging, log_conda_environment
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +61,14 @@ def mantis(
             --output-dir ./data \\
             --name my_experiment
     """
+    # Import before configure_logging: pymmcore-plus calls configure_logging() at module
+    # level, which clears all handlers on the "pymmcore-plus" logger. Importing first
+    # ensures that call happens before fileConfig() attaches the shrimpy file handler.
+    from shrimpy.mantis.mantis_engine import MantisEngine
+
     # Configure logging
     config_file = Path(__file__).parent.parent.parent / "config" / "logging.ini"
-    log_file = setup_logging(config_file, output_dir, name)
+    log_file = configure_logging(config_file, output_dir, name)
     if config_file.exists():
         logger.info(f"Logging configured for acquisition: {name}")
         logger.info(f"Log file: {log_file}")
@@ -76,9 +81,6 @@ def mantis(
         logger.debug(out)
     else:
         logger.error(err)
-
-    # Initialize core and engine, then run acquisition
-    from shrimpy.mantis.mantis_engine import MantisEngine
 
     core = MantisEngine.initialize_core(mm_config)
     engine = MantisEngine(core)
