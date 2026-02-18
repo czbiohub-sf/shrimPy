@@ -265,9 +265,9 @@ def test_pymmcore_plus_own_handlers_preserved(config_file, temp_log_dir):
 
     # All original pymmcore-plus handlers must still be present
     for handler in handlers_before:
-        assert (
-            handler in pymmcore_logger.handlers
-        ), f"pymmcore-plus handler {handler!r} was removed by shrimpy configure_logging"
+        assert handler in pymmcore_logger.handlers, (
+            f"pymmcore-plus handler {handler!r} was removed by shrimpy configure_logging"
+        )
 
     # The shrimpy file handler must be added on top, not in place of existing ones
     added_handlers = [h for h in pymmcore_logger.handlers if h not in handlers_before]
