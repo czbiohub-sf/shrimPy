@@ -7,7 +7,7 @@ from pathlib import Path
 from subprocess import PIPE, STDOUT, Popen
 
 
-def setup_logging(
+def configure_logging(
     config_file: Path,
     output_dir: Path,
     name: str,
@@ -45,16 +45,32 @@ def setup_logging(
             defaults={"log_file": log_file.as_posix()},
             disable_existing_loggers=False,
         )
+        file_handler = next(
+            (
+                h
+                for h in logging.getLogger("shrimpy").handlers
+                if isinstance(h, logging.FileHandler)
+            ),
+            None,
+        )
     else:
         # Fallback to basic config if config file not found
+        file_handler = logging.FileHandler(log_file)
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             handlers=[
                 logging.StreamHandler(),
-                logging.FileHandler(log_file),
+                file_handler,
             ],
         )
+
+    # Add the shrimpy file handler to the pymmcore-plus logger without touching its
+    # own handlers (stderr output, rotating log file to pymmcore-plus's data dir).
+    if file_handler is not None:
+        pymmcore_logger = logging.getLogger("pymmcore-plus")
+        pymmcore_logger.setLevel(logging.DEBUG)
+        pymmcore_logger.addHandler(file_handler)
 
     return log_file
 
