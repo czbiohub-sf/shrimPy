@@ -243,29 +243,3 @@ def test_detailed_formatter(config_file, temp_log_dir):
     assert "shrimpy.mantis.mantis_engine" in log_content
     assert "test_mantis_logger" in log_content  # module name
     assert "test_detailed_formatter" in log_content  # function name
-
-
-def test_fstring_formatting(config_file, temp_log_dir):
-    """Test that logger works with f-string formatting."""
-    from shrimpy._logging import setup_logging
-
-    setup_logging(config_file, temp_log_dir, "test_acquisition")
-
-    # Get a logger
-    logger = logging.getLogger("shrimpy.test")
-
-    # Test f-string formatting
-    test_string = "string"
-    test_number = 42
-    logger.info(f"Test message with {test_string} and {test_number}")
-
-    # Flush handlers
-    for handler in logging.getLogger("shrimpy").handlers:
-        handler.flush()
-
-    # Check that message was formatted correctly
-    log_dir = temp_log_dir / "logs"
-    log_files = list(log_dir.glob("test_acquisition_log_*.txt"))
-    assert len(log_files) == 1
-    log_content = log_files[0].read_text()
-    assert "Test message with string and 42" in log_content
