@@ -42,7 +42,7 @@ def test_acquire_mantis_help(runner):
     result = runner.invoke(cli, ["acquire", "mantis", "--help"])
     assert result.exit_code == 0
     assert "Run Mantis microscope acquisition" in result.output
-    assert "--mmconfig" in result.output
-    assert "--mda-sequence" in result.output
-    assert "--save-dir" in result.output
-    assert "--acquisition-name" in result.output
+    assert "--mm-config" in result.output
+    assert "--mda-config" in result.output
+    assert "--output-dir" in result.output
+    assert "--name" in result.output

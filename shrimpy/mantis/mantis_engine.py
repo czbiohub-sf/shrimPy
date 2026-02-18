@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
 import time
+
+from pathlib import Path
 
 import numpy as np
 import useq
@@ -16,10 +19,8 @@ from pymmcore_plus.mda import MDAEngine
 from pymmcore_plus.metadata import SummaryMetaV1
 from useq import MDAEvent, MDASequence
 
-from shrimpy.mantis.mantis_logger import configure_mantis_logger, get_mantis_logger
-
-# Get the logger instance
-logger = get_mantis_logger()
+# Get the logger instance (will be configured by the CLI entry point)
+logger = logging.getLogger(__name__)
 
 DEMO_PFS_METHOD = "demo-PFS"
 
@@ -37,7 +38,7 @@ class MantisEngine(MDAEngine):
     """
 
     def __init__(self, mmc: CMMCorePlus, *args, **kwargs):
-        """Initialize the MantisEngine.
+        """Initialize and register the MantisEngine with the core.
 
         Parameters
         ----------
@@ -45,6 +46,7 @@ class MantisEngine(MDAEngine):
             The Micro-Manager core instance
         """
         super().__init__(mmc, *args, **kwargs)
+        mmc.mda.set_engine(self)
         self._use_autofocus = False
         self._autofocus_success = False
         self._autofocus_stage = None
@@ -138,7 +140,6 @@ class MantisEngine(MDAEngine):
                 logger.info("Autofocus is disabled for this acquisition")
 
         # Store XY stage device name
-        core.events.XYStagePositionChanged.connect(self.on_xy_stage_moved)
         self._xy_stage_device = core.getXYStageDevice()
         logger.debug(f"XY stage device: {self._xy_stage_device}")
 
@@ -148,25 +149,12 @@ class MantisEngine(MDAEngine):
 
     def setup_event(self, event: useq.MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
-        # Log sequenced event details to show all channels being acquired
-        # from pymmcore_plus.core._sequencing import SequencedEvent
-
-        # TODO: consider removing this, pymmcore_plus already logs this?
-        # if isinstance(event, SequencedEvent):
-        #     channels = [e.channel.config if e.channel else 'None' for e in event.events]
-        #     unique_channels = list(dict.fromkeys(channels))  # preserve order, remove dupes
-        #     logger.info(
-        #         f"Sequenced event will acquire {len(event.events)} images: "
-        #         f"{len(unique_channels)} channels {unique_channels} × "
-        #         f"{len(event.events)//len(unique_channels)} z-slices"
-        #     )
-
-        # Call parent setup
         super().setup_event(event)
 
     def exec_event(self, event: MDAEvent):
         if self._use_autofocus and not self._autofocus_success:
             # Pad zarr dataset with empty images if autofocus failed at this position
+            logger.debug("Autofocus failed, padding zarr dataset with zeros")
             image_height = self.mmcore.getImageHeight()
             image_width = self.mmcore.getImageWidth()
             dtype = f"uint{self.mmcore.getImageBitDepth()}"
@@ -342,164 +330,129 @@ class MantisEngine(MDAEngine):
         if not self._autofocus_success:
             logger.error(f"Autofocus call failed after {len(z_offsets)} attempts")
 
-    def on_xy_stage_moved(self, x: float, y: float) -> None:
-        """Handle XY stage movement events."""
-        # TODO: throws error, x = 'XY' rather than float
-        pass
-        # logger.debug(f"XY stage position changed: ({x:.2f}, {y:.2f})")
+    def acquire(
+        self,
+        output_dir: str | Path,
+        name: str,
+        mda_config: str | Path,
+    ) -> None:
+        """Run a Mantis microscope acquisition.
 
+        Parameters
+        ----------
+        output_dir : str | Path
+            Directory where acquisition data will be saved.
+        name : str
+            Base acquisition name; an index suffix will be appended automatically.
+        mda_config : str | Path
+            Path to the MDA sequence configuration YAML file.
+        """
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        name = _get_next_acquisition_name(output_dir, name)
 
-def initialize_mantis_core(config_path: str | None = None) -> CMMCorePlus:
-    """Initialize and configure the Core instance for Mantis.
+        logger.info(f"Loading MDA sequence from {mda_config}")
+        sequence = MDASequence.from_file(mda_config)
 
-    Parameters
-    ----------
-    config_path : str | None
-        Path to the Micro-Manager configuration file. If None, uses default demo config.
+        data_path = output_dir / f"{name}.ome.zarr"
+        logger.info(f"Initializing OME-ZARR writer at {data_path}")
 
-    Returns
-    -------
-    CMMCorePlus (or UniMMCore)
-        Configured core instance ready for use.
-    """
-    logger.info("Initializing Micro-Manager core")
-    core = CMMCorePlus().instance()
+        core = self.mmcore
+        # TODO: ROI is read from metadata because it has not been applied yet
+        roi = sequence.metadata.get("mantis", {}).get("roi")
+        if roi:
+            image_width, image_height = roi[-2], roi[-1]
+        else:
+            image_width = core.getImageWidth()
+            image_height = core.getImageHeight()
+        pixel_size_um = core.getPixelSizeUm()
 
-    if config_path is None:
-        logger.info("No configuration file provided. Using MMConfig_demo.cfg.")
-    else:
-        logger.info(f"Loading Micro-Manager configuration from: {config_path}")
+        chunk_shapes = {
+            "t": 1,
+            "c": 1,
+            "z": min(512, sequence.sizes["z"]),
+            "y": image_height,
+            "x": image_width,
+        }
 
-    core.loadSystemConfiguration(config_path)
-    logger.info("Micro-Manager core initialized successfully")
-    # core.setPixelSizeConfig("Res40x")  # Uncomment if needed
+        acq_settings = useq_to_acquisition_settings(
+            sequence,
+            image_width=image_width,
+            image_height=image_height,
+            pixel_size_um=pixel_size_um,
+            chunk_shapes=chunk_shapes,
+        )
 
-    return core
+        settings = AcquisitionSettings(
+            root_path=data_path,
+            dtype="uint16",
+            compression="blosc-zstd",
+            format="acquire-zarr",
+            overwrite=False,
+            **acq_settings,
+        )
 
+        logger.info(f"Starting acquisition: {name}")
+        with create_stream(settings) as stream:
 
-def create_mantis_engine(
-    core: CMMCorePlus, use_hardware_sequencing: bool = True
-) -> MantisEngine:
-    """Create and register a MantisEngine with the core.
+            @self.mmcore.mda.events.frameReady.connect
+            def _on_frame_ready(frame: np.ndarray, _event: useq.MDAEvent, _meta: dict) -> None:
+                stream.append(frame)
 
-    Parameters
-    ----------
-    core : UniMMCore
-        The core instance to attach the engine to.
-    use_hardware_sequencing : bool
-        Whether to enable hardware sequencing (default: True).
+            logger.info("Starting MDA acquisition sequence")
+            self.mmcore.mda.run(sequence)
 
-    Returns
-    -------
-    MantisEngine
-        The created and registered engine instance.
-    """
-    logger.info(f"Creating MantisEngine (hardware_sequencing={use_hardware_sequencing})")
-    engine = MantisEngine(core, use_hardware_sequencing=use_hardware_sequencing)
-    core.mda.set_engine(engine)
-    return engine
-
-
-def acquire(
-    mmconfig: str,
-    mda_sequence: str,
-    save_dir: str,
-    acquisition_name: str = "mantis_acquisition",
-) -> None:
-    """Run a Mantis microscope acquisition.
-
-    Parameters
-    ----------
-    mmconfig : str
-        Path to Micro-Manager configuration file.
-    mda_sequence : str
-        Path to MDA sequence YAML file.
-    save_dir : str
-        Directory where acquisition data and logs will be saved.
-    acquisition_name : str
-        Name of the acquisition (used for log files and output).
-    """
-    from pathlib import Path
-
-    from shrimpy.mantis.mantis_logger import log_conda_environment
-
-    # Create save directory
-    save_dir = Path(save_dir)
-    save_dir.mkdir(parents=True, exist_ok=True)
-
-    # Configure mantis logger
-    logger = configure_mantis_logger(save_dir, acquisition_name)
-
-    # Log conda environment
-    log_dir = save_dir / "logs"
-    output, errors = log_conda_environment(log_dir)
-    if output:
-        logger.debug(output.decode("ascii").strip())
-    if errors:
-        logger.error(errors.decode("ascii"))
-
-    # Load the sequence
-    logger.info(f"Loading MDA sequence from {mda_sequence}")
-    sequence = MDASequence.from_file(mda_sequence)
-
-    # Initialize core and engine using common functions
-    core = initialize_mantis_core(mmconfig)
-    use_hardware_sequencing = sequence.metadata.get("mantis").get("use_hardware_sequencing")
-    create_mantis_engine(core, use_hardware_sequencing=use_hardware_sequencing)
-
-    # Setup data writer
-    data_path = save_dir / f"{acquisition_name}.ome.zarr"
-    logger.info(f"Initializing OME-ZARR writer at {data_path}")
-
-    # Get image dimensions from core
-    # TODO: we are getting the ROI from the mda config because it has not been applied yet
-    roi = sequence.metadata.get("mantis").get("roi")
-    if roi:
-        image_width = roi[-2]
-        image_height = roi[-1]
-    else:
-        image_width = core.getImageWidth()
-        image_height = core.getImageHeight()
-    pixel_size_um = core.getPixelSizeUm()
-    dtype = "uint16"
-
-    # Define chunk shapes for optimal performance
-    chunk_shapes = {
-        "t": 1,
-        "c": 1,
-        "z": min(512, sequence.sizes["z"]),
-        "y": image_height,
-        "x": image_width,
-    }
-
-    # Convert MDASequence to acquisition settings
-    acq_settings = useq_to_acquisition_settings(
-        sequence,
-        image_width=image_width,
-        image_height=image_height,
-        pixel_size_um=pixel_size_um,
-        chunk_shapes=chunk_shapes,
-    )
-
-    # Create acquisition settings with compression
-    settings = AcquisitionSettings(
-        root_path=data_path,
-        dtype=dtype,
-        compression="blosc-zstd",
-        format="acquire-zarr",
-        overwrite=False,
-        **acq_settings,
-    )
-
-    with create_stream(settings) as stream:
-        # Append frames to the stream on frameReady event
-        @core.mda.events.frameReady.connect
-        def _on_frame_ready(frame: np.ndarray, event: useq.MDAEvent, metadata: dict) -> None:
-            stream.append(frame)
-
-        # Run the acquisition
-        logger.info("Starting MDA acquisition sequence")
-        core.mda.run(sequence)
-
-        # Cleanup
         logger.info("Acquisition completed successfully")
+
+    @staticmethod
+    def initialize_core(mm_config: str | Path | None = None) -> CMMCorePlus:
+        """Initialize and configure the Core instance for Mantis.
+
+        Parameters
+        ----------
+        mm_config : str | Path | None
+            Path to the Micro-Manager configuration file. If None, uses default demo config.
+
+        Returns
+        -------
+        CMMCorePlus (or UniMMCore)
+            Configured core instance ready for use.
+        """
+        logger.info("Initializing Micro-Manager core")
+        core = CMMCorePlus().instance()
+
+        if mm_config is None:
+            logger.info("No configuration file provided. Using MMConfig_demo.cfg.")
+            _config = None
+        else:
+            logger.info(f"Loading Micro-Manager configuration from: {mm_config}")
+            _config = mm_config
+
+        core.loadSystemConfiguration(_config)
+        logger.info("Micro-Manager core initialized successfully")
+
+        return core
+
+
+def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
+    """Get next available acquisition name with incremented index.
+
+    Parameters
+    ----------
+    output_dir : Path
+        Output directory where acquisitions are saved.
+    name : str
+        Base acquisition name.
+
+    Returns
+    -------
+    str
+        Acquisition name with index (e.g., "acq_1", "acq_2", etc.).
+    """
+    idx = 1
+    while True:
+        indexed_name = f"{name}_{idx}"
+        data_path = output_dir / f"{indexed_name}.ome.zarr"
+        if not data_path.exists():
+            return indexed_name
+        idx += 1

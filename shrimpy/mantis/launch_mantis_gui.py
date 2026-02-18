@@ -7,7 +7,7 @@ interface for configuring and running mantis microscope acquisitions.
 from qtpy.QtWidgets import QApplication
 
 from shrimpy.mantis.mantis_acquisition_widget import MantisAcquisitionWidget
-from shrimpy.mantis.mantis_engine import initialize_mantis_core
+from shrimpy.mantis.mantis_engine import MantisEngine
 
 if __name__ == "__main__":
     # Create Qt application
@@ -16,12 +16,12 @@ if __name__ == "__main__":
     # Initialize core using common function
     # Uncomment and modify path to load your microscope configuration
     # config_path = r"C:\Program Files\Micro-Manager-2.0\MMConfig_demo.cfg"
-    # core = initialize_mantis_core(config_path)
+    # core = MantisEngine.initialize_core(config_path)
 
     # Try to load mantis demo config
     try:
         demo_config = r"C:\Users\Cameron\justin\shrimPy\CompMicro_MMConfigs\Dev_Computer\mantis2-demo.cfg"
-        core = initialize_mantis_core(demo_config)
+        core = MantisEngine.initialize_core(demo_config)
         print(f"Loaded configuration: {demo_config}")
     except Exception as e:
         print(f"Could not load demo config: {e}")

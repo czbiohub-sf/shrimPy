@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+
 from pathlib import Path
 
 import click
+
+from shrimpy._logging import log_conda_environment, setup_logging
+
+logger = logging.getLogger(__name__)
 
 
 @click.group()
@@ -13,57 +19,70 @@ def acquire():
     pass
 
 
-# TODO: update cli arguments, for example "mm-config" instead of mmconfig,
-# "output" instead of save-dir, "name" instead of acquisition-name,
-# "acq-config" instead of mda-sequence, etc.
 @acquire.command()
 @click.option(
-    "--mmconfig",
+    "--mm-config",
     type=click.Path(exists=True, path_type=Path),
     required=True,
     help="Path to Micro-Manager configuration file",
 )
 @click.option(
-    "--mda-sequence",
+    "--mda-config",
     type=click.Path(exists=True, path_type=Path),
     required=True,
-    help="Path to MDA sequence YAML file",
+    help="Path to MDA sequence configuration YAML file",
 )
 @click.option(
-    "--save-dir",
-    type=click.Path(path_type=Path),
-    default="./acquisition_data",
-    help="Directory where acquisition data and logs will be saved",
+    "-o",
+    "--output-dir",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
+    required=True,
+    help="Output directory where acquisition data and logs will be saved (must exist)",
 )
 @click.option(
-    "--acquisition-name",
+    "-n",
+    "--name",
     default="mantis_acquisition",
-    help="Name of the acquisition (used for log files)",
+    help="Name of the acquisition (used for log files and output)",
 )
 def mantis(
-    mmconfig: Path,
-    mda_sequence: Path,
-    save_dir: Path,
-    acquisition_name: str,
+    mm_config: Path,
+    mda_config: Path,
+    output_dir: Path,
+    name: str,
 ):
     """Run Mantis microscope acquisition.
 
     Example:
 
         shrimpy acquire mantis \\
-            --mmconfig /path/to/mantis.cfg \\
-            --mda-sequence /path/to/sequence.yaml \\
-            --save-dir ./data \\
-            --acquisition-name my_experiment
+            --mm-config /path/to/mantis.cfg \\
+            --mda-config /path/to/sequence.yaml \\
+            --output-dir ./data \\
+            --name my_experiment
     """
-    from shrimpy.mantis.mantis_engine import acquire as acquire_mantis
+    # Configure logging
+    config_file = Path(__file__).parent.parent.parent / "config" / "logging.ini"
+    log_file = setup_logging(config_file, output_dir, name)
+    if config_file.exists():
+        logger.info(f"Logging configured for acquisition: {name}")
+        logger.info(f"Log file: {log_file}")
+    else:
+        logger.warning(f"Logging config not found at {config_file}, using defaults")
 
-    acquire_mantis(
-        mmconfig=str(mmconfig),
-        mda_sequence=str(mda_sequence),
-        save_dir=str(save_dir),
-        acquisition_name=acquisition_name,
-    )
+    # Log conda environment
+    out, err = log_conda_environment(log_file.parent)
+    if err is None:
+        logger.debug(out)
+    else:
+        logger.error(err)
+
+    # Initialize core and engine, then run acquisition
+    from shrimpy.mantis.mantis_engine import MantisEngine
+
+    core = MantisEngine.initialize_core(mm_config)
+    engine = MantisEngine(core)
+    engine.acquire(output_dir=output_dir, name=name, mda_config=mda_config)
 
 
 @acquire.command()
@@ -73,8 +92,8 @@ def isim():
     Example:
 
         shrimpy acquire isim \\
-            --mmconfig /path/to/isim.cfg \\
-            --mda-sequence /path/to/sequence.yaml
+            --mm-config /path/to/isim.cfg \\
+            --mda-config /path/to/sequence.yaml
     """
     click.echo(
         click.style("iSIM acquisition is not yet implemented. Coming soon!", fg="yellow")
