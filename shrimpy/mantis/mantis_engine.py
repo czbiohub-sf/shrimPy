@@ -45,10 +45,9 @@ class MantisEngine(MDAEngine):
         mmc : CMMCorePlus
             The Micro-Manager core instance
         """
+        kwargs.setdefault("use_hardware_sequencing", True)
+        kwargs.setdefault("force_set_xy_position", False)
         super().__init__(mmc, *args, **kwargs)
-        # TODO: pass in __init__ after
-        # https://github.com/pymmcore-plus/pymmcore-plus/pull/548 merges
-        self.force_set_xy_position = False
         self._use_autofocus = False
         self._autofocus_success = False
         self._autofocus_stage = None
