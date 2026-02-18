@@ -1,0 +1,3 @@
+[submodule "config/CompMicro_MMConfigs"]
+	path = config/CompMicro_MMConfigs
+	url = https://github.com/czbiohub-sf/CompMicro_MMConfigs.git
