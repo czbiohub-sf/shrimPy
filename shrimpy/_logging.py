@@ -7,19 +7,6 @@ from pathlib import Path
 from subprocess import PIPE, STDOUT, Popen
 
 
-class _IgnorePropertyChangedWarnings(logging.Filter):
-    """Suppress noisy warnings from pymmcore-plus when a device property cannot
-    be read before emitting a propertyChanged signal.
-
-    These are benign for TriggerScope TTL/DAC channels that do not expose
-    'State' or 'Label' properties, and clutter the log with WARNING-level
-    noise on every hardware-sequenced event.
-    """
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        return record.funcName != "_property_change_emission_ensured"
-
-
 def configure_logging(
     config_file: Path,
     output_dir: Path,
@@ -84,7 +71,6 @@ def configure_logging(
         pymmcore_logger = logging.getLogger("pymmcore-plus")
         pymmcore_logger.setLevel(logging.DEBUG)
         pymmcore_logger.addHandler(file_handler)
-        pymmcore_logger.addFilter(_IgnorePropertyChangedWarnings())
 
     return log_file
 
