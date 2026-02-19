@@ -199,6 +199,17 @@ class MantisEngine(MDAEngine):
             self.mmcore.setProperty(
                 self._xy_stage_device, "MotorSpeedY-S(mm/s)", DEFAULT_XY_STAGE_SPEED
             )
+
+        # Apply reset sequencing settings
+        microscope_meta = sequence.metadata.get("mantis", {}) if sequence.metadata else {}
+        if reset_settings := microscope_meta.get("reset_hardware_sequencing_settings"):
+            logger.info(f"Applying {len(reset_settings)} reset sequencing settings")
+            for setting in reset_settings:
+                logger.debug(f"  Setting {setting[0]}.{setting[1]} = {setting[2]}")
+                self.mmcore.setProperty(setting[0], setting[1], setting[2])
+        else:
+            logger.debug("No reset sequencing settings specified")
+
         return super().teardown_sequence(sequence)
 
     def _adjust_xy_stage_speed(self, event: MDAEvent) -> None:
