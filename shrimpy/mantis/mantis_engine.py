@@ -21,24 +21,8 @@ from useq import MDAEvent, MDASequence
 # Get the logger instance (will be configured by the CLI entry point)
 logger = logging.getLogger(__name__)
 
-TRIGGERSCOPE_TTL_NAME = "TS2_TTL1-8"
 DEMO_PFS_METHOD = "demo-PFS"
 DEFAULT_XY_STAGE_SPEED = 5.75  # in mm/s, specific to mantis XY stage
-
-
-class _IgnoreTriggerScopePropertyWarnings(logging.Filter):
-    """Suppress benign 'Error getting properties' warnings for TriggerScope TTL channels.
-
-    TriggerScope TTL/DAC channels do not expose 'State' or 'Label' properties,
-    so pymmcore-plus emits a WARNING on every hardware-sequenced event when it
-    tries to read those properties before firing a propertyChanged signal.
-    """
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        return TRIGGERSCOPE_TTL_NAME not in record.getMessage()
-
-
-logging.getLogger("pymmcore-plus").addFilter(_IgnoreTriggerScopePropertyWarnings())
 
 
 class MantisEngine(MDAEngine):
