@@ -23,6 +23,7 @@ from useq import MDAEvent, MDASequence
 logger = logging.getLogger(__name__)
 
 DEMO_PFS_METHOD = "demo-PFS"
+DEFAULT_XY_STAGE_SPEED = 5.75 # in mm/s, specific to mantis XY stage
 
 
 class MantisEngine(MDAEngine):
@@ -53,9 +54,7 @@ class MantisEngine(MDAEngine):
         self._autofocus_stage = None
         self._autofocus_method = None
         self._xy_stage_device = None
-        self._slow_speed = 2.0  # mm/s for short distances
-        self._fast_speed = 5.75  # mm/s for long distances
-        self._short_distance_threshold = 2000  # um
+        self._xy_stage_speed = None
 
         # Register event callbacks for logging
         mmc.mda.set_engine(self)
@@ -152,12 +151,12 @@ class MantisEngine(MDAEngine):
 
         return summary
 
-    def setup_event(self, event: useq.MDAEvent) -> None:
+    def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
         # Set XY stage position and engage autofocus
         # Note: this command will not move the stage if the target position is the same
         # as the last commanded position and force_set_xy_position is False.
-        # TODO: modulate stage speed
+        self._adjust_xy_stage_speed(event)
         self._set_event_xy_position(event)
 
         # Set Z position for the event only if not using autofocus; calling
@@ -189,92 +188,57 @@ class MantisEngine(MDAEngine):
         else:
             yield from super().exec_event(event)
 
-    # def _set_event_xy_position(self, event: MDAEvent) -> None:
-    #     """Override XY position setting to handle autofocus after stage movement.
+    def teardown_sequence(self, sequence):
+        self.mmcore.setProperty(self._xy_stage_device, "MotorSpeedX-S(mm/s)", DEFAULT_XY_STAGE_SPEED)
+        self.mmcore.setProperty(self._xy_stage_device, "MotorSpeedY-S(mm/s)", DEFAULT_XY_STAGE_SPEED)
+        return super().teardown_sequence(sequence)
+    
 
-    #     Changes from default MDAEngine behavior:
-    #     1. SPEED ADJUSTMENT: Sets stage speed based on distance before movement
-    #        - Default: Uses pre-configured stage speed
-    #        - Mantis: 2.0 mm/s for <2000 um, 5.75 mm/s for longer moves
-    #        - Reason: Slow speed keeps continuous autofocus engaged during short moves
+    def _adjust_xy_stage_speed(self, event: MDAEvent) -> None:
+        """Modulate XY stage speed based on distance to target position.
 
-    #     2. EXPLICIT WAIT: Calls core.waitForDevice() after setXYPosition()
-    #        - Default: Does NOT wait for stage to finish moving
-    #        - Mantis: Waits for movement completion before proceeding
-    #        - Reason: Ensures stage is settled before engaging autofocus
+        This method adjusts the XY stage speed before moving to a new position,
+        using a slower speed for short moves to help maintain autofocus lock.
 
-    #     3. AUTOFOCUS: Engages continuous autofocus after each position change
-    #        - Default: No automatic autofocus behavior
-    #        - Mantis: Calls _engage_autofocus() with multiple Z offset attempts
-    #        - Reason: Re-establish Nikon PFS lock after stage movement
+        Parameters
+        ----------
+        event : MDAEvent
+            The MDA event containing the target XY position.
+        """
+        slow_speed = 2.0 # in mm/s
+        fast_speed = 5.75 # in mm/s
+        negligible_distance = 1  # in um
+        short_distance = 2000  # in um
 
-    #     4. POSITION TRACKING: Uses local _last_xy_position instead of core's cache
-    #        - Note: This differs from default's use of core._last_xy_position
-    #        - TODO: Consider using core._last_xy_position for consistency
-    #     """
-    #     event_x, event_y = event.x_pos, event.y_pos
+        if not self._use_autofocus or not self._xy_stage_device:
+            return
 
-    #     # If neither coordinate is provided, do nothing
-    #     if event_x is None and event_y is None:
-    #         return
+        last_x, last_y = self.mmcore._last_xy_position.get(None) or (None, None)
+        target_x, target_y = event.x_pos, event.y_pos
 
-    #     core = self.mmcore
+        if not all(v is not None for v in [last_x, last_y, target_x, target_y]):
+            return
 
-    #     # Skip if no XY stage device is found
-    #     if not self._xy_stage_device:
-    #         logger.warning("No XY stage device found. Cannot set XY position.")
-    #         return
+        distance = np.linalg.norm([target_x - last_x, target_y - last_y])
+        # If the move is negligible, skip speed adjustment
+        if distance < negligible_distance: 
+            return
+        
+        speed = slow_speed if distance < short_distance else fast_speed
 
-    #     # Get current position
-    #     try:
-    #         current_x, current_y = core.getXYPosition()
-    #     except Exception as e:
-    #         logger.warning(f"Failed to get current XY position: {e}")
-    #         current_x, current_y = 0, 0
+        # If the speed is already set appropriately, no need to update
+        if self._xy_stage_speed == speed:
+            return
+        
+        try:
+            # Set XY stage speed (mantis-specific property names)
+            self.mmcore.setProperty(self._xy_stage_device, "MotorSpeedX-S(mm/s)", speed)
+            self.mmcore.setProperty(self._xy_stage_device, "MotorSpeedY-S(mm/s)", speed)
 
-    #     # Use current position if event position is None
-    #     target_x = current_x if event_x is None else event_x
-    #     target_y = current_y if event_y is None else event_y
-
-    #     # Check if position actually changed
-    #     if self._last_xy_position is not None and np.allclose(
-    #         [target_x, target_y], self._last_xy_position, rtol=0, atol=0.01
-    #     ):
-    #         logger.debug(
-    #             f"Stage position unchanged ({target_x:.2f}, {target_y:.2f}), skipping move"
-    #         )
-    #         return
-
-    #     # Adjust stage speed based on distance (only if using autofocus)
-    #     if self._use_autofocus and self._xy_stage_device:
-    #         distance = np.linalg.norm([target_x - current_x, target_y - current_y])
-    #         speed = (
-    #             self._slow_speed
-    #             if distance < self._short_distance_threshold
-    #             else self._fast_speed
-    #         )
-
-    #         try:
-    #             # Set XY stage speed (mantis-specific property names)
-    #             core.setProperty(self._xy_stage_device, "MotorSpeedX-S(mm/s)", speed)
-    #             core.setProperty(self._xy_stage_device, "MotorSpeedY-S(mm/s)", speed)
-    #             logger.debug(f"Set stage speed to {speed} mm/s for distance {distance:.1f} um")
-    #         except Exception as e:
-    #             logger.debug(f"Could not set stage speed: {e}")
-
-    #     # Move to the target position
-    #     try:
-    #         logger.debug(f"Moving stage to ({target_x:.2f}, {target_y:.2f})")
-    #         core.setXYPosition(target_x, target_y)
-    #         core.waitForDevice(self._xy_stage_device)
-    #         self._last_xy_position = [target_x, target_y]
-    #     except Exception as e:
-    #         logger.warning(f"Failed to set XY position: {e}")
-    #         return
-
-    #     # Attempt autofocus after stage movement
-    #     if self._use_autofocus:
-    #         self._engage_autofocus(event)
+            self._xy_stage_speed = speed
+            logger.debug(f"Set stage speed to {speed} mm/s")
+        except Exception:
+            logger.debug(f"Could not update stage speed")
 
     def _engage_autofocus(self, event: MDAEvent) -> None:
         if not self._use_autofocus:
@@ -427,7 +391,7 @@ class MantisEngine(MDAEngine):
         with create_stream(settings) as stream:
 
             @self.mmcore.mda.events.frameReady.connect
-            def _on_frame_ready(frame: np.ndarray, _event: useq.MDAEvent, _meta: dict) -> None:
+            def _on_frame_ready(frame: np.ndarray, _event: MDAEvent, _meta: dict) -> None:
                 stream.append(frame)
 
             logger.info("Starting MDA acquisition sequence")
