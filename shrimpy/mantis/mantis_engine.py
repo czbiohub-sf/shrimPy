@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 import numpy as np
-import useq
 
 from ome_writers import (
     AcquisitionSettings,
@@ -23,7 +22,7 @@ from useq import MDAEvent, MDASequence
 logger = logging.getLogger(__name__)
 
 DEMO_PFS_METHOD = "demo-PFS"
-DEFAULT_XY_STAGE_SPEED = 5.75 # in mm/s, specific to mantis XY stage
+DEFAULT_XY_STAGE_SPEED = 5.75  # in mm/s, specific to mantis XY stage
 
 
 class MantisEngine(MDAEngine):
@@ -189,10 +188,13 @@ class MantisEngine(MDAEngine):
             yield from super().exec_event(event)
 
     def teardown_sequence(self, sequence):
-        self.mmcore.setProperty(self._xy_stage_device, "MotorSpeedX-S(mm/s)", DEFAULT_XY_STAGE_SPEED)
-        self.mmcore.setProperty(self._xy_stage_device, "MotorSpeedY-S(mm/s)", DEFAULT_XY_STAGE_SPEED)
+        self.mmcore.setProperty(
+            self._xy_stage_device, "MotorSpeedX-S(mm/s)", DEFAULT_XY_STAGE_SPEED
+        )
+        self.mmcore.setProperty(
+            self._xy_stage_device, "MotorSpeedY-S(mm/s)", DEFAULT_XY_STAGE_SPEED
+        )
         return super().teardown_sequence(sequence)
-    
 
     def _adjust_xy_stage_speed(self, event: MDAEvent) -> None:
         """Modulate XY stage speed based on distance to target position.
@@ -205,8 +207,8 @@ class MantisEngine(MDAEngine):
         event : MDAEvent
             The MDA event containing the target XY position.
         """
-        slow_speed = 2.0 # in mm/s
-        fast_speed = 5.75 # in mm/s
+        slow_speed = 2.0  # in mm/s
+        fast_speed = 5.75  # in mm/s
         negligible_distance = 1  # in um
         short_distance = 2000  # in um
 
@@ -221,15 +223,15 @@ class MantisEngine(MDAEngine):
 
         distance = np.linalg.norm([target_x - last_x, target_y - last_y])
         # If the move is negligible, skip speed adjustment
-        if distance < negligible_distance: 
+        if distance < negligible_distance:
             return
-        
+
         speed = slow_speed if distance < short_distance else fast_speed
 
         # If the speed is already set appropriately, no need to update
         if self._xy_stage_speed == speed:
             return
-        
+
         try:
             # Set XY stage speed (mantis-specific property names)
             self.mmcore.setProperty(self._xy_stage_device, "MotorSpeedX-S(mm/s)", speed)
@@ -238,7 +240,7 @@ class MantisEngine(MDAEngine):
             self._xy_stage_speed = speed
             logger.debug(f"Set stage speed to {speed} mm/s")
         except Exception:
-            logger.debug(f"Could not update stage speed")
+            logger.debug("Could not update stage speed")
 
     def _engage_autofocus(self, event: MDAEvent) -> None:
         if not self._use_autofocus:
