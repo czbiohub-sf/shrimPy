@@ -21,6 +21,7 @@ from useq import MDAEvent, MDASequence
 # Get the logger instance (will be configured by the CLI entry point)
 logger = logging.getLogger(__name__)
 
+MANTIS_XY_STAGE_NAME = "XYStage:XY:31"
 DEMO_PFS_METHOD = "demo-PFS"
 DEFAULT_XY_STAGE_SPEED = 5.75  # in mm/s, specific to mantis XY stage
 
@@ -188,12 +189,13 @@ class MantisEngine(MDAEngine):
             yield from super().exec_event(event)
 
     def teardown_sequence(self, sequence):
-        self.mmcore.setProperty(
-            self._xy_stage_device, "MotorSpeedX-S(mm/s)", DEFAULT_XY_STAGE_SPEED
-        )
-        self.mmcore.setProperty(
-            self._xy_stage_device, "MotorSpeedY-S(mm/s)", DEFAULT_XY_STAGE_SPEED
-        )
+        if self._xy_stage_device == MANTIS_XY_STAGE_NAME:
+            self.mmcore.setProperty(
+                self._xy_stage_device, "MotorSpeedX-S(mm/s)", DEFAULT_XY_STAGE_SPEED
+            )
+            self.mmcore.setProperty(
+                self._xy_stage_device, "MotorSpeedY-S(mm/s)", DEFAULT_XY_STAGE_SPEED
+            )
         return super().teardown_sequence(sequence)
 
     def _adjust_xy_stage_speed(self, event: MDAEvent) -> None:
@@ -215,6 +217,10 @@ class MantisEngine(MDAEngine):
         if not self._use_autofocus or not self._xy_stage_device:
             return
 
+        # Only adjust speed for Mantis XY stage, not demo XY stage
+        if self._xy_stage_device != MANTIS_XY_STAGE_NAME:
+            return
+
         last_x, last_y = self.mmcore._last_xy_position.get(None) or (None, None)
         target_x, target_y = event.x_pos, event.y_pos
 
@@ -232,15 +238,11 @@ class MantisEngine(MDAEngine):
         if self._xy_stage_speed == speed:
             return
 
-        try:
-            # Set XY stage speed (mantis-specific property names)
-            self.mmcore.setProperty(self._xy_stage_device, "MotorSpeedX-S(mm/s)", speed)
-            self.mmcore.setProperty(self._xy_stage_device, "MotorSpeedY-S(mm/s)", speed)
+        self.mmcore.setProperty(self._xy_stage_device, "MotorSpeedX-S(mm/s)", speed)
+        self.mmcore.setProperty(self._xy_stage_device, "MotorSpeedY-S(mm/s)", speed)
 
-            self._xy_stage_speed = speed
-            logger.debug(f"Set stage speed to {speed} mm/s")
-        except Exception:
-            logger.debug("Could not update stage speed")
+        self._xy_stage_speed = speed
+        logger.debug(f"Set stage speed to {speed} mm/s")
 
     def _engage_autofocus(self, event: MDAEvent) -> None:
         if not self._use_autofocus:
