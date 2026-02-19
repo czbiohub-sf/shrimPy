@@ -35,7 +35,7 @@ def configure_logging(
 
     # Create log file path with timestamp (matching original convention)
     timestamp = datetime.now().strftime("%Y%m%dT%H%M%S_%f")
-    log_file = log_dir / f"{name}_log_{timestamp}.txt"
+    log_file = log_dir / f"{name}_log_{timestamp}.log"
 
     if config_file.exists():
         # Load logging configuration from file
@@ -112,6 +112,11 @@ def log_conda_environment(log_dir: Path) -> tuple[bytes | None, bytes | None]:
         process = Popen(cmd, shell=True, stdout=PIPE, stderr=STDOUT)
         output, errors = process.communicate()
 
-        return output.decode("ascii").strip(), errors.decode("ascii").strip()
+        if output:
+            output = output.decode("ascii").strip()
+        if errors:
+            errors = errors.decode("ascii").strip()
+
+        return output, errors
 
     return None, None

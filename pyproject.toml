@@ -24,8 +24,8 @@ dependencies = [
   "click",
   "numpy",
   # TODO: replace [all] with specific writer backend
-  "ome-writers[all] @ git+https://github.com/pymmcore-plus/ome-writers",
-  "pymmcore_plus==0.17.1",
+  "ome-writers[acquire-zarr] @ git+https://github.com/pymmcore-plus/ome-writers",
+  "pymmcore_plus==0.17.2",
   "pymmcore-widgets",
   "PyYAML",
   "qtpy",

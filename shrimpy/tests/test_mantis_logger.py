@@ -56,7 +56,7 @@ def test_configure_logging_from_cli(config_file, temp_log_dir):
     assert log_dir.exists()
 
     # Check that log file was created with timestamp naming
-    log_files = list(log_dir.glob("test_acquisition_log_*.txt"))
+    log_files = list(log_dir.glob("test_acquisition_log_*.log"))
     assert len(log_files) == 1, f"Expected 1 log file, found {len(log_files)}"
 
 
@@ -115,7 +115,7 @@ def test_logger_writes_to_file(config_file, temp_log_dir):
 
     # Check log file content
     log_dir = output_dir / "logs"
-    log_files = list(log_dir.glob("test_acquisition_log_*.txt"))
+    log_files = list(log_dir.glob("test_acquisition_log_*.log"))
     assert len(log_files) == 1
     log_content = log_files[0].read_text()
 
@@ -153,8 +153,8 @@ def test_multiple_acquisitions_separate_logs(config_file, temp_log_dir):
 
     # Check that both log files exist with timestamp naming
     log_dir = output_dir / "logs"
-    log_files_1 = list(log_dir.glob("acquisition_1_log_*.txt"))
-    log_files_2 = list(log_dir.glob("acquisition_2_log_*.txt"))
+    log_files_1 = list(log_dir.glob("acquisition_1_log_*.log"))
+    log_files_2 = list(log_dir.glob("acquisition_2_log_*.log"))
 
     assert len(log_files_1) == 1
     assert len(log_files_2) == 1
@@ -185,7 +185,7 @@ def test_fallback_logging_when_config_missing(config_file, temp_log_dir):
 
         # Log file should still be created with timestamp naming
         log_dir = output_dir / "logs"
-        log_files = list(log_dir.glob("test_acquisition_log_*.txt"))
+        log_files = list(log_dir.glob("test_acquisition_log_*.log"))
         assert len(log_files) == 1
         assert log_file.exists()
 
@@ -211,7 +211,7 @@ def test_pymmcore_logger_captured(config_file, temp_log_dir):
 
     # Check that message is in the log file
     log_dir = temp_log_dir / "logs"
-    log_files = list(log_dir.glob("test_acquisition_log_*.txt"))
+    log_files = list(log_dir.glob("test_acquisition_log_*.log"))
     assert len(log_files) == 1
     log_content = log_files[0].read_text()
 
@@ -242,7 +242,7 @@ def test_pymmcore_logger_captured_after_import(config_file, temp_log_dir):
         handler.flush()
 
     log_dir = temp_log_dir / "logs"
-    log_files = list(log_dir.glob("test_acquisition_log_*.txt"))
+    log_files = list(log_dir.glob("test_acquisition_log_*.log"))
     assert len(log_files) == 1
     assert "Test message from pymmcore-plus after import" in log_files[0].read_text()
 
@@ -291,7 +291,7 @@ def test_detailed_formatter(config_file, temp_log_dir):
 
     # Check log file content
     log_dir = temp_log_dir / "logs"
-    log_files = list(log_dir.glob("test_acquisition_log_*.txt"))
+    log_files = list(log_dir.glob("test_acquisition_log_*.log"))
     assert len(log_files) == 1
     log_content = log_files[0].read_text()
 
