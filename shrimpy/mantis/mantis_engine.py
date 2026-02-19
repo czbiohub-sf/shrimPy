@@ -24,11 +24,6 @@ logger = logging.getLogger(__name__)
 DEMO_PFS_METHOD = "demo-PFS"
 DEFAULT_XY_STAGE_SPEED = 5.75  # in mm/s, specific to mantis XY stage
 
-# Ignore "Error getting properties ('State', 'Label') on TS2_TTL1-8:" warnings
-logging.getLogger("pymmcore-plus._mmcore_plus._property_change_emission_ensured").setLevel(
-    logging.ERROR
-)
-
 
 class MantisEngine(MDAEngine):
     """Custom MDA engine for the Mantis microscope.
