@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 DEMO_PFS_METHOD = "demo-PFS"
 DEFAULT_XY_STAGE_SPEED = 5.75  # in mm/s, specific to mantis XY stage
 
+# Ignore "Error getting properties ('State', 'Label') on TS2_TTL1-8:" warnings
+logging.getLogger("pymmcore-plus._mmcore_plus._property_change_emission_ensured").setLevel(
+    logging.ERROR
+)
+
 
 class MantisEngine(MDAEngine):
     """Custom MDA engine for the Mantis microscope.
@@ -63,6 +68,9 @@ class MantisEngine(MDAEngine):
 
     def _on_property_changed(self, device: str, property_name: str, value: str) -> None:
         """Log property changes at debug level."""
+        # Ignore "PFS Status" changes
+        if property_name == "PFS Status":
+            return
         logger.debug(f"Property changed: {device}.{property_name} = {value}")
 
     def _on_roi_set(self, camera: str, x: int, y: int, width: int, height: int) -> None:
