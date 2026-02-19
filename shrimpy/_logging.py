@@ -35,7 +35,7 @@ def configure_logging(
 
     # Create log file path with timestamp (matching original convention)
     timestamp = datetime.now().strftime("%Y%m%dT%H%M%S_%f")
-    log_file = log_dir / f"{name}_log_{timestamp}.txt"
+    log_file = log_dir / f"{name}_log_{timestamp}.log"
 
     if config_file.exists():
         # Load logging configuration from file
