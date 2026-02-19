@@ -284,11 +284,14 @@ class MantisEngine(MDAEngine):
         if self._autofocus_method == DEMO_PFS_METHOD:
             self._engage_demo_pfs(success_rate=0.5)
         else:
-            z_position = (
-                event.z_pos
-                if event.z_pos is not None
-                else self.mmcore.getPosition(self._autofocus_stage)
-            )
+            # TODO: fix after resolving https://github.com/czbiohub-sf/shrimPy/issues/242
+            z_position = self.mmcore.getPosition(self._autofocus_stage)
+            # MDA events have z_pos of the scan stage
+            # z_position = (
+            #     event.z_pos
+            #     if event.z_pos is not None
+            #     else self.mmcore.getPosition(self._autofocus_stage)
+            # )
             self._engage_nikon_pfs(self._autofocus_stage, z_position)
 
     def _engage_demo_pfs(self, success_rate: float = 0.9):
@@ -329,7 +332,7 @@ class MantisEngine(MDAEngine):
             core.fullFocus()
             logger.debug("Call to fullFocus() succeeded")
         except Exception:
-            logger.error("Call to fullFocus() failed")
+            logger.debug("Call to fullFocus() failed")
 
         # Check if autofocus is already engaged
         if core.isContinuousFocusLocked():
@@ -352,6 +355,10 @@ class MantisEngine(MDAEngine):
                 logger.debug(f"Autofocus call failed with Z offset of {z_offset} um")
 
         if not self._autofocus_success:
+            # return z stage to original position if autofocus attempts failed
+            core.setPosition(z_stage_name, z_position)
+            core.waitForDevice(z_stage_name)
+
             logger.error(f"Autofocus call failed after {len(z_offsets)} attempts")
 
     def acquire(
