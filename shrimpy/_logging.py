@@ -112,6 +112,11 @@ def log_conda_environment(log_dir: Path) -> tuple[bytes | None, bytes | None]:
         process = Popen(cmd, shell=True, stdout=PIPE, stderr=STDOUT)
         output, errors = process.communicate()
 
-        return output.decode("ascii").strip(), errors.decode("ascii").strip()
+        if output:
+            output = output.decode("ascii").strip()
+        if errors:
+            errors = errors.decode("ascii").strip()
+
+        return output, errors
 
     return None, None

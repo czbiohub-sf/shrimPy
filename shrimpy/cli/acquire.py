@@ -75,6 +75,7 @@ def mantis(
     else:
         logger.warning(f"Logging config not found at {config_file}, using defaults")
 
+    # TODO: switch to uv
     # Log conda environment
     out, err = log_conda_environment(log_file.parent)
     if err is None:
