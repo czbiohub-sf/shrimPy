@@ -76,10 +76,7 @@ class MantisEngine(MDAEngine):
         )
 
     def _on_xy_stage_position_changed(self, device: str, x: float, y: float) -> None:
-        """Log stage position changes at debug level.
-
-        None: The DXYStage device adapter fires this callback twice per move.
-        """
+        """Log stage position changes at debug level."""
         logger.debug(f"XY stage position changed: device={device}, x={x:.2f}, y={y:.2f}")
 
     def setup_sequence(self, sequence: MDASequence) -> SummaryMetaV1 | None:
