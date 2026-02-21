@@ -12,11 +12,11 @@ Current status: Alpha version, actively restructuring from mantis-only to multi-
 
 ### Setup
 ```bash
-# Install in development mode with dev dependencies
-pip install -e ".[dev]"
+# Install in development mode with all dependencies (uses uv)
+uv sync
 
 # Or using make
-make setup-develop
+make install
 
 # Install pre-commit hooks (required for contributors)
 pre-commit install
@@ -24,17 +24,11 @@ pre-commit install
 
 ### Code Quality
 ```bash
-# Format code (black + isort)
+# Format code (ruff format + ruff check --fix)
 make format
 
-# Check formatting without modifying files
-make check-format
-
-# Lint with flake8
-make lint
-
-# Run all pre-commit hooks
-make pre-commit
+# Check formatting and linting without modifying files
+make check
 ```
 
 ### Testing
@@ -43,16 +37,16 @@ make pre-commit
 make test
 
 # Or directly with pytest
-python -m pytest . --disable-pytest-warnings
+uv run pytest
 
 # Run specific test file
-pytest shrimpy/tests/test_mantis_logger.py
+uv run pytest shrimpy/tests/test_mantis_logger.py
 ```
 
 ### Running the Mantis GUI
 ```bash
 # Launch the GUI-based acquisition interface
-python -m shrimpy.mantis.launch_mantis_gui
+uv run python -m shrimpy.mantis.launch_mantis_gui
 ```
 
 ### Demo Mode Acquisition (Legacy)
@@ -199,6 +193,13 @@ Optional (for analysis, not in core package):
 - **Pre-commit hooks**: Automatically run style checks on commit
 
 Run `make format` before committing. The pre-commit hooks will catch violations.
+
+## Package Management
+
+This project uses [uv](https://docs.astral.sh/uv/) for dependency management and `hatchling` + `hatch-vcs` as the build backend (version derived from git tags).
+
+- `pymmcore-plus` and `ome-writers` are installed as editable local sources (see `[tool.uv.sources]` in `pyproject.toml`)
+- Dependencies are locked in `uv.lock` for reproducibility
 
 ## Testing
 
