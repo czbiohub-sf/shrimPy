@@ -23,7 +23,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ### Clone repositories
 
-shrimPy depends on local editable installs of `pymmcore-plus` and `ome-writers`. Clone all three repositories into the same parent directory:
+shrimPy depends on local editable installs of `pymmcore-plus` and `ome-writers`. These are installed as editable packages during the initial phases of active development and will be pinned to stable releases eventually. Clone all three repositories into the same parent directory:
 
 ```sh
 git clone https://github.com/czbiohub-sf/shrimPy.git
