@@ -27,9 +27,9 @@ def mock_core() -> MagicMock:
     core.getXYStageDevice.return_value = "XYStage:XY:31"
     core.getFocusDevice.return_value = "ZDrive"
 
-    # Image properties (typical mantis ROI)
+    # Image properties (full sensor before ROI is applied)
     core.getImageWidth.return_value = 2048
-    core.getImageHeight.return_value = 256
+    core.getImageHeight.return_value = 2048
     core.getImageBitDepth.return_value = 16
     core.getPixelSizeUm.return_value = 0.115
 

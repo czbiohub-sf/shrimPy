@@ -368,7 +368,7 @@ def test_exec_event_autofocus_failure_yields_zero_padded_image(engine, mock_core
     # Autofocus on + failure → yield zeros with correct shape and dtype
     engine._use_autofocus = True
     engine._autofocus_success = False
-    mock_core.getImageHeight.return_value = 256
+    mock_core.getImageHeight.return_value = 2048
     mock_core.getImageWidth.return_value = 2048
     mock_core.getImageBitDepth.return_value = 16
     # get_frame_metadata needs these to build position metadata
@@ -380,7 +380,7 @@ def test_exec_event_autofocus_failure_yields_zero_padded_image(engine, mock_core
 
     assert len(results) == 1
     img, evt, _meta = results[0]
-    assert img.shape == (256, 2048)
+    assert img.shape == (2048, 2048)
     assert img.dtype == np.uint16
     assert np.all(img == 0)
     assert evt is event
