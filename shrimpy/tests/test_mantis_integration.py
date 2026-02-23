@@ -70,11 +70,15 @@ def test_setup_applies_demo_settings(demo_engine, demo_mda_sequence, mantis_meta
     assert demo_engine._autofocus_stage == mantis_metadata["autofocus"]["stage"]
 
 
-def test_demo_acquisition_collects_frames(demo_engine, demo_mda_sequence):
+def test_demo_acquisition_collects_frames(demo_engine, mantis_metadata):
     # Run setup_sequence + iterate events to verify frames are produced.
     # This is a lighter-weight check than full acquire() — no file I/O.
     core = demo_engine.mmcore
-    demo_engine.setup_sequence(demo_mda_sequence)
+    sequence = MDASequence(
+        time_plan={"interval": 0, "loops": 10},
+        metadata={"mantis": mantis_metadata},
+    )
+    demo_engine.setup_sequence(sequence)
 
     frames_collected = []
 
@@ -82,14 +86,14 @@ def test_demo_acquisition_collects_frames(demo_engine, demo_mda_sequence):
     def _on_frame(img: np.ndarray, _event, _meta) -> None:
         frames_collected.append(img)
 
-    core.mda.run(demo_mda_sequence)
+    core.mda.run(sequence)
 
     # With demo-PFS (50% success rate) some positions may yield zero frames,
     # but we should still get a substantial number of frames overall
     assert len(frames_collected) > 0, "No frames were collected during demo acquisition"
 
 
-def test_demo_acquisition_produces_output(demo_engine, demo_mda_sequence, tmp_path):
+def test_demo_mda_acquisition(demo_engine, demo_mda_sequence, tmp_path):
     # Run a full acquisition to a temp directory using the demo config.
     # The demo.yaml specifies: 2 channels, 13 z-slices, 3 timepoints, 8 positions
     # With the demo camera this completes quickly without real hardware.
