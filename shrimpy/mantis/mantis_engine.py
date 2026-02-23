@@ -24,6 +24,10 @@ logger = logging.getLogger(__name__)
 MANTIS_XY_STAGE_NAME = "XYStage:XY:31"
 DEMO_PFS_METHOD = "demo-PFS"
 DEFAULT_XY_STAGE_SPEED = 5.75  # in mm/s, specific to mantis XY stage
+SLOW_XY_STAGE_SPEED = 2.0  # in mm/s, used for short moves to maintain autofocus lock
+FAST_XY_STAGE_SPEED = 5.75  # in mm/s, used for long moves
+NEGLIGIBLE_XY_DISTANCE = 1  # in um, moves below this are ignored
+SHORT_XY_DISTANCE = 2000  # in um, threshold between slow and fast speed
 
 
 class MantisEngine(MDAEngine):
@@ -209,11 +213,6 @@ class MantisEngine(MDAEngine):
         event : MDAEvent
             The MDA event containing the target XY position.
         """
-        slow_speed = 2.0  # in mm/s
-        fast_speed = 5.75  # in mm/s
-        negligible_distance = 1  # in um
-        short_distance = 2000  # in um
-
         if not self._use_autofocus or not self._xy_stage_device:
             return
 
@@ -229,10 +228,10 @@ class MantisEngine(MDAEngine):
 
         distance = np.linalg.norm([target_x - last_x, target_y - last_y])
         # If the move is negligible, skip speed adjustment
-        if distance < negligible_distance:
+        if distance < NEGLIGIBLE_XY_DISTANCE:
             return
 
-        speed = slow_speed if distance < short_distance else fast_speed
+        speed = SLOW_XY_STAGE_SPEED if distance < SHORT_XY_DISTANCE else FAST_XY_STAGE_SPEED
 
         # If the speed is already set appropriately, no need to update
         if self._xy_stage_speed == speed:
@@ -402,35 +401,6 @@ class MantisEngine(MDAEngine):
             self.mmcore.mda.run(sequence)
 
         logger.info("Acquisition completed successfully")
-
-    @staticmethod
-    def initialize_core(mm_config: str | Path | None = None) -> CMMCorePlus:
-        """Initialize and configure the Core instance for Mantis.
-
-        Parameters
-        ----------
-        mm_config : str | Path | None
-            Path to the Micro-Manager configuration file. If None, uses default demo config.
-
-        Returns
-        -------
-        CMMCorePlus (or UniMMCore)
-            Configured core instance ready for use.
-        """
-        logger.info("Initializing Micro-Manager core")
-        core = CMMCorePlus().instance()
-
-        if mm_config is None:
-            logger.info("No configuration file provided. Using MMConfig_demo.cfg.")
-            _config = None
-        else:
-            logger.info(f"Loading Micro-Manager configuration from: {mm_config}")
-            _config = mm_config
-
-        core.loadSystemConfiguration(_config)
-        logger.info("Micro-Manager core initialized successfully")
-
-        return core
 
 
 def _get_next_acquisition_name(output_dir: Path, name: str) -> str:

@@ -798,7 +798,8 @@ if __name__ == "__main__":
         r"C:\Users\Cameron\justin\shrimPy\CompMicro_MMConfigs\Dev_Computer\mantis2-demo.cfg"
     )
     try:
-        core = MantisEngine.initialize_core(demo_config)
+        core = CMMCorePlus()
+        core.loadSystemConfiguration(demo_config)
         print(f"Loaded configuration: {demo_config}")
     except Exception as e:
         print(f"Could not load config: {e}")

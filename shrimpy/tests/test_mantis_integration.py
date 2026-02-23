@@ -18,11 +18,9 @@ from useq import MDASequence
 
 from shrimpy.mantis.mantis_engine import DEMO_PFS_METHOD, MantisEngine
 
-# Path to the demo MDA config shipped with the project
-DEMO_MDA_CONFIG = (
-    Path(__file__).parent.parent.parent / "config" / "mda" / "mantis" / "demo.yaml"
-)
-
+# Local copy of the demo MDA config, kept in tests/artifacts so test inputs
+# are independent of the project's runtime configuration files.
+DEMO_MDA_CONFIG = Path(__file__).parent / "artifacts" / "demo_mda_sequence.yaml"
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -37,7 +35,7 @@ def demo_engine(demo_core: CMMCorePlus) -> MantisEngine:
 
 @pytest.fixture
 def demo_sequence() -> MDASequence:
-    """Load the demo MDA sequence from the project config."""
+    """Load the full demo MDA sequence from the project config."""
     assert DEMO_MDA_CONFIG.exists(), f"Demo config not found: {DEMO_MDA_CONFIG}"
     return MDASequence.from_file(DEMO_MDA_CONFIG)
 
@@ -47,38 +45,24 @@ def demo_sequence() -> MDASequence:
 # ---------------------------------------------------------------------------
 
 
-def test_initialize_core_demo():
-    # initialize_core() with no args should load the demo config.
-    # Note: MantisEngine.initialize_core(None) passes None to
-    # loadSystemConfiguration which doesn't accept None in the current
-    # editable pymmcore-plus. Use the demo_core fixture pattern instead.
-    core = CMMCorePlus()
-    core.loadSystemConfiguration()  # loads MMConfig_demo.cfg by default
-    assert isinstance(core, CMMCorePlus)
-    # Demo config defines at least a camera and XY stage
-    assert core.getCameraDevice() != ""
-    assert core.getXYStageDevice() != ""
-
-
-def test_setup_applies_demo_settings(demo_engine, demo_sequence):
+def test_setup_applies_demo_settings(demo_engine, demo_sequence, mantis_metadata):
     # setup_sequence should apply all mantis metadata from demo.yaml
     demo_engine.setup_sequence(demo_sequence)
 
     core = demo_engine.mmcore
-    mantis_meta = demo_sequence.metadata["mantis"]
 
     # ROI should have been applied
-    roi = mantis_meta["roi"]
+    roi = mantis_metadata["roi"]
     actual_roi = list(core.getROI())
     assert actual_roi == roi, f"Expected ROI {roi}, got {actual_roi}"
 
     # Focus device should be set to the z_stage from metadata
-    assert core.getFocusDevice() == mantis_meta["z_stage"]
+    assert core.getFocusDevice() == mantis_metadata["z_stage"]
 
     # Autofocus should be enabled with demo-PFS method
     assert demo_engine._use_autofocus is True
     assert demo_engine._autofocus_method == DEMO_PFS_METHOD
-    assert demo_engine._autofocus_stage == mantis_meta["autofocus"]["stage"]
+    assert demo_engine._autofocus_stage == mantis_metadata["autofocus"]["stage"]
 
 
 def test_demo_acquisition_produces_output(demo_engine, tmp_path):
@@ -124,3 +108,98 @@ def test_teardown_after_setup(demo_engine, demo_sequence):
     # The demo XY stage is not the Mantis stage, so no speed reset expected,
     # but teardown should complete without error
     assert demo_engine._xy_stage_device is not None
+
+
+def test_single_channel_acquisition(demo_engine, mantis_metadata, tmp_path):
+    # Acquisition with a single channel and minimal time/z settings
+    seq = MDASequence(
+        channels=[{"config": "DAPI", "group": "Channel", "exposure": 10.0}],
+        z_plan={"top": 15, "bottom": -15, "step": 15},
+        metadata={"mantis": mantis_metadata},
+    )
+
+    core = demo_engine.mmcore
+    demo_engine.setup_sequence(seq)
+
+    frames_collected = []
+
+    @core.mda.events.frameReady.connect
+    def _on_frame(img: np.ndarray, _event, _meta) -> None:
+        frames_collected.append(img)
+
+    core.mda.run(seq)
+
+    assert len(frames_collected) > 0, "No frames collected for single-channel acquisition"
+
+
+def test_multi_timepoint_acquisition(demo_engine, mantis_metadata):
+    # Acquisition with multiple timepoints, single channel, no positions
+    seq = MDASequence(
+        channels=[{"config": "DAPI", "group": "Channel", "exposure": 5.0}],
+        time_plan={"interval": 0.1, "loops": 3},
+        z_plan={"top": 15, "bottom": -15, "step": 15},
+        metadata={"mantis": mantis_metadata},
+    )
+
+    core = demo_engine.mmcore
+    demo_engine.setup_sequence(seq)
+
+    frames_collected = []
+
+    @core.mda.events.frameReady.connect
+    def _on_frame(img: np.ndarray, _event, _meta) -> None:
+        frames_collected.append(img)
+
+    core.mda.run(seq)
+
+    assert len(frames_collected) > 0, "No frames collected for multi-timepoint acquisition"
+
+
+def test_multi_position_acquisition(demo_engine, mantis_metadata):
+    # Acquisition across multiple stage positions
+    seq = MDASequence(
+        channels=[{"config": "DAPI", "group": "Channel", "exposure": 5.0}],
+        stage_positions=[(0, 0), (100, 0), (0, 100)],
+        z_plan={"top": 15, "bottom": -15, "step": 15},
+        metadata={"mantis": mantis_metadata},
+    )
+
+    core = demo_engine.mmcore
+    demo_engine.setup_sequence(seq)
+
+    frames_collected = []
+
+    @core.mda.events.frameReady.connect
+    def _on_frame(img: np.ndarray, _event, _meta) -> None:
+        frames_collected.append(img)
+
+    core.mda.run(seq)
+
+    assert len(frames_collected) > 0, "No frames collected for multi-position acquisition"
+
+
+def test_autofocus_disabled_acquisition(demo_engine, mantis_metadata):
+    # Acquisition with autofocus disabled — all frames should succeed
+    mantis_metadata["autofocus"]["enabled"] = False
+    seq = MDASequence(
+        channels=[{"config": "DAPI", "group": "Channel", "exposure": 5.0}],
+        z_plan={"top": 15, "bottom": -15, "step": 15},
+        metadata={"mantis": mantis_metadata},
+    )
+
+    core = demo_engine.mmcore
+    demo_engine.setup_sequence(seq)
+
+    frames_collected = []
+
+    @core.mda.events.frameReady.connect
+    def _on_frame(img: np.ndarray, _event, _meta) -> None:
+        frames_collected.append(img)
+
+    core.mda.run(seq)
+
+    # With autofocus disabled, every event should produce a frame
+    expected = seq.sizes.get("c", 1) * seq.sizes.get("z", 1)
+    assert len(frames_collected) == expected, (
+        f"Expected {expected} frames, got {len(frames_collected)}"
+    )

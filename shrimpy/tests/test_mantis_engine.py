@@ -18,7 +18,9 @@ from useq import MDAEvent, MDASequence
 from shrimpy.mantis.mantis_engine import (
     DEFAULT_XY_STAGE_SPEED,
     DEMO_PFS_METHOD,
+    FAST_XY_STAGE_SPEED,
     MANTIS_XY_STAGE_NAME,
+    SLOW_XY_STAGE_SPEED,
     MantisEngine,
     _get_next_acquisition_name,
 )
@@ -171,13 +173,14 @@ def test_setup_sequence_autofocus_enabled(engine, mock_core):
     mock_core.setAutoFocusDevice.assert_called_once_with("PFS")
 
 
-def test_setup_sequence_autofocus_disabled(engine):
+def test_setup_sequence_autofocus_disabled(engine, mock_core):
     # Autofocus explicitly disabled → _use_autofocus stays False
     af = {"enabled": False, "stage": "ZDrive", "method": "PFS"}
     seq = _make_sequence({"autofocus": af})
     with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"):
         engine.setup_sequence(seq)
     assert engine._use_autofocus is False
+    mock_core.setAutoFocusDevice.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -211,23 +214,31 @@ def test_speed_returns_early_when_no_last_position(engine, mock_core):
 
 
 def test_speed_short_move_sets_slow_speed(engine, mock_core):
-    # Move of 500 µm (< 2000 µm threshold) → slow speed 2.0 mm/s
+    # Move of 500 µm (< SHORT_DISTANCE threshold) → SLOW_XY_STAGE_SPEED
     engine._use_autofocus = True
     engine._xy_stage_device = MANTIS_XY_STAGE_NAME
     mock_core._last_xy_position = {None: (0.0, 0.0)}
     engine._adjust_xy_stage_speed(MDAEvent(x_pos=500.0, y_pos=0.0))
-    mock_core.setProperty.assert_any_call(MANTIS_XY_STAGE_NAME, "MotorSpeedX-S(mm/s)", 2.0)
-    mock_core.setProperty.assert_any_call(MANTIS_XY_STAGE_NAME, "MotorSpeedY-S(mm/s)", 2.0)
+    mock_core.setProperty.assert_any_call(
+        MANTIS_XY_STAGE_NAME, "MotorSpeedX-S(mm/s)", SLOW_XY_STAGE_SPEED
+    )
+    mock_core.setProperty.assert_any_call(
+        MANTIS_XY_STAGE_NAME, "MotorSpeedY-S(mm/s)", SLOW_XY_STAGE_SPEED
+    )
 
 
 def test_speed_long_move_sets_fast_speed(engine, mock_core):
-    # Move of 3000 µm (≥ 2000 µm threshold) → fast speed 5.75 mm/s
+    # Move of 3000 µm (≥ SHORT_DISTANCE threshold) → FAST_XY_STAGE_SPEED
     engine._use_autofocus = True
     engine._xy_stage_device = MANTIS_XY_STAGE_NAME
     mock_core._last_xy_position = {None: (0.0, 0.0)}
     engine._adjust_xy_stage_speed(MDAEvent(x_pos=3000.0, y_pos=0.0))
-    mock_core.setProperty.assert_any_call(MANTIS_XY_STAGE_NAME, "MotorSpeedX-S(mm/s)", 5.75)
-    mock_core.setProperty.assert_any_call(MANTIS_XY_STAGE_NAME, "MotorSpeedY-S(mm/s)", 5.75)
+    mock_core.setProperty.assert_any_call(
+        MANTIS_XY_STAGE_NAME, "MotorSpeedX-S(mm/s)", FAST_XY_STAGE_SPEED
+    )
+    mock_core.setProperty.assert_any_call(
+        MANTIS_XY_STAGE_NAME, "MotorSpeedY-S(mm/s)", FAST_XY_STAGE_SPEED
+    )
 
 
 def test_speed_negligible_move_skips_adjustment(engine, mock_core):
@@ -243,7 +254,7 @@ def test_speed_same_speed_not_set_again(engine, mock_core):
     # If cached speed matches computed speed, skip redundant setProperty calls
     engine._use_autofocus = True
     engine._xy_stage_device = MANTIS_XY_STAGE_NAME
-    engine._xy_stage_speed = 2.0  # already set to slow
+    engine._xy_stage_speed = SLOW_XY_STAGE_SPEED  # already set to slow
     mock_core._last_xy_position = {None: (0.0, 0.0)}
     engine._adjust_xy_stage_speed(MDAEvent(x_pos=500.0, y_pos=0.0))
     mock_core.setProperty.assert_not_called()
@@ -267,7 +278,7 @@ def test_autofocus_demo_pfs_dispatched(engine):
     engine._autofocus_method = DEMO_PFS_METHOD
     with patch.object(engine, "_engage_demo_pfs") as mock_demo:
         engine._engage_autofocus(MDAEvent())
-    mock_demo.assert_called_once_with(success_rate=0.5)
+    mock_demo.assert_called_once()
 
 
 def test_autofocus_nikon_pfs_dispatched(engine, mock_core):

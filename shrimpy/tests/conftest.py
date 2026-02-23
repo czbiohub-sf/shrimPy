@@ -57,3 +57,43 @@ def demo_core() -> CMMCorePlus:
     core = CMMCorePlus()
     core.loadSystemConfiguration()  # loads MMConfig_demo.cfg
     return core
+
+
+@pytest.fixture
+def mantis_metadata() -> dict:
+    """Mantis-specific metadata for integration tests, to be used with MMConfig_demo.cfg.
+
+    Returns a fresh dict each test can safely modify (e.g. disable autofocus)
+    without affecting other tests. Hardcoded so that changes to demo.yaml
+    don't break tests.
+
+    Usage::
+
+        seq = MDASequence(
+            channels=[...],
+            time_plan={...},
+            metadata={"mantis": mantis_metadata},
+        )
+    """
+    return {
+        "roi": [225, 880, 1600, 256],
+        "z_stage": "Z",
+        "use_hardware_sequencing": True,
+        "initialization_settings": [
+            ["Camera", "OnCameraCCDXSize", "2048"],
+            ["Camera", "OnCameraCCDYSize", "2048"],
+            ["Camera", "PixelType", "16bit"],
+            ["XY", "Velocity", "10000"],
+        ],
+        "setup_hardware_sequencing_settings": [
+            ["Z", "UseSequences", "Yes"],
+        ],
+        "reset_hardware_sequencing_settings": [
+            ["Z", "UseSequences", "No"],
+        ],
+        "autofocus": {
+            "enabled": True,
+            "method": "demo-PFS",
+            "stage": "Z",
+        },
+    }
