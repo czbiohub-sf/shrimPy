@@ -13,6 +13,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from iohub import open_ome_zarr
+from iohub.ngff import Plate
 from pymmcore_plus.core import CMMCorePlus
 from useq import MDASequence
 
@@ -28,9 +30,11 @@ DEMO_MDA_CONFIG = Path(__file__).parent / "artifacts" / "demo_mda_sequence.yaml"
 
 
 @pytest.fixture
-def demo_engine(demo_core: CMMCorePlus) -> MantisEngine:
+def demo_engine() -> MantisEngine:
     """Create a MantisEngine backed by the real demo core."""
-    return MantisEngine(demo_core)
+    core = CMMCorePlus()
+    core.loadSystemConfiguration()
+    return MantisEngine(core)
 
 
 @pytest.fixture
@@ -66,22 +70,6 @@ def test_setup_applies_demo_settings(demo_engine, demo_mda_sequence, mantis_meta
     assert demo_engine._autofocus_stage == mantis_metadata["autofocus"]["stage"]
 
 
-def test_demo_acquisition_produces_output(demo_engine, tmp_path):
-    # Run a full acquisition to a temp directory using the demo config.
-    # The demo.yaml specifies: 2 channels, 13 z-slices, 3 timepoints, 8 positions
-    # With the demo camera this completes quickly without real hardware.
-    demo_engine.acquire(
-        output_dir=tmp_path,
-        name="test_acq",
-        mda_config=DEMO_MDA_CONFIG,
-    )
-
-    # Verify the output zarr directory was created
-    zarr_dirs = list(tmp_path.glob("test_acq_*.ome.zarr"))
-    assert len(zarr_dirs) == 1, f"Expected 1 zarr dir, found {zarr_dirs}"
-    assert zarr_dirs[0].is_dir()
-
-
 def test_demo_acquisition_collects_frames(demo_engine, demo_mda_sequence):
     # Run setup_sequence + iterate events to verify frames are produced.
     # This is a lighter-weight check than full acquire() — no file I/O.
@@ -101,6 +89,44 @@ def test_demo_acquisition_collects_frames(demo_engine, demo_mda_sequence):
     assert len(frames_collected) > 0, "No frames were collected during demo acquisition"
 
 
+def test_demo_acquisition_produces_output(demo_engine, demo_mda_sequence, tmp_path):
+    # Run a full acquisition to a temp directory using the demo config.
+    # The demo.yaml specifies: 2 channels, 13 z-slices, 3 timepoints, 8 positions
+    # With the demo camera this completes quickly without real hardware.
+    demo_engine.acquire(
+        output_dir=tmp_path,
+        name="test_acq",
+        mda_config=DEMO_MDA_CONFIG,
+    )
+
+    # Verify the output zarr directory was created
+    zarr_dirs = list(tmp_path.glob("test_acq_*.ome.zarr"))
+    assert len(zarr_dirs) == 1, f"Expected 1 zarr dir, found {zarr_dirs}"
+
+    # Load dataset with iohub and inspect metadata
+    dataset = open_ome_zarr(zarr_dirs[0])
+    assert isinstance(dataset, Plate)
+
+    positions = list(dataset.positions())
+    num_positions = len(positions)
+    _pos_name, _pos = positions[0]
+    _data = _pos.data
+
+    assert num_positions == 8, f"Expected 8 positions, found {num_positions}"
+    # Confirm expected position name
+    assert _pos_name == "A/1/fov0"
+    assert _data.shape == (
+        demo_mda_sequence.sizes["t"],
+        demo_mda_sequence.sizes["c"],
+        demo_mda_sequence.sizes["z"],
+        demo_mda_sequence.metadata["mantis"]["roi"][3],
+        demo_mda_sequence.metadata["mantis"]["roi"][2],
+    )
+    assert all(
+        channel.config in dataset.channel_names for channel in demo_mda_sequence.channels
+    )
+
+
 def test_teardown_after_setup(demo_engine, demo_mda_sequence):
     core = demo_engine.mmcore
     # Setup then teardown — engine should not raise and state should be clean
@@ -110,11 +136,10 @@ def test_teardown_after_setup(demo_engine, demo_mda_sequence):
     assert core.getProperty("Z", "UseSequences") == "No"
 
 
-def test_single_channel_acquisition(demo_engine, mantis_metadata, tmp_path):
-    # Acquisition with a single channel and minimal time/z settings
+def test_timelapse_acquisition(demo_engine, mantis_metadata):
+    # Acquisition with a timelapse plan
     seq = MDASequence(
-        channels=[{"config": "DAPI", "group": "Channel", "exposure": 10.0}],
-        z_plan={"top": 15, "bottom": -15, "step": 15},
+        time_plan={"interval": 0, "loops": 10},
         metadata={"mantis": mantis_metadata},
     )
 
@@ -129,53 +154,7 @@ def test_single_channel_acquisition(demo_engine, mantis_metadata, tmp_path):
 
     core.mda.run(seq)
 
-    assert len(frames_collected) > 0, "No frames collected for single-channel acquisition"
-
-
-def test_multi_timepoint_acquisition(demo_engine, mantis_metadata):
-    # Acquisition with multiple timepoints, single channel, no positions
-    seq = MDASequence(
-        channels=[{"config": "DAPI", "group": "Channel", "exposure": 5.0}],
-        time_plan={"interval": 0.1, "loops": 3},
-        z_plan={"top": 15, "bottom": -15, "step": 15},
-        metadata={"mantis": mantis_metadata},
-    )
-
-    core = demo_engine.mmcore
-    demo_engine.setup_sequence(seq)
-
-    frames_collected = []
-
-    @core.mda.events.frameReady.connect
-    def _on_frame(img: np.ndarray, _event, _meta) -> None:
-        frames_collected.append(img)
-
-    core.mda.run(seq)
-
-    assert len(frames_collected) > 0, "No frames collected for multi-timepoint acquisition"
-
-
-def test_multi_position_acquisition(demo_engine, mantis_metadata):
-    # Acquisition across multiple stage positions
-    seq = MDASequence(
-        channels=[{"config": "DAPI", "group": "Channel", "exposure": 5.0}],
-        stage_positions=[(0, 0), (100, 0), (0, 100)],
-        z_plan={"top": 15, "bottom": -15, "step": 15},
-        metadata={"mantis": mantis_metadata},
-    )
-
-    core = demo_engine.mmcore
-    demo_engine.setup_sequence(seq)
-
-    frames_collected = []
-
-    @core.mda.events.frameReady.connect
-    def _on_frame(img: np.ndarray, _event, _meta) -> None:
-        frames_collected.append(img)
-
-    core.mda.run(seq)
-
-    assert len(frames_collected) > 0, "No frames collected for multi-position acquisition"
+    assert len(frames_collected) == 10, "No frames collected for timelapse acquisition"
 
 
 def test_autofocus_disabled_acquisition(demo_engine, mantis_metadata):
