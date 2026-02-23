@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools >= 61", "setuptools_scm[toml]>=8.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
 
 [project]
 name = "shrimpy"
@@ -23,9 +23,8 @@ classifiers = [
 dependencies = [
   "click",
   "numpy",
-  # TODO: replace [all] with specific writer backend
-  "ome-writers[acquire-zarr] @ git+https://github.com/pymmcore-plus/ome-writers",
-  "pymmcore_plus==0.17.2",
+  "ome-writers[acquire-zarr]",
+  "pymmcore-plus",
   "pymmcore-widgets",
   "PyYAML",
   "qtpy",
@@ -34,31 +33,31 @@ dependencies = [
 
 
 [project.optional-dependencies]
-# note that dev dependencies are only pinned to major versions
+build = ["build", "twine"]
+
+[dependency-groups]
 dev = [
   "pre-commit~=4.5",
   "pytest~=9.0",
   "ruff~=0.15",
 ]
-build = ["build", "twine"]
 
 [project.scripts]
 shrimpy = "shrimpy.cli.main:cli"
 
-[tool.setuptools]
-# allow use of __file__ to load data files included in the package
-zip-safe = false
+[tool.hatch.version]
+source = "vcs"
 
-[tool.setuptools.packages.find]
-# Exclude tests from distribution package
-exclude = ["shrimpy.tests*"]
-
-[tool.setuptools_scm]
-# Version is derived from git tags
-# Format: for tagged commits: "1.2.0"
-#         for dev commits: "1.2.0.post3+ge9f2970"
+[tool.hatch.version.raw-options]
 version_scheme = "post-release"
 local_scheme = "no-local-version"
+
+[tool.hatch.build.targets.wheel]
+packages = ["shrimpy"]
+
+[tool.uv.sources]
+ome-writers = { path = "../ome-writers", editable = true }
+pymmcore-plus = { path = "../pymmcore-plus", editable = true }
 
 [tool.ruff]
 # Ruff replaces black, isort, flake8, and pylint

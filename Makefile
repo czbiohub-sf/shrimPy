@@ -2,22 +2,22 @@ PACKAGE_NAME := shrimpy
 
 .PHONY: install
 install:
-	pip install -e ".[dev]"
+	uv sync
 
 .PHONY: uninstall
 uninstall:
-	pip uninstall -y $(PACKAGE_NAME)
+	uv pip uninstall $(PACKAGE_NAME)
 
 .PHONY: check
 check:
-	ruff format --check .
-	ruff check .
+	uv run ruff format --check .
+	uv run ruff check .
 
 .PHONY: format
 format:
-	ruff format .
-	ruff check --fix .
+	uv run ruff format .
+	uv run ruff check --fix .
 
 .PHONY: test
 test:
-	python -m pytest
+	uv run pytest
