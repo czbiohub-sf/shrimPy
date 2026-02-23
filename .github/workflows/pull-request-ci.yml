@@ -56,7 +56,7 @@ jobs:
       run: uv sync
 
     - name: Install mmcore
-      run: mmcore install --test-adapters
+      run: uv run mmcore install --test-adapters
 
     - name: Run tests
       run: make test
