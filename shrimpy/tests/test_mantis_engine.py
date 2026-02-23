@@ -16,7 +16,6 @@ import pytest
 from useq import MDAEvent, MDASequence
 
 from shrimpy.mantis.mantis_engine import (
-    DEFAULT_XY_STAGE_SPEED,
     DEMO_PFS_METHOD,
     FAST_XY_STAGE_SPEED,
     MANTIS_XY_STAGE_NAME,
@@ -402,24 +401,32 @@ def test_exec_event_autofocus_failure_yields_zero_padded_image(engine, mock_core
 # ---------------------------------------------------------------------------
 
 
-def test_teardown_mantis_stage_speed_reset(engine, mock_core):
-    # Mantis XY stage → speed should be reset to default
-    engine._xy_stage_device = MANTIS_XY_STAGE_NAME
-    seq = MDASequence()
+def test_teardown_applies_reset_hardware_sequencing_settings(engine, mock_core):
+    # Sequence with reset_hardware_sequencing_settings → applies each setting
+    seq = MDASequence(
+        metadata={
+            "mantis": {
+                "reset_hardware_sequencing_settings": [
+                    ["Z", "UseSequences", "No"],
+                ],
+            }
+        }
+    )
     with patch("shrimpy.mantis.mantis_engine.MDAEngine.teardown_sequence"):
         engine.teardown_sequence(seq)
-
-    mock_core.setProperty.assert_any_call(
-        MANTIS_XY_STAGE_NAME, "MotorSpeedX-S(mm/s)", DEFAULT_XY_STAGE_SPEED
-    )
-    mock_core.setProperty.assert_any_call(
-        MANTIS_XY_STAGE_NAME, "MotorSpeedY-S(mm/s)", DEFAULT_XY_STAGE_SPEED
-    )
+    mock_core.setProperty.assert_called_once_with("Z", "UseSequences", "No")
 
 
-def test_teardown_non_mantis_stage_no_speed_reset(engine, mock_core):
-    # Non-Mantis XY stage → no speed reset calls
-    engine._xy_stage_device = "DemoXYStage"
+def test_teardown_no_reset_settings(engine, mock_core):
+    # Sequence without reset_hardware_sequencing_settings → no setProperty calls
+    seq = MDASequence(metadata={"mantis": {}})
+    with patch("shrimpy.mantis.mantis_engine.MDAEngine.teardown_sequence"):
+        engine.teardown_sequence(seq)
+    mock_core.setProperty.assert_not_called()
+
+
+def test_teardown_no_mantis_metadata(engine, mock_core):
+    # Sequence with no mantis metadata at all → no setProperty calls
     seq = MDASequence()
     with patch("shrimpy.mantis.mantis_engine.MDAEngine.teardown_sequence"):
         engine.teardown_sequence(seq)

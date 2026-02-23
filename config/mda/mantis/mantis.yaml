@@ -88,6 +88,8 @@ metadata:
     reset_hardware_sequencing_settings:
       - ['TS2_TTL1-8', 'Blanking', 'Off']
       - ['TS2_DAC03', 'Sequence', 'Off']
+      - ['XYStage:XY:31', 'MotorSpeedX-S(mm/s)', '5.75']
+      - ['XYStage:XY:31', 'MotorSpeedY-S(mm/s)', '5.75']
     autofocus:
       enabled: false
       method: PFS

@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 
 MANTIS_XY_STAGE_NAME = "XYStage:XY:31"
 DEMO_PFS_METHOD = "demo-PFS"
-DEFAULT_XY_STAGE_SPEED = 5.75  # in mm/s, specific to mantis XY stage
 SLOW_XY_STAGE_SPEED = 2.0  # in mm/s, used for short moves to maintain autofocus lock
 FAST_XY_STAGE_SPEED = 5.75  # in mm/s, used for long moves
 NEGLIGIBLE_XY_DISTANCE = 1  # in um, moves below this are ignored
@@ -114,7 +113,6 @@ class MantisEngine(MDAEngine):
             core.setROI(*roi)
 
         # Apply setup hardware sequencing settings
-        # TODO: reset hardware sequencing settings after acquisition
         if setup_hardware_sequencing_settings := microscope_meta.get(
             "setup_hardware_sequencing_settings"
         ):
@@ -193,14 +191,22 @@ class MantisEngine(MDAEngine):
             yield from super().exec_event(event)
 
     def teardown_sequence(self, sequence):
-        if self._xy_stage_device == MANTIS_XY_STAGE_NAME:
-            self.mmcore.setProperty(
-                self._xy_stage_device, "MotorSpeedX-S(mm/s)", DEFAULT_XY_STAGE_SPEED
+        super().teardown_sequence(sequence)
+
+        core = self.mmcore
+        microscope_meta = sequence.metadata.get("mantis", {}) if sequence.metadata else {}
+
+        if reset_hardware_sequencing_settings := microscope_meta.get(
+            "reset_hardware_sequencing_settings"
+        ):
+            logger.info(
+                f"Resetting {len(reset_hardware_sequencing_settings)} hardware sequencing settings"
             )
-            self.mmcore.setProperty(
-                self._xy_stage_device, "MotorSpeedY-S(mm/s)", DEFAULT_XY_STAGE_SPEED
-            )
-        return super().teardown_sequence(sequence)
+            for setting in reset_hardware_sequencing_settings:
+                logger.debug(f"  Setting {setting[0]}.{setting[1]} = {setting[2]}")
+                core.setProperty(setting[0], setting[1], setting[2])
+        else:
+            logger.debug("No reset hardware sequencing settings specified")
 
     def _adjust_xy_stage_speed(self, event: MDAEvent) -> None:
         """Modulate XY stage speed based on distance to target position.

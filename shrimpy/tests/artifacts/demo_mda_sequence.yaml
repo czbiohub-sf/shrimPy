@@ -26,8 +26,8 @@ stage_positions:
 # Define time plan
 time_plan:
   prioritize_duration: true
-  interval: 5.0
-  duration: 15.0
+  interval: 1.0
+  loops: 3.0
 
 # Define z plan
 z_plan:

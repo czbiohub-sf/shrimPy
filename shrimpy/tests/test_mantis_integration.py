@@ -34,7 +34,7 @@ def demo_engine(demo_core: CMMCorePlus) -> MantisEngine:
 
 
 @pytest.fixture
-def demo_sequence() -> MDASequence:
+def demo_mda_sequence() -> MDASequence:
     """Load the full demo MDA sequence from the project config."""
     assert DEMO_MDA_CONFIG.exists(), f"Demo config not found: {DEMO_MDA_CONFIG}"
     return MDASequence.from_file(DEMO_MDA_CONFIG)
@@ -45,9 +45,10 @@ def demo_sequence() -> MDASequence:
 # ---------------------------------------------------------------------------
 
 
-def test_setup_applies_demo_settings(demo_engine, demo_sequence, mantis_metadata):
-    # setup_sequence should apply all mantis metadata from demo.yaml
-    demo_engine.setup_sequence(demo_sequence)
+def test_setup_applies_demo_settings(demo_engine, demo_mda_sequence, mantis_metadata):
+    # setup_sequence should apply all mantis metadata from demo.yaml,
+    # tested in test_setup_sequence_*
+    demo_engine.setup_sequence(demo_mda_sequence)
 
     core = demo_engine.mmcore
 
@@ -81,11 +82,11 @@ def test_demo_acquisition_produces_output(demo_engine, tmp_path):
     assert zarr_dirs[0].is_dir()
 
 
-def test_demo_acquisition_collects_frames(demo_engine, demo_sequence):
+def test_demo_acquisition_collects_frames(demo_engine, demo_mda_sequence):
     # Run setup_sequence + iterate events to verify frames are produced.
     # This is a lighter-weight check than full acquire() — no file I/O.
     core = demo_engine.mmcore
-    demo_engine.setup_sequence(demo_sequence)
+    demo_engine.setup_sequence(demo_mda_sequence)
 
     frames_collected = []
 
@@ -93,21 +94,20 @@ def test_demo_acquisition_collects_frames(demo_engine, demo_sequence):
     def _on_frame(img: np.ndarray, _event, _meta) -> None:
         frames_collected.append(img)
 
-    core.mda.run(demo_sequence)
+    core.mda.run(demo_mda_sequence)
 
     # With demo-PFS (50% success rate) some positions may yield zero frames,
     # but we should still get a substantial number of frames overall
     assert len(frames_collected) > 0, "No frames were collected during demo acquisition"
 
 
-def test_teardown_after_setup(demo_engine, demo_sequence):
+def test_teardown_after_setup(demo_engine, demo_mda_sequence):
+    core = demo_engine.mmcore
     # Setup then teardown — engine should not raise and state should be clean
-    demo_engine.setup_sequence(demo_sequence)
-    demo_engine.teardown_sequence(demo_sequence)
-
-    # The demo XY stage is not the Mantis stage, so no speed reset expected,
-    # but teardown should complete without error
-    assert demo_engine._xy_stage_device is not None
+    demo_engine.setup_sequence(demo_mda_sequence)
+    assert core.getProperty("Z", "UseSequences") == "Yes"
+    demo_engine.teardown_sequence(demo_mda_sequence)
+    assert core.getProperty("Z", "UseSequences") == "No"
 
 
 def test_single_channel_acquisition(demo_engine, mantis_metadata, tmp_path):
