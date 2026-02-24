@@ -16,7 +16,7 @@ import pytest
 from iohub import open_ome_zarr
 from iohub.ngff import Plate
 from pymmcore_plus.core import CMMCorePlus
-from useq import MDASequence
+from useq import MDASequence, Position
 
 from shrimpy.mantis.mantis_engine import DEMO_PFS_METHOD, MantisEngine
 
@@ -108,7 +108,7 @@ def test_demo_mda_acquisition(demo_engine, demo_mda_sequence, tmp_path):
     assert len(zarr_dirs) == 1, f"Expected 1 zarr dir, found {zarr_dirs}"
 
     # Load dataset with iohub and inspect metadata
-    dataset = open_ome_zarr(zarr_dirs[0])
+    dataset = open_ome_zarr(zarr_dirs[0], version="0.5")
     assert isinstance(dataset, Plate)
 
     positions = list(dataset.positions())
@@ -188,14 +188,14 @@ def test_autofocus_disabled_acquisition(demo_engine, mantis_metadata):
     )
 
 
-def test_autofocus_failure_pads_with_zeros(demo_engine, mantis_metadata):
-    """Verify that when autofocus fails, exec_event yields zero-padded frames.
+def test_autofocus_failure_pads_with_zeros(demo_engine, mantis_metadata, tmp_path):
+    """Verify that when autofocus fails, the written zarr contains zero-padded data.
 
-    Runs a 3-position, 5-timepoint acquisition with sequenced z-slices.
-    Uses fail_at_index to deterministically fail autofocus at specific
-    (t, p) combinations. Autofocus runs once per position per timepoint
-    (in setup_event), and exec_event pads all z-slices with zeros when
-    it fails.
+    Runs a 3-position, 5-timepoint acquisition with sequenced z-slices via
+    engine.acquire(). Uses fail_at_index to deterministically fail autofocus
+    at specific (t, p) combinations, then reads back the zarr with iohub to
+    verify that failed positions contain all-zero data and successful ones
+    contain non-zero camera data.
     """
     fail_at_index = [
         {"t": 1, "p": 0},
@@ -205,48 +205,43 @@ def test_autofocus_failure_pads_with_zeros(demo_engine, mantis_metadata):
         {"t": 4, "p": 1},
     ]
 
+    position_names = ["0", "1", "2"]
+    position_coords = [(0, 0), (100, 0), (0, 100)]
     seq = MDASequence(
-        stage_positions=[(0, 0), (100, 0), (0, 100)],
+        stage_positions=[
+            Position(x=x, y=y, name=name)
+            for name, (x, y) in zip(position_names, position_coords, strict=True)
+        ],
         time_plan={"interval": 0, "loops": 5},
+        channels=[{"config": "DAPI", "exposure": 1.0}],
         z_plan={"top": 15, "bottom": -15, "step": 15},  # 3 z-slices
         metadata={"mantis": mantis_metadata},
     )
 
-    core = demo_engine.mmcore
-
     # Set deterministic autofocus failure directly on the engine
     demo_engine._autofocus_fail_at_index = fail_at_index
 
-    # Collect (frame, event) pairs
-    results = []
+    # Run full acquisition pipeline (setup, acquire, write to zarr)
+    demo_engine.acquire(output_dir=tmp_path, name="af_test", mda_config=seq)
 
-    @core.mda.events.frameReady.connect
-    def _on_frame(img: np.ndarray, event, _meta) -> None:
-        results.append((img.copy(), event))
+    # Read back the written zarr store
+    zarr_dirs = list(tmp_path.glob("af_test_*.ome.zarr"))
+    assert len(zarr_dirs) == 1, f"Expected 1 zarr dir, found {zarr_dirs}"
 
-    core.mda.run(seq)
-
-    # 5 timepoints × 3 positions × 3 z-slices = 45 frames total
-    n_timepoints = seq.sizes["t"]
-    n_positions = seq.sizes["p"]
-    n_z_slices = seq.sizes["z"]
-    expected = n_timepoints * n_positions * n_z_slices
-    assert len(results) == expected, f"Expected {expected} frames, got {len(results)}"
-
-    # Build a set of (t, p) tuples that should fail
+    # Build a set of (t, p) tuples that should fail for failed positions
     fail_set = {(idx["t"], idx["p"]) for idx in fail_at_index}
 
-    for img, event in results:
-        t_idx = event.index.get("t", 0)
-        p_idx = event.index.get("p", 0)
-        z_idx = event.index.get("z", 0)
-        if (t_idx, p_idx) in fail_set:
-            # Autofocus failed → all z-slices zero-padded
-            assert np.all(img == 0), (
-                f"Expected zeros at t={t_idx}, p={p_idx}, z={z_idx}, got non-zero data"
-            )
-        else:
-            # Autofocus succeeded → real camera data
-            assert np.any(img != 0), (
-                f"Expected non-zero data at t={t_idx}, p={p_idx}, z={z_idx}, got all zeros"
-            )
+    c_idx = 0
+    for pos_idx, pos_key in enumerate(position_names):
+        dataset = open_ome_zarr(zarr_dirs[0] / pos_key, layout="fov")
+        data = dataset.data.numpy()
+        for t_idx in range(seq.sizes["t"]):
+            volume = data[t_idx, c_idx]  # shape: (Z, Y, X)
+            if (t_idx, pos_idx) in fail_set:
+                assert np.all(volume == 0), (
+                    f"Expected zeros at t={t_idx}, p={pos_idx}, got non-zero data"
+                )
+            else:
+                assert np.any(volume != 0), (
+                    f"Expected non-zero data at t={t_idx}, p={pos_idx}, got all zeros"
+                )
