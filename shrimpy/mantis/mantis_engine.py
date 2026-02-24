@@ -23,7 +23,10 @@ logger = logging.getLogger(__name__)
 
 MANTIS_XY_STAGE_NAME = "XYStage:XY:31"
 DEMO_PFS_METHOD = "demo-PFS"
-DEFAULT_XY_STAGE_SPEED = 5.75  # in mm/s, specific to mantis XY stage
+SLOW_XY_STAGE_SPEED = 2.0  # in mm/s, used for short moves to maintain autofocus lock
+FAST_XY_STAGE_SPEED = 5.75  # in mm/s, used for long moves
+NEGLIGIBLE_XY_DISTANCE = 1  # in um, moves below this are ignored
+SHORT_XY_DISTANCE = 2000  # in um, threshold between slow and fast speed
 
 
 class MantisEngine(MDAEngine):
@@ -53,6 +56,7 @@ class MantisEngine(MDAEngine):
         self._autofocus_success = False
         self._autofocus_stage = None
         self._autofocus_method = None
+        self._autofocus_fail_at_index = None
         self._xy_stage_device = None
         self._xy_stage_speed = None
 
@@ -110,7 +114,6 @@ class MantisEngine(MDAEngine):
             core.setROI(*roi)
 
         # Apply setup hardware sequencing settings
-        # TODO: reset hardware sequencing settings after acquisition
         if setup_hardware_sequencing_settings := microscope_meta.get(
             "setup_hardware_sequencing_settings"
         ):
@@ -189,14 +192,22 @@ class MantisEngine(MDAEngine):
             yield from super().exec_event(event)
 
     def teardown_sequence(self, sequence):
-        if self._xy_stage_device == MANTIS_XY_STAGE_NAME:
-            self.mmcore.setProperty(
-                self._xy_stage_device, "MotorSpeedX-S(mm/s)", DEFAULT_XY_STAGE_SPEED
+        super().teardown_sequence(sequence)
+
+        core = self.mmcore
+        microscope_meta = sequence.metadata.get("mantis", {}) if sequence.metadata else {}
+
+        if reset_hardware_sequencing_settings := microscope_meta.get(
+            "reset_hardware_sequencing_settings"
+        ):
+            logger.info(
+                f"Resetting {len(reset_hardware_sequencing_settings)} hardware sequencing settings"
             )
-            self.mmcore.setProperty(
-                self._xy_stage_device, "MotorSpeedY-S(mm/s)", DEFAULT_XY_STAGE_SPEED
-            )
-        return super().teardown_sequence(sequence)
+            for setting in reset_hardware_sequencing_settings:
+                logger.debug(f"  Setting {setting[0]}.{setting[1]} = {setting[2]}")
+                core.setProperty(setting[0], setting[1], setting[2])
+        else:
+            logger.debug("No reset hardware sequencing settings specified")
 
     def _adjust_xy_stage_speed(self, event: MDAEvent) -> None:
         """Modulate XY stage speed based on distance to target position.
@@ -209,11 +220,6 @@ class MantisEngine(MDAEngine):
         event : MDAEvent
             The MDA event containing the target XY position.
         """
-        slow_speed = 2.0  # in mm/s
-        fast_speed = 5.75  # in mm/s
-        negligible_distance = 1  # in um
-        short_distance = 2000  # in um
-
         if not self._use_autofocus or not self._xy_stage_device:
             return
 
@@ -229,10 +235,10 @@ class MantisEngine(MDAEngine):
 
         distance = np.linalg.norm([target_x - last_x, target_y - last_y])
         # If the move is negligible, skip speed adjustment
-        if distance < negligible_distance:
+        if distance < NEGLIGIBLE_XY_DISTANCE:
             return
 
-        speed = slow_speed if distance < short_distance else fast_speed
+        speed = SLOW_XY_STAGE_SPEED if distance < SHORT_XY_DISTANCE else FAST_XY_STAGE_SPEED
 
         # If the speed is already set appropriately, no need to update
         if self._xy_stage_speed == speed:
@@ -250,7 +256,11 @@ class MantisEngine(MDAEngine):
             return
 
         if self._autofocus_method == DEMO_PFS_METHOD:
-            self._engage_demo_pfs(success_rate=0.5)
+            self._engage_demo_pfs(
+                event=event,
+                success_rate=0.5,
+                fail_at_index=self._autofocus_fail_at_index,
+            )
         else:
             # TODO: fix after resolving https://github.com/czbiohub-sf/shrimPy/issues/242
             z_position = self.mmcore.getPosition(self._autofocus_stage)
@@ -262,16 +272,41 @@ class MantisEngine(MDAEngine):
             # )
             self._engage_nikon_pfs(self._autofocus_stage, z_position)
 
-    def _engage_demo_pfs(self, success_rate: float = 0.9):
-        """
-        Engage demo PFS continuous autofocus.
+    def _engage_demo_pfs(
+        self,
+        event: MDAEvent | None = None,
+        success_rate: float = 0.9,
+        fail_at_index: list[dict] | None = None,
+    ):
+        """Engage demo PFS continuous autofocus.
+
+        If ``fail_at_index`` is provided, autofocus deterministically fails
+        when the event index matches any entry in the list. Otherwise, success
+        is random based on ``success_rate``.
 
         Parameters
         ----------
+        event : MDAEvent | None
+            The current MDA event (used for deterministic failure matching).
         success_rate : float
-            The probability of success for the demo PFS call.
+            The probability of success for the demo PFS call. Only used when
+            ``fail_at_index`` is not provided.
+        fail_at_index : list[dict] | None
+            List of index dicts to fail at, e.g. ``[{"p": 0}, {"t": 1, "p": 2}]``.
+            Each dict is matched against the event index — if all keys in the
+            dict match the event index, autofocus fails at that event.
         """
-        self._autofocus_success = np.random.random() < success_rate
+        if fail_at_index is not None and event is not None:
+            # For SequencedEvents, use the first sub-event's index
+            event_index = (
+                event.events[0].index if isinstance(event, SequencedEvent) else event.index
+            )
+            self._autofocus_success = not any(
+                all(event_index.get(k) == v for k, v in idx.items()) for idx in fail_at_index
+            )
+        else:
+            self._autofocus_success = np.random.random() < success_rate
+
         if self._autofocus_success:
             logger.debug(f"{DEMO_PFS_METHOD} call succeeded")
         else:
@@ -402,35 +437,6 @@ class MantisEngine(MDAEngine):
             self.mmcore.mda.run(sequence)
 
         logger.info("Acquisition completed successfully")
-
-    @staticmethod
-    def initialize_core(mm_config: str | Path | None = None) -> CMMCorePlus:
-        """Initialize and configure the Core instance for Mantis.
-
-        Parameters
-        ----------
-        mm_config : str | Path | None
-            Path to the Micro-Manager configuration file. If None, uses default demo config.
-
-        Returns
-        -------
-        CMMCorePlus (or UniMMCore)
-            Configured core instance ready for use.
-        """
-        logger.info("Initializing Micro-Manager core")
-        core = CMMCorePlus().instance()
-
-        if mm_config is None:
-            logger.info("No configuration file provided. Using MMConfig_demo.cfg.")
-            _config = None
-        else:
-            logger.info(f"Loading Micro-Manager configuration from: {mm_config}")
-            _config = mm_config
-
-        core.loadSystemConfiguration(_config)
-        logger.info("Micro-Manager core initialized successfully")
-
-        return core
 
 
 def _get_next_acquisition_name(output_dir: Path, name: str) -> str:

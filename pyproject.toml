@@ -40,6 +40,7 @@ dev = [
   "pre-commit~=4.5",
   "pytest~=9.0",
   "ruff~=0.15",
+  "iohub==0.3.0a6"
 ]
 
 [project.scripts]
