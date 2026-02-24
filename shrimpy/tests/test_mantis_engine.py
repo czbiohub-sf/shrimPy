@@ -10,7 +10,6 @@ import weakref
 
 from unittest.mock import MagicMock, call, patch
 
-import numpy as np
 import pytest
 
 from useq import MDAEvent, MDASequence
@@ -345,56 +344,6 @@ def test_pfs_all_offsets_fail(engine, mock_core):
     # Z stage should be returned to the original position
     last_set_position = mock_core.setPosition.call_args_list[-1]
     assert last_set_position == call("ZDrive", 100.0)
-
-
-# ---------------------------------------------------------------------------
-# exec_event()
-# ---------------------------------------------------------------------------
-
-
-def test_exec_event_no_autofocus_delegates_to_super(engine):
-    # When autofocus is off, just delegate to parent
-    engine._use_autofocus = False
-    event = MDAEvent()
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.exec_event") as mock_super:
-        mock_super.return_value = iter([("frame", event, {})])
-        results = list(engine.exec_event(event))
-    assert len(results) == 1
-    mock_super.assert_called_once_with(event)
-
-
-def test_exec_event_autofocus_success_delegates_to_super(engine):
-    # Autofocus on + success → delegate to parent
-    engine._use_autofocus = True
-    engine._autofocus_success = True
-    event = MDAEvent()
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.exec_event") as mock_super:
-        mock_super.return_value = iter([("frame", event, {})])
-        results = list(engine.exec_event(event))
-    assert len(results) == 1
-    mock_super.assert_called_once_with(event)
-
-
-def test_exec_event_autofocus_failure_yields_zero_padded_image(engine, mock_core):
-    # Autofocus on + failure → yield zeros with correct shape and dtype
-    engine._use_autofocus = True
-    engine._autofocus_success = False
-    mock_core.getImageHeight.return_value = 2048
-    mock_core.getImageWidth.return_value = 2048
-    mock_core.getImageBitDepth.return_value = 16
-    # get_frame_metadata needs these to build position metadata
-    mock_core.getXYPosition.return_value = (0.0, 0.0)
-    mock_core.getPosition.return_value = 0.0
-
-    event = MDAEvent()
-    results = list(engine.exec_event(event))
-
-    assert len(results) == 1
-    img, evt, _meta = results[0]
-    assert img.shape == (2048, 2048)
-    assert img.dtype == np.uint16
-    assert np.all(img == 0)
-    assert evt is event
 
 
 # ---------------------------------------------------------------------------

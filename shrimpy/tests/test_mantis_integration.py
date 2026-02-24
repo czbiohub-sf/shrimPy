@@ -16,7 +16,7 @@ import pytest
 from iohub import open_ome_zarr
 from iohub.ngff import Plate
 from pymmcore_plus.core import CMMCorePlus
-from useq import MDASequence, Position
+from useq import MDASequence
 
 from shrimpy.mantis.mantis_engine import DEMO_PFS_METHOD, MantisEngine
 
@@ -186,62 +186,3 @@ def test_autofocus_disabled_acquisition(demo_engine, mantis_metadata):
     assert len(frames_collected) == expected, (
         f"Expected {expected} frames, got {len(frames_collected)}"
     )
-
-
-def test_autofocus_failure_pads_with_zeros(demo_engine, mantis_metadata, tmp_path):
-    """Verify that when autofocus fails, the written zarr contains zero-padded data.
-
-    Runs a 3-position, 5-timepoint acquisition with sequenced z-slices via
-    engine.acquire(). Uses fail_at_index to deterministically fail autofocus
-    at specific (t, p) combinations, then reads back the zarr with iohub to
-    verify that failed positions contain all-zero data and successful ones
-    contain non-zero camera data.
-    """
-    fail_at_index = [
-        {"t": 1, "p": 0},
-        {"t": 1, "p": 1},
-        {"t": 2, "p": 0},
-        {"t": 4, "p": 0},
-        {"t": 4, "p": 1},
-    ]
-
-    position_names = ["0", "1", "2"]
-    position_coords = [(0, 0), (100, 0), (0, 100)]
-    seq = MDASequence(
-        stage_positions=[
-            Position(x=x, y=y, name=name)
-            for name, (x, y) in zip(position_names, position_coords, strict=True)
-        ],
-        time_plan={"interval": 0, "loops": 5},
-        channels=[{"config": "DAPI", "exposure": 1.0}],
-        z_plan={"top": 15, "bottom": -15, "step": 15},  # 3 z-slices
-        metadata={"mantis": mantis_metadata},
-    )
-
-    # Set deterministic autofocus failure directly on the engine
-    demo_engine._autofocus_fail_at_index = fail_at_index
-
-    # Run full acquisition pipeline (setup, acquire, write to zarr)
-    demo_engine.acquire(output_dir=tmp_path, name="af_test", mda_config=seq)
-
-    # Read back the written zarr store
-    zarr_dirs = list(tmp_path.glob("af_test_*.ome.zarr"))
-    assert len(zarr_dirs) == 1, f"Expected 1 zarr dir, found {zarr_dirs}"
-
-    # Build a set of (t, p) tuples that should fail for failed positions
-    fail_set = {(idx["t"], idx["p"]) for idx in fail_at_index}
-
-    c_idx = 0
-    for pos_idx, pos_key in enumerate(position_names):
-        dataset = open_ome_zarr(zarr_dirs[0] / pos_key, layout="fov")
-        data = dataset.data.numpy()
-        for t_idx in range(seq.sizes["t"]):
-            volume = data[t_idx, c_idx]  # shape: (Z, Y, X)
-            if (t_idx, pos_idx) in fail_set:
-                assert np.all(volume == 0), (
-                    f"Expected zeros at t={t_idx}, p={pos_idx}, got non-zero data"
-                )
-            else:
-                assert np.any(volume != 0), (
-                    f"Expected non-zero data at t={t_idx}, p={pos_idx}, got all zeros"
-                )

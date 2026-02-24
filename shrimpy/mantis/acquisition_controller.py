@@ -24,6 +24,18 @@ from shrimpy.mantis.mantis_engine import MantisEngine
 logger = logging.getLogger(__name__)
 
 
+def _event_index(event: MDAEvent) -> dict:
+    """Extract the event index, using the first sub-event for SequencedEvents."""
+    if isinstance(event, SequencedEvent):
+        return dict(event.events[0].index)
+    return dict(event.index)
+
+
+def _n_frames(event: MDAEvent) -> int:
+    """Return the number of frames an event will produce."""
+    return len(event.events) if isinstance(event, SequencedEvent) else 1
+
+
 class AcquisitionController:
     """Controls acquisition flow: autofocus, event queuing, frame skipping.
 
@@ -79,11 +91,15 @@ class AcquisitionController:
         # Start MDA runner in background with queue iterator
         queue_iter = iter(self._queue.get, self.STOP_EVENT)
         mda_thread = core.run_mda(queue_iter)
+        logger.info("Starting acquisition sequence")
 
         try:
             # Iterate over events from event_iterator (handles hardware sequencing).
             # SequencedEvents bundle z-slices; plain MDAEvents are individual frames.
             for event in self.engine.event_iterator(self.sequence):
+                idx = _event_index(event)
+                n = _n_frames(event)
+
                 self.engine._adjust_xy_stage_speed(event)
                 self.engine._set_event_xy_position(event)
                 self.engine._engage_autofocus(event)
@@ -93,17 +109,17 @@ class AcquisitionController:
                     self._event_finished.wait()
                     self._event_finished.clear()
                     self._queue.put(event)
+                    logger.debug(f"Queued event {idx} ({n} frame(s))")
                 else:
                     # Wait for MDA thread to finish the previous event
                     # before calling skip, to keep the stream in order
                     self._event_finished.wait()
-                    n = len(event.events) if isinstance(event, SequencedEvent) else 1
-                    logger.debug(f"Autofocus failed, skipping {n} frame(s)")
                     self.stream.skip(frames=n)
+                    logger.info(f"Autofocus failed at {idx}, skipped {n} frame(s)")
         finally:
             self._queue.put(self.STOP_EVENT)
-            # Wait for the MDA thread to finish processing all queued events
             mda_thread.join()
+            logger.info("Acquisition completed successfully")
 
     def on_frame_ready(self, frame: np.ndarray, event: MDAEvent, meta: dict) -> None:
         """Called when a frame is acquired. Override for smart microscopy.
