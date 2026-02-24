@@ -56,6 +56,7 @@ class MantisEngine(MDAEngine):
         self._autofocus_success = False
         self._autofocus_stage = None
         self._autofocus_method = None
+        self._autofocus_fail_at_index = None
         self._xy_stage_device = None
         self._xy_stage_speed = None
 
@@ -255,7 +256,11 @@ class MantisEngine(MDAEngine):
             return
 
         if self._autofocus_method == DEMO_PFS_METHOD:
-            self._engage_demo_pfs(success_rate=0.5)
+            self._engage_demo_pfs(
+                event=event,
+                success_rate=0.5,
+                fail_at_index=self._autofocus_fail_at_index,
+            )
         else:
             # TODO: fix after resolving https://github.com/czbiohub-sf/shrimPy/issues/242
             z_position = self.mmcore.getPosition(self._autofocus_stage)
@@ -267,16 +272,41 @@ class MantisEngine(MDAEngine):
             # )
             self._engage_nikon_pfs(self._autofocus_stage, z_position)
 
-    def _engage_demo_pfs(self, success_rate: float = 0.9):
-        """
-        Engage demo PFS continuous autofocus.
+    def _engage_demo_pfs(
+        self,
+        event: MDAEvent | None = None,
+        success_rate: float = 0.9,
+        fail_at_index: list[dict] | None = None,
+    ):
+        """Engage demo PFS continuous autofocus.
+
+        If ``fail_at_index`` is provided, autofocus deterministically fails
+        when the event index matches any entry in the list. Otherwise, success
+        is random based on ``success_rate``.
 
         Parameters
         ----------
+        event : MDAEvent | None
+            The current MDA event (used for deterministic failure matching).
         success_rate : float
-            The probability of success for the demo PFS call.
+            The probability of success for the demo PFS call. Only used when
+            ``fail_at_index`` is not provided.
+        fail_at_index : list[dict] | None
+            List of index dicts to fail at, e.g. ``[{"p": 0}, {"t": 1, "p": 2}]``.
+            Each dict is matched against the event index — if all keys in the
+            dict match the event index, autofocus fails at that event.
         """
-        self._autofocus_success = np.random.random() < success_rate
+        if fail_at_index is not None and event is not None:
+            # For SequencedEvents, use the first sub-event's index
+            event_index = (
+                event.events[0].index if isinstance(event, SequencedEvent) else event.index
+            )
+            self._autofocus_success = not any(
+                all(event_index.get(k) == v for k, v in idx.items()) for idx in fail_at_index
+            )
+        else:
+            self._autofocus_success = np.random.random() < success_rate
+
         if self._autofocus_success:
             logger.debug(f"{DEMO_PFS_METHOD} call succeeded")
         else:

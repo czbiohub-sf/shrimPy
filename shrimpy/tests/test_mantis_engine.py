@@ -96,6 +96,7 @@ def test_init_default_attributes(engine):
     assert engine._autofocus_success is False
     assert engine._autofocus_stage is None
     assert engine._autofocus_method is None
+    assert engine._autofocus_fail_at_index is None
     assert engine._xy_stage_speed is None
 
 
