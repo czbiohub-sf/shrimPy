@@ -9,6 +9,7 @@ import numpy as np
 
 from ome_writers import (
     AcquisitionSettings,
+    OMEStream,
     create_stream,
     useq_to_acquisition_settings,
 )
@@ -38,7 +39,9 @@ class MantisEngine(MDAEngine):
     - ROI setup
     - Axial Piezo (AP Galvo) focus control
     - TTL blanking
-    - Autofocus after XY stage movements
+
+    Autofocus and XY stage positioning are handled by the AcquisitionController,
+    not by this engine. The engine focuses on hardware configuration only.
     """
 
     def __init__(self, mmc: CMMCorePlus, *args, **kwargs):
@@ -99,7 +102,6 @@ class MantisEngine(MDAEngine):
         microscope_meta = sequence.metadata.get("mantis", {}) if sequence.metadata else {}
 
         # Apply initialization settings
-        # TODO: move to proper place
         if initialization_settings := microscope_meta.get("initialization_settings"):
             logger.info(f"Applying {len(initialization_settings)} initialization settings")
             for setting in initialization_settings:
@@ -146,50 +148,12 @@ class MantisEngine(MDAEngine):
                 logger.info("Autofocus is disabled for this acquisition")
 
         # Store XY stage device name
-        # TODO: confirm this is required
         self._xy_stage_device = core.getXYStageDevice()
         logger.debug(f"XY stage device: {self._xy_stage_device}")
 
         logger.info("Mantis hardware setup completed successfully")
 
         return summary
-
-    def setup_event(self, event: MDAEvent) -> None:
-        """Prepare mantis hardware for each event."""
-        # Set XY stage position and engage autofocus
-        # Note: this command will not move the stage if the target position is the same
-        # as the last commanded position and force_set_xy_position is False.
-        self._adjust_xy_stage_speed(event)
-        self._set_event_xy_position(event)
-
-        # Set Z position for the event only if not using autofocus; calling
-        # setPosition will disengage continuous autofocus. The autofocus algorithm
-        # sets the z position independently.
-        if not self._use_autofocus and self._autofocus_stage and event.z_pos is not None:
-            self.mmcore.setPosition(self._autofocus_stage, event.z_pos)
-            self.mmcore.waitForDevice(self._autofocus_stage)
-
-        # Engage autofocus
-        self._engage_autofocus(event)
-
-        # Call parent setup_event
-        super().setup_event(event)
-
-    def exec_event(self, event: MDAEvent):
-        if self._use_autofocus and not self._autofocus_success:
-            # Pad zarr dataset with empty images if autofocus failed at this position
-            logger.debug("Autofocus failed, padding zarr dataset with zeros")
-            image_height = self.mmcore.getImageHeight()
-            image_width = self.mmcore.getImageWidth()
-            dtype = f"uint{self.mmcore.getImageBitDepth()}"
-            _img = np.zeros((image_height, image_width), dtype=dtype)
-            if isinstance(event, SequencedEvent):
-                for _event in event.events:
-                    yield (_img, _event, self.get_frame_metadata(_event))
-            else:
-                yield (_img, event, self.get_frame_metadata(event))
-        else:
-            yield from super().exec_event(event)
 
     def teardown_sequence(self, sequence):
         super().teardown_sequence(sequence)
@@ -264,12 +228,6 @@ class MantisEngine(MDAEngine):
         else:
             # TODO: fix after resolving https://github.com/czbiohub-sf/shrimPy/issues/242
             z_position = self.mmcore.getPosition(self._autofocus_stage)
-            # MDA events have z_pos of the scan stage
-            # z_position = (
-            #     event.z_pos
-            #     if event.z_pos is not None
-            #     else self.mmcore.getPosition(self._autofocus_stage)
-            # )
             self._engage_nikon_pfs(self._autofocus_stage, z_position)
 
     def _engage_demo_pfs(
@@ -313,18 +271,18 @@ class MantisEngine(MDAEngine):
             logger.debug(f"{DEMO_PFS_METHOD} call failed")
 
     def _engage_nikon_pfs(self, z_stage_name: str, z_position: float):
-        """
-                Attempt to engage Nikon PFS continuous autofocus. This function will log a
-                message and continue if continuous autofocus is already engaged. Otherwise,
-                it will attempt to engage autofocus, moving the z stage by amounts given in
-                `z_offsets`, if necessary.
-        `
-                Parameters`
-                ----------
-                z_stage_name : str
-                    The name of the z stage device which will be moved to help engage autofocus.
-                z_position : float
-                    The target position at which autofocus will be engaged.
+        """Attempt to engage Nikon PFS continuous autofocus.
+
+        This function will log a message and continue if continuous autofocus
+        is already engaged. Otherwise, it will attempt to engage autofocus,
+        moving the z stage by amounts given in `z_offsets`, if necessary.
+
+        Parameters
+        ----------
+        z_stage_name : str
+            The name of the z stage device which will be moved to help engage autofocus.
+        z_position : float
+            The target position at which autofocus will be engaged.
         """
         core = self.mmcore
         self._autofocus_success = False
@@ -364,38 +322,23 @@ class MantisEngine(MDAEngine):
 
             logger.error(f"Autofocus call failed after {len(z_offsets)} attempts")
 
-    def acquire(
-        self,
-        output_dir: str | Path,
-        name: str,
-        mda_config: MDASequence | str | Path,
-    ) -> None:
-        """Run a Mantis microscope acquisition.
+    def create_stream(self, sequence: MDASequence, data_path: str | Path) -> OMEStream:
+        """Create an OME-ZARR stream for writing acquisition data.
 
         Parameters
         ----------
-        output_dir : str | Path
-            Directory where acquisition data will be saved.
-        name : str
-            Base acquisition name; an index suffix will be appended automatically.
-        mda_config : MDASequence | str | Path
-            An MDASequence object or path to an MDA sequence configuration YAML file.
+        sequence : MDASequence
+            The acquisition sequence (used to determine dimensions and chunk shapes).
+        data_path : str | Path
+            Path where the .ome.zarr store will be created.
+
+        Returns
+        -------
+        OMEStream context manager
+            Use with ``with engine.create_stream(...) as stream:``.
         """
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        name = _get_next_acquisition_name(output_dir, name)
-
-        if isinstance(mda_config, MDASequence):
-            sequence = mda_config
-        else:
-            logger.info(f"Loading MDA sequence from {mda_config}")
-            sequence = MDASequence.from_file(mda_config)
-
-        data_path = output_dir / f"{name}.ome.zarr"
-        logger.info(f"Initializing OME-ZARR writer at {data_path}")
-
         core = self.mmcore
-        # TODO: ROI is read from metadata because it has not been applied yet
+        # ROI is read from metadata because it may not have been applied yet
         roi = sequence.metadata.get("mantis", {}).get("roi")
         if roi:
             image_width, image_height = roi[-2], roi[-1]
@@ -429,14 +372,47 @@ class MantisEngine(MDAEngine):
             **acq_settings,
         )
 
+        return create_stream(settings)
+
+    def acquire(
+        self,
+        output_dir: str | Path,
+        name: str,
+        mda_config: MDASequence | str | Path,
+    ) -> None:
+        """Run a simple Mantis microscope acquisition without autofocus.
+
+        For autofocus-aware acquisition with frame skipping, use
+        AcquisitionController directly.
+
+        Parameters
+        ----------
+        output_dir : str | Path
+            Directory where acquisition data will be saved.
+        name : str
+            Base acquisition name; an index suffix will be appended automatically.
+        mda_config : MDASequence | str | Path
+            An MDASequence object or path to an MDA sequence configuration YAML file.
+        """
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        name = _get_next_acquisition_name(output_dir, name)
+
+        if isinstance(mda_config, MDASequence):
+            sequence = mda_config
+        else:
+            logger.info(f"Loading MDA sequence from {mda_config}")
+            sequence = MDASequence.from_file(mda_config)
+
+        data_path = output_dir / f"{name}.ome.zarr"
         logger.info(f"Starting acquisition: {name}")
-        with create_stream(settings) as stream:
+
+        with self.create_stream(sequence, data_path) as stream:
 
             @self.mmcore.mda.events.frameReady.connect
             def _on_frame_ready(frame: np.ndarray, _event: MDAEvent, _meta: dict) -> None:
                 stream.append(frame)
 
-            logger.info("Starting MDA acquisition sequence")
             self.mmcore.mda.run(sequence)
 
         logger.info("Acquisition completed successfully")

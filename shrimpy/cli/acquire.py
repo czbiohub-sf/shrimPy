@@ -65,8 +65,10 @@ def mantis(
     # level, which clears all handlers on the "pymmcore-plus" logger. Importing first
     # ensures that call happens before fileConfig() attaches the shrimpy file handler.
     from pymmcore_plus import CMMCorePlus
+    from useq import MDASequence
 
-    from shrimpy.mantis.mantis_engine import MantisEngine
+    from shrimpy.mantis.acquisition_controller import AcquisitionController
+    from shrimpy.mantis.mantis_engine import MantisEngine, _get_next_acquisition_name
 
     # Configure logging
     config_file = Path(__file__).parent.parent.parent / "config" / "logging.ini"
@@ -88,7 +90,16 @@ def mantis(
     core = CMMCorePlus()
     core.loadSystemConfiguration(mm_config)
     engine = MantisEngine(core)
-    engine.acquire(output_dir=output_dir, name=name, mda_config=mda_config)
+
+    sequence = MDASequence.from_file(mda_config)
+    acq_name = _get_next_acquisition_name(output_dir, name)
+    data_path = output_dir / f"{acq_name}.ome.zarr"
+
+    logger.info(f"Starting acquisition: {acq_name}")
+    with engine.create_stream(sequence, data_path) as stream:
+        controller = AcquisitionController(engine, stream, sequence)
+        controller.run()
+    logger.info("Acquisition completed successfully")
 
 
 @acquire.command()
