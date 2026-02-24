@@ -368,7 +368,7 @@ class MantisEngine(MDAEngine):
         self,
         output_dir: str | Path,
         name: str,
-        mda_config: str | Path,
+        mda_config: MDASequence | str | Path,
     ) -> None:
         """Run a Mantis microscope acquisition.
 
@@ -378,15 +378,18 @@ class MantisEngine(MDAEngine):
             Directory where acquisition data will be saved.
         name : str
             Base acquisition name; an index suffix will be appended automatically.
-        mda_config : str | Path
-            Path to the MDA sequence configuration YAML file.
+        mda_config : MDASequence | str | Path
+            An MDASequence object or path to an MDA sequence configuration YAML file.
         """
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         name = _get_next_acquisition_name(output_dir, name)
 
-        logger.info(f"Loading MDA sequence from {mda_config}")
-        sequence = MDASequence.from_file(mda_config)
+        if isinstance(mda_config, MDASequence):
+            sequence = mda_config
+        else:
+            logger.info(f"Loading MDA sequence from {mda_config}")
+            sequence = MDASequence.from_file(mda_config)
 
         data_path = output_dir / f"{name}.ome.zarr"
         logger.info(f"Initializing OME-ZARR writer at {data_path}")
