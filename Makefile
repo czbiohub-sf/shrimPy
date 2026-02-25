@@ -4,6 +4,11 @@ PACKAGE_NAME := shrimpy
 install:
 	uv sync
 
+.PHONY: install-dev
+install-dev:
+	uv sync
+	uv pip install -e ../pymmcore-plus -e ../ome-writers
+
 .PHONY: uninstall
 uninstall:
 	uv pip uninstall $(PACKAGE_NAME)
