@@ -31,24 +31,6 @@ jobs:
       with:
         fetch-depth: 0  # Fetch all history for hatch-vcs
 
-    - name: Checkout pymmcore-plus
-      uses: actions/checkout@v4
-      with:
-        repository: ieivanov/pymmcore-plus
-        path: pymmcore-plus
-
-    - name: Checkout ome-writers
-      uses: actions/checkout@v4
-      with:
-        repository: ieivanov/ome-writers
-        path: ome-writers
-
-    - name: Move editable sources to expected paths
-      shell: bash
-      run: |
-        mv pymmcore-plus ../pymmcore-plus
-        mv ome-writers ../ome-writers
-
     - name: Install uv
       uses: astral-sh/setup-uv@v6
 
