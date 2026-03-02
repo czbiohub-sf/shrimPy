@@ -9,7 +9,6 @@ import numpy as np
 
 from ome_writers import (
     AcquisitionSettings,
-    create_stream,
     useq_to_acquisition_settings,
 )
 from pymmcore_plus.core import CMMCorePlus
@@ -444,17 +443,10 @@ class MantisEngine(MDAEngine):
             sequence = MDASequence.from_file(mda_config)
 
         data_path = output_dir / f"{name}.ome.zarr"
-        logger.info(f"Starting acquisition: {name}")
-
         settings = self._create_stream_settings(sequence, data_path)
-        with create_stream(settings) as stream:
 
-            @self.mmcore.mda.events.frameReady.connect
-            def _on_frame_ready(frame: np.ndarray, _event: MDAEvent, _meta: dict) -> None:
-                stream.append(frame)
-
-            self.mmcore.mda.run(sequence)
-
+        logger.info(f"Starting acquisition: {name}")
+        self.mmcore.mda.run(sequence, output=settings)
         logger.info("Acquisition completed successfully")
 
 
