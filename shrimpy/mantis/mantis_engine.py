@@ -90,15 +90,14 @@ class MantisEngine(MDAEngine):
         """
         logger.info("Setting up Mantis-specific hardware for acquisition sequence")
 
-        # Call parent setup first
-        summary = super().setup_sequence(sequence)
         core = self.mmcore
 
         # Extract mantis settings from metadata
         microscope_meta = sequence.metadata.get("mantis", {}) if sequence.metadata else {}
 
-        # Apply initialization settings
-        # TODO: move to proper place
+        # Apply initialization settings and ROI before the parent's
+        # setup_sequence so that SummaryMetaV1 captures the correct
+        # image dimensions (used by the output sink).
         if initialization_settings := microscope_meta.get("initialization_settings"):
             logger.info(f"Applying {len(initialization_settings)} initialization settings")
             for setting in initialization_settings:
@@ -151,7 +150,9 @@ class MantisEngine(MDAEngine):
 
         logger.info("Mantis hardware setup completed successfully")
 
-        return summary
+        # Call parent setup last so SummaryMetaV1 captures the fully
+        # configured hardware state (ROI, focus device, etc.).
+        return super().setup_sequence(sequence)
 
     def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
