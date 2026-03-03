@@ -380,6 +380,7 @@ class MantisEngine(MDAEngine):
             image_height = core.getImageHeight()
         pixel_size_um = core.getPixelSizeUm()
 
+        # TODO: current implementation of ome-writers handlers overwrites provided chunking
         chunk_shapes = {
             "t": 1,
             "c": 1,
