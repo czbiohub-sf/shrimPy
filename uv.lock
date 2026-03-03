@@ -1562,8 +1562,8 @@ wheels = [
 
 [[package]]
 name = "ome-writers"
-version = "0.1.dev109+g83ee949eb"
-source = { git = "https://github.com/ieivanov/ome-writers?branch=main#83ee949ebaf225e563b4e880a04e87cc339483ba" }
+version = "0.3.1.dev2+g132389bfc"
+source = { git = "https://github.com/ieivanov/ome-writers?branch=main#132389bfc4b8626f723989309e2104ae8adb485f" }
 dependencies = [
     { name = "numpy" },
     { name = "pydantic" },
@@ -1575,6 +1575,10 @@ dependencies = [
 [package.optional-dependencies]
 acquire-zarr = [
     { name = "acquire-zarr", marker = "python_full_version < '3.14'" },
+]
+tensorstore = [
+    { name = "tensorstore" },
+    { name = "yaozarrs", extra = ["write-tensorstore"] },
 ]
 
 [[package]]
@@ -2107,16 +2111,16 @@ wheels = [
 
 [[package]]
 name = "pymmcore-plus"
-version = "0.17.3.dev13+gecafb675c"
-source = { git = "https://github.com/ieivanov/pymmcore-plus?branch=add-event-finished-signal#ecafb675cdc5bf29b0f1b8d285c2ba1088bac730" }
+version = "0.17.3.dev30+g5b2cf4483"
+source = { git = "https://github.com/ieivanov/pymmcore-plus?branch=main#5b2cf44832d35e9a993f97f2aff78bfe409b360f" }
 dependencies = [
     { name = "numpy" },
     { name = "ome-types" },
+    { name = "ome-writers", extra = ["tensorstore"] },
     { name = "platformdirs" },
     { name = "psygnal" },
     { name = "pymmcore" },
     { name = "rich" },
-    { name = "tensorstore" },
     { name = "typer" },
     { name = "typing-extensions" },
     { name = "useq-schema" },
@@ -2485,7 +2489,7 @@ requires-dist = [
     { name = "click" },
     { name = "numpy" },
     { name = "ome-writers", extras = ["acquire-zarr"], git = "https://github.com/ieivanov/ome-writers?branch=main" },
-    { name = "pymmcore-plus", git = "https://github.com/ieivanov/pymmcore-plus?branch=add-event-finished-signal" },
+    { name = "pymmcore-plus", git = "https://github.com/ieivanov/pymmcore-plus?branch=main" },
     { name = "pymmcore-widgets" },
     { name = "pyyaml" },
     { name = "qtpy" },
@@ -2863,6 +2867,9 @@ wheels = [
 [package.optional-dependencies]
 io = [
     { name = "fsspec", extra = ["http", "s3"] },
+]
+write-tensorstore = [
+    { name = "tensorstore" },
 ]
 
 [[package]]
