@@ -74,6 +74,7 @@ def test_demo_acquisition_collects_frames(demo_engine, mantis_metadata):
     # Run setup_sequence + iterate events to verify frames are produced.
     # This is a lighter-weight check than full acquire() — no file I/O.
     core = demo_engine.mmcore
+    mantis_metadata["autofocus"]["enabled"] = False
     sequence = MDASequence(
         time_plan={"interval": 0, "loops": 10},
         metadata={"mantis": mantis_metadata},
