@@ -9,12 +9,11 @@ import numpy as np
 
 from ome_writers import (
     AcquisitionSettings,
-    create_stream,
     useq_to_acquisition_settings,
 )
 from pymmcore_plus.core import CMMCorePlus
 from pymmcore_plus.core._sequencing import SequencedEvent
-from pymmcore_plus.mda import MDAEngine
+from pymmcore_plus.mda import MDAEngine, SkipEvent
 from pymmcore_plus.metadata import SummaryMetaV1
 from useq import MDAEvent, MDASequence
 
@@ -91,15 +90,14 @@ class MantisEngine(MDAEngine):
         """
         logger.info("Setting up Mantis-specific hardware for acquisition sequence")
 
-        # Call parent setup first
-        summary = super().setup_sequence(sequence)
         core = self.mmcore
 
         # Extract mantis settings from metadata
         microscope_meta = sequence.metadata.get("mantis", {}) if sequence.metadata else {}
 
-        # Apply initialization settings
-        # TODO: move to proper place
+        # Apply initialization settings and ROI before the parent's
+        # setup_sequence so that SummaryMetaV1 captures the correct
+        # image dimensions (used by the output sink).
         if initialization_settings := microscope_meta.get("initialization_settings"):
             logger.info(f"Applying {len(initialization_settings)} initialization settings")
             for setting in initialization_settings:
@@ -152,7 +150,9 @@ class MantisEngine(MDAEngine):
 
         logger.info("Mantis hardware setup completed successfully")
 
-        return summary
+        # Call parent setup last so SummaryMetaV1 captures the fully
+        # configured hardware state (ROI, focus device, etc.).
+        return super().setup_sequence(sequence)
 
     def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
@@ -172,24 +172,13 @@ class MantisEngine(MDAEngine):
         # Engage autofocus
         self._engage_autofocus(event)
 
+        # Skip acquisition if autofocus failed
+        if self._use_autofocus and not self._autofocus_success:
+            num_frames = len(event.events) if isinstance(event, SequencedEvent) else 1
+            raise SkipEvent(num_frames=num_frames, reason="autofocus failed")
+
         # Call parent setup_event
         super().setup_event(event)
-
-    def exec_event(self, event: MDAEvent):
-        if self._use_autofocus and not self._autofocus_success:
-            # Pad zarr dataset with empty images if autofocus failed at this position
-            logger.debug("Autofocus failed, padding zarr dataset with zeros")
-            image_height = self.mmcore.getImageHeight()
-            image_width = self.mmcore.getImageWidth()
-            dtype = f"uint{self.mmcore.getImageBitDepth()}"
-            _img = np.zeros((image_height, image_width), dtype=dtype)
-            if isinstance(event, SequencedEvent):
-                for _event in event.events:
-                    yield (_img, _event, self.get_frame_metadata(_event))
-            else:
-                yield (_img, event, self.get_frame_metadata(event))
-        else:
-            yield from super().exec_event(event)
 
     def teardown_sequence(self, sequence):
         super().teardown_sequence(sequence)
@@ -364,35 +353,25 @@ class MantisEngine(MDAEngine):
 
             logger.error(f"Autofocus call failed after {len(z_offsets)} attempts")
 
-    def acquire(
-        self,
-        output_dir: str | Path,
-        name: str,
-        mda_config: str | Path,
-    ) -> None:
-        """Run a Mantis microscope acquisition.
+    def _create_stream_settings(
+        self, sequence: MDASequence, data_path: str | Path
+    ) -> AcquisitionSettings:
+        """Create acquisition settings for an OME-ZARR stream.
 
         Parameters
         ----------
-        output_dir : str | Path
-            Directory where acquisition data will be saved.
-        name : str
-            Base acquisition name; an index suffix will be appended automatically.
-        mda_config : str | Path
-            Path to the MDA sequence configuration YAML file.
+        sequence : MDASequence
+            The acquisition sequence (used to determine dimensions and chunk shapes).
+        data_path : str | Path
+            Path where the .ome.zarr store will be created.
+
+        Returns
+        -------
+        AcquisitionSettings
+            Settings to pass to ``create_stream()``.
         """
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        name = _get_next_acquisition_name(output_dir, name)
-
-        logger.info(f"Loading MDA sequence from {mda_config}")
-        sequence = MDASequence.from_file(mda_config)
-
-        data_path = output_dir / f"{name}.ome.zarr"
-        logger.info(f"Initializing OME-ZARR writer at {data_path}")
-
         core = self.mmcore
-        # TODO: ROI is read from metadata because it has not been applied yet
+        # ROI is read from metadata because it may not have been applied yet
         roi = sequence.metadata.get("mantis", {}).get("roi")
         if roi:
             image_width, image_height = roi[-2], roi[-1]
@@ -401,6 +380,7 @@ class MantisEngine(MDAEngine):
             image_height = core.getImageHeight()
         pixel_size_um = core.getPixelSizeUm()
 
+        # TODO: current implementation of ome-writers handlers overwrites provided chunking
         chunk_shapes = {
             "t": 1,
             "c": 1,
@@ -417,7 +397,7 @@ class MantisEngine(MDAEngine):
             chunk_shapes=chunk_shapes,
         )
 
-        settings = AcquisitionSettings(
+        return AcquisitionSettings(
             root_path=data_path,
             dtype="uint16",
             compression="blosc-zstd",
@@ -426,16 +406,38 @@ class MantisEngine(MDAEngine):
             **acq_settings,
         )
 
+    def acquire(
+        self,
+        output_dir: str | Path,
+        name: str,
+        mda_config: MDASequence | str | Path,
+    ) -> None:
+        """Run a Mantis microscope acquisition.
+
+        Parameters
+        ----------
+        output_dir : str | Path
+            Directory where acquisition data will be saved.
+        name : str
+            Base acquisition name; an index suffix will be appended automatically.
+        mda_config : MDASequence | str | Path
+            An MDASequence object or path to an MDA sequence configuration YAML file.
+        """
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        name = _get_next_acquisition_name(output_dir, name)
+
+        if isinstance(mda_config, MDASequence):
+            sequence = mda_config
+        else:
+            logger.info(f"Loading MDA sequence from {mda_config}")
+            sequence = MDASequence.from_file(mda_config)
+
+        data_path = output_dir / f"{name}.ome.zarr"
+        settings = self._create_stream_settings(sequence, data_path)
+
         logger.info(f"Starting acquisition: {name}")
-        with create_stream(settings) as stream:
-
-            @self.mmcore.mda.events.frameReady.connect
-            def _on_frame_ready(frame: np.ndarray, _event: MDAEvent, _meta: dict) -> None:
-                stream.append(frame)
-
-            logger.info("Starting MDA acquisition sequence")
-            self.mmcore.mda.run(sequence)
-
+        self.mmcore.mda.run(sequence, output=settings)
         logger.info("Acquisition completed successfully")
 
 

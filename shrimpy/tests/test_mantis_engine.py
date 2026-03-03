@@ -10,7 +10,6 @@ import weakref
 
 from unittest.mock import MagicMock, call, patch
 
-import numpy as np
 import pytest
 
 from useq import MDAEvent, MDASequence
@@ -281,6 +280,74 @@ def test_autofocus_demo_pfs_dispatched(engine):
     mock_demo.assert_called_once()
 
 
+# ---------------------------------------------------------------------------
+# _engage_demo_pfs()
+# ---------------------------------------------------------------------------
+
+
+def test_demo_pfs_fail_at_index_matching_event_fails(engine):
+    # Deterministic failure when event index matches fail_at_index entry
+    event = MDAEvent(index={"t": 1, "p": 0})
+    engine._engage_demo_pfs(event=event, fail_at_index=[{"t": 1, "p": 0}])
+    assert engine._autofocus_success is False
+
+
+def test_demo_pfs_fail_at_index_partial_match_fails(engine):
+    # Partial key match: {"p": 0} matches any event with p=0
+    event = MDAEvent(index={"t": 5, "p": 0})
+    engine._engage_demo_pfs(event=event, fail_at_index=[{"p": 0}])
+    assert engine._autofocus_success is False
+
+
+def test_demo_pfs_fail_at_index_no_match_succeeds(engine):
+    # No matching entry → autofocus succeeds
+    event = MDAEvent(index={"t": 0, "p": 1})
+    engine._engage_demo_pfs(event=event, fail_at_index=[{"t": 1, "p": 0}])
+    assert engine._autofocus_success is True
+
+
+def test_demo_pfs_fail_at_index_empty_dict_fails_all(engine):
+    # Empty dict matches every event (all zero keys trivially match)
+    event = MDAEvent(index={"t": 3, "p": 2})
+    engine._engage_demo_pfs(event=event, fail_at_index=[{}])
+    assert engine._autofocus_success is False
+
+
+def test_demo_pfs_fail_at_index_empty_list_succeeds(engine):
+    # Empty fail list → no failures
+    event = MDAEvent(index={"t": 0, "p": 0})
+    engine._engage_demo_pfs(event=event, fail_at_index=[])
+    assert engine._autofocus_success is True
+
+
+def test_demo_pfs_random_fallback_when_no_fail_at_index(engine):
+    # When fail_at_index is None, uses random success_rate
+    engine._engage_demo_pfs(event=MDAEvent(), success_rate=1.0, fail_at_index=None)
+    assert engine._autofocus_success is True
+
+    engine._engage_demo_pfs(event=MDAEvent(), success_rate=0.0, fail_at_index=None)
+    assert engine._autofocus_success is False
+
+
+def test_demo_pfs_sequenced_event_uses_first_sub_event_index(engine):
+    # For SequencedEvents, index matching uses the first sub-event
+    from pymmcore_plus.core._sequencing import SequencedEvent
+
+    sub_events = [
+        MDAEvent(index={"t": 0, "p": 1, "z": 0}),
+        MDAEvent(index={"t": 0, "p": 1, "z": 1}),
+    ]
+    seq_event = SequencedEvent(events=sub_events)
+
+    # Partial match on first sub-event's index → should fail
+    engine._engage_demo_pfs(event=seq_event, fail_at_index=[{"p": 1}])
+    assert engine._autofocus_success is False
+
+    # No match → should succeed
+    engine._engage_demo_pfs(event=seq_event, fail_at_index=[{"p": 2}])
+    assert engine._autofocus_success is True
+
+
 def test_autofocus_nikon_pfs_dispatched(engine, mock_core):
     # Non-demo method → calls _engage_nikon_pfs with stage name and z position
     engine._use_autofocus = True
@@ -348,53 +415,52 @@ def test_pfs_all_offsets_fail(engine, mock_core):
 
 
 # ---------------------------------------------------------------------------
-# exec_event()
+# setup_event() — SkipEvent on autofocus failure
 # ---------------------------------------------------------------------------
 
 
-def test_exec_event_no_autofocus_delegates_to_super(engine):
-    # When autofocus is off, just delegate to parent
-    engine._use_autofocus = False
-    event = MDAEvent()
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.exec_event") as mock_super:
-        mock_super.return_value = iter([("frame", event, {})])
-        results = list(engine.exec_event(event))
-    assert len(results) == 1
-    mock_super.assert_called_once_with(event)
+def test_setup_event_autofocus_failure_raises_skip_event(engine, mock_core):
+    # Autofocus on + failure → SkipEvent raised with num_frames=1 for single event
+    from pymmcore_plus.mda import SkipEvent
 
-
-def test_exec_event_autofocus_success_delegates_to_super(engine):
-    # Autofocus on + success → delegate to parent
     engine._use_autofocus = True
-    engine._autofocus_success = True
+    engine._autofocus_method = "demo-PFS"
+    # Force autofocus to fail at every event
+    engine._autofocus_fail_at_index = [{}]
+
     event = MDAEvent()
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.exec_event") as mock_super:
-        mock_super.return_value = iter([("frame", event, {})])
-        results = list(engine.exec_event(event))
-    assert len(results) == 1
-    mock_super.assert_called_once_with(event)
+    with pytest.raises(SkipEvent, match="autofocus failed") as exc_info:
+        engine.setup_event(event)
+    assert exc_info.value.num_frames == 1
 
 
-def test_exec_event_autofocus_failure_yields_zero_padded_image(engine, mock_core):
-    # Autofocus on + failure → yield zeros with correct shape and dtype
+def test_setup_event_autofocus_failure_sequenced_event_skips_all_frames(engine, mock_core):
+    # SkipEvent.num_frames equals len(event.events) for SequencedEvents
+    from pymmcore_plus.core._sequencing import SequencedEvent
+    from pymmcore_plus.mda import SkipEvent
+
     engine._use_autofocus = True
-    engine._autofocus_success = False
-    mock_core.getImageHeight.return_value = 2048
-    mock_core.getImageWidth.return_value = 2048
-    mock_core.getImageBitDepth.return_value = 16
-    # get_frame_metadata needs these to build position metadata
-    mock_core.getXYPosition.return_value = (0.0, 0.0)
-    mock_core.getPosition.return_value = 0.0
+    engine._autofocus_method = "demo-PFS"
+
+    engine._autofocus_fail_at_index = [{}]
+
+    sub_events = [MDAEvent(index={"t": 0, "p": 0, "z": i}) for i in range(5)]
+    seq_event = SequencedEvent(events=sub_events)
+
+    with pytest.raises(SkipEvent) as exc_info:
+        engine.setup_event(seq_event)
+    assert exc_info.value.num_frames == 5
+
+
+def test_setup_event_autofocus_success_does_not_raise(engine, mock_core):
+    # Autofocus on + success → no SkipEvent, delegates to parent setup_event
+    engine._use_autofocus = True
+    engine._autofocus_method = "demo-PFS"
+    engine._autofocus_fail_at_index = []
 
     event = MDAEvent()
-    results = list(engine.exec_event(event))
-
-    assert len(results) == 1
-    img, evt, _meta = results[0]
-    assert img.shape == (2048, 2048)
-    assert img.dtype == np.uint16
-    assert np.all(img == 0)
-    assert evt is event
+    with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_event"):
+        engine.setup_event(event)  # should not raise
 
 
 # ---------------------------------------------------------------------------
