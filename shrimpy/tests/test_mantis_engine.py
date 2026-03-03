@@ -10,7 +10,6 @@ import weakref
 
 from unittest.mock import MagicMock, call, patch
 
-import numpy as np
 import pytest
 
 from useq import MDAEvent, MDASequence
@@ -375,26 +374,19 @@ def test_exec_event_autofocus_success_delegates_to_super(engine):
     mock_super.assert_called_once_with(event)
 
 
-def test_exec_event_autofocus_failure_yields_zero_padded_image(engine, mock_core):
-    # Autofocus on + failure → yield zeros with correct shape and dtype
+def test_setup_event_autofocus_failure_raises_skip_event(engine, mock_core):
+    # Autofocus on + failure → SkipEvent raised with correct num_frames
+    from pymmcore_plus.mda import SkipEvent
+
     engine._use_autofocus = True
-    engine._autofocus_success = False
-    mock_core.getImageHeight.return_value = 2048
-    mock_core.getImageWidth.return_value = 2048
-    mock_core.getImageBitDepth.return_value = 16
-    # get_frame_metadata needs these to build position metadata
-    mock_core.getXYPosition.return_value = (0.0, 0.0)
-    mock_core.getPosition.return_value = 0.0
+    engine._autofocus_method = "demo-PFS"
+    # Force autofocus to fail at every event
+    engine._autofocus_fail_at_index = [{}]
 
     event = MDAEvent()
-    results = list(engine.exec_event(event))
-
-    assert len(results) == 1
-    img, evt, _meta = results[0]
-    assert img.shape == (2048, 2048)
-    assert img.dtype == np.uint16
-    assert np.all(img == 0)
-    assert evt is event
+    with pytest.raises(SkipEvent, match="autofocus failed") as exc_info:
+        engine.setup_event(event)
+    assert exc_info.value.num_frames == 1
 
 
 # ---------------------------------------------------------------------------

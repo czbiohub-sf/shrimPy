@@ -13,7 +13,7 @@ from ome_writers import (
 )
 from pymmcore_plus.core import CMMCorePlus
 from pymmcore_plus.core._sequencing import SequencedEvent
-from pymmcore_plus.mda import MDAEngine
+from pymmcore_plus.mda import MDAEngine, SkipEvent
 from pymmcore_plus.metadata import SummaryMetaV1
 from useq import MDAEvent, MDASequence
 
@@ -172,24 +172,13 @@ class MantisEngine(MDAEngine):
         # Engage autofocus
         self._engage_autofocus(event)
 
+        # Skip acquisition if autofocus failed
+        if self._use_autofocus and not self._autofocus_success:
+            num_frames = len(event.events) if isinstance(event, SequencedEvent) else 1
+            raise SkipEvent(num_frames=num_frames, reason="autofocus failed")
+
         # Call parent setup_event
         super().setup_event(event)
-
-    def exec_event(self, event: MDAEvent):
-        if self._use_autofocus and not self._autofocus_success:
-            # Pad zarr dataset with empty images if autofocus failed at this position
-            logger.debug("Autofocus failed, padding zarr dataset with zeros")
-            image_height = self.mmcore.getImageHeight()
-            image_width = self.mmcore.getImageWidth()
-            dtype = f"uint{self.mmcore.getImageBitDepth()}"
-            _img = np.zeros((image_height, image_width), dtype=dtype)
-            if isinstance(event, SequencedEvent):
-                for _event in event.events:
-                    yield (_img, _event, self.get_frame_metadata(_event))
-            else:
-                yield (_img, event, self.get_frame_metadata(event))
-        else:
-            yield from super().exec_event(event)
 
     def teardown_sequence(self, sequence):
         super().teardown_sequence(sequence)

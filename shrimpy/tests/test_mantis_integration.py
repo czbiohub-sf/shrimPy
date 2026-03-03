@@ -142,6 +142,7 @@ def test_teardown_after_setup(demo_engine, demo_mda_sequence):
 
 def test_timelapse_acquisition(demo_engine, mantis_metadata):
     # Acquisition with a timelapse plan
+    mantis_metadata["autofocus"]["enabled"] = False
     seq = MDASequence(
         time_plan={"interval": 0, "loops": 10},
         metadata={"mantis": mantis_metadata},
