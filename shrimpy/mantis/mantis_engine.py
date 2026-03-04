@@ -177,8 +177,19 @@ class MantisEngine(MDAEngine):
             num_frames = len(event.events) if isinstance(event, SequencedEvent) else 1
             raise SkipEvent(num_frames=num_frames, reason="autofocus failed")
 
-        # Call parent setup_event
+        # Call parent setup_event, sets channel and exposure time
         super().setup_event(event)
+
+        # Calculate timeout
+        readout_time_ms = np.around(
+            float(self.mmcore.getProperty('Prime BSI Express', 'Timing-ReadoutTimeNs'))
+            * 1e-6,
+            decimals=3,
+        )
+        acq_rate_fps = 1000 / (event.exposure + readout_time_ms)
+        buffer_s = 2
+        self._timeout = len(event.events) / acq_rate_fps + buffer_s
+        logger.info(f"Timeout set to: {self._timeout:.2f}s")
 
     def teardown_sequence(self, sequence):
         super().teardown_sequence(sequence)
