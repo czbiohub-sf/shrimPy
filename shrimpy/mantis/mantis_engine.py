@@ -180,16 +180,14 @@ class MantisEngine(MDAEngine):
         # Call parent setup_event, sets channel and exposure time
         super().setup_event(event)
 
-        # Calculate timeout
-        readout_time_ms = np.around(
-            float(self.mmcore.getProperty('Prime BSI Express', 'Timing-ReadoutTimeNs'))
-            * 1e-6,
-            decimals=3,
-        )
-        acq_rate_fps = 1000 / (event.exposure + readout_time_ms)
+        # Set acquisition timeout to guard against stalling due to dropped frames
+        # or missed trigger pulses
+        acq_duration = self._calculate_acq_duration(event)
         buffer_s = 2
-        self._timeout = len(event.events) / acq_rate_fps + buffer_s
-        logger.info(f"Timeout set to: {self._timeout:.2f}s")
+        self._sequenced_acq_timeout = (
+            acq_duration + buffer_s if acq_duration is not None else np.inf
+        )
+        logger.info(f"Acquisition timeout set to: {self._timeout:.2f}s")
 
     def teardown_sequence(self, sequence):
         super().teardown_sequence(sequence)
@@ -208,6 +206,31 @@ class MantisEngine(MDAEngine):
                 core.setProperty(setting[0], setting[1], setting[2])
         else:
             logger.debug("No reset hardware sequencing settings specified")
+
+    def _calculate_acq_duration(self, event: MDAEvent) -> float | None:
+        """Calculate the duration of an acquisition event.
+
+        Returns
+        -------
+        float
+            The duration of the acquisition event in seconds.
+            None if acquisition rate cannot be calculated.
+        """
+        if event.exposure is None:
+            return None
+
+        if not isinstance(event, SequencedEvent):
+            return event.exposure / 1000  # convert to seconds
+
+        camera = self.mmcore.getCameraDevice()
+        if not camera == "Prime BSI Express":
+            # Currently only supported for Prime BSI Express
+            return None
+
+        readout_time_ns = float(self.mmcore.getProperty(camera, "Timing-ReadoutTimeNs"))
+        readout_time_ms = round(readout_time_ns * 1e-6, 3)
+        acq_framerate = 1000 / (event.exposure + readout_time_ms)
+        return len(event.events) / acq_framerate
 
     def _adjust_xy_stage_speed(self, event: MDAEvent) -> None:
         """Modulate XY stage speed based on distance to target position.
