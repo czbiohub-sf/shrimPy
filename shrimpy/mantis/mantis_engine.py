@@ -227,9 +227,9 @@ class MantisEngine(MDAEngine):
             # Currently only supported for Prime BSI Express
             return None
 
-        readout_time_ns = float(self.mmcore.getProperty(camera, "Timing-ReadoutTimeNs"))
-        readout_time_ms = round(readout_time_ns * 1e-6, 3)
-        acq_framerate = 1000 / (event.exposure + readout_time_ms)
+        # For Prime BSI Express the acquisition framerate is dominated
+        # by the exposure time
+        acq_framerate = 1000 / event.exposure
         return len(event.events) / acq_framerate
 
     def _adjust_xy_stage_speed(self, event: MDAEvent) -> None:
