@@ -159,7 +159,8 @@ class MantisEngine(MDAEngine):
         # Set XY stage position and engage autofocus
         # Note: this command will not move the stage if the target position is the same
         # as the last commanded position and force_set_xy_position is False.
-        self._adjust_xy_stage_speed(event)
+        # TODO: debug resetting xy stage speed
+        # self._adjust_xy_stage_speed(event)
         self._set_event_xy_position(event)
 
         # Set Z position for the event only if not using autofocus; calling
@@ -319,9 +320,11 @@ class MantisEngine(MDAEngine):
         self._autofocus_success = False
         z_offsets = [0, -10, 10, -20, 20, -30, 30]  # in um
 
-        # Try to engage autofocus with fullFocus
+        # Turn on autofocus if it has been turned off. This call has no effect is
+        # continuous autofocus is already engaged
         try:
             core.fullFocus()
+            time.sleep(0.2)  # needed before we can call isContinuousFocusLocked()
             logger.debug("Call to fullFocus() succeeded")
         except Exception:
             logger.debug("Call to fullFocus() failed")
@@ -336,6 +339,7 @@ class MantisEngine(MDAEngine):
             core.setPosition(z_stage_name, z_position + z_offset)
             core.waitForDevice(z_stage_name)
 
+            # This call engages autofocus
             core.enableContinuousFocus(True)
             time.sleep(1)  # Wait for autofocus to engage
 
