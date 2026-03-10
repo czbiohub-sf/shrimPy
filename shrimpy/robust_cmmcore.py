@@ -52,8 +52,18 @@ class RobustCMMCore(CMMCorePlus):
         core.loadSystemConfiguration("path/to/config.cfg")
     """
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Set only after parent init completes so that __getattribute__ does not
+        # intercept internal bound-method lookups (e.g. weakref.WeakMethod) during init.
+        object.__setattr__(self, "_robust_ready", True)
+
     def __getattribute__(self, name: str):
         attr = super().__getattribute__(name)
-        if callable(attr) and not name.startswith("_"):
+        try:
+            ready = object.__getattribute__(self, "_robust_ready")
+        except AttributeError:
+            ready = False
+        if ready and callable(attr) and not name.startswith("_"):
             return _make_robust_call(name, attr, NUM_RETRIES, WAIT_BETWEEN_RETRIES_S)
         return attr
