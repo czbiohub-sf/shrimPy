@@ -188,7 +188,7 @@ class MantisEngine(MDAEngine):
         self._sequenced_acq_timeout = (
             acq_duration + buffer_s if acq_duration is not None else np.inf
         )
-        logger.info(f"Acquisition timeout set to: {self._timeout:.2f}s")
+        logger.debug(f"Acquisition timeout set to: {self._sequenced_acq_timeout:.2f}s")
 
     def teardown_sequence(self, sequence):
         super().teardown_sequence(sequence)
