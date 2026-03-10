@@ -4,10 +4,10 @@ This script launches the MantisAcquisitionWidget, which provides a graphical
 interface for configuring and running mantis microscope acquisitions.
 """
 
-from pymmcore_plus import CMMCorePlus
 from qtpy.QtWidgets import QApplication
 
 from shrimpy.mantis.mantis_acquisition_widget import MantisAcquisitionWidget
+from shrimpy.robust_cmmcore import RobustCMMCore
 
 if __name__ == "__main__":
     # Create Qt application
@@ -16,7 +16,7 @@ if __name__ == "__main__":
     # Try to load mantis demo config
     try:
         demo_config = r"C:\Users\Cameron\justin\shrimPy\CompMicro_MMConfigs\Dev_Computer\mantis2-demo.cfg"
-        core = CMMCorePlus()
+        core = RobustCMMCore()
         core.loadSystemConfiguration(demo_config)
         print(f"Loaded configuration: {demo_config}")
     except Exception as e:
