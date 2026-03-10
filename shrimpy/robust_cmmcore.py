@@ -14,9 +14,24 @@ NUM_RETRIES = 3
 WAIT_BETWEEN_RETRIES_S = 5.0  # seconds
 
 
+_NO_RETRY_CALLS: set[str] = {"getMultiROI"}
+_NO_RETRY_CALLS_WITH_ARGS: set[tuple] = {
+    ("getProperty", "TS2_TTL1-8", "Label"),
+    ("getStateLabels", "TS2_TTL1-8"),
+}
+
+
 def _make_robust_call(name: str, func, num_retries: int, wait_s: float):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
+        if name in _NO_RETRY_CALLS:
+            return func(*args, **kwargs)
+        try:
+            if (name, *args) in _NO_RETRY_CALLS_WITH_ARGS:
+                return func(*args, **kwargs)
+        except TypeError:
+            pass  # args contain an unhashable type; proceed with retry logic
+
         last_error: Exception | None = None
         for attempt in range(num_retries):
             try:
@@ -28,7 +43,7 @@ def _make_robust_call(name: str, func, num_retries: int, wait_s: float):
                 last_error = e
                 msg = str(e).split("\n")[0]
                 logger.error(
-                    f"Attempt {attempt + 1}/{num_retries} failed calling {name}: {msg}"
+                    f"Attempt {attempt + 1}/{num_retries} failed calling {name} with arguments {args} and keyword arguments {kwargs}: {msg}"
                 )
                 if attempt < num_retries - 1:
                     time.sleep(wait_s)

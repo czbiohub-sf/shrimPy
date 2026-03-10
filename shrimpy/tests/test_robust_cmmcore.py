@@ -97,6 +97,45 @@ def test_robust_call_passes_args_and_kwargs():
     func.assert_called_once_with("a", "b", key="val")
 
 
+def test_robust_call_excluded_method_not_retried():
+    # getMultiROI should be called once even if it raises
+    func = MagicMock(side_effect=RuntimeError("fail"))
+    wrapped = _make_robust_call("getMultiROI", func, NUM_RETRIES, WAIT_BETWEEN_RETRIES_S)
+    with pytest.raises(RuntimeError):
+        wrapped()
+    assert func.call_count == 1
+
+
+def test_robust_call_excluded_property_args_not_retried():
+    # getProperty('TS2_TTL1-8', 'Label') should be called once even if it raises
+    func = MagicMock(side_effect=RuntimeError("fail"))
+    wrapped = _make_robust_call("getProperty", func, NUM_RETRIES, WAIT_BETWEEN_RETRIES_S)
+    with pytest.raises(RuntimeError):
+        wrapped("TS2_TTL1-8", "Label")
+    assert func.call_count == 1
+
+
+def test_robust_call_unhashable_args_still_retried():
+    # If args contain an unhashable type the exclusion check must not crash,
+    # and the call should still be retried normally.
+    func = MagicMock(side_effect=RuntimeError("fail"))
+    with patch("shrimpy.robust_cmmcore.time.sleep"):
+        wrapped = _make_robust_call("getProperty", func, NUM_RETRIES, WAIT_BETWEEN_RETRIES_S)
+        with pytest.raises(RuntimeError):
+            wrapped({"unhashable": "dict"}, "Label")
+    assert func.call_count == NUM_RETRIES
+
+
+def test_robust_call_getproperty_other_args_still_retried():
+    # getProperty with different args should still be retried
+    func = MagicMock(side_effect=RuntimeError("fail"))
+    with patch("shrimpy.robust_cmmcore.time.sleep"):
+        wrapped = _make_robust_call("getProperty", func, NUM_RETRIES, WAIT_BETWEEN_RETRIES_S)
+        with pytest.raises(RuntimeError):
+            wrapped("SomeDevice", "SomeProperty")
+    assert func.call_count == NUM_RETRIES
+
+
 def test_robust_call_num_retries_one_tries_exactly_once():
     func = MagicMock(side_effect=RuntimeError("e"))
     with patch("shrimpy.robust_cmmcore.time.sleep") as mock_sleep:
