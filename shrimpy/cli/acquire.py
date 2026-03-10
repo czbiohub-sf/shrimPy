@@ -64,9 +64,8 @@ def mantis(
     # Import before configure_logging: pymmcore-plus calls configure_logging() at module
     # level, which clears all handlers on the "pymmcore-plus" logger. Importing first
     # ensures that call happens before fileConfig() attaches the shrimpy file handler.
-    from pymmcore_plus import CMMCorePlus
-
     from shrimpy.mantis.mantis_engine import MantisEngine
+    from shrimpy.robust_cmmcore import RobustCMMCore
 
     # Configure logging
     config_file = Path(__file__).parent.parent.parent / "config" / "logging.ini"
@@ -85,7 +84,7 @@ def mantis(
     else:
         logger.error(err)
 
-    core = CMMCorePlus()
+    core = RobustCMMCore()
     core.loadSystemConfiguration(mm_config)
     engine = MantisEngine(core)
     engine.acquire(output_dir=output_dir, name=name, mda_config=mda_config)
