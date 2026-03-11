@@ -14,7 +14,7 @@ NUM_RETRIES = 3
 WAIT_BETWEEN_RETRIES_S = 5.0  # seconds
 
 
-_NO_RETRY_CALLS: set[str] = {"getMultiROI"}
+_NO_RETRY_CALLS: set[str] = {"getMultiROI", "fullFocus"}
 _NO_RETRY_CALLS_WITH_ARGS: set[tuple] = {
     ("getProperty", "TS2_TTL1-8", "Label"),
     ("getStateLabels", "TS2_TTL1-8"),

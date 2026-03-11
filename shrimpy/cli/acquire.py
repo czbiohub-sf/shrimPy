@@ -8,7 +8,7 @@ from pathlib import Path
 
 import click
 
-from shrimpy._logging import configure_logging, log_conda_environment
+from shrimpy._logging import configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -75,14 +75,6 @@ def mantis(
         logger.info(f"Log file: {log_file}")
     else:
         logger.warning(f"Logging config not found at {config_file}, using defaults")
-
-    # TODO: switch to uv
-    # Log conda environment
-    out, err = log_conda_environment(log_file.parent)
-    if err is None:
-        logger.debug(out)
-    else:
-        logger.error(err)
 
     core = RobustCMMCore()
     core.loadSystemConfiguration(mm_config)
