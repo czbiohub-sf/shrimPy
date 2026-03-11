@@ -50,6 +50,12 @@ class MantisEngine(MDAEngine):
         """
         kwargs.setdefault("use_hardware_sequencing", True)
         kwargs.setdefault("force_set_xy_position", False)
+        # Set acquisition timeout to guard against stalling due to dropped frames
+        # or missed trigger pulses
+        kwargs.setdefault("timeout_base", 2.0)
+        kwargs.setdefault("timeout_multiplier", 1.0)
+        kwargs.setdefault("timeout_first_frame", None)
+        kwargs.setdefault("timeout_action", "warn")
         super().__init__(mmc, *args, **kwargs)
         self._use_autofocus = False
         self._autofocus_success = False
