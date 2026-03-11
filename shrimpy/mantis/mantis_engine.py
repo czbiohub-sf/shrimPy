@@ -184,7 +184,7 @@ class MantisEngine(MDAEngine):
             num_frames = len(event.events) if isinstance(event, SequencedEvent) else 1
             raise SkipEvent(num_frames=num_frames, reason="autofocus failed")
 
-        # Call parent setup_event, sets channel and exposure time
+        # Call parent setup_event
         super().setup_event(event)
 
     def teardown_sequence(self, sequence):
