@@ -50,6 +50,12 @@ class MantisEngine(MDAEngine):
         """
         kwargs.setdefault("use_hardware_sequencing", True)
         kwargs.setdefault("force_set_xy_position", False)
+        # Set acquisition timeout to guard against stalling due to dropped frames
+        # or missed trigger pulses
+        kwargs.setdefault("timeout_base", 2.0)
+        kwargs.setdefault("timeout_multiplier", 1.0)
+        kwargs.setdefault("timeout_first_frame", None)
+        kwargs.setdefault("timeout_action", "warn")
         super().__init__(mmc, *args, **kwargs)
         self._use_autofocus = False
         self._autofocus_success = False
@@ -181,15 +187,6 @@ class MantisEngine(MDAEngine):
         # Call parent setup_event, sets channel and exposure time
         super().setup_event(event)
 
-        # Set acquisition timeout to guard against stalling due to dropped frames
-        # or missed trigger pulses
-        acq_duration = self._calculate_acq_duration(event)
-        buffer_s = 2
-        self._sequenced_acq_timeout = (
-            acq_duration + buffer_s if acq_duration is not None else np.inf
-        )
-        logger.debug(f"Acquisition timeout set to: {self._sequenced_acq_timeout:.2f}s")
-
     def teardown_sequence(self, sequence):
         super().teardown_sequence(sequence)
 
@@ -207,31 +204,6 @@ class MantisEngine(MDAEngine):
                 core.setProperty(setting[0], setting[1], setting[2])
         else:
             logger.debug("No reset hardware sequencing settings specified")
-
-    def _calculate_acq_duration(self, event: MDAEvent) -> float | None:
-        """Calculate the duration of an acquisition event.
-
-        Returns
-        -------
-        float
-            The duration of the acquisition event in seconds.
-            None if acquisition rate cannot be calculated.
-        """
-        if event.exposure is None:
-            return None
-
-        if not isinstance(event, SequencedEvent):
-            return event.exposure / 1000  # convert to seconds
-
-        camera = self.mmcore.getCameraDevice()
-        if not camera == "Prime BSI Express":
-            # Currently only supported for Prime BSI Express
-            return None
-
-        # For Prime BSI Express the acquisition framerate is dominated
-        # by the exposure time
-        acq_framerate = 1000 / event.exposure
-        return len(event.events) / acq_framerate
 
     def _adjust_xy_stage_speed(self, event: MDAEvent) -> None:
         """Modulate XY stage speed based on distance to target position.
