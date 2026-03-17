@@ -1,3 +1,14 @@
+# Setup
+setup:
+  roi: [225, 880, 1600, 256]
+  properties:
+    - ['Core', 'Focus', 'Z']
+    - ['Camera', 'OnCameraCCDXSize', '2048']
+    - ['Camera', 'OnCameraCCDYSize', '2048']
+    - ['Camera', 'PixelType', '16bit']
+    - ['XY', 'Velocity', '10000']
+    - ['Z', 'UseSequences', 'Yes']
+
 # Define stage positions
 stage_positions:
   a1_center_xy: [0, 0]
@@ -68,16 +79,7 @@ metadata:
   pymmcore_widgets:
     version: 0.10.2.dev23+g22b8c0aff.d20260106
   mantis:
-    roi: [225, 880, 1600, 256]
-    z_stage: Z
     use_hardware_sequencing: true
-    initialization_settings:
-      - ['Camera', 'OnCameraCCDXSize', '2048']
-      - ['Camera', 'OnCameraCCDYSize', '2048']
-      - ['Camera', 'PixelType', '16bit']
-      - ['XY', 'Velocity', '10000']
-    setup_hardware_sequencing_settings:
-      - ['Z', 'UseSequences', 'Yes']
     reset_hardware_sequencing_settings:
       - ['Z', 'UseSequences', 'No']
     autofocus:
