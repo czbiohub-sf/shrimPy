@@ -101,42 +101,6 @@ class MantisEngine(MDAEngine):
         # Extract mantis settings from metadata
         microscope_meta = sequence.metadata.get("mantis", {}) if sequence.metadata else {}
 
-        # Apply initialization settings and ROI before the parent's
-        # setup_sequence so that SummaryMetaV1 captures the correct
-        # image dimensions (used by the output sink).
-        if initialization_settings := microscope_meta.get("initialization_settings"):
-            logger.info(f"Applying {len(initialization_settings)} initialization settings")
-            for setting in initialization_settings:
-                logger.debug(f"  Setting {setting[0]}.{setting[1]} = {setting[2]}")
-                core.setProperty(setting[0], setting[1], setting[2])
-        else:
-            logger.debug("No initialization settings specified")
-
-        # Apply ROI settings
-        if roi := microscope_meta.get("roi"):
-            core.clearROI()
-            core.setROI(*roi)
-
-        # Apply setup hardware sequencing settings
-        if setup_hardware_sequencing_settings := microscope_meta.get(
-            "setup_hardware_sequencing_settings"
-        ):
-            logger.info(
-                f"Applying {len(setup_hardware_sequencing_settings)} hardware sequencing settings"
-            )
-            for setting in setup_hardware_sequencing_settings:
-                logger.debug(f"  Setting {setting[0]}.{setting[1]} = {setting[2]}")
-                core.setProperty(setting[0], setting[1], setting[2])
-        else:
-            logger.debug("No hardware sequencing settings specified")
-
-        # Set focus device
-        if z_stage := microscope_meta.get("z_stage"):
-            logger.info(f"Setting focus device to: {z_stage}")
-            core.setProperty("Core", "Focus", z_stage)
-        else:
-            logger.debug(f"Using default focus device: {core.getFocusDevice()}")
-
         # Set autofocus settings
         if autofocus := microscope_meta.get("autofocus"):
             if autofocus.get("enabled"):
