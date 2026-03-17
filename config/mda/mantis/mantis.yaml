@@ -5,7 +5,6 @@ setup:
     config: Right
     group: Imaging Path
   properties:
-    - ['Core', 'Focus', 'LS Scan Galvo']
     - ['Prime BSI Express', 'ReadoutRate', '100MHz 16bit']
     - ['Prime BSI Express', 'Gain', '1-HDR']
     - ['Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter']
