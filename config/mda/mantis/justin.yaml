@@ -25,22 +25,23 @@ time_plan:
 
 # Define z plan
 z_plan:
+  top: 89
+  bottom: -89
+  step: 15
   go_up: true
-  range: 100.0
-  step: 0.313
 
 # Define channels
 channels:
 - config: BF
   group: Channel
-  exposure: 100.0
+  exposure: 5.0
   do_stack: true
   z_offset: 0.0
   acquire_every: 1
   camera: null
 - config: GFP
   group: Channel
-  exposure: 100.0
+  exposure: 10.0
   do_stack: true
   z_offset: 0.0
   acquire_every: 1
@@ -61,21 +62,22 @@ metadata:
   pymmcore_widgets:
     version: 0.10.2.dev23+g22b8c0aff.d20260106
   mantis:
-    roi: [0, 512, 2048, 256]
+    roi: [225, 880, 1600, 256]
     z_stage: AP Galvo
     use_hardware_sequencing: true
     initialization_settings:
-      - ['Prime BSI Express', 'ReadoutRate', '200MHz 11bit']
-      - ['Prime BSI Express', 'Gain', '1-Full well']
+      - ['Core', 'Camera', 'Prime BSI Express']
+      - ['Prime BSI Express', 'ReadoutRate', '100MHz 16bit']
+      - ['Prime BSI Express', 'Gain', '1-HDR']
       - ['Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter']
     setup_hardware_sequencing_settings:
-      - ['Prime BSI Express', 'TriggerMode', 'Edge Trigger']
-      - ['TS2_TTL1-8', 'Blanking', 'On']
+      # - ['Prime BSI Express', 'TriggerMode', 'Edge Trigger']
+      - ['TS_TTL1-8', 'Blanking', 'On']
       - ['TS_DAC01', 'Sequence', 'On']
     reset_hardware_sequencing_settings:
-      - ['Prime BSI Express', 'TriggerMode', 'Internal Trigger']
-      - ['TS2_TTL1-8', 'Blanking', 'Off']
+      # - ['Prime BSI Express', 'TriggerMode', 'Internal Trigger']
+      - ['TS_TTL1-8', 'Blanking', 'Off']
       - ['TS_DAC01', 'Sequence', 'Off']
     autofocus:
-      enabled: true
-      method: PFS
+      enabled: false
+      method: demo-PFS
