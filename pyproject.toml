@@ -24,6 +24,7 @@ dependencies = [
   "click",
   "numpy",
   "ome-writers[acquire-zarr]",
+  "pymmcore>=11.14.0.75.0",
   "pymmcore-plus",
   "pymmcore-widgets",
   "PyYAML",
