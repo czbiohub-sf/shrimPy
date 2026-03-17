@@ -111,12 +111,14 @@ def test_demo_mda_acquisition(demo_engine, demo_mda_sequence, tmp_path):
     assert num_positions == 8, f"Expected 8 positions, found {num_positions}"
     # Confirm expected position name
     assert _pos_name == "A/1/fov0"
+    # ROI is now applied via the setup event in MDASequence
+    setup_roi = demo_mda_sequence.setup.roi
     assert _data.shape == (
         demo_mda_sequence.sizes["t"],
         demo_mda_sequence.sizes["c"],
         demo_mda_sequence.sizes["z"],
-        demo_mda_sequence.metadata["mantis"]["roi"][3],
-        demo_mda_sequence.metadata["mantis"]["roi"][2],
+        setup_roi.height,
+        setup_roi.width,
     )
     assert all(
         channel.config in dataset.channel_names for channel in demo_mda_sequence.channels
