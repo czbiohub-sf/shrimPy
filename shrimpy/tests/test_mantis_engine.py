@@ -123,41 +123,6 @@ def test_setup_sequence_no_mantis_metadata(engine):
     assert engine._use_autofocus is False
 
 
-def test_setup_sequence_roi_applied(engine, mock_core):
-    # ROI from metadata should be forwarded to core.clearROI + core.setROI
-    roi = [225, 880, 1600, 256]
-    seq = _make_sequence({"roi": roi})
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"):
-        engine.setup_sequence(seq)
-    mock_core.clearROI.assert_called_once()
-    mock_core.setROI.assert_called_once_with(*roi)
-
-
-def test_setup_sequence_initialization_settings_applied(engine, mock_core):
-    # Each [device, property, value] triple should call core.setProperty
-    settings = [
-        ["Camera", "OnCameraCCDXSize", "2048"],
-        ["Camera", "PixelType", "16bit"],
-    ]
-    seq = _make_sequence({"initialization_settings": settings})
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"):
-        engine.setup_sequence(seq)
-
-    calls = [
-        call("Camera", "OnCameraCCDXSize", "2048"),
-        call("Camera", "PixelType", "16bit"),
-    ]
-    mock_core.setProperty.assert_has_calls(calls, any_order=False)
-
-
-def test_setup_sequence_z_stage_set(engine, mock_core):
-    # z_stage metadata should set Core/Focus property
-    seq = _make_sequence({"z_stage": "AP Galvo"})
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"):
-        engine.setup_sequence(seq)
-    mock_core.setProperty.assert_called_with("Core", "Focus", "AP Galvo")
-
-
 def test_setup_sequence_autofocus_enabled(engine, mock_core):
     # Autofocus metadata with enabled=True should configure the engine
     af = {"enabled": True, "stage": "ZDrive", "method": "PFS"}

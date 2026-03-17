@@ -50,19 +50,10 @@ def demo_mda_sequence() -> MDASequence:
 
 
 def test_setup_applies_demo_settings(demo_engine, demo_mda_sequence, mantis_metadata):
-    # setup_sequence should apply all mantis metadata from demo.yaml,
-    # tested in test_setup_sequence_*
+    # setup_sequence should apply mantis-specific settings from demo.yaml.
+    # ROI and device properties are now applied via a setup event in MDASequence,
+    # not by MantisEngine.setup_sequence.
     demo_engine.setup_sequence(demo_mda_sequence)
-
-    core = demo_engine.mmcore
-
-    # ROI should have been applied
-    roi = mantis_metadata["roi"]
-    actual_roi = list(core.getROI())
-    assert actual_roi == roi, f"Expected ROI {roi}, got {actual_roi}"
-
-    # Focus device should be set to the z_stage from metadata
-    assert core.getFocusDevice() == mantis_metadata["z_stage"]
 
     # Autofocus should be enabled with demo-PFS method
     assert demo_engine._use_autofocus is True
@@ -134,9 +125,10 @@ def test_demo_mda_acquisition(demo_engine, demo_mda_sequence, tmp_path):
 
 def test_teardown_after_setup(demo_engine, demo_mda_sequence):
     core = demo_engine.mmcore
-    # Setup then teardown — engine should not raise and state should be clean
+    # Setup then teardown — engine should not raise and state should be clean.
+    # setup_hardware_sequencing_settings are now applied via a setup event,
+    # not by MantisEngine.setup_sequence, so we only check teardown resets.
     demo_engine.setup_sequence(demo_mda_sequence)
-    assert core.getProperty("Z", "UseSequences") == "Yes"
     demo_engine.teardown_sequence(demo_mda_sequence)
     assert core.getProperty("Z", "UseSequences") == "No"
 
