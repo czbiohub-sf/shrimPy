@@ -85,7 +85,6 @@ metadata:
   pymmcore_widgets:
     version: 0.10.2.dev23+g22b8c0aff.d20260106
   mantis:
-    use_hardware_sequencing: true
     reset_hardware_sequencing_settings:
       - ['TS2_TTL1-8', 'Blanking', 'Off']
       - ['TS2_DAC03', 'Sequence', 'Off']
