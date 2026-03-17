@@ -76,18 +76,6 @@ def mantis_metadata() -> dict:
         )
     """
     return {
-        "roi": [225, 880, 1600, 256],
-        "z_stage": "Z",
-        "use_hardware_sequencing": True,
-        "initialization_settings": [
-            ["Camera", "OnCameraCCDXSize", "2048"],
-            ["Camera", "OnCameraCCDYSize", "2048"],
-            ["Camera", "PixelType", "16bit"],
-            ["XY", "Velocity", "10000"],
-        ],
-        "setup_hardware_sequencing_settings": [
-            ["Z", "UseSequences", "Yes"],
-        ],
         "reset_hardware_sequencing_settings": [
             ["Z", "UseSequences", "No"],
         ],

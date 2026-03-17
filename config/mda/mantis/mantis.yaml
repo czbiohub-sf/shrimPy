@@ -1,3 +1,17 @@
+# Setup
+setup:
+  roi: [190, 880, 1600, 256]
+  channel:
+    config: Right
+    group: Imaging Path
+  properties:
+    - ['Prime BSI Express', 'ReadoutRate', '100MHz 16bit']
+    - ['Prime BSI Express', 'Gain', '1-HDR']
+    - ['Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter']
+    - ['TS2_TTL1-8', 'Sequence', 'Off']
+    - ['TS2_TTL1-8', 'Blanking', 'On']
+    - ['TS2_DAC03', 'Sequence', 'On']
+
 # Define stage positions
 stage_positions:
   a1_center_xy: [0, 0]
@@ -33,8 +47,8 @@ time_plan:
 
 # Define z plan
 z_plan:
-  top: 89
-  bottom: -89
+  top: 99
+  bottom: -81
   step: 0.15
   go_up: true
 
@@ -70,21 +84,6 @@ metadata:
   pymmcore_widgets:
     version: 0.10.2.dev23+g22b8c0aff.d20260106
   mantis:
-    roi: [225, 880, 1600, 256]
-    z_stage: AP Galvo
-    use_hardware_sequencing: true
-    initialization_settings:
-      - ['LightPath', 'Label', '2-R100']
-      - ['TS2_TTL1-8', 'Sequence', 'Off']
-      - ['Core', 'Shutter', 'TS2 Shutter']
-      - ['Turret1Shutter', 'State', '0']
-      - ['Core', 'Camera', 'Prime BSI Express']
-      - ['Prime BSI Express', 'ReadoutRate', '100MHz 16bit']
-      - ['Prime BSI Express', 'Gain', '1-HDR']
-      - ['Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter']
-    setup_hardware_sequencing_settings:
-      - ['TS2_TTL1-8', 'Blanking', 'On']
-      - ['TS2_DAC03', 'Sequence', 'On']
     reset_hardware_sequencing_settings:
       - ['TS2_TTL1-8', 'Blanking', 'Off']
       - ['TS2_DAC03', 'Sequence', 'Off']
