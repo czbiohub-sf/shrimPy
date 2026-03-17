@@ -1562,8 +1562,8 @@ wheels = [
 
 [[package]]
 name = "ome-writers"
-version = "0.3.1.dev2+g132389bfc"
-source = { git = "https://github.com/ieivanov/ome-writers?branch=main#132389bfc4b8626f723989309e2104ae8adb485f" }
+version = "0.3.1.dev5+g71dc49126"
+source = { git = "https://github.com/ieivanov/ome-writers?branch=main#71dc49126c933a5fa3b1fc01c5a6b07ebc98eb9e" }
 dependencies = [
     { name = "numpy" },
     { name = "pydantic" },
@@ -2111,8 +2111,8 @@ wheels = [
 
 [[package]]
 name = "pymmcore-plus"
-version = "0.17.3.dev30+g5b2cf4483"
-source = { git = "https://github.com/ieivanov/pymmcore-plus?branch=main#5b2cf44832d35e9a993f97f2aff78bfe409b360f" }
+version = "0.18.0rc2.dev20+gbc7fed8bc"
+source = { git = "https://github.com/ieivanov/pymmcore-plus?branch=main#bc7fed8bcbf9318779aa850cf64929f5a957ee91" }
 dependencies = [
     { name = "numpy" },
     { name = "ome-types" },
@@ -2694,7 +2694,7 @@ wheels = [
 
 [[package]]
 name = "useq-schema"
-version = "0.8.2"
+version = "0.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
@@ -2702,9 +2702,9 @@ dependencies = [
     { name = "shapely" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a6/d6/6e458ca25e07b726956e1edd7fb57f0bd762af733cc184d3c580d463a62a/useq_schema-0.8.2.tar.gz", hash = "sha256:76daf878a0c4750ce900b419c3c6a0866e05a88e7bb39e495655453a6d396c97", size = 69035, upload-time = "2025-12-01T21:06:40.623Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/79/6e/4882a6210bf931c3045408aa68d662c2fa23020e067eb8126b8b1dbecb06/useq_schema-0.9.0.tar.gz", hash = "sha256:e4212a3950675877b80a93db9cf90af788358e67949e70a73abca76ceac72f14", size = 114204, upload-time = "2026-03-12T02:11:32.622Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/87/41/84baf0a3157876df43f8aebf6526f88df7003b1fd168956498f3f12d885a/useq_schema-0.8.2-py3-none-any.whl", hash = "sha256:239836c8a55d5cdfcf3be74f753977180a01c738edb98ef4f38d5eb543df83c6", size = 52915, upload-time = "2025-12-01T21:06:39.049Z" },
+    { url = "https://files.pythonhosted.org/packages/e6/dd/8eb6c5a1375eee2a5b9642fb35441407e4cde25761b93b658759075511f4/useq_schema-0.9.0-py3-none-any.whl", hash = "sha256:fe94e0e67b1a60625d84619c0187de2217142e9d2bdf5f3d8dd4d42fdf01bdb7", size = 85516, upload-time = "2026-03-12T02:11:31.158Z" },
 ]
 
 [[package]]
