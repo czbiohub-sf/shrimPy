@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import time
 
@@ -15,6 +16,7 @@ from pymmcore_plus.core import CMMCorePlus
 from pymmcore_plus.core._sequencing import SequencedEvent
 from pymmcore_plus.mda import MDAEngine, SkipEvent
 from pymmcore_plus.metadata import SummaryMetaV1
+from pymmcore_plus.metadata.serialize import to_builtins
 from useq import MDAEvent, MDASequence
 
 # Get the logger instance (will be configured by the CLI entry point)
@@ -64,6 +66,7 @@ class MantisEngine(MDAEngine):
         self._autofocus_fail_at_index = None
         self._xy_stage_device = None
         self._xy_stage_speed = None
+        self._summary_metadata: SummaryMetaV1 | None = None
 
         # Register event callbacks for logging
         mmc.mda.set_engine(self)
@@ -122,7 +125,13 @@ class MantisEngine(MDAEngine):
 
         # Call parent setup last so SummaryMetaV1 captures the fully
         # configured hardware state (ROI, focus device, etc.).
-        return super().setup_sequence(sequence)
+        meta = super().setup_sequence(sequence)
+
+        # Store summary metadata for writing to disk in acquire()
+        # TODO: remove once ome-writers supports root-level metadata natively
+        self._summary_metadata = meta
+
+        return meta
 
     def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
@@ -413,6 +422,13 @@ class MantisEngine(MDAEngine):
         logger.info(f"Starting acquisition: {name}")
         self.mmcore.mda.run(sequence, output=settings)
         logger.info("Acquisition completed successfully")
+
+        # Write summary metadata to a separate file at the zarr root
+        # TODO: remove once ome-writers supports root-level metadata natively
+        if self._summary_metadata is not None:
+            meta_path = data_path / "summary_metadata.json"
+            meta_path.write_text(json.dumps(to_builtins(self._summary_metadata)))
+            self._summary_metadata = None
 
 
 def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
