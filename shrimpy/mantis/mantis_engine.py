@@ -75,8 +75,8 @@ class MantisEngine(MDAEngine):
 
     def _on_property_changed(self, device: str, property_name: str, value: str) -> None:
         """Log property changes at debug level."""
-        # Ignore "PFS Status" changes
-        if property_name == "PFS Status":
+        # Ignore select property changes
+        if property_name in ("PFS Status", "PFS", "FocusMaintenance"):
             return
         logger.debug(f"Property changed: {device}.{property_name} = {value}")
 
