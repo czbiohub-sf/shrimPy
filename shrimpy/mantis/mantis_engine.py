@@ -75,8 +75,8 @@ class MantisEngine(MDAEngine):
 
     def _on_property_changed(self, device: str, property_name: str, value: str) -> None:
         """Log property changes at debug level."""
-        # Ignore "PFS Status" changes
-        if property_name == "PFS Status":
+        # Ignore select property changes
+        if property_name in ("PFS Status", "PFS", "FocusMaintenance"):
             return
         logger.debug(f"Property changed: {device}.{property_name} = {value}")
 
@@ -116,7 +116,6 @@ class MantisEngine(MDAEngine):
                 logger.info("Autofocus is disabled for this acquisition")
 
         # Store XY stage device name
-        # TODO: confirm this is required
         self._xy_stage_device = core.getXYStageDevice()
         logger.debug(f"XY stage device: {self._xy_stage_device}")
 
@@ -134,6 +133,9 @@ class MantisEngine(MDAEngine):
         # TODO: debug resetting xy stage speed
         # self._adjust_xy_stage_speed(event)
         self._set_event_xy_position(event)
+        # _set_event_xy_position does not wait for the stage to reach the target position
+        if self._xy_stage_device:
+            self.mmcore.waitForDevice(self._xy_stage_device)
 
         # Set Z position for the event only if not using autofocus; calling
         # setPosition will disengage continuous autofocus. The autofocus algorithm
