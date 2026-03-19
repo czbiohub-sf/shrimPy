@@ -66,7 +66,7 @@ class MantisEngine(MDAEngine):
         self._autofocus_fail_at_index = None
         self._xy_stage_device = None
         self._xy_stage_speed = None
-        self._summary_metadata: SummaryMetaV1 | None = None
+        self._data_path: Path | None = None
 
         # Register event callbacks for logging
         mmc.mda.set_engine(self)
@@ -127,9 +127,11 @@ class MantisEngine(MDAEngine):
         # configured hardware state (ROI, focus device, etc.).
         meta = super().setup_sequence(sequence)
 
-        # Store summary metadata for writing to disk in acquire()
+        # Write summary metadata to zarr root before acquisition starts
         # TODO: remove once ome-writers supports root-level metadata natively
-        self._summary_metadata = meta
+        if meta is not None and self._data_path is not None:
+            meta_path = self._data_path / "summary_metadata.json"
+            meta_path.write_text(json.dumps(to_builtins(meta)))
 
         return meta
 
@@ -419,16 +421,13 @@ class MantisEngine(MDAEngine):
         data_path = output_dir / f"{name}.ome.zarr"
         settings = self._create_stream_settings(sequence, data_path)
 
+        # Store data path so setup_sequence can write summary metadata
+        # TODO: remove once ome-writers supports root-level metadata natively
+        self._data_path = data_path
+
         logger.info(f"Starting acquisition: {name}")
         self.mmcore.mda.run(sequence, output=settings)
         logger.info("Acquisition completed successfully")
-
-        # Write summary metadata to a separate file at the zarr root
-        # TODO: remove once ome-writers supports root-level metadata natively
-        if self._summary_metadata is not None:
-            meta_path = data_path / "summary_metadata.json"
-            meta_path.write_text(json.dumps(to_builtins(self._summary_metadata)))
-            self._summary_metadata = None
 
 
 def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
