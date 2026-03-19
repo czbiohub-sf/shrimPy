@@ -42,8 +42,8 @@ def _make_robust_call(name: str, func, num_retries: int, wait_s: float):
             except Exception as e:
                 last_error = e
                 msg = str(e).split("\n")[0]
-                logger.error(
-                    f"Attempt {attempt + 1}/{num_retries} failed calling {name} with arguments {args} and keyword arguments {kwargs}: {msg}"
+                logger.debug(
+                    f"Attempt {attempt + 1}/{num_retries} failed calling {name} with arguments {args} and keywords {kwargs}: {msg}"
                 )
                 if attempt < num_retries - 1:
                     time.sleep(wait_s)
