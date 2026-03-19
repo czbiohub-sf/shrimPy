@@ -47,8 +47,8 @@ time_plan:
 
 # Define z plan
 z_plan:
-  top: 99
-  bottom: -81
+  top: 90
+  bottom: -90
   step: 0.15
   go_up: true
 
