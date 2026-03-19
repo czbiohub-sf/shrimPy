@@ -125,6 +125,30 @@ def test_demo_mda_acquisition(demo_engine, demo_mda_sequence, tmp_path):
     )
 
 
+def test_summary_metadata_written_to_zarr(demo_engine, demo_mda_sequence, tmp_path):
+    """Verify that summary_metadata.json is written at the zarr root."""
+    import json
+
+    demo_engine.acquire(
+        output_dir=tmp_path,
+        name="meta_test",
+        mda_config=DEMO_MDA_CONFIG,
+    )
+
+    zarr_dirs = list(tmp_path.glob("meta_test_*.ome.zarr"))
+    assert len(zarr_dirs) == 1
+
+    meta_path = zarr_dirs[0] / "summary_metadata.json"
+    assert meta_path.exists(), "summary_metadata.json not found at zarr root"
+
+    summary = json.loads(meta_path.read_text())
+    assert summary["format"] == "summary-dict"
+    assert summary["version"] == "1.0"
+    assert "devices" in summary
+    assert "system_info" in summary
+    assert "image_infos" in summary
+
+
 def test_teardown_after_setup(demo_engine, demo_mda_sequence):
     core = demo_engine.mmcore
     # Setup then teardown — engine should not raise and state should be clean.
