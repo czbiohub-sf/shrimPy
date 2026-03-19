@@ -66,7 +66,6 @@ class MantisEngine(MDAEngine):
         self._autofocus_fail_at_index = None
         self._xy_stage_device = None
         self._xy_stage_speed = None
-        self._data_path: Path | None = None
 
         # Register event callbacks for logging
         mmc.mda.set_engine(self)
@@ -125,15 +124,7 @@ class MantisEngine(MDAEngine):
 
         # Call parent setup last so SummaryMetaV1 captures the fully
         # configured hardware state (ROI, focus device, etc.).
-        meta = super().setup_sequence(sequence)
-
-        # Write summary metadata to zarr root before acquisition starts
-        # TODO: remove once ome-writers supports root-level metadata natively
-        if meta is not None and self._data_path is not None:
-            meta_path = self._data_path / "summary_metadata.json"
-            meta_path.write_text(json.dumps(to_builtins(meta)))
-
-        return meta
+        return super().setup_sequence(sequence)
 
     def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
@@ -421,9 +412,15 @@ class MantisEngine(MDAEngine):
         data_path = output_dir / f"{name}.ome.zarr"
         settings = self._create_stream_settings(sequence, data_path)
 
-        # Store data path so setup_sequence can write summary metadata
+        # Write summary metadata after the zarr store is created
         # TODO: remove once ome-writers supports root-level metadata natively
-        self._data_path = data_path
+        def _write_summary_metadata(_seq: MDASequence, meta: object) -> None:
+            self.mmcore.mda.events.sequenceStarted.disconnect(_write_summary_metadata)
+            if meta and isinstance(meta, dict):
+                meta_path = data_path / "summary_metadata.json"
+                meta_path.write_text(json.dumps(to_builtins(meta)))
+
+        self.mmcore.mda.events.sequenceStarted.connect(_write_summary_metadata)
 
         logger.info(f"Starting acquisition: {name}")
         self.mmcore.mda.run(sequence, output=settings)
