@@ -28,11 +28,10 @@ BRUNO_DST = Path(r"Z:\OPS")
 mmc = Core()
 
 acquisition_directory = Path(r'G:\OPS')
-acquisition_name = 'OPS0XXX_test'
-# start_time = '2026-03-20 04:30:00'
-start_time = 'now'
-# well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
-well_diameter = 3000
+acquisition_name = 'OPS0142'
+start_time = '2026-03-20 04:30:00'
+# start_time = 'now'
+well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
 min_fov_distance_from_well_edge = 800  # in um
 well_centers = {
     'A1': (1569, -118, 6285),
@@ -453,7 +452,7 @@ else:
     else:
         dst_name = '_'.join(acq_dir.name.split('_')[:-1])
         dst = BRUNO_DST / dst_name
-        logger.info(f'Transferring data to Bruno at {dst}')
+        logger.info(f'Transferring data to Bruno at {dst}...')
         shutil.copytree(acq_dir, dst)
         logger.info(f'Data transfer to Bruno finished successfully')
 
