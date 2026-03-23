@@ -6,6 +6,7 @@ import json
 from datetime import datetime
 import re
 import shutil
+from tqdm import tqdm
 
 import numpy as np
 
@@ -444,6 +445,19 @@ finally:
     reset_acquisition()
 
 # %% Transfer data to bruno
+
+# --- Data transfer with progress bar ---
+def copy_with_progress_bar(src, dst):
+    src = Path(src)
+    dst = Path(dst)
+    dst.mkdir(parents=True, exist_ok=True)
+    files = [f for f in src.rglob('*') if f.is_file()]
+    for file in tqdm(files, desc='Transferring files', unit='file'):
+        rel_path = file.relative_to(src)
+        dest_file = dst / rel_path
+        dest_file.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(file, dest_file)
+
 if not BRUNO_DST.exists():
     logger.error(f"Bruno destination {BRUNO_DST} is not accessible, please reconnect to cm.dragonfly and transfer data manually")
 else:
@@ -452,8 +466,12 @@ else:
     else:
         dst_name = '_'.join(acq_dir.name.split('_')[:-1])
         dst = BRUNO_DST / dst_name
-        logger.info(f'Transferring data to Bruno at {dst}...')
-        shutil.copytree(acq_dir, dst)
-        logger.info(f'Data transfer to Bruno finished successfully')
+        if dst.exists():
+            logger.error(f"Destination {dst} already exists, skipping data transfer to avoid overwriting")
+        else:
+            logger.info(f'Transferring data to Bruno at {dst}...')
+            # shutil.copytree(acq_dir, dst)
+            copy_with_progress_bar(acq_dir, dst)
+            logger.info(f'Data transfer to Bruno finished successfully')
 
 # %%
