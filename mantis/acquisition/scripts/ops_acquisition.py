@@ -26,16 +26,16 @@ NUM_RETRY = 3
 mmc = Core()
 
 acquisition_directory = Path(r'G:\OPS')
-acquisition_name = 'OPS0111'
-start_time = '2025-12-12 05:15:00'
+acquisition_name = 'OPS0142'
+start_time = '2026-03-20 04:30:00'
 # start_time = 'now'
 well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
 min_fov_distance_from_well_edge = 800  # in um
 #TODO:uncomment this after this acquisition -EH
 well_centers = {
-    'A1': (1413, 50, 6405),
-    'A2': (40753, 50, 6412),
-    'A3': (80093, 50, 6496),
+    'A1': (1569, -118, 6285),
+    'A2': (40909, -118, 6335),
+    'A3': (80249, -118, 6433),
 }  # (x, y, z) in um
 
 phenotyping_magnification = 20
@@ -46,9 +46,10 @@ image_size = (2048, 2048)
 pixel_size = 6.5  # in um
 
 phenotyping_channel_group = 'Channels'
+# phenotyping_channel = '5-MultiCam_DAPI_mCherry_BF'
 # phenotyping_channel = '5-MultiCam_GFP_Cy5_BF'
-# phenotyping_channel = '5-MultiCam_GFP_mCherry_BF'
-phenotyping_channel = '4-MultiCam_GFP_BF'
+phenotyping_channel = '5-MultiCam_GFP_mCherry_BF'
+# phenotyping_channel = '4-MultiCam_GFP_BF'
 # phenotyping_channel = '4-MultiCam_CL488_BF'
 # phenotyping_channel = '4-MultiCam_mCherry_BF'
 # phenotyping_channel = '4-MultiCam_Cy5_BF'
