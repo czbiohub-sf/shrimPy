@@ -5,6 +5,7 @@ from pathlib import Path
 import json
 from datetime import datetime
 import re
+import shutil
 
 import numpy as np
 
@@ -23,15 +24,16 @@ USE_HW_SEQUENCING = False
 DEBUG = False
 PIEZO_STEP_TIME_S = 0.05
 NUM_RETRY = 3
+BRUNO_DST = Path(r"Z:\OPS")
 mmc = Core()
 
 acquisition_directory = Path(r'G:\OPS')
-acquisition_name = 'OPS0142'
-start_time = '2026-03-20 04:30:00'
-# start_time = 'now'
-well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
+acquisition_name = 'OPS0XXX_test'
+# start_time = '2026-03-20 04:30:00'
+start_time = 'now'
+# well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
+well_diameter = 3000
 min_fov_distance_from_well_edge = 800  # in um
-#TODO:uncomment this after this acquisition -EH
 well_centers = {
     'A1': (1569, -118, 6285),
     'A2': (40909, -118, 6335),
@@ -238,7 +240,7 @@ def reset_acquisition():
 
 # Setup logger and acquisition directory=
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
@@ -442,4 +444,17 @@ try:
 finally:
     reset_acquisition()
 
-## %%
+# %% Transfer data to bruno
+if not BRUNO_DST.exists():
+    logger.error(f"Bruno destination {BRUNO_DST} is not accessible, please reconnect to cm.dragonfly and transfer data manually")
+else:
+    if "test" in acquisition_name.lower():
+        logger.warning("This acquisition is marked as test, skipping data transfer to Bruno")
+    else:
+        dst_name = '_'.join(acq_dir.name.split('_')[:-1])
+        dst = BRUNO_DST / dst_name
+        logger.info(f'Transferring data to Bruno at {dst}')
+        shutil.copytree(acq_dir, dst)
+        logger.info(f'Data transfer to Bruno finished successfully')
+
+# %%
