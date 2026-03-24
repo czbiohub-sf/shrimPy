@@ -19,6 +19,12 @@ from pymmcore_plus.metadata import SummaryMetaV1
 from pymmcore_plus.metadata.serialize import to_builtins
 from useq import MDAEvent, MDASequence
 
+from shrimpy.mantis.position_update import (
+    PositionStore,
+    PositionUpdateConfig,
+    PositionUpdateManager,
+)
+
 # Get the logger instance (will be configured by the CLI entry point)
 logger = logging.getLogger(__name__)
 
@@ -66,6 +72,8 @@ class MantisEngine(MDAEngine):
         self._autofocus_fail_at_index = None
         self._xy_stage_device = None
         self._xy_stage_speed = None
+        self._position_update_manager: PositionUpdateManager | None = None
+        self._position_update_last_tp: tuple[int, int] = (-1, -1)
 
         # Register event callbacks for logging
         mmc.mda.set_engine(self)
@@ -119,6 +127,26 @@ class MantisEngine(MDAEngine):
         self._xy_stage_device = core.getXYStageDevice()
         logger.debug(f"XY stage device: {self._xy_stage_device}")
 
+        # Setup position updating
+        position_update_meta = microscope_meta.get("position_update", {})
+        position_update_config = PositionUpdateConfig(
+            enabled=position_update_meta.get("enabled", False),
+        )
+        if position_update_config.enabled and sequence.stage_positions:
+            position_store = PositionStore()
+            position_store.initialize_from_sequence(sequence)
+            self._position_update_manager = PositionUpdateManager(
+                config=position_update_config,
+                position_store=position_store,
+            )
+            self._position_update_manager.start()
+            self._position_update_last_tp = (-1, -1)
+            logger.info(
+                f"Position updating enabled with {position_store.num_positions} positions"
+            )
+        else:
+            self._position_update_manager = None
+
         logger.info("Mantis hardware setup completed successfully")
 
         # Call parent setup last so SummaryMetaV1 captures the fully
@@ -127,6 +155,10 @@ class MantisEngine(MDAEngine):
 
     def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
+        # Apply position updates and detect position boundaries
+        event = self._apply_position_update(event)
+        self._check_position_update_boundary(event)
+
         # Set XY stage position and engage autofocus
         # Note: this command will not move the stage if the target position is the same
         # as the last commanded position and force_set_xy_position is False.
@@ -155,7 +187,69 @@ class MantisEngine(MDAEngine):
         # Call parent setup_event
         super().setup_event(event)
 
+    def _apply_position_update(self, event: MDAEvent) -> MDAEvent:
+        """Replace event's x/y/z with current values from the position store."""
+        if self._position_update_manager is None:
+            return event
+
+        if isinstance(event, SequencedEvent):
+            p_idx = event.events[0].index.get("p")
+        else:
+            p_idx = event.index.get("p")
+
+        if p_idx is None:
+            return event
+
+        coords = self._position_update_manager.position_store.get_position(p_idx)
+        if coords is None:
+            return event
+
+        update: dict = {}
+        if coords.x is not None:
+            update["x_pos"] = coords.x
+        if coords.y is not None:
+            update["y_pos"] = coords.y
+        if coords.z is not None:
+            update["z_pos"] = coords.z
+
+        if not update:
+            return event
+
+        logger.debug(
+            f"Position update: overriding p={p_idx} to "
+            f"x={update.get('x_pos')}, y={update.get('y_pos')}, z={update.get('z_pos')}"
+        )
+        return event.model_copy(update=update)
+
+    def _check_position_update_boundary(self, event: MDAEvent) -> None:
+        """Detect when a new position starts and trigger updating for the previous one."""
+        if self._position_update_manager is None:
+            return
+
+        if isinstance(event, SequencedEvent):
+            t_idx = event.events[0].index.get("t", 0)
+            p_idx = event.events[0].index.get("p", 0)
+        else:
+            t_idx = event.index.get("t", 0)
+            p_idx = event.index.get("p", 0)
+
+        current_tp = (t_idx, p_idx)
+        last_t, last_p = self._position_update_last_tp
+
+        if current_tp != self._position_update_last_tp and last_t >= 0:
+            self._position_update_manager.on_position_complete(last_t, last_p)
+
+        self._position_update_last_tp = current_tp
+
     def teardown_sequence(self, sequence):
+        # Position update: trigger update for the final position and shutdown
+        if self._position_update_manager is not None:
+            last_t, last_p = self._position_update_last_tp
+            if last_t >= 0:
+                self._position_update_manager.on_position_complete(last_t, last_p)
+            self._position_update_manager.shutdown()
+            self._position_update_manager = None
+
         super().teardown_sequence(sequence)
 
         core = self.mmcore
