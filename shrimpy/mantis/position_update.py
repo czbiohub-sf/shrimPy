@@ -3,10 +3,11 @@ from __future__ import annotations
 import logging
 import threading
 
-from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+import numpy as np
 
 if TYPE_CHECKING:
     from useq import MDASequence
@@ -81,27 +82,61 @@ class PositionUpdateConfig:
     enabled: bool = False
 
 
+class PositionUpdater:
+    """Base class for position updaters.
+
+    Subclass to add stateful tracking (e.g. reference images, models).
+    The ``update`` method is called in a background thread after each
+    position's z-stack is acquired.
+    """
+
+    def update(
+        self,
+        timepoint_index: int,
+        position_index: int,
+        position: PositionCoordinates,
+        data: list[np.ndarray] | None = None,
+    ) -> PositionCoordinates:
+        """Return updated coordinates for the given position.
+
+        Parameters
+        ----------
+        timepoint_index : int
+            The current timepoint index.
+        position_index : int
+            The position that was just acquired.
+        position : PositionCoordinates
+            Current coordinates for this position.
+        data : list[np.ndarray] | None
+            Frames acquired for this position (one 2D array per z-slice),
+            or None if frame collection is not available.
+
+        Returns
+        -------
+        PositionCoordinates
+            Updated coordinates for this position.
+        """
+        return position
+
+
 class PositionUpdateManager:
     """Manages async position updates after each position is acquired.
 
     Holds the PositionStore and a single-worker ThreadPoolExecutor.
-    After each position's z-stack completes, the updater function is
-    called with all current positions and the index of the position
-    that just completed. It returns updated coordinates for that
-    position only.
+    After each position's z-stack completes, the updater is called with
+    all current positions, the index of the completed position, and the
+    acquired frame data. It returns updated coordinates for that position.
     """
 
     def __init__(
         self,
         config: PositionUpdateConfig,
         position_store: PositionStore,
-        updater_fn: (
-            Callable[[int, int, dict[int, PositionCoordinates]], PositionCoordinates] | None
-        ) = None,
+        updater: PositionUpdater | None = None,
     ) -> None:
         self.config = config
         self.position_store = position_store
-        self._updater_fn = updater_fn or self._default_updater
+        self._updater = updater or PositionUpdater()
         self._executor: ThreadPoolExecutor | None = None
         self._pending_future: Future | None = None
 
@@ -120,7 +155,12 @@ class PositionUpdateManager:
             self._executor.shutdown(wait=True)
             self._executor = None
 
-    def on_position_complete(self, timepoint_index: int, position_index: int) -> None:
+    def on_position_complete(
+        self,
+        timepoint_index: int,
+        position_index: int,
+        data: list[np.ndarray] | None = None,
+    ) -> None:
         """Called when a position's z-stack has been fully acquired.
 
         Submits the update computation to the thread pool.
@@ -128,20 +168,24 @@ class PositionUpdateManager:
         if not self.config.enabled or self._executor is None:
             return
 
-        positions_snapshot = self.position_store.get_all_positions()
+        position = self.position_store.get_position(position_index)
+        if position is None:
+            return
+
         self._pending_future = self._executor.submit(
-            self._run_updater, timepoint_index, position_index, positions_snapshot
+            self._run_updater, timepoint_index, position_index, position, data
         )
 
     def _run_updater(
         self,
         timepoint_index: int,
         position_index: int,
-        positions: dict[int, PositionCoordinates],
+        position: PositionCoordinates,
+        data: list[np.ndarray] | None,
     ) -> None:
         """Execute the updater and write the result to the position store."""
         try:
-            updated = self._updater_fn(timepoint_index, position_index, positions)
+            updated = self._updater.update(timepoint_index, position_index, position, data)
             self.position_store.update_position(
                 position_index, updated.x, updated.y, updated.z
             )
@@ -154,12 +198,3 @@ class PositionUpdateManager:
                 f"Position update failed for p={position_index} at "
                 f"t={timepoint_index}, keeping previous position"
             )
-
-    @staticmethod
-    def _default_updater(
-        timepoint_index: int,
-        position_index: int,
-        positions: dict[int, PositionCoordinates],
-    ) -> PositionCoordinates:
-        """Stub updater — returns the position unchanged."""
-        return positions[position_index]

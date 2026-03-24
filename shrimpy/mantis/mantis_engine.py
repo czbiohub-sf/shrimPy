@@ -74,6 +74,7 @@ class MantisEngine(MDAEngine):
         self._xy_stage_speed = None
         self._position_update_manager: PositionUpdateManager | None = None
         self._position_update_last_tp: tuple[int, int] = (-1, -1)
+        self._position_update_frames: list[np.ndarray] = []
 
         # Register event callbacks for logging
         mmc.mda.set_engine(self)
@@ -187,6 +188,14 @@ class MantisEngine(MDAEngine):
         # Call parent setup_event
         super().setup_event(event)
 
+    def exec_event(self, event: MDAEvent):
+        """Execute event and buffer frames for position updating."""
+        for payload in super().exec_event(event):
+            if payload is not None and self._position_update_manager is not None:
+                img = payload[0]
+                self._position_update_frames.append(img.copy())
+            yield payload
+
     def _apply_position_update(self, event: MDAEvent) -> MDAEvent:
         """Replace event's x/y/z with current values from the position store."""
         if self._position_update_manager is None:
@@ -237,7 +246,9 @@ class MantisEngine(MDAEngine):
         last_t, last_p = self._position_update_last_tp
 
         if current_tp != self._position_update_last_tp and last_t >= 0:
-            self._position_update_manager.on_position_complete(last_t, last_p)
+            frames = self._position_update_frames
+            self._position_update_frames = []
+            self._position_update_manager.on_position_complete(last_t, last_p, frames)
 
         self._position_update_last_tp = current_tp
 
@@ -246,7 +257,9 @@ class MantisEngine(MDAEngine):
         if self._position_update_manager is not None:
             last_t, last_p = self._position_update_last_tp
             if last_t >= 0:
-                self._position_update_manager.on_position_complete(last_t, last_p)
+                frames = self._position_update_frames
+                self._position_update_frames = []
+                self._position_update_manager.on_position_complete(last_t, last_p, frames)
             self._position_update_manager.shutdown()
             self._position_update_manager = None
 

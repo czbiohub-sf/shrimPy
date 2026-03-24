@@ -1,6 +1,7 @@
 """Tests for position update infrastructure.
 
-Covers PositionStore, PositionUpdateManager, and MantisEngine integration.
+Covers PositionStore, PositionUpdateManager, PositionUpdater,
+and MantisEngine integration.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import weakref
 
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
 from useq import MDAEvent, MDASequence
@@ -21,6 +23,7 @@ from shrimpy.mantis.position_update import (
     PositionStore,
     PositionUpdateConfig,
     PositionUpdateManager,
+    PositionUpdater,
 )
 
 # ---------------------------------------------------------------------------
@@ -157,6 +160,45 @@ class TestPositionStore:
 
 
 # ---------------------------------------------------------------------------
+# PositionUpdater tests
+# ---------------------------------------------------------------------------
+
+
+class TestPositionUpdater:
+    def test_default_updater_returns_position_unchanged(self):
+        updater = PositionUpdater()
+        pos = PositionCoordinates(x=1.0, y=2.0, z=3.0)
+        result = updater.update(0, 0, pos)
+        assert result.x == 1.0
+        assert result.y == 2.0
+        assert result.z == 3.0
+
+    def test_default_updater_ignores_data(self):
+        updater = PositionUpdater()
+        pos = PositionCoordinates(x=1.0, y=2.0, z=3.0)
+        frames = [np.zeros((10, 10), dtype=np.uint16)]
+        result = updater.update(0, 0, pos, data=frames)
+        assert result.x == 1.0
+
+    def test_subclass_receives_data(self):
+        """A subclass can use the data parameter."""
+        received_data = {}
+
+        class TestUpdater(PositionUpdater):
+            def update(self, t_idx, p_idx, position, data=None):
+                received_data["frames"] = data
+                return position
+
+        updater = TestUpdater()
+        pos = PositionCoordinates(x=1.0, y=2.0, z=3.0)
+        frames = [np.ones((5, 5), dtype=np.uint16) * 42]
+        updater.update(0, 0, pos, data=frames)
+
+        assert received_data["frames"] is frames
+        assert received_data["frames"][0][0, 0] == 42
+
+
+# ---------------------------------------------------------------------------
 # PositionUpdateManager tests
 # ---------------------------------------------------------------------------
 
@@ -169,35 +211,40 @@ class TestPositionUpdateManager:
         manager.on_position_complete(0, 0)
         manager.shutdown()
 
-    def test_calls_updater_fn(self, enabled_config, position_store):
+    def test_calls_updater(self, enabled_config, position_store):
         called_with = {}
 
-        def mock_updater(t_idx, p_idx, positions):
-            called_with["t_idx"] = t_idx
-            called_with["p_idx"] = p_idx
-            called_with["positions"] = positions
-            return positions[p_idx]
+        class SpyUpdater(PositionUpdater):
+            def update(self, t_idx, p_idx, position, data=None):
+                called_with["t_idx"] = t_idx
+                called_with["p_idx"] = p_idx
+                called_with["position"] = position
+                called_with["data"] = data
+                return position
 
-        manager = PositionUpdateManager(
-            enabled_config, position_store, updater_fn=mock_updater
-        )
+        manager = PositionUpdateManager(enabled_config, position_store, updater=SpyUpdater())
         manager.start()
-        manager.on_position_complete(0, 1)
+        frames = [np.zeros((4, 4), dtype=np.uint16)]
+        manager.on_position_complete(0, 1, data=frames)
         manager._pending_future.result(timeout=5)
         manager.shutdown()
 
         assert called_with["t_idx"] == 0
         assert called_with["p_idx"] == 1
-        assert len(called_with["positions"]) == 3
+        assert called_with["position"].x == 300.0
+        assert called_with["position"].y == 400.0
+        assert called_with["data"] is frames
 
     def test_updates_store_with_results(self, enabled_config, position_store):
-        def shift_updater(t_idx, p_idx, positions):
-            p = positions[p_idx]
-            return PositionCoordinates(x=p.x + 10.0, y=p.y + 20.0, z=(p.z or 0) + 5.0)
+        class ShiftUpdater(PositionUpdater):
+            def update(self, t_idx, p_idx, position, data=None):
+                return PositionCoordinates(
+                    x=position.x + 10.0,
+                    y=position.y + 20.0,
+                    z=(position.z or 0) + 5.0,
+                )
 
-        manager = PositionUpdateManager(
-            enabled_config, position_store, updater_fn=shift_updater
-        )
+        manager = PositionUpdateManager(enabled_config, position_store, updater=ShiftUpdater())
         manager.start()
         manager.on_position_complete(0, 0)
         manager._pending_future.result(timeout=5)
@@ -211,11 +258,12 @@ class TestPositionUpdateManager:
     def test_updater_failure_preserves_positions(self, enabled_config, position_store):
         original = position_store.get_position(0)
 
-        def failing_updater(t_idx, p_idx, positions):
-            raise RuntimeError("updater crashed")
+        class FailingUpdater(PositionUpdater):
+            def update(self, t_idx, p_idx, position, data=None):
+                raise RuntimeError("updater crashed")
 
         manager = PositionUpdateManager(
-            enabled_config, position_store, updater_fn=failing_updater
+            enabled_config, position_store, updater=FailingUpdater()
         )
         manager.start()
         manager.on_position_complete(0, 0)
@@ -230,28 +278,17 @@ class TestPositionUpdateManager:
     def test_shutdown_waits_for_pending(self, enabled_config, position_store):
         completed = threading.Event()
 
-        def slow_updater(t_idx, p_idx, positions):
-            time.sleep(0.2)
-            completed.set()
-            return positions[p_idx]
+        class SlowUpdater(PositionUpdater):
+            def update(self, t_idx, p_idx, position, data=None):
+                time.sleep(0.2)
+                completed.set()
+                return position
 
-        manager = PositionUpdateManager(
-            enabled_config, position_store, updater_fn=slow_updater
-        )
+        manager = PositionUpdateManager(enabled_config, position_store, updater=SlowUpdater())
         manager.start()
         manager.on_position_complete(0, 0)
         manager.shutdown()
         assert completed.is_set()
-
-    def test_default_updater_returns_position_unchanged(self):
-        positions = {
-            0: PositionCoordinates(x=1.0, y=2.0, z=3.0),
-            1: PositionCoordinates(x=4.0, y=5.0, z=6.0),
-        }
-        result = PositionUpdateManager._default_updater(0, 0, positions)
-        assert result.x == 1.0
-        assert result.y == 2.0
-        assert result.z == 3.0
 
 
 # ---------------------------------------------------------------------------
@@ -351,10 +388,33 @@ class TestMantisEnginePositionUpdate:
 
         manager.shutdown()
 
+    def test_position_boundary_passes_frames(self, engine):
+        """Buffered frames should be passed to on_position_complete."""
+        store = PositionStore()
+        store.update_position(0, x=10.0, y=20.0, z=5.0)
+        manager = PositionUpdateManager(PositionUpdateConfig(enabled=True), store)
+        manager.start()
+        engine._position_update_manager = manager
+        engine._position_update_last_tp = (0, 0)
+
+        # Simulate buffered frames
+        frame1 = np.ones((4, 4), dtype=np.uint16)
+        frame2 = np.ones((4, 4), dtype=np.uint16) * 2
+        engine._position_update_frames = [frame1, frame2]
+
+        # Trigger boundary — should pass frames and clear the buffer
+        event_p1 = MDAEvent(index={"t": 0, "p": 1})
+        engine._check_position_update_boundary(event_p1)
+        manager._pending_future.result(timeout=5)
+
+        assert engine._position_update_frames == []
+        manager.shutdown()
+
     def test_timepoint_change_triggers_update(self, engine):
         """When t changes, update should fire for the last position."""
         store = PositionStore()
         store.update_position(0, x=10.0, y=20.0, z=5.0)
+        store.update_position(1, x=30.0, y=40.0, z=15.0)
         manager = PositionUpdateManager(PositionUpdateConfig(enabled=True), store)
         manager.start()
         engine._position_update_manager = manager
@@ -402,6 +462,50 @@ class TestMantisEnginePositionUpdate:
         assert called_event.y_pos == 666.0
         assert called_event.z_pos == 555.0
 
+    def test_exec_event_buffers_frames(self, engine, mock_core):
+        """exec_event should buffer frame copies when position update is active."""
+        store = PositionStore()
+        engine._position_update_manager = PositionUpdateManager(
+            PositionUpdateConfig(enabled=True), store
+        )
+        engine._position_update_frames = []
+
+        frame = np.ones((4, 4), dtype=np.uint16) * 42
+        event = MDAEvent(index={"t": 0, "p": 0})
+        meta = {"test": True}
+
+        with patch(
+            "shrimpy.mantis.mantis_engine.MDAEngine.exec_event",
+            return_value=[(frame, event, meta)],
+        ):
+            results = list(engine.exec_event(event))
+
+        # Frame should be yielded through
+        assert len(results) == 1
+        assert np.array_equal(results[0][0], frame)
+
+        # Frame should be buffered (as a copy)
+        assert len(engine._position_update_frames) == 1
+        assert np.array_equal(engine._position_update_frames[0], frame)
+        # Verify it's a copy, not the same object
+        assert engine._position_update_frames[0] is not frame
+
+    def test_exec_event_no_buffer_when_disabled(self, engine, mock_core):
+        """exec_event should not buffer frames when position update is disabled."""
+        engine._position_update_manager = None
+        engine._position_update_frames = []
+
+        frame = np.ones((4, 4), dtype=np.uint16)
+        event = MDAEvent(index={"t": 0, "p": 0})
+
+        with patch(
+            "shrimpy.mantis.mantis_engine.MDAEngine.exec_event",
+            return_value=[(frame, event, {})],
+        ):
+            list(engine.exec_event(event))
+
+        assert len(engine._position_update_frames) == 0
+
 
 # ---------------------------------------------------------------------------
 # Integration test with mock updater
@@ -417,9 +521,13 @@ class TestPositionUpdateIntegration:
         """
         engine = MantisEngine(demo_core)
 
-        def shift_updater(t_idx, p_idx, positions):
-            p = positions[p_idx]
-            return PositionCoordinates(x=p.x + 1.0, y=p.y + 1.0, z=(p.z or 0) + 0.5)
+        class ShiftUpdater(PositionUpdater):
+            def update(self, t_idx, p_idx, position, data=None):
+                return PositionCoordinates(
+                    x=position.x + 1.0,
+                    y=position.y + 1.0,
+                    z=(position.z or 0) + 0.5,
+                )
 
         mantis_metadata["position_update"] = {"enabled": True}
         seq = MDASequence(
@@ -432,7 +540,7 @@ class TestPositionUpdateIntegration:
         )
 
         engine.setup_sequence(seq)
-        engine._position_update_manager._updater_fn = shift_updater
+        engine._position_update_manager._updater = ShiftUpdater()
 
         xy_positions: list[tuple[int, int, float, float]] = []
 
