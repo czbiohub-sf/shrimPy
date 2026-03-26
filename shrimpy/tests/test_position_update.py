@@ -365,37 +365,36 @@ class TestMantisEnginePositionUpdate:
         result = engine._apply_position_update(event)
         assert result is event
 
-    def test_position_boundary_triggers_update(self, engine):
-        """When (t, p) changes, _on_frame_ready should fire update for the previous position."""
+    def test_z_slice_count_triggers_update(self, engine):
+        """on_position_complete fires when all z-slices for a position arrive."""
         store = PositionStore()
         store.update_position(0, x=10.0, y=20.0, z=5.0)
-        store.update_position(1, x=30.0, y=40.0, z=15.0)
         manager = PositionUpdateManager(PositionUpdateConfig(enabled=True), store)
         manager.start()
         engine._position_update_manager = manager
-        engine._position_update_last_tp = (-1, -1)
-        engine._position_update_frames = []
+        engine._position_update_frames = {}
+        engine._position_update_expected_slices = 3
 
         frame = np.zeros((4, 4), dtype=np.uint16)
 
-        # First frame at (t=0, p=0) — no update yet
-        event_p0 = MDAEvent(index={"t": 0, "p": 0})
-        engine._on_frame_ready(frame, event_p0)
+        # First two z-slices — not enough yet
+        engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 0}))
+        engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 1}))
         assert manager._pending_future is None
 
-        # First frame at (t=0, p=1) — should trigger update for p=0
-        event_p1 = MDAEvent(index={"t": 0, "p": 1})
-        engine._on_frame_ready(frame, event_p1)
+        # Third z-slice — should trigger update for p=0
+        engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 2}))
         assert manager._pending_future is not None
         manager._pending_future.result(timeout=5)
 
+        # Buffer should be cleared for this (t, p)
+        assert (0, 0) not in engine._position_update_frames
         manager.shutdown()
 
-    def test_position_boundary_passes_frames(self, engine):
-        """Buffered frames from _on_frame_ready should be passed to on_position_complete."""
+    def test_z_slice_count_passes_frames(self, engine):
+        """All buffered z-slices should be passed to on_position_complete."""
         store = PositionStore()
         store.update_position(0, x=10.0, y=20.0, z=5.0)
-        store.update_position(1, x=30.0, y=40.0, z=15.0)
 
         received_data = {}
 
@@ -409,44 +408,45 @@ class TestMantisEnginePositionUpdate:
         )
         manager.start()
         engine._position_update_manager = manager
-        engine._position_update_last_tp = (-1, -1)
-        engine._position_update_frames = []
+        engine._position_update_frames = {}
+        engine._position_update_expected_slices = 2
 
-        # Send two frames at p=0
         frame1 = np.ones((4, 4), dtype=np.uint16)
         frame2 = np.ones((4, 4), dtype=np.uint16) * 2
-        event_p0 = MDAEvent(index={"t": 0, "p": 0, "c": 0})
-        engine._on_frame_ready(frame1, event_p0)
-        engine._on_frame_ready(frame2, event_p0)
-
-        # Trigger boundary with p=1 — should pass buffered frames and clear
-        event_p1 = MDAEvent(index={"t": 0, "p": 1, "c": 0})
-        engine._on_frame_ready(np.zeros((4, 4), dtype=np.uint16), event_p1)
+        engine._on_frame_ready(frame1, MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 0}))
+        engine._on_frame_ready(frame2, MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 1}))
         manager._pending_future.result(timeout=5)
 
         assert len(received_data["frames"]) == 2
         assert np.array_equal(received_data["frames"][0], frame1)
         assert np.array_equal(received_data["frames"][1], frame2)
-        # Buffer should now only contain the p=1 frame
-        assert len(engine._position_update_frames) == 1
         manager.shutdown()
 
-    def test_timepoint_change_triggers_update(self, engine):
-        """When t changes, _on_frame_ready should fire update for the last position."""
+    def test_multiple_positions_update_independently(self, engine):
+        """Each (t, p) accumulates slices and flushes independently."""
         store = PositionStore()
         store.update_position(0, x=10.0, y=20.0, z=5.0)
         store.update_position(1, x=30.0, y=40.0, z=15.0)
         manager = PositionUpdateManager(PositionUpdateConfig(enabled=True), store)
         manager.start()
         engine._position_update_manager = manager
-        engine._position_update_last_tp = (0, 1)
-        engine._position_update_frames = []
+        engine._position_update_frames = {}
+        engine._position_update_expected_slices = 2
 
         frame = np.zeros((4, 4), dtype=np.uint16)
-        event_t1 = MDAEvent(index={"t": 1, "p": 0})
-        engine._on_frame_ready(frame, event_t1)
+
+        # One slice each for p=0 and p=1 — neither complete yet
+        engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 0}))
+        engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 1, "c": 0, "z": 0}))
+        assert manager._pending_future is None
+
+        # Complete p=0
+        engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 1}))
         assert manager._pending_future is not None
         manager._pending_future.result(timeout=5)
+        assert (0, 0) not in engine._position_update_frames
+        # p=1 still buffering
+        assert (0, 1) in engine._position_update_frames
 
         manager.shutdown()
 
@@ -456,8 +456,7 @@ class TestMantisEnginePositionUpdate:
         manager = PositionUpdateManager(PositionUpdateConfig(enabled=True), store)
         manager.start()
         engine._position_update_manager = manager
-        engine._position_update_last_tp = (0, 1)
-        engine._position_update_frames = []
+        engine._position_update_frames = {}
 
         with patch("shrimpy.mantis.mantis_engine.MDAEngine.teardown_sequence"):
             engine.teardown_sequence(MDASequence(metadata={"mantis": {}}))
@@ -472,7 +471,6 @@ class TestMantisEnginePositionUpdate:
         engine._position_update_manager = PositionUpdateManager(
             PositionUpdateConfig(enabled=True), store
         )
-        engine._position_update_last_tp = (-1, -1)
 
         event = MDAEvent(x_pos=100.0, y_pos=200.0, z_pos=300.0, index={"t": 0, "p": 0})
 
@@ -492,8 +490,8 @@ class TestMantisEnginePositionUpdate:
         engine._position_update_manager = PositionUpdateManager(
             PositionUpdateConfig(enabled=True), store
         )
-        engine._position_update_frames = []
-        engine._position_update_last_tp = (-1, -1)
+        engine._position_update_frames = {}
+        engine._position_update_expected_slices = 5  # high so no flush
 
         frame = np.ones((4, 4), dtype=np.uint16) * 42
         event = MDAEvent(index={"t": 0, "p": 0, "c": 0})
@@ -501,68 +499,69 @@ class TestMantisEnginePositionUpdate:
         engine._on_frame_ready(frame, event)
 
         # Frame should be buffered (as a copy)
-        assert len(engine._position_update_frames) == 1
-        assert np.array_equal(engine._position_update_frames[0], frame)
+        buffered = engine._position_update_frames[(0, 0)]
+        assert len(buffered) == 1
+        assert np.array_equal(buffered[0], frame)
         # Verify it's a copy, not the same object
-        assert engine._position_update_frames[0] is not frame
+        assert buffered[0] is not frame
 
     def test_on_frame_ready_default_caches_channel_0_only(self, engine):
         """Default update_channel=0 should only buffer frames from channel 0."""
         store = PositionStore()
         config = PositionUpdateConfig(enabled=True)  # default update_channel=0
         engine._position_update_manager = PositionUpdateManager(config, store)
-        engine._position_update_frames = []
-        engine._position_update_last_tp = (-1, -1)
+        engine._position_update_frames = {}
+        engine._position_update_expected_slices = 5
 
         frame = np.ones((4, 4), dtype=np.uint16)
 
         # Channel 0 — should be buffered
         engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0}))
-        assert len(engine._position_update_frames) == 1
+        assert len(engine._position_update_frames.get((0, 0), [])) == 1
 
         # Channel 1 — should be skipped
         engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 1}))
-        assert len(engine._position_update_frames) == 1
+        assert len(engine._position_update_frames.get((0, 0), [])) == 1
 
     def test_on_frame_ready_filters_by_channel(self, engine):
         """Only frames from the configured update_channel should be buffered."""
         store = PositionStore()
         config = PositionUpdateConfig(enabled=True, update_channel=1)
         engine._position_update_manager = PositionUpdateManager(config, store)
-        engine._position_update_frames = []
-        engine._position_update_last_tp = (-1, -1)
+        engine._position_update_frames = {}
+        engine._position_update_expected_slices = 5
 
         frame = np.ones((4, 4), dtype=np.uint16)
 
         # Channel 0 frame — should be skipped
         engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0}))
-        assert len(engine._position_update_frames) == 0
+        assert (0, 0) not in engine._position_update_frames
 
         # Channel 1 frame — should be buffered
         engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 1}))
-        assert len(engine._position_update_frames) == 1
+        assert len(engine._position_update_frames[(0, 0)]) == 1
 
         # Channel 2 frame — should be skipped
         engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 2}))
-        assert len(engine._position_update_frames) == 1
+        assert len(engine._position_update_frames[(0, 0)]) == 1
 
     def test_on_frame_ready_all_channels_when_none(self, engine):
         """When update_channel is None, all channels should be buffered."""
         store = PositionStore()
         config = PositionUpdateConfig(enabled=True, update_channel=None)
         engine._position_update_manager = PositionUpdateManager(config, store)
-        engine._position_update_frames = []
-        engine._position_update_last_tp = (-1, -1)
+        engine._position_update_frames = {}
+        engine._position_update_expected_slices = 5
 
         frame = np.ones((4, 4), dtype=np.uint16)
         engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0}))
         engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 1}))
-        assert len(engine._position_update_frames) == 2
+        assert len(engine._position_update_frames[(0, 0)]) == 2
 
     def test_on_frame_ready_no_buffer_when_disabled(self, engine):
         """_on_frame_ready should not buffer frames when position update is disabled."""
         engine._position_update_manager = None
-        engine._position_update_frames = []
+        engine._position_update_frames = {}
 
         frame = np.ones((4, 4), dtype=np.uint16)
         event = MDAEvent(index={"t": 0, "p": 0})

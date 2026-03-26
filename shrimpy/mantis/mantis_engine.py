@@ -73,8 +73,8 @@ class MantisEngine(MDAEngine):
         self._xy_stage_device = None
         self._xy_stage_speed = None
         self._position_update_manager: PositionUpdateManager | None = None
-        self._position_update_last_tp: tuple[int, int] = (-1, -1)
-        self._position_update_frames: list[np.ndarray] = []
+        self._position_update_frames: dict[tuple[int, int], list[np.ndarray]] = {}
+        self._position_update_expected_slices: int = 1
 
         # Register event callbacks for logging
         mmc.mda.set_engine(self)
@@ -142,8 +142,8 @@ class MantisEngine(MDAEngine):
                 position_store=position_store,
             )
             self._position_update_manager.start()
-            self._position_update_last_tp = (-1, -1)
-            self._position_update_frames = []
+            self._position_update_frames = {}
+            self._position_update_expected_slices = max(sequence.sizes.get("z", 1), 1)
             self.mmcore.mda.events.frameReady.connect(self._on_frame_ready)
             logger.info(
                 f"Position updating enabled with {position_store.num_positions} positions"
@@ -193,30 +193,29 @@ class MantisEngine(MDAEngine):
     def _on_frame_ready(self, img: np.ndarray, event: MDAEvent) -> None:
         """Buffer frames for position updating via frameReady callback.
 
-        Detects position boundaries by tracking (timepoint, position) indices.
-        When a new position starts, triggers the updater for the previous one.
+        Counts z-slices per (timepoint, position) and triggers the updater
+        as soon as all expected slices have been collected.
         """
         if self._position_update_manager is None:
             return
-
-        t_idx = event.index.get("t", 0)
-        p_idx = event.index.get("p", 0)
-        current_tp = (t_idx, p_idx)
-        last_t, last_p = self._position_update_last_tp
-
-        # Detect position boundary: new (t, p) means previous position is complete
-        if current_tp != self._position_update_last_tp and last_t >= 0:
-            frames = self._position_update_frames
-            self._position_update_frames = []
-            self._position_update_manager.on_position_complete(last_t, last_p, frames)
-
-        self._position_update_last_tp = current_tp
 
         # Only cache frames from the configured channel (None = all channels)
         update_channel = self._position_update_manager.config.update_channel
         if update_channel is not None and event.index.get("c") != update_channel:
             return
-        self._position_update_frames.append(img.copy())
+
+        t_idx = event.index.get("t", 0)
+        p_idx = event.index.get("p", 0)
+        tp = (t_idx, p_idx)
+
+        if tp not in self._position_update_frames:
+            self._position_update_frames[tp] = []
+        self._position_update_frames[tp].append(img.copy())
+
+        # Flush when all z-slices for this position have arrived
+        if len(self._position_update_frames[tp]) >= self._position_update_expected_slices:
+            frames = self._position_update_frames.pop(tp)
+            self._position_update_manager.on_position_complete(t_idx, p_idx, frames)
 
     def _apply_position_update(self, event: MDAEvent) -> MDAEvent:
         """Replace event's x/y/z with current values from the position store."""
@@ -253,14 +252,10 @@ class MantisEngine(MDAEngine):
         return event.model_copy(update=update)
 
     def teardown_sequence(self, sequence):
-        # Position update: disconnect callback, flush final position, and shutdown
+        # Position update: disconnect callback and shutdown
         if self._position_update_manager is not None:
             self.mmcore.mda.events.frameReady.disconnect(self._on_frame_ready)
-            last_t, last_p = self._position_update_last_tp
-            if last_t >= 0:
-                frames = self._position_update_frames
-                self._position_update_frames = []
-                self._position_update_manager.on_position_complete(last_t, last_p, frames)
+            self._position_update_frames = {}
             self._position_update_manager.shutdown()
             self._position_update_manager = None
 
