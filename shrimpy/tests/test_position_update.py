@@ -415,12 +415,12 @@ class TestMantisEnginePositionUpdate:
         # Send two frames at p=0
         frame1 = np.ones((4, 4), dtype=np.uint16)
         frame2 = np.ones((4, 4), dtype=np.uint16) * 2
-        event_p0 = MDAEvent(index={"t": 0, "p": 0})
+        event_p0 = MDAEvent(index={"t": 0, "p": 0, "c": 0})
         engine._on_frame_ready(frame1, event_p0)
         engine._on_frame_ready(frame2, event_p0)
 
         # Trigger boundary with p=1 — should pass buffered frames and clear
-        event_p1 = MDAEvent(index={"t": 0, "p": 1})
+        event_p1 = MDAEvent(index={"t": 0, "p": 1, "c": 0})
         engine._on_frame_ready(np.zeros((4, 4), dtype=np.uint16), event_p1)
         manager._pending_future.result(timeout=5)
 
@@ -496,7 +496,7 @@ class TestMantisEnginePositionUpdate:
         engine._position_update_last_tp = (-1, -1)
 
         frame = np.ones((4, 4), dtype=np.uint16) * 42
-        event = MDAEvent(index={"t": 0, "p": 0})
+        event = MDAEvent(index={"t": 0, "p": 0, "c": 0})
 
         engine._on_frame_ready(frame, event)
 
@@ -505,6 +505,59 @@ class TestMantisEnginePositionUpdate:
         assert np.array_equal(engine._position_update_frames[0], frame)
         # Verify it's a copy, not the same object
         assert engine._position_update_frames[0] is not frame
+
+    def test_on_frame_ready_default_caches_channel_0_only(self, engine):
+        """Default update_channel=0 should only buffer frames from channel 0."""
+        store = PositionStore()
+        config = PositionUpdateConfig(enabled=True)  # default update_channel=0
+        engine._position_update_manager = PositionUpdateManager(config, store)
+        engine._position_update_frames = []
+        engine._position_update_last_tp = (-1, -1)
+
+        frame = np.ones((4, 4), dtype=np.uint16)
+
+        # Channel 0 — should be buffered
+        engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0}))
+        assert len(engine._position_update_frames) == 1
+
+        # Channel 1 — should be skipped
+        engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 1}))
+        assert len(engine._position_update_frames) == 1
+
+    def test_on_frame_ready_filters_by_channel(self, engine):
+        """Only frames from the configured update_channel should be buffered."""
+        store = PositionStore()
+        config = PositionUpdateConfig(enabled=True, update_channel=1)
+        engine._position_update_manager = PositionUpdateManager(config, store)
+        engine._position_update_frames = []
+        engine._position_update_last_tp = (-1, -1)
+
+        frame = np.ones((4, 4), dtype=np.uint16)
+
+        # Channel 0 frame — should be skipped
+        engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0}))
+        assert len(engine._position_update_frames) == 0
+
+        # Channel 1 frame — should be buffered
+        engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 1}))
+        assert len(engine._position_update_frames) == 1
+
+        # Channel 2 frame — should be skipped
+        engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 2}))
+        assert len(engine._position_update_frames) == 1
+
+    def test_on_frame_ready_all_channels_when_none(self, engine):
+        """When update_channel is None, all channels should be buffered."""
+        store = PositionStore()
+        config = PositionUpdateConfig(enabled=True, update_channel=None)
+        engine._position_update_manager = PositionUpdateManager(config, store)
+        engine._position_update_frames = []
+        engine._position_update_last_tp = (-1, -1)
+
+        frame = np.ones((4, 4), dtype=np.uint16)
+        engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0}))
+        engine._on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 1}))
+        assert len(engine._position_update_frames) == 2
 
     def test_on_frame_ready_no_buffer_when_disabled(self, engine):
         """_on_frame_ready should not buffer frames when position update is disabled."""

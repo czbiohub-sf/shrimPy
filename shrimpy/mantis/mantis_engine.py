@@ -132,6 +132,7 @@ class MantisEngine(MDAEngine):
         position_update_meta = microscope_meta.get("position_update", {})
         position_update_config = PositionUpdateConfig(
             enabled=position_update_meta.get("enabled", False),
+            update_channel=position_update_meta.get("update_channel"),
         )
         if position_update_config.enabled and sequence.stage_positions:
             position_store = PositionStore()
@@ -210,6 +211,11 @@ class MantisEngine(MDAEngine):
             self._position_update_manager.on_position_complete(last_t, last_p, frames)
 
         self._position_update_last_tp = current_tp
+
+        # Only cache frames from the configured channel (None = all channels)
+        update_channel = self._position_update_manager.config.update_channel
+        if update_channel is not None and event.index.get("c") != update_channel:
+            return
         self._position_update_frames.append(img.copy())
 
     def _apply_position_update(self, event: MDAEvent) -> MDAEvent:

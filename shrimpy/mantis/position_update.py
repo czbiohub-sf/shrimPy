@@ -80,6 +80,7 @@ class PositionUpdateConfig:
     """Configuration for position updating, read from sequence metadata."""
 
     enabled: bool = False
+    update_channel: int | None = 0  # channel index to cache; None = all channels
 
 
 class PositionUpdater:
