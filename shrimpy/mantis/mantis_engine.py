@@ -4,6 +4,7 @@ import json
 import logging
 import time
 
+from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +14,7 @@ from ome_writers import (
     useq_to_acquisition_settings,
 )
 from pymmcore_plus.core import CMMCorePlus
+from pymmcore_plus.core._constants import Keyword
 from pymmcore_plus.core._sequencing import SequencedEvent
 from pymmcore_plus.mda import MDAEngine, SkipEvent
 from pymmcore_plus.metadata import SummaryMetaV1
@@ -76,7 +78,7 @@ class MantisEngine(MDAEngine):
     def _on_property_changed(self, device: str, property_name: str, value: str) -> None:
         """Log property changes at debug level."""
         # Ignore select property changes
-        if property_name in ("PFS Status", "PFS", "FocusMaintenance"):
+        if property_name in ("PFS Status", "PFS in Range", "FocusMaintenance"):
             return
         logger.debug(f"Property changed: {device}.{property_name} = {value}")
 
@@ -140,6 +142,7 @@ class MantisEngine(MDAEngine):
         # Set Z position for the event only if not using autofocus; calling
         # setPosition will disengage continuous autofocus. The autofocus algorithm
         # sets the z position independently.
+        # TODO: probably not needed, Z position is passed thru device properties in most cases
         if not self._use_autofocus and self._autofocus_stage and event.z_pos is not None:
             self.mmcore.setPosition(self._autofocus_stage, event.z_pos)
             self.mmcore.waitForDevice(self._autofocus_stage)
@@ -172,6 +175,20 @@ class MantisEngine(MDAEngine):
                 core.setProperty(setting[0], setting[1], setting[2])
         else:
             logger.debug("No reset hardware sequencing settings specified")
+
+    def _set_event_properties(self, properties: Iterable[tuple]) -> None:
+        """Set properties for the current event."""
+        for device, prop, value in properties:
+            if (
+                prop == Keyword.Position
+                and device == self._autofocus_stage
+                and self._use_autofocus
+            ):
+                # Skip setting Z position if autofocus is enabled to avoid
+                # disengaging autofocus lock; autofocus algorithm will set Z
+                # position independently
+                continue
+            super()._set_event_properties([(device, prop, value)])
 
     def _adjust_xy_stage_speed(self, event: MDAEvent) -> None:
         """Modulate XY stage speed based on distance to target position.
@@ -226,14 +243,14 @@ class MantisEngine(MDAEngine):
                 fail_at_index=self._autofocus_fail_at_index,
             )
         else:
-            # TODO: fix after resolving https://github.com/czbiohub-sf/shrimPy/issues/242
-            z_position = self.mmcore.getPosition(self._autofocus_stage)
-            # MDA events have z_pos of the scan stage
-            # z_position = (
-            #     event.z_pos
-            #     if event.z_pos is not None
-            #     else self.mmcore.getPosition(self._autofocus_stage)
-            # )
+            z_position = None
+            if event.properties:
+                for dev, prop, value in event.properties:
+                    if dev == self._autofocus_stage and prop == "Position":
+                        z_position = value
+                        break
+            if z_position is None:
+                z_position = self.mmcore.getPosition(self._autofocus_stage)
             self._engage_nikon_pfs(self._autofocus_stage, z_position)
 
     def _engage_demo_pfs(
