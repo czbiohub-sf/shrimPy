@@ -142,6 +142,8 @@ class MantisEngine(MDAEngine):
             )
             self._position_update_manager.start()
             self._position_update_last_tp = (-1, -1)
+            self._position_update_frames = []
+            self.mmcore.mda.events.frameReady.connect(self._on_frame_ready)
             logger.info(
                 f"Position updating enabled with {position_store.num_positions} positions"
             )
@@ -156,9 +158,8 @@ class MantisEngine(MDAEngine):
 
     def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
-        # Apply position updates and detect position boundaries
+        # Apply position updates
         event = self._apply_position_update(event)
-        self._check_position_update_boundary(event)
 
         # Set XY stage position and engage autofocus
         # Note: this command will not move the stage if the target position is the same
@@ -188,13 +189,28 @@ class MantisEngine(MDAEngine):
         # Call parent setup_event
         super().setup_event(event)
 
-    def exec_event(self, event: MDAEvent):
-        """Execute event and buffer frames for position updating."""
-        for payload in super().exec_event(event):
-            if payload is not None and self._position_update_manager is not None:
-                img = payload[0]
-                self._position_update_frames.append(img.copy())
-            yield payload
+    def _on_frame_ready(self, img: np.ndarray, event: MDAEvent) -> None:
+        """Buffer frames for position updating via frameReady callback.
+
+        Detects position boundaries by tracking (timepoint, position) indices.
+        When a new position starts, triggers the updater for the previous one.
+        """
+        if self._position_update_manager is None:
+            return
+
+        t_idx = event.index.get("t", 0)
+        p_idx = event.index.get("p", 0)
+        current_tp = (t_idx, p_idx)
+        last_t, last_p = self._position_update_last_tp
+
+        # Detect position boundary: new (t, p) means previous position is complete
+        if current_tp != self._position_update_last_tp and last_t >= 0:
+            frames = self._position_update_frames
+            self._position_update_frames = []
+            self._position_update_manager.on_position_complete(last_t, last_p, frames)
+
+        self._position_update_last_tp = current_tp
+        self._position_update_frames.append(img.copy())
 
     def _apply_position_update(self, event: MDAEvent) -> MDAEvent:
         """Replace event's x/y/z with current values from the position store."""
@@ -230,31 +246,10 @@ class MantisEngine(MDAEngine):
         )
         return event.model_copy(update=update)
 
-    def _check_position_update_boundary(self, event: MDAEvent) -> None:
-        """Detect when a new position starts and trigger updating for the previous one."""
-        if self._position_update_manager is None:
-            return
-
-        if isinstance(event, SequencedEvent):
-            t_idx = event.events[0].index.get("t", 0)
-            p_idx = event.events[0].index.get("p", 0)
-        else:
-            t_idx = event.index.get("t", 0)
-            p_idx = event.index.get("p", 0)
-
-        current_tp = (t_idx, p_idx)
-        last_t, last_p = self._position_update_last_tp
-
-        if current_tp != self._position_update_last_tp and last_t >= 0:
-            frames = self._position_update_frames
-            self._position_update_frames = []
-            self._position_update_manager.on_position_complete(last_t, last_p, frames)
-
-        self._position_update_last_tp = current_tp
-
     def teardown_sequence(self, sequence):
-        # Position update: trigger update for the final position and shutdown
+        # Position update: disconnect callback, flush final position, and shutdown
         if self._position_update_manager is not None:
+            self.mmcore.mda.events.frameReady.disconnect(self._on_frame_ready)
             last_t, last_p = self._position_update_last_tp
             if last_t >= 0:
                 frames = self._position_update_frames
