@@ -10,7 +10,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from useq import MDASequence
+    from pymmcore_plus.core._sequencing import SequencedEvent
+    from useq import MDAEvent, MDASequence
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +141,39 @@ class PositionUpdateManager:
         self._updater = updater or PositionUpdater()
         self._executor: ThreadPoolExecutor | None = None
         self._pending_future: Future | None = None
+
+    def apply_position_update(self, event: MDAEvent) -> MDAEvent:
+        """Replace event's x/y/z with current values from the position store."""
+        from pymmcore_plus.core._sequencing import SequencedEvent
+
+        if isinstance(event, SequencedEvent):
+            p_idx = event.events[0].index.get("p")
+        else:
+            p_idx = event.index.get("p")
+
+        if p_idx is None:
+            return event
+
+        coords = self.position_store.get_position(p_idx)
+        if coords is None:
+            return event
+
+        update: dict = {}
+        if coords.x is not None:
+            update["x_pos"] = coords.x
+        if coords.y is not None:
+            update["y_pos"] = coords.y
+        if coords.z is not None:
+            update["z_pos"] = coords.z
+
+        if not update:
+            return event
+
+        logger.debug(
+            f"Position update: overriding p={p_idx} to "
+            f"x={update.get('x_pos')}, y={update.get('y_pos')}, z={update.get('z_pos')}"
+        )
+        return event.model_copy(update=update)
 
     def start(self) -> None:
         """Initialize the executor. Called during setup_sequence."""

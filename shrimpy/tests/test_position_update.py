@@ -290,6 +290,34 @@ class TestPositionUpdateManager:
         manager.shutdown()
         assert completed.is_set()
 
+    def test_apply_position_update_returns_modified_event(self, enabled_config, position_store):
+        manager = PositionUpdateManager(enabled_config, position_store)
+        position_store.update_position(0, x=999.0, y=888.0, z=777.0)
+
+        event = MDAEvent(x_pos=100.0, y_pos=200.0, z_pos=300.0, index={"t": 0, "p": 0})
+        result = manager.apply_position_update(event)
+
+        assert result.x_pos == 999.0
+        assert result.y_pos == 888.0
+        assert result.z_pos == 777.0
+        # Original event should be unchanged (frozen)
+        assert event.x_pos == 100.0
+
+    def test_apply_position_update_no_position_index(self, enabled_config, position_store):
+        manager = PositionUpdateManager(enabled_config, position_store)
+
+        event = MDAEvent(x_pos=100.0, y_pos=200.0, index={"t": 0})
+        result = manager.apply_position_update(event)
+        assert result is event
+
+    def test_apply_position_update_unknown_position(self, enabled_config):
+        store = PositionStore()
+        manager = PositionUpdateManager(enabled_config, store)
+
+        event = MDAEvent(x_pos=100.0, y_pos=200.0, index={"t": 0, "p": 99})
+        result = manager.apply_position_update(event)
+        assert result is event
+
 
 # ---------------------------------------------------------------------------
 # MantisEngine integration tests
@@ -331,39 +359,6 @@ class TestMantisEnginePositionUpdate:
             engine.setup_sequence(seq)
 
         assert engine._position_update_manager is None
-
-    def test_apply_position_update_returns_modified_event(self, engine):
-        store = PositionStore()
-        store.update_position(0, x=999.0, y=888.0, z=777.0)
-        engine._position_update_manager = PositionUpdateManager(
-            PositionUpdateConfig(enabled=True), store
-        )
-
-        event = MDAEvent(x_pos=100.0, y_pos=200.0, z_pos=300.0, index={"t": 0, "p": 0})
-        result = engine._apply_position_update(event)
-
-        assert result.x_pos == 999.0
-        assert result.y_pos == 888.0
-        assert result.z_pos == 777.0
-        # Original event should be unchanged (frozen)
-        assert event.x_pos == 100.0
-
-    def test_apply_position_update_disabled_passes_event_through(self, engine):
-        engine._position_update_manager = None
-        event = MDAEvent(x_pos=100.0, y_pos=200.0, index={"t": 0, "p": 0})
-        result = engine._apply_position_update(event)
-        assert result is event
-
-    def test_apply_position_update_no_position_index(self, engine):
-        store = PositionStore()
-        store.update_position(0, x=999.0, y=888.0, z=777.0)
-        engine._position_update_manager = PositionUpdateManager(
-            PositionUpdateConfig(enabled=True), store
-        )
-
-        event = MDAEvent(x_pos=100.0, y_pos=200.0, index={"t": 0})
-        result = engine._apply_position_update(event)
-        assert result is event
 
     def test_z_slice_count_triggers_update(self, engine):
         """on_position_complete fires when all z-slices for a position arrive."""

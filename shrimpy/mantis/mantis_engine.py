@@ -160,7 +160,8 @@ class MantisEngine(MDAEngine):
     def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
         # Apply position updates
-        event = self._apply_position_update(event)
+        if self._position_update_manager is not None:
+            event = self._position_update_manager.apply_position_update(event)
 
         # Set XY stage position and engage autofocus
         # Note: this command will not move the stage if the target position is the same
@@ -216,40 +217,6 @@ class MantisEngine(MDAEngine):
         if len(self._position_update_frames[tp]) >= self._position_update_expected_slices:
             frames = self._position_update_frames.pop(tp)
             self._position_update_manager.on_position_complete(t_idx, p_idx, frames)
-
-    def _apply_position_update(self, event: MDAEvent) -> MDAEvent:
-        """Replace event's x/y/z with current values from the position store."""
-        if self._position_update_manager is None:
-            return event
-
-        if isinstance(event, SequencedEvent):
-            p_idx = event.events[0].index.get("p")
-        else:
-            p_idx = event.index.get("p")
-
-        if p_idx is None:
-            return event
-
-        coords = self._position_update_manager.position_store.get_position(p_idx)
-        if coords is None:
-            return event
-
-        update: dict = {}
-        if coords.x is not None:
-            update["x_pos"] = coords.x
-        if coords.y is not None:
-            update["y_pos"] = coords.y
-        if coords.z is not None:
-            update["z_pos"] = coords.z
-
-        if not update:
-            return event
-
-        logger.debug(
-            f"Position update: overriding p={p_idx} to "
-            f"x={update.get('x_pos')}, y={update.get('y_pos')}, z={update.get('z_pos')}"
-        )
-        return event.model_copy(update=update)
 
     def teardown_sequence(self, sequence):
         # Position update: disconnect callback and shutdown
