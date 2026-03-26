@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from pymmcore_plus.core._sequencing import SequencedEvent
     from useq import MDAEvent, MDASequence
 
 logger = logging.getLogger(__name__)

@@ -290,7 +290,9 @@ class TestPositionUpdateManager:
         manager.shutdown()
         assert completed.is_set()
 
-    def test_apply_position_update_returns_modified_event(self, enabled_config, position_store):
+    def test_apply_position_update_returns_modified_event(
+        self, enabled_config, position_store
+    ):
         manager = PositionUpdateManager(enabled_config, position_store)
         position_store.update_position(0, x=999.0, y=888.0, z=777.0)
 
