@@ -173,7 +173,7 @@ class MantisEngine(MDAEngine):
                 updater = DynaTrackUpdater(config=dynatrack_config, preprocessor=preprocessor)
                 # Save preprocessed stacks for debugging
                 if dynatrack_config.save_debug and preprocessor and self._data_path:
-                    updater._debug_zarr_path = self._data_path / "dynatrack_debug.zarr"
+                    updater._debug_zarr_path = self._data_path.parent / "dynatrack_debug.zarr"
                 logger.info(
                     f"DynaTrack enabled: scale_yx={dynatrack_config.scale_yx}, "
                     f"scale_z={dynatrack_config.scale_z}, "
