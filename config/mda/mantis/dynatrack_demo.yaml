@@ -64,8 +64,54 @@ metadata:
       dynatrack:
         scale_yx: 0.1494
         scale_z: 0.174
+        tracking_interval: 1
         # shift_limits:
         #   z: [0.5, 2.0]
         #   y: [2.0, 10.0]
         #   x: [2.0, 10.0]
-        tracking_interval: 1
+
+        # Preprocessing: reconstruct phase and predict virtual staining
+        # before computing shifts via phase cross-correlation.
+        # Options: ['phase'] or ['phase', 'vs']
+        preprocessing: ['phase', 'vs']
+        # Which channel to use for shift estimation:
+        # 'raw', 'phase', 'vs_nuclei', 'vs_membrane'
+        shift_estimation_channel: 'vs_nuclei'
+
+        # Waveorder phase reconstruction parameters
+        phase_config:
+          transfer_function:
+            wavelength_illumination: 0.450
+            yx_pixel_size: 0.1494
+            z_pixel_size: 0.174
+            z_padding: 5
+            index_of_refraction_media: 1.4
+            numerical_aperture_detection: 1.35
+            numerical_aperture_illumination: 0.52
+            invert_phase_contrast: false
+          apply_inverse:
+            reconstruction_algorithm: Tikhonov
+            regularization_strength: 0.01
+
+        # VisCy virtual staining model parameters
+        vs_config:
+          model:
+            class_path: viscy.translation.engine.VSUNet
+            init_args:
+              architecture: fcmae
+              model_config:
+                in_channels: 1
+                out_channels: 2
+                in_stack_depth: 21
+                encoder_blocks: [3, 3, 9, 3]
+                dims: [96, 192, 384, 768]
+                encoder_drop_path_rate: 0.0
+                stem_kernel_size: [7, 4, 4]
+                decoder_conv_blocks: 2
+                pretraining: false
+                head_conv: true
+                head_conv_expansion_ratio: 4
+                head_conv_pool: false
+              test_time_augmentations: true
+              tta_type: median
+          ckpt_path: /hpc/projects/comp.micro/virtual_staining/models/fcmae-3d/fit_v2/pretrain_end2end/lightning_logs/finetune_VS_end2end_v1_test6_prefetch2_nopersistwork_restart_2/checkpoints/epoch=64-step=24960.ckpt
