@@ -56,7 +56,6 @@ def gui(mm_config: Path | None, unicore: bool):
             device = core._pydevices[cam_label]
             if isinstance(device, ReplayCamera):
                 device.connect_z_stage(core)
-                device.connect_to_mda(core)
 
     from pymmcore_gui._qt.QtWidgets import QApplication
 
