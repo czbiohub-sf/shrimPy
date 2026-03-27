@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import logging
 
+from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -102,6 +103,9 @@ class ReplayCamera(SimpleCameraDevice):
         self._z_origin: float = 0.0  # z-stage position at center of stack
         self._exposure: float = 10.0
         self._mda_connected: bool = False
+
+        # Queue of z-indices for sequenced (hardware-triggered) acquisitions
+        self._z_queue: deque[int] = deque()
 
         # Signal disconnectors
         self._z_disconnect = None
@@ -202,9 +206,17 @@ class ReplayCamera(SimpleCameraDevice):
         After each snap, the timepoint counter auto-increments (wrapping at
         the end of the dataset). In MDA mode, the timepoint is overridden
         by ``eventStarted`` events.
+
+        For sequenced (hardware-triggered) acquisitions, z-indices are
+        pre-queued by ``_on_event_started`` and popped on each snap.
         """
         t = self._t_index % self._nt if self._nt > 0 else 0
-        z = self._get_z_index()
+
+        # Use queued z-index for sequenced acquisitions, else compute from position
+        if self._z_queue:
+            z = self._z_queue.popleft()
+        else:
+            z = self._get_z_index()
 
         if self._channel_index < 0 or self._channel_index >= self._nc:
             # Channel not in dataset — return zeros
@@ -318,21 +330,48 @@ class ReplayCamera(SimpleCameraDevice):
             self._mda_connected = False
 
     def _on_event_started(self, event: MDAEvent) -> None:
-        """Update state from the running MDA event."""
-        idx = event.index
-        self._t_index = idx.get("t", 0)
+        """Update state from the running MDA event.
 
-        # Channel from event
-        if event.channel and event.channel.config:
-            self._set_channel(event.channel.config)
-        elif "c" in idx:
-            c = idx["c"]
-            if 0 <= c < len(self._channel_names):
-                self._set_channel(self._channel_names[c])
+        For ``SequencedEvent`` (hardware-triggered bursts), the z-indices
+        of all sub-events are queued so that each ``snap()`` returns the
+        correct z-slice.
+        """
+        from pymmcore_plus.core._sequencing import SequencedEvent
 
-        # Z position from event
-        if event.z_pos is not None:
-            self._z_position = event.z_pos
+        if isinstance(event, SequencedEvent):
+            sub_events = event.events
+            first = sub_events[0]
+            idx = first.index
+            self._t_index = idx.get("t", 0)
+
+            # Channel from first sub-event
+            if first.channel and first.channel.config:
+                self._set_channel(first.channel.config)
+            elif "c" in idx:
+                c = idx["c"]
+                if 0 <= c < len(self._channel_names):
+                    self._set_channel(self._channel_names[c])
+
+            # Queue z-indices for all sub-events
+            self._z_queue.clear()
+            for sub in sub_events:
+                self._z_queue.append(sub.index.get("z", self._z_center))
+        else:
+            idx = event.index
+            self._t_index = idx.get("t", 0)
+            self._z_queue.clear()
+
+            # Channel from event
+            if event.channel and event.channel.config:
+                self._set_channel(event.channel.config)
+            elif "c" in idx:
+                c = idx["c"]
+                if 0 <= c < len(self._channel_names):
+                    self._set_channel(self._channel_names[c])
+
+            # Z position from event
+            if event.z_pos is not None:
+                self._z_position = event.z_pos
 
     # ------------------------------------------------------------------
     # Public helpers

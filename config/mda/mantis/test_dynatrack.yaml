@@ -1,0 +1,50 @@
+# Setup
+setup:
+  properties:
+    - ['XY', 'Velocity', '10000']
+    - ['Z', 'UseSequences', 'Yes']
+
+# Define time plan
+time_plan:
+  prioritize_duration: true
+  interval: 0
+  loops: 3
+
+# Define z plan
+z_plan:
+  top: 10
+  bottom: -10
+  step: 0.174
+  go_up: true
+
+# Define channels
+channels:
+- config: BF
+  group: Channel
+  exposure: 10.0
+  do_stack: true
+  z_offset: 0.0
+  acquire_every: 1
+  camera: null
+
+# Define axis order
+axis_order:
+- t
+- p
+- c
+- z
+
+autofocus_plan: null
+keep_shutter_open_across: []
+
+# Define metadata per microscope
+metadata:
+  pymmcore_widgets:
+    version: 0.10.2.dev23+g22b8c0aff.d20260106
+  mantis:
+    reset_hardware_sequencing_settings:
+      - ['Z', 'UseSequences', 'No']
+    autofocus:
+      enabled: false
+      method: demo-PFS
+      stage: Z
