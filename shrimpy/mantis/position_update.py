@@ -258,14 +258,24 @@ class PositionUpdateManager:
         data: list[np.ndarray] | None,
     ) -> None:
         """Execute the updater and write the result to the position store."""
+        import time as _time
+
+        t0 = _time.monotonic()
+        n_frames = len(data) if data else 0
+        logger.info(
+            f"Position updater: starting p={position_index} t={timepoint_index} "
+            f"({n_frames} frames)"
+        )
         try:
             updated = self._updater.update(timepoint_index, position_index, position, data)
+            elapsed = _time.monotonic() - t0
             self.position_store.update_position(
                 position_index, updated.x, updated.y, updated.z
             )
             logger.info(
-                f"Position update: p={position_index} at t={timepoint_index} "
-                f"-> x={updated.x:.2f}, y={updated.y:.2f}, z={updated.z}"
+                f"Position update: p={position_index} t={timepoint_index} "
+                f"-> x={updated.x:.2f}, y={updated.y:.2f}, z={updated.z} "
+                f"({elapsed:.1f}s)"
             )
         except Exception:
             logger.exception(

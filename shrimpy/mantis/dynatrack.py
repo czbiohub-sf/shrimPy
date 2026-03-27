@@ -364,11 +364,22 @@ class DynaTrackUpdater(PositionUpdater):
             )
             return position
 
+        import time as _time
+
         current_stack = np.stack(data)
+        logger.info(
+            f"DynaTrack: p={position_index} t={timepoint_index} "
+            f"stack shape={current_stack.shape}"
+        )
 
         # Apply optional preprocessing (e.g. phase reconstruction, VS)
         if self._preprocessor is not None:
+            t0 = _time.monotonic()
             current_stack = self._preprocessor(current_stack)
+            logger.info(
+                f"DynaTrack: preprocessing took {_time.monotonic() - t0:.1f}s "
+                f"(output shape={current_stack.shape})"
+            )
 
         # Store reference on first encounter
         if position_index not in self._reference_stacks:

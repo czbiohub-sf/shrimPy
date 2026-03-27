@@ -16,8 +16,8 @@ stage_positions:
 # Define time plan
 time_plan:
   prioritize_duration: true
-  interval: 10
-  loops: 5
+  interval: 60
+  loops: 3
 
 # Define z plan
 z_plan:
@@ -73,10 +73,12 @@ metadata:
         # Preprocessing: reconstruct phase and predict virtual staining
         # before computing shifts via phase cross-correlation.
         # Options: ['phase'] or ['phase', 'vs']
-        preprocessing: ['phase', 'vs']
+        # preprocessing: ['phase', 'vs']
+        preprocessing: ['phase']
         # Which channel to use for shift estimation:
         # 'raw', 'phase', 'vs_nuclei', 'vs_membrane'
-        shift_estimation_channel: 'vs_nuclei'
+        # shift_estimation_channel: 'vs_nuclei'
+        shift_estimation_channel: 'phase'
 
         # Waveorder phase reconstruction parameters
         phase_config:
