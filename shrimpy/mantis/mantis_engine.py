@@ -178,12 +178,20 @@ class MantisEngine(MDAEngine):
         # configured hardware state (ROI, focus device, etc.).
         return super().setup_sequence(sequence)
 
+    def event_iterator(self, events: Iterable[MDAEvent]):
+        """Wrap event iteration to apply position updates before logging.
+
+        By applying position updates here (before the MDA runner emits
+        ``eventStarted``), the logged event reflects the corrected
+        coordinates rather than the original sequence values.
+        """
+        for event in super().event_iterator(events):
+            if self._position_update_manager is not None:
+                event = self._position_update_manager.apply_position_update(event)
+            yield event
+
     def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
-        # Apply position updates
-        if self._position_update_manager is not None:
-            event = self._position_update_manager.apply_position_update(event)
-
         # Set XY stage position and engage autofocus
         # Note: this command will not move the stage if the target position is the same
         # as the last commanded position and force_set_xy_position is False.

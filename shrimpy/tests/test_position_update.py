@@ -461,8 +461,12 @@ class TestMantisEnginePositionUpdate:
         assert engine._position_update_manager is None
         assert manager._executor is None
 
-    def test_setup_event_uses_updated_positions(self, engine, mock_core):
-        """Full setup_event flow: updated position should reach _set_event_xy_position."""
+    def test_event_iterator_applies_position_updates(self, demo_core, mantis_metadata):
+        """event_iterator should apply position updates before events are logged."""
+        from shrimpy.mantis.mantis_engine import MantisEngine
+
+        engine = MantisEngine(demo_core)
+
         store = PositionStore()
         store.update_position(0, x=777.0, y=666.0, z=555.0)
         engine._position_update_manager = PositionUpdateManager(
@@ -471,15 +475,14 @@ class TestMantisEnginePositionUpdate:
 
         event = MDAEvent(x_pos=100.0, y_pos=200.0, z_pos=300.0, index={"t": 0, "p": 0})
 
-        with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_event"):
-            with patch.object(engine, "_set_event_xy_position") as mock_set_xy:
-                with patch.object(engine, "_engage_autofocus"):
-                    engine.setup_event(event)
-
-        called_event = mock_set_xy.call_args[0][0]
-        assert called_event.x_pos == 777.0
-        assert called_event.y_pos == 666.0
-        assert called_event.z_pos == 555.0
+        # event_iterator wraps super().event_iterator which does sequencing;
+        # for a single event it just yields it back
+        results = list(engine.event_iterator([event]))
+        assert len(results) == 1
+        updated = results[0]
+        assert updated.x_pos == 777.0
+        assert updated.y_pos == 666.0
+        assert updated.z_pos == 555.0
 
     def test_on_frame_ready_buffers_frames(self, engine):
         """_on_frame_ready should buffer frame copies when position update is active."""
