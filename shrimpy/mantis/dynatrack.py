@@ -79,6 +79,7 @@ class DynaTrackConfig:
     phase_config: dict[str, Any] | None = None
     vs_config: dict[str, Any] | None = None
     shift_log_path: str | Path | None = None
+    save_debug: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -310,16 +311,17 @@ class DynaTrackUpdater(PositionUpdater):
     ----------
     config : DynaTrackConfig
         Tracking configuration.
-    preprocessor : Callable[[np.ndarray], np.ndarray] | None
-        Optional callable that transforms a z-stack before shift estimation.
-        For example, phase reconstruction or virtual staining. When ``None``,
-        the raw z-stack is used directly for phase cross-correlation.
+    preprocessor : Callable[[np.ndarray], dict[str, np.ndarray]] | None
+        Optional callable that transforms a z-stack and returns a dict of
+        channel name to ZYX array (e.g. ``{'phase': ..., 'vs_nuclei': ...}``).
+        The channel specified by ``config.shift_estimation_channel`` is used
+        for phase cross-correlation. When ``None``, the raw z-stack is used.
     """
 
     def __init__(
         self,
         config: DynaTrackConfig,
-        preprocessor: Callable[[np.ndarray], np.ndarray] | None = None,
+        preprocessor: Callable[[np.ndarray], dict[str, np.ndarray]] | None = None,
     ) -> None:
         self._config = config
         self._preprocessor = preprocessor
@@ -327,6 +329,9 @@ class DynaTrackUpdater(PositionUpdater):
         self._shift_log_path: Path | None = (
             Path(config.shift_log_path) if config.shift_log_path else None
         )
+        # Debug zarr store for preprocessed stacks (set by MantisEngine)
+        self._debug_zarr_path: Path | None = None
+        self._debug_zarr = None
 
     @property
     def config(self) -> DynaTrackConfig:
@@ -375,11 +380,22 @@ class DynaTrackUpdater(PositionUpdater):
         # Apply optional preprocessing (e.g. phase reconstruction, VS)
         if self._preprocessor is not None:
             t0 = _time.monotonic()
-            current_stack = self._preprocessor(current_stack)
+            channels = self._preprocessor(current_stack)
             logger.info(
                 f"DynaTrack: preprocessing took {_time.monotonic() - t0:.1f}s "
-                f"(output shape={current_stack.shape})"
+                f"(channels={list(channels.keys())})"
             )
+            self._save_debug_channels(channels, timepoint_index, position_index)
+            # Select the configured channel for shift estimation
+            channel_name = self._config.shift_estimation_channel
+            if channel_name in channels:
+                current_stack = channels[channel_name]
+            else:
+                logger.warning(
+                    f"DynaTrack: channel '{channel_name}' not in preprocessor "
+                    f"output {list(channels.keys())}, using first channel"
+                )
+                current_stack = next(iter(channels.values()))
 
         # Store reference on first encounter
         if position_index not in self._reference_stacks:
@@ -482,3 +498,49 @@ class DynaTrackUpdater(PositionUpdater):
         z_um = float(shifts_zyx_um[0])
 
         return (x_um, y_um, z_um)
+
+    def _save_debug_channels(
+        self,
+        channels: dict[str, np.ndarray],
+        timepoint_index: int,
+        position_index: int,
+    ) -> None:
+        """Save all preprocessed channels to an OME-Zarr FOV store.
+
+        Stores as TCZYX using iohub with proper channel names.
+        """
+        if self._debug_zarr_path is None:
+            return
+
+        from iohub.ngff import open_ome_zarr
+
+        channel_names = sorted(channels.keys())
+        czyx = np.stack([channels[name] for name in channel_names])
+        nc, nz, ny, nx = czyx.shape
+
+        if self._debug_zarr is None:
+            self._debug_zarr = open_ome_zarr(
+                str(self._debug_zarr_path),
+                layout="fov",
+                mode="w",
+                channel_names=channel_names,
+            )
+            self._debug_zarr.create_zeros(
+                "0",
+                shape=(0, nc, nz, ny, nx),
+                chunks=(1, nc, nz, ny, nx),
+                dtype=czyx.dtype,
+            )
+            logger.info(
+                "DynaTrack: debug store created at %s (channels=%s)",
+                self._debug_zarr_path,
+                channel_names,
+            )
+
+        self._debug_zarr["0"].append(czyx[np.newaxis], axis=0)
+        logger.debug(
+            "DynaTrack: saved debug t=%d p=%d (store shape=%s)",
+            timepoint_index,
+            position_index,
+            self._debug_zarr["0"].shape,
+        )

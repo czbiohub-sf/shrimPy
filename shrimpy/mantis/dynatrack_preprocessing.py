@@ -152,7 +152,7 @@ class _LabelfreePreprocessor:
             elapsed,
         )
 
-    def __call__(self, volume_bf: np.ndarray) -> np.ndarray:
+    def __call__(self, volume_bf: np.ndarray) -> dict[str, np.ndarray]:
         """Preprocess a brightfield z-stack.
 
         Parameters
@@ -162,25 +162,21 @@ class _LabelfreePreprocessor:
 
         Returns
         -------
-        np.ndarray
-            Preprocessed volume for shift estimation.
+        dict[str, np.ndarray]
+            Mapping of channel name to ZYX array. Always includes
+            ``'phase'``; may also include ``'vs_nuclei'`` and
+            ``'vs_membrane'`` when VS is enabled.
         """
+        channels: dict[str, np.ndarray] = {}
+
         volume_phase = self._reconstruct_phase(volume_bf)
+        channels["phase"] = volume_phase
 
-        if self._output_channel == "phase":
-            return volume_phase
+        if self._vs_config is not None:
+            vs_result = self._predict_vs(volume_phase)
+            channels.update(vs_result)
 
-        if self._vs_config is not None and self._output_channel in (
-            "vs_nuclei",
-            "vs_membrane",
-        ):
-            return self._predict_vs(volume_phase)
-
-        logger.warning(
-            "DynaTrack: unknown output channel '%s', returning phase",
-            self._output_channel,
-        )
-        return volume_phase
+        return channels
 
     def _reconstruct_phase(self, volume_bf: np.ndarray) -> np.ndarray:
         """Apply phase reconstruction via waveorder on the target device."""
@@ -214,8 +210,14 @@ class _LabelfreePreprocessor:
         logger.info("DynaTrack: phase reconstruction took %.1fs", _time.monotonic() - t0)
         return phase
 
-    def _predict_vs(self, volume_phase: np.ndarray) -> np.ndarray:
-        """Apply virtual staining via viscy."""
+    def _predict_vs(self, volume_phase: np.ndarray) -> dict[str, np.ndarray]:
+        """Apply virtual staining via viscy.
+
+        Returns
+        -------
+        dict[str, np.ndarray]
+            ``{'vs_nuclei': ..., 'vs_membrane': ...}`` ZYX arrays.
+        """
         import torch
 
         if self._vs_model is None:
@@ -235,12 +237,10 @@ class _LabelfreePreprocessor:
             t_output = self._vs_model.predict_sliding_windows(t_input)
 
         # Output shape: (B, C_out, Z, Y, X) where C_out = [nuclei, membrane]
-        if self._output_channel == "vs_nuclei":
-            result = t_output[0, 0].detach().cpu().numpy()
-        elif self._output_channel == "vs_membrane":
-            result = t_output[0, 1].detach().cpu().numpy()
-        else:
-            result = t_output[0, 0].detach().cpu().numpy()
+        result = {
+            "vs_nuclei": t_output[0, 0].detach().cpu().numpy(),
+            "vs_membrane": t_output[0, 1].detach().cpu().numpy(),
+        }
 
         del t_input, t_output
         gc.collect()
