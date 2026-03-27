@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import gc
 import logging
+import time as _time
 
 from typing import TYPE_CHECKING
 
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
     from typing import Any
 
     import torch
+    import xarray as xr
 
     from shrimpy.mantis.dynatrack import DynaTrackConfig
 
@@ -34,7 +36,9 @@ def _get_device() -> torch.device:
     """Return the best available torch device (lazy import)."""
     import torch
 
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.debug("DynaTrack compute device: %s", device)
+    return device
 
 
 def build_preprocessor(
@@ -95,9 +99,11 @@ class _LabelfreePreprocessor:
         self._phase_config = phase_config
         self._vs_config = vs_config
         self._output_channel = output_channel
+        self._device = None
 
         # Cached state (computed by warm_up or lazily on first call)
-        self._transfer_function: tuple[torch.Tensor, ...] | None = None
+        self._transfer_function: xr.Dataset | None = None
+        self._phase_settings = None
         self._vs_model = None
 
     def warm_up(self) -> None:
@@ -106,18 +112,48 @@ class _LabelfreePreprocessor:
         Called before the acquisition starts so the first DynaTrack update
         doesn't pay the initialization cost.
         """
-        from waveorder.models.phase_thick_3d import calculate_transfer_function
+        self._device = _get_device()
+        logger.info("DynaTrack: using device: %s", self._device)
 
-        logger.info("DynaTrack: pre-computing transfer function...")
-        tf_config = dict(self._phase_config.get("transfer_function", {}))
-        tf_config["zyx_shape"] = self._zyx_shape
-        self._transfer_function = calculate_transfer_function(**tf_config)
-        logger.info("DynaTrack: transfer function ready")
+        self._phase_settings, self._transfer_function = self._compute_transfer_function()
 
         if self._vs_config is not None:
             logger.info("DynaTrack: pre-loading VS model...")
             self._vs_model = self._load_vs_model()
             logger.info("DynaTrack: VS model ready")
+
+    def _compute_transfer_function(self):
+        """Compute and cache the phase transfer function on the target device."""
+        from waveorder.api.phase import Settings, compute_transfer_function
+
+        logger.info("DynaTrack: pre-computing transfer function...")
+        t0 = _time.monotonic()
+
+        # Build Settings from phase_config
+        tf_params = dict(self._phase_config.get("transfer_function", {}))
+        inv_params = dict(self._phase_config.get("apply_inverse", {}))
+        # Remove zyx_shape/z_padding from tf_params — they're not Settings fields
+        tf_params.pop("zyx_shape", None)
+        settings = Settings(transfer_function=tf_params, apply_inverse=inv_params)
+
+        # Create a dummy CZYX xr.DataArray with the right shape for the API
+        import xarray as xr
+
+        dummy = xr.DataArray(
+            np.zeros((1, *self._zyx_shape), dtype=np.float32),
+            dims=["C", "Z", "Y", "X"],
+        )
+
+        tf_dataset = compute_transfer_function(
+            czyx_data=dummy,
+            recon_dim=3,
+            settings=settings,
+            device=self._device,
+        )
+
+        elapsed = _time.monotonic() - t0
+        logger.info("DynaTrack: transfer function ready (on %s, %.1fs)", self._device, elapsed)
+        return settings, tf_dataset
 
     def __call__(self, volume_bf: np.ndarray) -> np.ndarray:
         """Preprocess a brightfield z-stack.
@@ -153,41 +189,39 @@ class _LabelfreePreprocessor:
 
     def _reconstruct_phase(self, volume_bf: np.ndarray) -> np.ndarray:
         """Apply phase reconstruction via waveorder."""
-        import torch
+        import xarray as xr
 
-        from waveorder.models.phase_thick_3d import (
+        from waveorder.api.phase import (
             apply_inverse_transfer_function,
-            calculate_transfer_function,
         )
+
+        if self._device is None:
+            self._device = _get_device()
 
         # Compute transfer function once and cache
-        if self._transfer_function is None:
-            logger.info("DynaTrack: computing transfer function...")
-            tf_config = dict(self._phase_config.get("transfer_function", {}))
-            tf_config["zyx_shape"] = self._zyx_shape
-            self._transfer_function = calculate_transfer_function(**tf_config)
+        if self._transfer_function is None or self._phase_settings is None:
+            self._phase_settings, self._transfer_function = self._compute_transfer_function()
 
         # Apply inverse transfer function
-        import time as _time
-
         logger.info("DynaTrack: reconstructing phase...")
         t0 = _time.monotonic()
-        device = _get_device()
-        tf_tensors = tuple(tf.to(device) for tf in self._transfer_function)
-        t_volume = torch.as_tensor(volume_bf, device=device, dtype=torch.float32)
 
-        inverse_config = dict(self._phase_config.get("apply_inverse", {}))
-        z_padding = self._phase_config.get("transfer_function", {}).get("z_padding", 0)
-
-        t_phase = apply_inverse_transfer_function(
-            t_volume, *tf_tensors, z_padding=z_padding, **inverse_config
+        # Wrap volume as CZYX xr.DataArray
+        czyx_data = xr.DataArray(
+            volume_bf[np.newaxis].astype(np.float32),
+            dims=["C", "Z", "Y", "X"],
         )
 
-        phase = t_phase.detach().cpu().numpy()
-        del t_volume, tf_tensors, t_phase
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        phase_result = apply_inverse_transfer_function(
+            czyx_data=czyx_data,
+            transfer_function=self._transfer_function,
+            recon_dim=3,
+            settings=self._phase_settings,
+            device=self._device,
+        )
+
+        # Extract ZYX numpy array from CZYX result
+        phase = phase_result.values[0]
 
         logger.info("DynaTrack: phase reconstruction took %.1fs", _time.monotonic() - t0)
         return phase
@@ -201,9 +235,11 @@ class _LabelfreePreprocessor:
             logger.info("DynaTrack: loading VS model...")
             self._vs_model = self._load_vs_model()
 
-        logger.debug("DynaTrack: predicting virtual staining...")
+        logger.info("DynaTrack: predicting virtual staining...")
+        t0 = _time.monotonic()
+
+        device = self._device or _get_device()
         # viscy expects (B, C, Z, Y, X) input
-        device = _get_device()
         t_input = torch.as_tensor(
             volume_phase[np.newaxis, np.newaxis], device=device, dtype=torch.float32
         )
@@ -224,6 +260,7 @@ class _LabelfreePreprocessor:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
+        logger.info("DynaTrack: VS prediction took %.1fs", _time.monotonic() - t0)
         return result
 
     def _load_vs_model(self):
@@ -244,7 +281,7 @@ class _LabelfreePreprocessor:
         module_path, class_name = class_path.rsplit(".", 1)
         model_class = getattr(importlib.import_module(module_path), class_name)
 
-        device = _get_device()
+        device = self._device or _get_device()
         model = model_class(**init_args).to(device).eval()
 
         wrapper = (
