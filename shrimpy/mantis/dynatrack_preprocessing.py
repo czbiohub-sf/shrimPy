@@ -32,6 +32,23 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _numpy_to_czyx(zyx: np.ndarray) -> xr.DataArray:
+    """Wrap a ZYX numpy array as a CZYX xr.DataArray with indexed coords."""
+    import xarray as xr
+
+    z, y, x = zyx.shape
+    return xr.DataArray(
+        zyx[np.newaxis].astype(np.float32),
+        dims=["c", "z", "y", "x"],
+        coords={
+            "c": [0],
+            "z": np.arange(z, dtype=float),
+            "y": np.arange(y, dtype=float),
+            "x": np.arange(x, dtype=float),
+        },
+    )
+
+
 def _get_device() -> torch.device:
     """Return the best available torch device (lazy import)."""
     import torch
@@ -112,7 +129,9 @@ class _LabelfreePreprocessor:
         Called before the acquisition starts so the first DynaTrack update
         doesn't pay the initialization cost.
         """
-        self._device = _get_device()
+        from waveorder.device import resolve_device
+
+        self._device = resolve_device("auto")
         logger.info("DynaTrack: using device: %s", self._device)
 
         self._phase_settings, self._transfer_function = self._compute_transfer_function()
@@ -137,12 +156,8 @@ class _LabelfreePreprocessor:
         settings = Settings(transfer_function=tf_params, apply_inverse=inv_params)
 
         # Create a dummy CZYX xr.DataArray with the right shape for the API
-        import xarray as xr
 
-        dummy = xr.DataArray(
-            np.zeros((1, *self._zyx_shape), dtype=np.float32),
-            dims=["C", "Z", "Y", "X"],
-        )
+        dummy = _numpy_to_czyx(np.zeros(self._zyx_shape, dtype=np.float32))
 
         tf_dataset = compute_transfer_function(
             czyx_data=dummy,
@@ -189,14 +204,15 @@ class _LabelfreePreprocessor:
 
     def _reconstruct_phase(self, volume_bf: np.ndarray) -> np.ndarray:
         """Apply phase reconstruction via waveorder."""
-        import xarray as xr
 
         from waveorder.api.phase import (
             apply_inverse_transfer_function,
         )
 
         if self._device is None:
-            self._device = _get_device()
+            from waveorder.device import resolve_device
+
+            self._device = resolve_device("auto")
 
         # Compute transfer function once and cache
         if self._transfer_function is None or self._phase_settings is None:
@@ -206,11 +222,8 @@ class _LabelfreePreprocessor:
         logger.info("DynaTrack: reconstructing phase...")
         t0 = _time.monotonic()
 
-        # Wrap volume as CZYX xr.DataArray
-        czyx_data = xr.DataArray(
-            volume_bf[np.newaxis].astype(np.float32),
-            dims=["C", "Z", "Y", "X"],
-        )
+        # Wrap volume as CZYX xr.DataArray with proper coords
+        czyx_data = _numpy_to_czyx(volume_bf)
 
         phase_result = apply_inverse_transfer_function(
             czyx_data=czyx_data,
