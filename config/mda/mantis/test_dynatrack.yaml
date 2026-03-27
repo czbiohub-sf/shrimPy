@@ -67,4 +67,3 @@ metadata:
         #   y: [2.0, 10.0]
         #   x: [2.0, 10.0]
         tracking_interval: 1
-        shift_log_path: shift_log.csv

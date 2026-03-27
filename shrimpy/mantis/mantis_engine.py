@@ -78,6 +78,7 @@ class MantisEngine(MDAEngine):
         self._position_update_manager: PositionUpdateManager | None = None
         self._position_update_frames: dict[tuple[int, int], list[np.ndarray]] = {}
         self._position_update_expected_slices: int = 1
+        self._data_path: Path | None = None
 
         # Register event callbacks for logging
         mmc.mda.set_engine(self)
@@ -147,6 +148,12 @@ class MantisEngine(MDAEngine):
             # Create DynaTrack updater if config is provided
             dynatrack_meta = position_update_meta.get("dynatrack")
             if dynatrack_meta:
+                # Save shift log alongside the zarr store
+                if self._data_path:
+                    dynatrack_meta = dict(dynatrack_meta)
+                    dynatrack_meta["shift_log_path"] = str(
+                        self._data_path / "dynatrack_log.csv"
+                    )
                 dynatrack_config = DynaTrackConfig(**dynatrack_meta)
                 updater = DynaTrackUpdater(config=dynatrack_config)
                 logger.info(
@@ -526,6 +533,7 @@ class MantisEngine(MDAEngine):
             sequence = MDASequence.from_file(mda_config)
 
         data_path = output_dir / f"{name}.ome.zarr"
+        self._data_path = data_path
         settings = self._create_stream_settings(sequence, data_path)
 
         # Write summary metadata after the zarr store is created

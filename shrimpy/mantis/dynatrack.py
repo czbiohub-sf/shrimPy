@@ -64,7 +64,8 @@ class DynaTrackConfig:
         Model and checkpoint config for virtual staining (viscy).
     shift_log_path : str | Path | None
         Path to a CSV file for incremental shift logging. Each computed
-        shift is appended immediately after calculation.
+        shift is appended immediately after calculation. Typically set
+        automatically by MantisEngine to ``<zarr_store>/dynatrack_log.csv``.
     """
 
     scale_yx: float
