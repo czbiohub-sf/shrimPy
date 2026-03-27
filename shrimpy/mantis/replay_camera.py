@@ -136,14 +136,17 @@ class ReplayCamera(SimpleCameraDevice):
         if not path.exists():
             raise FileNotFoundError(f"ReplayCamera: dataset not found at {path}")
 
+        logger.info("ReplayCamera: loading dataset into memory...")
         self._dataset = open_ome_zarr(str(path), layout="fov", mode="r")
-        self._data_array = self._dataset["0"]
+        self._data_array = self._dataset.data.numpy()
 
         shape = self._data_array.shape
         if len(shape) != 5:
             raise ValueError(f"ReplayCamera: expected 5D TCZYX data, got shape {shape}")
         self._nt, self._nc, self._nz, self._ny, self._nx = shape
         self._dtype_val = self._data_array.dtype
+
+        # Load entire dataset into memory for fast per-frame access
         self._channel_names = list(self._dataset.channel_names)
         self._z_center = self._nz // 2
 
@@ -222,7 +225,7 @@ class ReplayCamera(SimpleCameraDevice):
             # Channel not in dataset — return zeros
             buffer[:] = 0
         else:
-            buffer[:] = np.asarray(self._data_array[t, self._channel_index, z])
+            buffer[:] = self._data_array[t, self._channel_index, z]
 
         # Auto-increment timepoint (MDA mode overrides via event tracking)
         if not self._mda_connected:
@@ -395,10 +398,10 @@ class ReplayCamera(SimpleCameraDevice):
         return self._z_scale
 
     def get_frame(self, t: int, c: int, z: int) -> np.ndarray:
-        """Read a single 2-D frame directly from the dataset."""
+        """Read a single 2-D frame directly from the in-memory dataset."""
         if self._data_array is None:
             raise RuntimeError("ReplayCamera not initialized")
         t = t % self._nt
         c = c % self._nc
         z = z % self._nz
-        return np.asarray(self._data_array[t, c, z])
+        return self._data_array[t, c, z]
