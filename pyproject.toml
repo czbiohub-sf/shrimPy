@@ -45,6 +45,10 @@ dev = [
   "iohub==0.3.0a6",
   "ipykernel",
 ]
+dynatrack = [
+  "waveorder",
+  "viscy",
+]
 
 [project.scripts]
 shrimpy = "shrimpy.cli.main:cli"

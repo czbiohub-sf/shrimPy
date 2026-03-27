@@ -155,11 +155,27 @@ class MantisEngine(MDAEngine):
                         self._data_path / "dynatrack_log.csv"
                     )
                 dynatrack_config = DynaTrackConfig(**dynatrack_meta)
-                updater = DynaTrackUpdater(config=dynatrack_config)
+
+                # Build preprocessor if configured
+                preprocessor = None
+                if dynatrack_config.preprocessing:
+                    from shrimpy.mantis.dynatrack_preprocessing import (
+                        build_preprocessor,
+                    )
+
+                    zyx_shape = (
+                        max(sequence.sizes.get("z", 1), 1),
+                        self.mmcore.getImageHeight(),
+                        self.mmcore.getImageWidth(),
+                    )
+                    preprocessor = build_preprocessor(dynatrack_config, zyx_shape)
+
+                updater = DynaTrackUpdater(config=dynatrack_config, preprocessor=preprocessor)
                 logger.info(
                     f"DynaTrack enabled: scale_yx={dynatrack_config.scale_yx}, "
                     f"scale_z={dynatrack_config.scale_z}, "
-                    f"interval={dynatrack_config.tracking_interval}"
+                    f"interval={dynatrack_config.tracking_interval}, "
+                    f"channel={dynatrack_config.shift_estimation_channel}"
                 )
             else:
                 updater = None
