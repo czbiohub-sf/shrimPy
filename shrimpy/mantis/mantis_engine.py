@@ -21,6 +21,7 @@ from pymmcore_plus.metadata import SummaryMetaV1
 from pymmcore_plus.metadata.serialize import to_builtins
 from useq import MDAEvent, MDASequence
 
+from shrimpy.mantis.dynatrack import DynaTrackConfig, DynaTrackUpdater
 from shrimpy.mantis.position_update import (
     PositionStore,
     PositionUpdateConfig,
@@ -139,9 +140,24 @@ class MantisEngine(MDAEngine):
         if position_update_config.enabled and sequence.stage_positions:
             position_store = PositionStore()
             position_store.initialize_from_sequence(sequence)
+
+            # Create DynaTrack updater if config is provided
+            dynatrack_meta = position_update_meta.get("dynatrack")
+            if dynatrack_meta:
+                dynatrack_config = DynaTrackConfig(**dynatrack_meta)
+                updater = DynaTrackUpdater(config=dynatrack_config)
+                logger.info(
+                    f"DynaTrack enabled: scale_yx={dynatrack_config.scale_yx}, "
+                    f"scale_z={dynatrack_config.scale_z}, "
+                    f"interval={dynatrack_config.tracking_interval}"
+                )
+            else:
+                updater = None
+
             self._position_update_manager = PositionUpdateManager(
                 config=position_update_config,
                 position_store=position_store,
+                updater=updater,
             )
             self._position_update_manager.start()
             self._position_update_frames = {}

@@ -1,22 +1,18 @@
-"""Tests for the ReplayCamera — OME-Zarr-backed camera patch.
+"""Tests for the ReplayCamera — OME-Zarr-backed UniMMCore camera device.
 
 Creates small synthetic OME-Zarr datasets in temporary directories and
-verifies that the ReplayCamera correctly serves frames through a patched
-CMMCorePlus instance.
-
-These tests do NOT require real Micro-Manager device adapters.  The patched
-core tests use a lightweight ``_FakeCore`` that provides just enough of the
-CMMCorePlus interface (including psygnal-based MDA signals) to exercise the
-replay camera patching logic.
+verifies that the ReplayCamera correctly serves frames through UniMMCore.
 """
 
 from __future__ import annotations
+
+import time
 
 import numpy as np
 import pytest
 
 from iohub.ngff import open_ome_zarr
-from psygnal import Signal
+from pymmcore_plus.experimental.unicore.core._unicore import UniMMCore
 from useq import MDAEvent
 
 from shrimpy.mantis.replay_camera import ReplayCamera
@@ -49,66 +45,6 @@ def _fill_position(pos_node, pos_idx: int) -> None:
     pos_node["0"][:] = data
 
 
-class _MDAEvents:
-    """Minimal signal group matching the MDA events the ReplayCamera connects to."""
-
-    eventStarted = Signal(MDAEvent)
-    frameReady = Signal(np.ndarray, MDAEvent, dict)
-
-
-class _MDA:
-    """Minimal stand-in for ``core.mda``."""
-
-    def __init__(self):
-        self.events = _MDAEvents()
-
-
-class _FakeCore:
-    """Lightweight fake CMMCorePlus with real psygnal signals.
-
-    Provides the methods that ``patch_with_object`` will try to replace, and
-    the ``mda.events`` signal group that ReplayCamera connects to.
-    """
-
-    def __init__(self):
-        self.mda = _MDA()
-
-    # Methods that ReplayCamera patches — defaults return nonsense so we can
-    # verify the patch actually replaced them.
-    def snapImage(self):  # noqa: N802
-        raise RuntimeError("original snapImage called")
-
-    def getImage(self):  # noqa: N802
-        raise RuntimeError("original getImage called")
-
-    def getLastImage(self):  # noqa: N802
-        raise RuntimeError("original getLastImage called")
-
-    def getImageWidth(self):  # noqa: N802
-        return -1
-
-    def getImageHeight(self):  # noqa: N802
-        return -1
-
-    def getImageBitDepth(self):  # noqa: N802
-        return -1
-
-    def startSequenceAcquisition(self, n, interval=0, stop=True):  # noqa: N802
-        raise RuntimeError("original startSequenceAcquisition called")
-
-    def getRemainingImageCount(self):  # noqa: N802
-        return -1
-
-    def isSequenceRunning(self):  # noqa: N802
-        return False
-
-    def popNextImageAndMD(self):  # noqa: N802
-        raise RuntimeError("original popNextImageAndMD called")
-
-    def stopSequenceAcquisition(self):  # noqa: N802
-        raise RuntimeError("original stopSequenceAcquisition called")
-
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -139,8 +75,13 @@ def replay_camera(zarr_path) -> ReplayCamera:
 
 
 @pytest.fixture
-def fake_core() -> _FakeCore:
-    return _FakeCore()
+def core_with_camera(replay_camera) -> UniMMCore:
+    """Return a UniMMCore with the ReplayCamera loaded as the active camera."""
+    core = UniMMCore()
+    core.loadPyDevice("Camera", replay_camera)
+    core.initializeDevice("Camera")
+    core.setCameraDevice("Camera")
+    return core
 
 
 # ---------------------------------------------------------------------------
@@ -152,11 +93,14 @@ class TestReplayCameraInit:
     def test_opens_dataset(self, replay_camera):
         assert replay_camera.num_positions == N_POS
 
-    def test_shape(self, replay_camera):
-        assert replay_camera.shape == (N_T, N_C, N_Z, N_Y, N_X)
+    def test_sensor_shape(self, replay_camera):
+        assert replay_camera.sensor_shape() == (N_Y, N_X)
 
     def test_dtype(self, replay_camera):
-        assert replay_camera.dtype == np.uint16
+        assert replay_camera.dtype() == np.uint16
+
+    def test_tcz_shape(self, replay_camera):
+        assert replay_camera.tcz_shape == (N_T, N_C, N_Z, N_Y, N_X)
 
 
 class TestGetFrame:
@@ -197,80 +141,97 @@ class TestEmptyDataset:
 
 
 # ---------------------------------------------------------------------------
-# Patched core tests
+# UniMMCore integration tests
 # ---------------------------------------------------------------------------
 
 
-class TestPatchedCore:
-    def test_image_dimensions(self, replay_camera, fake_core):
-        with replay_camera.patch(fake_core):
-            assert fake_core.getImageWidth() == N_X
-            assert fake_core.getImageHeight() == N_Y
-            assert fake_core.getImageBitDepth() == 16
+class TestUniMMCoreIntegration:
+    def test_image_dimensions(self, core_with_camera):
+        assert core_with_camera.getImageWidth() == N_X
+        assert core_with_camera.getImageHeight() == N_Y
+        assert core_with_camera.getImageBitDepth() == 16
 
-    def test_snap_and_get_image(self, replay_camera, fake_core):
-        with replay_camera.patch(fake_core):
-            # Simulate an event at t=1, c=0, z=2, p=0
+    def test_snap_and_get_image(self, core_with_camera, replay_camera):
+        # Set indices via event tracking
+        replay_camera._t = 1
+        replay_camera._c = 0
+        replay_camera._z = 2
+        replay_camera._p = 0
+
+        core_with_camera.snapImage()
+        img = core_with_camera.getImage()
+        expected = 0 * 10000 + 1 * 1000 + 0 * 100 + 2
+        assert img.shape == (N_Y, N_X)
+        assert img[0, 0] == expected
+
+    def test_snap_updates_with_indices(self, core_with_camera, replay_camera):
+        """Verify that changing indices changes the returned frame."""
+        replay_camera._t = 0
+        replay_camera._c = 0
+        replay_camera._z = 0
+        replay_camera._p = 0
+
+        core_with_camera.snapImage()
+        img1 = core_with_camera.getImage()
+
+        replay_camera._c = 1
+        replay_camera._p = 1
+
+        core_with_camera.snapImage()
+        img2 = core_with_camera.getImage()
+
+        assert img1[0, 0] != img2[0, 0]
+        assert img1[0, 0] == 0  # p=0,t=0,c=0,z=0
+        assert img2[0, 0] == 1 * 10000 + 0 * 1000 + 1 * 100 + 0
+
+    def test_exposure_property(self, core_with_camera):
+        core_with_camera.setExposure(42.0)
+        assert core_with_camera.getExposure() == 42.0
+
+    def test_default_indices_are_zero(self, core_with_camera):
+        """Before any event, indices default to (0,0,0,0)."""
+        core_with_camera.snapImage()
+        img = core_with_camera.getImage()
+        assert img[0, 0] == 0  # p=0,t=0,c=0,z=0
+
+
+# ---------------------------------------------------------------------------
+# MDA event tracking tests
+# ---------------------------------------------------------------------------
+
+
+class TestMDAEventTracking:
+    def test_connect_and_event_updates_indices(self, core_with_camera, replay_camera):
+        replay_camera.connect_to_mda(core_with_camera)
+        try:
             event = MDAEvent(index={"t": 1, "c": 0, "z": 2, "p": 0})
-            fake_core.mda.events.eventStarted.emit(event)
+            core_with_camera.mda.events.eventStarted.emit(event)
 
-            fake_core.snapImage()
-            img = fake_core.getImage()
+            assert replay_camera._t == 1
+            assert replay_camera._c == 0
+            assert replay_camera._z == 2
+            assert replay_camera._p == 0
+
+            core_with_camera.snapImage()
+            img = core_with_camera.getImage()
             expected = 0 * 10000 + 1 * 1000 + 0 * 100 + 2
-            assert img.shape == (N_Y, N_X)
             assert img[0, 0] == expected
+        finally:
+            replay_camera.disconnect_from_mda(core_with_camera)
 
-    def test_snap_updates_with_event(self, replay_camera, fake_core):
-        """Verify that changing the event changes the returned frame."""
-        with replay_camera.patch(fake_core):
-            # First event
-            e1 = MDAEvent(index={"t": 0, "c": 0, "z": 0, "p": 0})
-            fake_core.mda.events.eventStarted.emit(e1)
-            fake_core.snapImage()
-            img1 = fake_core.getImage()
-
-            # Second event — different position & channel
-            e2 = MDAEvent(index={"t": 0, "c": 1, "z": 0, "p": 1})
-            fake_core.mda.events.eventStarted.emit(e2)
-            fake_core.snapImage()
-            img2 = fake_core.getImage()
-
-            assert img1[0, 0] != img2[0, 0]
-            assert img1[0, 0] == 0  # p=0,t=0,c=0,z=0
-            assert img2[0, 0] == 1 * 10000 + 0 * 1000 + 1 * 100 + 0
-
-    def test_patch_is_temporary(self, replay_camera, fake_core):
-        """After exiting the context, core methods are restored."""
-        with replay_camera.patch(fake_core):
-            # Patched — should not raise
-            fake_core.snapImage()
-
-        # Restored — should raise from the original
-        with pytest.raises(RuntimeError, match="original snapImage"):
-            fake_core.snapImage()
-
-    def test_getLastImage(self, replay_camera, fake_core):
-        with replay_camera.patch(fake_core):
-            event = MDAEvent(index={"t": 0, "c": 1, "z": 2, "p": 0})
-            fake_core.mda.events.eventStarted.emit(event)
-            img = fake_core.getLastImage()
-            expected = 0 * 10000 + 0 * 1000 + 1 * 100 + 2
-            assert img[0, 0] == expected
-
-    def test_default_indices_are_zero(self, replay_camera, fake_core):
-        """Before any event is emitted, indices default to (0,0,0,0)."""
-        with replay_camera.patch(fake_core):
-            img = fake_core.getImage()
-            assert img[0, 0] == 0  # p=0,t=0,c=0,z=0
-
-    def test_event_with_missing_indices(self, replay_camera, fake_core):
+    def test_event_with_missing_indices(self, core_with_camera, replay_camera):
         """Events that lack some index keys use 0 as default."""
-        with replay_camera.patch(fake_core):
+        replay_camera.connect_to_mda(core_with_camera)
+        try:
             event = MDAEvent(index={"t": 1})  # no p, c, z
-            fake_core.mda.events.eventStarted.emit(event)
-            img = fake_core.getImage()
+            core_with_camera.mda.events.eventStarted.emit(event)
+
+            core_with_camera.snapImage()
+            img = core_with_camera.getImage()
             expected = 0 * 10000 + 1 * 1000 + 0 * 100 + 0
             assert img[0, 0] == expected
+        finally:
+            replay_camera.disconnect_from_mda(core_with_camera)
 
 
 # ---------------------------------------------------------------------------
@@ -279,48 +240,43 @@ class TestPatchedCore:
 
 
 class TestSequenceAcquisition:
-    def test_start_and_pop(self, replay_camera, fake_core):
-        with replay_camera.patch(fake_core):
-            event = MDAEvent(index={"t": 0, "c": 0, "z": 0, "p": 0})
-            fake_core.mda.events.eventStarted.emit(event)
+    def test_sequence_acquisition(self, core_with_camera, replay_camera):
+        replay_camera._t = 0
+        replay_camera._c = 0
+        replay_camera._z = 0
+        replay_camera._p = 0
 
-            fake_core.startSequenceAcquisition(3)
-            assert fake_core.getRemainingImageCount() == 3
-            assert fake_core.isSequenceRunning()
+        n_frames = 3
+        core_with_camera.startSequenceAcquisition(n_frames, 0.0, True)
 
-            frames = []
-            while fake_core.getRemainingImageCount() > 0:
-                img, _md = fake_core.popNextImageAndMD()
-                frames.append(img)
+        # Wait for all frames to be available (acquisition runs in bg thread)
+        while core_with_camera.getRemainingImageCount() < n_frames:
+            time.sleep(0.001)
 
-            assert len(frames) == 3
-            assert not fake_core.isSequenceRunning()
+        frames = []
+        for _ in range(n_frames):
+            img, _md = core_with_camera.popNextImageAndMD()
+            frames.append(img.copy())
 
-    def test_stop_clears_queue(self, replay_camera, fake_core):
-        with replay_camera.patch(fake_core):
-            event = MDAEvent(index={"t": 0, "c": 0, "z": 0, "p": 0})
-            fake_core.mda.events.eventStarted.emit(event)
+        assert len(frames) == n_frames
+        # All frames should be the same (same TCZP indices)
+        for frame in frames:
+            assert frame.shape == (N_Y, N_X)
+            assert frame[0, 0] == 0
 
-            fake_core.startSequenceAcquisition(5)
-            assert fake_core.getRemainingImageCount() == 5
-            fake_core.stopSequenceAcquisition()
-            assert fake_core.getRemainingImageCount() == 0
-            assert not fake_core.isSequenceRunning()
+    def test_sequence_frame_shape(self, core_with_camera, replay_camera):
+        replay_camera._t = 1
+        replay_camera._c = 1
+        replay_camera._z = 2
+        replay_camera._p = 0
 
-    def test_pop_from_empty_queue_raises(self, replay_camera, fake_core):
-        with replay_camera.patch(fake_core):
-            fake_core.startSequenceAcquisition(1)
-            fake_core.popNextImageAndMD()  # drain the single frame
-            with pytest.raises(RuntimeError, match="No images"):
-                fake_core.popNextImageAndMD()
+        core_with_camera.startSequenceAcquisition(1, 0.0, True)
 
-    def test_sequence_frames_have_correct_shape(self, replay_camera, fake_core):
-        with replay_camera.patch(fake_core):
-            event = MDAEvent(index={"t": 1, "c": 1, "z": 2, "p": 0})
-            fake_core.mda.events.eventStarted.emit(event)
+        while core_with_camera.getRemainingImageCount() < 1:
+            time.sleep(0.001)
 
-            fake_core.startSequenceAcquisition(2)
-            img, _ = fake_core.popNextImageAndMD()
-            assert img.shape == (N_Y, N_X)
-            expected = 0 * 10000 + 1 * 1000 + 1 * 100 + 2
-            assert img[0, 0] == expected
+        img, _ = core_with_camera.popNextImageAndMD()
+
+        assert img.shape == (N_Y, N_X)
+        expected = 0 * 10000 + 1 * 1000 + 1 * 100 + 2
+        assert img[0, 0] == expected

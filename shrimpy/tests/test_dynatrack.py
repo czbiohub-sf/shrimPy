@@ -1,9 +1,12 @@
 """Tests for DynaTrackUpdater and supporting functions."""
 
+import csv
+
 import numpy as np
 import pytest
 
 from shrimpy.mantis.dynatrack import (
+    DynaTrackConfig,
     DynaTrackUpdater,
     _center_crop,
     _limit_shifts_zyx,
@@ -126,11 +129,60 @@ class TestLimitShiftsZyx:
 
 
 # ---------------------------------------------------------------------------
+# DynaTrackConfig tests
+# ---------------------------------------------------------------------------
+
+
+class TestDynaTrackConfig:
+    def test_minimal_config(self):
+        cfg = DynaTrackConfig(scale_yx=0.5, scale_z=2.0)
+        assert cfg.scale_yx == 0.5
+        assert cfg.scale_z == 2.0
+        assert cfg.maximum_shift == 1.0
+        assert cfg.dampening is None
+        assert cfg.shift_limits is None
+        assert cfg.tracking_interval == 1
+        assert cfg.shift_estimation_channel == "raw"
+        assert cfg.preprocessing is None
+        assert cfg.shift_log_path is None
+
+    def test_full_config(self):
+        cfg = DynaTrackConfig(
+            scale_yx=0.075,
+            scale_z=0.174,
+            dampening=(0.5, 0.8, 0.8),
+            shift_limits={"z": (0.5, 2.0), "y": (2.0, 10.0), "x": (2.0, 10.0)},
+            tracking_interval=2,
+            shift_estimation_channel="phase",
+            preprocessing=["phase"],
+            phase_config={"wavelength": 0.450},
+        )
+        assert cfg.dampening == (0.5, 0.8, 0.8)
+        assert cfg.tracking_interval == 2
+        assert cfg.shift_estimation_channel == "phase"
+
+    def test_config_from_dict(self):
+        """Config can be constructed from a metadata dict via **kwargs."""
+        meta = {
+            "scale_yx": 0.075,
+            "scale_z": 0.174,
+            "dampening": (0.5, 0.8, 0.8),
+        }
+        cfg = DynaTrackConfig(**meta)
+        assert cfg.scale_yx == 0.075
+
+
+# ---------------------------------------------------------------------------
 # DynaTrackUpdater._compute_shift tests
 # ---------------------------------------------------------------------------
 
 
 class TestComputeShift:
+    def _make_updater(self, **kwargs):
+        defaults = {"scale_yx": 0.5, "scale_z": 2.0}
+        defaults.update(kwargs)
+        return DynaTrackUpdater(config=DynaTrackConfig(**defaults))
+
     def test_pixel_to_micron_conversion(self):
         """Verify that pixel shifts are scaled by the correct factors."""
         rng = np.random.default_rng(42)
@@ -140,7 +192,7 @@ class TestComputeShift:
 
         scale_yx = 0.5  # um/px
         scale_z = 2.0  # um/z-step
-        updater = DynaTrackUpdater(scale_yx=scale_yx, scale_z=scale_z)
+        updater = self._make_updater(scale_yx=scale_yx, scale_z=scale_z)
 
         x_um, y_um, z_um = updater._compute_shift(ref, mov)
 
@@ -159,7 +211,7 @@ class TestComputeShift:
         scale_yx = 0.5
         scale_z = 2.0
         dampening = (0.5, 0.25, 0.1)  # z, y, x
-        updater = DynaTrackUpdater(scale_yx=scale_yx, scale_z=scale_z, dampening=dampening)
+        updater = self._make_updater(scale_yx=scale_yx, scale_z=scale_z, dampening=dampening)
 
         x_um, y_um, z_um = updater._compute_shift(ref, mov)
 
@@ -182,7 +234,7 @@ class TestComputeShift:
         scale_yx = 10.0
         scale_z = 2.0
         shift_limits = {"z": (0.1, 50.0), "y": (0.1, 50.0), "x": (0.1, 5.0)}
-        updater = DynaTrackUpdater(
+        updater = self._make_updater(
             scale_yx=scale_yx, scale_z=scale_z, shift_limits=shift_limits
         )
 
@@ -200,9 +252,14 @@ class TestComputeShift:
 
 
 class TestDynaTrackUpdaterFlow:
+    def _make_updater(self, **kwargs):
+        defaults = {"scale_yx": 0.5, "scale_z": 2.0}
+        defaults.update(kwargs)
+        return DynaTrackUpdater(config=DynaTrackConfig(**defaults))
+
     def test_first_call_stores_reference(self):
         """First call stores the reference and returns position unchanged."""
-        updater = DynaTrackUpdater(scale_yx=0.5, scale_z=2.0)
+        updater = self._make_updater()
         pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
         data = [np.random.default_rng(42).random((64, 64)) for _ in range(8)]
 
@@ -217,8 +274,7 @@ class TestDynaTrackUpdaterFlow:
         """Second call computes a shift and returns an updated position."""
         rng = np.random.default_rng(42)
         scale_yx = 0.5
-        scale_z = 2.0
-        updater = DynaTrackUpdater(scale_yx=scale_yx, scale_z=scale_z)
+        updater = self._make_updater(scale_yx=scale_yx)
         pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
 
         ref_frames = [rng.random((64, 64)) for _ in range(8)]
@@ -240,7 +296,7 @@ class TestDynaTrackUpdaterFlow:
 
     def test_no_data_returns_unchanged(self):
         """When data is None, position is returned unchanged."""
-        updater = DynaTrackUpdater(scale_yx=0.5, scale_z=2.0)
+        updater = self._make_updater()
         pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
 
         result = updater.update(0, 0, pos, None)
@@ -249,9 +305,182 @@ class TestDynaTrackUpdaterFlow:
 
     def test_empty_data_returns_unchanged(self):
         """When data is an empty list, position is returned unchanged."""
-        updater = DynaTrackUpdater(scale_yx=0.5, scale_z=2.0)
+        updater = self._make_updater()
         pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
 
         result = updater.update(0, 0, pos, [])
         assert result.x == 100.0
         assert result.y == 200.0
+
+
+# ---------------------------------------------------------------------------
+# Tracking interval tests
+# ---------------------------------------------------------------------------
+
+
+class TestTrackingInterval:
+    def test_skip_non_interval_timepoints(self):
+        """Updates are skipped when timepoint is not on the tracking interval."""
+        rng = np.random.default_rng(42)
+        config = DynaTrackConfig(scale_yx=0.5, scale_z=2.0, tracking_interval=3)
+        updater = DynaTrackUpdater(config=config)
+        pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
+
+        ref_frames = [rng.random((64, 64)) for _ in range(8)]
+        dy, dx = 2, -3
+        mov_frames = [np.roll(np.roll(f, dy, axis=0), dx, axis=1) for f in ref_frames]
+
+        # t=0: store reference
+        updater.update(0, 0, pos, ref_frames)
+
+        # t=1: not on interval (1 % 3 != 0), should return unchanged
+        result = updater.update(1, 0, pos, mov_frames)
+        assert result.x == 100.0
+        assert result.y == 200.0
+
+        # t=2: not on interval
+        result = updater.update(2, 0, pos, mov_frames)
+        assert result.x == 100.0
+
+        # t=3: on interval (3 % 3 == 0), should detect shift
+        result = updater.update(3, 0, pos, mov_frames)
+        assert result.x != 100.0  # shift detected
+
+    def test_interval_1_tracks_every_timepoint(self):
+        """Default interval=1 tracks every timepoint."""
+        rng = np.random.default_rng(42)
+        updater = DynaTrackUpdater(config=DynaTrackConfig(scale_yx=0.5, scale_z=2.0))
+        pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
+
+        ref_frames = [rng.random((64, 64)) for _ in range(8)]
+        dy, dx = 2, -3
+        mov_frames = [np.roll(np.roll(f, dy, axis=0), dx, axis=1) for f in ref_frames]
+
+        updater.update(0, 0, pos, ref_frames)
+        result = updater.update(1, 0, pos, mov_frames)
+        assert result.x != 100.0  # shift detected at t=1
+
+
+# ---------------------------------------------------------------------------
+# Preprocessor hook tests
+# ---------------------------------------------------------------------------
+
+
+class TestPreprocessor:
+    def test_preprocessor_is_applied(self):
+        """Preprocessor transforms data before shift estimation."""
+        rng = np.random.default_rng(42)
+        config = DynaTrackConfig(scale_yx=0.5, scale_z=2.0)
+
+        call_count = [0]
+
+        def identity_preprocessor(stack: np.ndarray) -> np.ndarray:
+            call_count[0] += 1
+            return stack
+
+        updater = DynaTrackUpdater(config=config, preprocessor=identity_preprocessor)
+        pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
+        frames = [rng.random((64, 64)) for _ in range(8)]
+
+        # First call: preprocessor applied to reference
+        updater.update(0, 0, pos, frames)
+        assert call_count[0] == 1
+
+        # Second call: preprocessor applied to current stack
+        updater.update(1, 0, pos, frames)
+        assert call_count[0] == 2
+
+    def test_preprocessor_affects_shift(self):
+        """A preprocessor that introduces a shift should be detected."""
+        rng = np.random.default_rng(42)
+        config = DynaTrackConfig(scale_yx=1.0, scale_z=1.0)
+
+        # Preprocessor that rolls the stack by 2 pixels in Y
+        first_call = [True]
+
+        def shifting_preprocessor(stack: np.ndarray) -> np.ndarray:
+            if first_call[0]:
+                first_call[0] = False
+                return stack
+            return np.roll(stack, 2, axis=1)
+
+        updater = DynaTrackUpdater(config=config, preprocessor=shifting_preprocessor)
+        pos = PositionCoordinates(x=0.0, y=0.0, z=0.0)
+        frames = [rng.random((64, 64)) for _ in range(8)]
+
+        updater.update(0, 0, pos, frames)
+        result = updater.update(1, 0, pos, frames)
+
+        # The preprocessor-introduced shift should be detected
+        assert result.y == pytest.approx(2.0, abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Shift logging tests
+# ---------------------------------------------------------------------------
+
+
+class TestShiftLogging:
+    def test_shift_log_created_on_first_write(self, tmp_path):
+        """CSV file is created with header on first shift computation."""
+        log_path = tmp_path / "shifts.csv"
+        config = DynaTrackConfig(scale_yx=0.5, scale_z=2.0, shift_log_path=str(log_path))
+        updater = DynaTrackUpdater(config=config)
+        pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
+
+        rng = np.random.default_rng(42)
+        ref_frames = [rng.random((64, 64)) for _ in range(8)]
+        dy, dx = 2, -3
+        mov_frames = [np.roll(np.roll(f, dy, axis=0), dx, axis=1) for f in ref_frames]
+
+        # First call: stores reference, no shift logged
+        updater.update(0, 0, pos, ref_frames)
+        assert not log_path.exists()
+
+        # Second call: computes shift, log created
+        updater.update(1, 0, pos, mov_frames)
+        assert log_path.exists()
+
+        with open(log_path) as f:
+            reader = csv.reader(f)
+            header = next(reader)
+            assert header[0] == "position_index"
+            assert header[1] == "timepoint_index"
+            row = next(reader)
+            assert row[0] == "0"  # position_index
+            assert row[1] == "1"  # timepoint_index
+
+    def test_multiple_shifts_appended(self, tmp_path):
+        """Each shift is appended as a new row."""
+        log_path = tmp_path / "shifts.csv"
+        config = DynaTrackConfig(scale_yx=0.5, scale_z=2.0, shift_log_path=str(log_path))
+        updater = DynaTrackUpdater(config=config)
+        pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
+
+        rng = np.random.default_rng(42)
+        ref_frames = [rng.random((64, 64)) for _ in range(8)]
+        mov_frames = [np.roll(f, 2, axis=0) for f in ref_frames]
+
+        updater.update(0, 0, pos, ref_frames)  # store ref
+        updater.update(1, 0, pos, mov_frames)  # shift 1
+        updater.update(2, 0, pos, mov_frames)  # shift 2
+
+        with open(log_path) as f:
+            reader = csv.reader(f)
+            next(reader)  # header
+            rows = list(reader)
+            assert len(rows) == 2
+
+    def test_no_log_when_path_is_none(self):
+        """No CSV is created when shift_log_path is None."""
+        config = DynaTrackConfig(scale_yx=0.5, scale_z=2.0)
+        updater = DynaTrackUpdater(config=config)
+        pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
+
+        rng = np.random.default_rng(42)
+        frames = [rng.random((64, 64)) for _ in range(8)]
+        mov = [np.roll(f, 2, axis=0) for f in frames]
+
+        updater.update(0, 0, pos, frames)
+        updater.update(1, 0, pos, mov)
+        # No exception, no file created — just verifying no crash

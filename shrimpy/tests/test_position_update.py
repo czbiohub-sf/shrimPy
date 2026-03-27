@@ -629,3 +629,57 @@ class TestPositionUpdateIntegration:
         x_t2_p0, y_t2_p0 = seen[(2, 0)]
         assert x_t2_p0 > 100.0, f"Expected x > 100 at t=2, got {x_t2_p0}"
         assert y_t2_p0 > 200.0, f"Expected y > 200 at t=2, got {y_t2_p0}"
+
+    def test_dynatrack_created_from_metadata(self, demo_core, mantis_metadata):
+        """DynaTrackUpdater is created when dynatrack config is in metadata."""
+        from shrimpy.mantis.dynatrack import DynaTrackUpdater
+
+        engine = MantisEngine(demo_core)
+
+        mantis_metadata["position_update"] = {
+            "enabled": True,
+            "update_channel": 0,
+            "dynatrack": {
+                "scale_yx": 0.075,
+                "scale_z": 0.174,
+                "dampening": (0.5, 0.8, 0.8),
+                "shift_limits": {"z": (0.5, 2.0), "y": (2.0, 10.0), "x": (2.0, 10.0)},
+                "tracking_interval": 2,
+            },
+        }
+        seq = MDASequence(
+            stage_positions=[{"x": 100, "y": 200, "z": 50}],
+            metadata={"mantis": mantis_metadata},
+        )
+
+        engine.setup_sequence(seq)
+
+        assert engine._position_update_manager is not None
+        updater = engine._position_update_manager._updater
+        assert isinstance(updater, DynaTrackUpdater)
+        assert updater.config.scale_yx == 0.075
+        assert updater.config.scale_z == 0.174
+        assert updater.config.tracking_interval == 2
+        assert updater.config.dampening == (0.5, 0.8, 0.8)
+
+        engine.teardown_sequence(seq)
+
+    def test_no_dynatrack_uses_default_updater(self, demo_core, mantis_metadata):
+        """Without dynatrack config, the default no-op updater is used."""
+        from shrimpy.mantis.dynatrack import DynaTrackUpdater
+
+        engine = MantisEngine(demo_core)
+
+        mantis_metadata["position_update"] = {"enabled": True}
+        seq = MDASequence(
+            stage_positions=[{"x": 100, "y": 200, "z": 50}],
+            metadata={"mantis": mantis_metadata},
+        )
+
+        engine.setup_sequence(seq)
+
+        assert engine._position_update_manager is not None
+        updater = engine._position_update_manager._updater
+        assert not isinstance(updater, DynaTrackUpdater)
+
+        engine.teardown_sequence(seq)

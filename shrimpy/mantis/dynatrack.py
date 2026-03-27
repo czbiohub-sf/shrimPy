@@ -7,13 +7,77 @@ update infrastructure via the PositionUpdater interface.
 
 from __future__ import annotations
 
+import csv
 import logging
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from shrimpy.mantis.position_update import PositionCoordinates, PositionUpdater
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from typing import Any
+
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class DynaTrackConfig:
+    """Configuration for DynaTrack position tracking.
+
+    Parameters
+    ----------
+    scale_yx : float
+        Pixel size in microns per pixel for Y and X axes.
+    scale_z : float
+        Step size in microns for the Z axis.
+    maximum_shift : float
+        Maximum translation normalised by axis size for FFT padding.
+    dampening : tuple[float, float, float] | None
+        Optional (z, y, x) dampening factors applied multiplicatively
+        to the computed shift.
+    shift_limits : dict[str, tuple[float, float]] | None
+        Optional per-axis (min, max) limits in microns. Keys are "z",
+        "y", "x". Shifts below min are zeroed; shifts above max are clipped.
+    tracking_interval : int
+        Track every N timepoints (1 = every timepoint).
+    shift_estimation_channel : str
+        Which representation to use for shift estimation:
+        ``'raw'`` (default, no preprocessing), ``'phase'`` (phase
+        reconstruction), ``'vs_nuclei'`` or ``'vs_membrane'`` (virtual
+        staining).
+    preprocessing : list[str] | None
+        Pipeline steps, e.g. ``['phase']`` or ``['phase', 'vs']``.
+        Used by external factory functions to build the preprocessor callable.
+    phase_config : dict[str, Any] | None
+        Optical parameters for phase reconstruction (waveorder).
+    vs_config : dict[str, Any] | None
+        Model and checkpoint config for virtual staining (viscy).
+    shift_log_path : str | Path | None
+        Path to a CSV file for incremental shift logging. Each computed
+        shift is appended immediately after calculation.
+    """
+
+    scale_yx: float
+    scale_z: float
+    maximum_shift: float = 1.0
+    dampening: tuple[float, float, float] | None = None
+    shift_limits: dict[str, tuple[float, float]] | None = None
+    tracking_interval: int = 1
+    shift_estimation_channel: str = "raw"
+    preprocessing: list[str] | None = None
+    phase_config: dict[str, Any] | None = None
+    vs_config: dict[str, Any] | None = None
+    shift_log_path: str | Path | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +247,52 @@ def _limit_shifts_zyx(
 
 
 # ---------------------------------------------------------------------------
+# Shift logging
+# ---------------------------------------------------------------------------
+
+_SHIFT_LOG_HEADER = [
+    "position_index",
+    "timepoint_index",
+    "shift_z_um",
+    "shift_y_um",
+    "shift_x_um",
+    "stage_x",
+    "stage_y",
+    "stage_z",
+]
+
+
+def _append_shift_log(
+    path: Path,
+    position_index: int,
+    timepoint_index: int,
+    shift_zyx_um: tuple[float, float, float],
+    stage_coords: PositionCoordinates,
+) -> None:
+    """Append a single shift record to the CSV log file.
+
+    Creates the file with a header row if it does not already exist.
+    """
+    write_header = not path.exists()
+    with open(path, "a", newline="") as f:
+        writer = csv.writer(f)
+        if write_header:
+            writer.writerow(_SHIFT_LOG_HEADER)
+        writer.writerow(
+            [
+                position_index,
+                timepoint_index,
+                f"{shift_zyx_um[0]:.4f}",
+                f"{shift_zyx_um[1]:.4f}",
+                f"{shift_zyx_um[2]:.4f}",
+                f"{stage_coords.x:.4f}",
+                f"{stage_coords.y:.4f}",
+                f"{stage_coords.z:.4f}" if stage_coords.z is not None else "",
+            ]
+        )
+
+
+# ---------------------------------------------------------------------------
 # DynaTrackUpdater
 # ---------------------------------------------------------------------------
 
@@ -197,36 +307,29 @@ class DynaTrackUpdater(PositionUpdater):
 
     Parameters
     ----------
-    scale_yx : float
-        Pixel size in microns per pixel for Y and X axes.
-    scale_z : float
-        Step size in microns for the Z axis.
-    maximum_shift : float
-        Maximum translation normalised by axis size for FFT padding
-        (default 1.0).
-    dampening : tuple[float, float, float] | None
-        Optional (z, y, x) dampening factors applied multiplicatively
-        to the computed shift.
-    shift_limits : dict[str, tuple[float, float]] | None
-        Optional per-axis (min, max) limits in microns. Keys are "z",
-        "y", "x". Shifts below min are zeroed; shifts above max are
-        clipped.
+    config : DynaTrackConfig
+        Tracking configuration.
+    preprocessor : Callable[[np.ndarray], np.ndarray] | None
+        Optional callable that transforms a z-stack before shift estimation.
+        For example, phase reconstruction or virtual staining. When ``None``,
+        the raw z-stack is used directly for phase cross-correlation.
     """
 
     def __init__(
         self,
-        scale_yx: float,
-        scale_z: float,
-        maximum_shift: float = 1.0,
-        dampening: tuple[float, float, float] | None = None,
-        shift_limits: dict[str, tuple[float, float]] | None = None,
+        config: DynaTrackConfig,
+        preprocessor: Callable[[np.ndarray], np.ndarray] | None = None,
     ) -> None:
+        self._config = config
+        self._preprocessor = preprocessor
         self._reference_stacks: dict[int, np.ndarray] = {}
-        self._scale_yx = scale_yx
-        self._scale_z = scale_z
-        self._maximum_shift = maximum_shift
-        self._dampening = dampening
-        self._shift_limits = shift_limits
+        self._shift_log_path: Path | None = (
+            Path(config.shift_log_path) if config.shift_log_path else None
+        )
+
+    @property
+    def config(self) -> DynaTrackConfig:
+        return self._config
 
     def update(
         self,
@@ -262,6 +365,10 @@ class DynaTrackUpdater(PositionUpdater):
 
         current_stack = np.stack(data)
 
+        # Apply optional preprocessing (e.g. phase reconstruction, VS)
+        if self._preprocessor is not None:
+            current_stack = self._preprocessor(current_stack)
+
         # Store reference on first encounter
         if position_index not in self._reference_stacks:
             self._reference_stacks[position_index] = current_stack
@@ -271,19 +378,42 @@ class DynaTrackUpdater(PositionUpdater):
             )
             return position
 
+        # Skip tracking if not on a tracking interval
+        if (
+            self._config.tracking_interval > 1
+            and timepoint_index % self._config.tracking_interval != 0
+        ):
+            logger.debug(
+                f"DynaTrack: skipping p={position_index} at t={timepoint_index} "
+                f"(interval={self._config.tracking_interval})"
+            )
+            return position
+
         reference_stack = self._reference_stacks[position_index]
-        shift = self._compute_shift(reference_stack, current_stack)
+        shift_xyz = self._compute_shift(reference_stack, current_stack)
+
+        updated = PositionCoordinates(
+            x=position.x + shift_xyz[0],
+            y=position.y + shift_xyz[1],
+            z=(position.z or 0) + shift_xyz[2] if position.z is not None else None,
+        )
 
         logger.info(
             f"DynaTrack: p={position_index} t={timepoint_index} "
-            f"shift=({shift[0]:.2f}, {shift[1]:.2f}, {shift[2]:.2f})"
+            f"shift=({shift_xyz[0]:.2f}, {shift_xyz[1]:.2f}, {shift_xyz[2]:.2f})"
         )
 
-        return PositionCoordinates(
-            x=position.x + shift[0],
-            y=position.y + shift[1],
-            z=(position.z or 0) + shift[2] if position.z is not None else None,
-        )
+        # Log shift to CSV immediately
+        if self._shift_log_path is not None:
+            _append_shift_log(
+                self._shift_log_path,
+                position_index,
+                timepoint_index,
+                shift_zyx_um=self._last_shift_zyx_um,
+                stage_coords=updated,
+            )
+
+        return updated
 
     def _compute_shift(
         self,
@@ -304,26 +434,35 @@ class DynaTrackUpdater(PositionUpdater):
         tuple[float, float, float]
             Estimated shift in (x, y, z) in stage coordinates (microns).
         """
+        cfg = self._config
+
         # 1. Phase cross-correlation in pixel space (returns ZYX order)
-        shifts_zyx_px = _phase_cross_corr(reference, current, self._maximum_shift)
+        shifts_zyx_px = _phase_cross_corr(reference, current, cfg.maximum_shift)
 
         # 2. Convert pixels to microns
         shifts_zyx_um = np.array(
             [
-                shifts_zyx_px[0] * self._scale_z,
-                shifts_zyx_px[1] * self._scale_yx,
-                shifts_zyx_px[2] * self._scale_yx,
+                shifts_zyx_px[0] * cfg.scale_z,
+                shifts_zyx_px[1] * cfg.scale_yx,
+                shifts_zyx_px[2] * cfg.scale_yx,
             ],
             dtype=float,
         )
 
         # 3. Apply shift limits (zero below min, clip above max)
-        if self._shift_limits is not None:
-            shifts_zyx_um = _limit_shifts_zyx(shifts_zyx_um, self._shift_limits)
+        if cfg.shift_limits is not None:
+            shifts_zyx_um = _limit_shifts_zyx(shifts_zyx_um, cfg.shift_limits)
 
         # 4. Apply dampening
-        if self._dampening is not None:
-            shifts_zyx_um = shifts_zyx_um * np.array(self._dampening, dtype=float)
+        if cfg.dampening is not None:
+            shifts_zyx_um = shifts_zyx_um * np.array(cfg.dampening, dtype=float)
+
+        # Store for shift logging (ZYX order, microns)
+        self._last_shift_zyx_um = (
+            float(shifts_zyx_um[0]),
+            float(shifts_zyx_um[1]),
+            float(shifts_zyx_um[2]),
+        )
 
         # 5. Reorder from (z, y, x) to (x, y, z) for PositionCoordinates
         x_um = float(shifts_zyx_um[2])
