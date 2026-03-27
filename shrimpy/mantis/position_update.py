@@ -36,15 +36,32 @@ class PositionStore:
         self._positions: dict[int, PositionCoordinates] = {}
         self._lock = threading.Lock()
 
-    def initialize_from_sequence(self, sequence: MDASequence) -> None:
-        """Populate the store from the sequence's stage_positions."""
+    def initialize_from_sequence(
+        self, sequence: MDASequence, z_device: str | None = None
+    ) -> None:
+        """Populate the store from the sequence's stage_positions.
+
+        Parameters
+        ----------
+        sequence : MDASequence
+            The acquisition sequence.
+        z_device : str | None
+            If set, read the initial Z value from the position's device
+            properties (e.g. ``ObjectiveZ``) instead of ``pos.z``.
+        """
         with self._lock:
             self._positions.clear()
             for idx, pos in enumerate(sequence.stage_positions):
+                z = pos.z
+                if z_device and pos.properties:
+                    for dev, prop, value in pos.properties:
+                        if dev == z_device and prop == "Position":
+                            z = float(value)
+                            break
                 self._positions[idx] = PositionCoordinates(
                     x=pos.x if pos.x is not None else 0.0,
                     y=pos.y if pos.y is not None else 0.0,
-                    z=pos.z,
+                    z=z,
                 )
 
     def get_position(self, position_index: int) -> PositionCoordinates | None:
@@ -81,6 +98,7 @@ class PositionUpdateConfig:
 
     enabled: bool = False
     update_channel: int | None = 0  # channel index to cache; None = all channels
+    z_device: str | None = None  # device name for Z updates (e.g. "ObjectiveZ")
 
 
 class PositionUpdater:
@@ -142,7 +160,12 @@ class PositionUpdateManager:
         self._pending_future: Future | None = None
 
     def apply_position_update(self, event: MDAEvent) -> MDAEvent:
-        """Replace event's x/y/z with current values from the position store."""
+        """Replace event's x/y/z with current values from the position store.
+
+        When ``z_device`` is configured, the Z coordinate is written to the
+        event's device properties (e.g. ``ObjectiveZ.Position``) rather than
+        ``z_pos``, which typically controls the fast scanning stage (PiezoZ).
+        """
         from pymmcore_plus.core._sequencing import SequencedEvent
 
         if isinstance(event, SequencedEvent):
@@ -162,15 +185,32 @@ class PositionUpdateManager:
             update["x_pos"] = coords.x
         if coords.y is not None:
             update["y_pos"] = coords.y
+
+        z_device = self.config.z_device
         if coords.z is not None:
-            update["z_pos"] = coords.z
+            if z_device:
+                # Write Z to device property instead of z_pos
+                props = list(event.properties) if event.properties else []
+                # Replace existing property or append
+                replaced = False
+                for i, (dev, prop, _val) in enumerate(props):
+                    if dev == z_device and prop == "Position":
+                        props[i] = (dev, prop, coords.z)
+                        replaced = True
+                        break
+                if not replaced:
+                    props.append((z_device, "Position", coords.z))
+                update["properties"] = props
+            else:
+                update["z_pos"] = coords.z
 
         if not update:
             return event
 
         logger.debug(
             f"Position update: overriding p={p_idx} to "
-            f"x={update.get('x_pos')}, y={update.get('y_pos')}, z={update.get('z_pos')}"
+            f"x={update.get('x_pos')}, y={update.get('y_pos')}, "
+            f"z={coords.z} (device={z_device or 'z_pos'})"
         )
         return event.model_copy(update=update)
 

@@ -136,10 +136,13 @@ class MantisEngine(MDAEngine):
         position_update_config = PositionUpdateConfig(
             enabled=position_update_meta.get("enabled", False),
             update_channel=position_update_meta.get("update_channel"),
+            z_device=position_update_meta.get("z_device"),
         )
         if position_update_config.enabled and sequence.stage_positions:
             position_store = PositionStore()
-            position_store.initialize_from_sequence(sequence)
+            position_store.initialize_from_sequence(
+                sequence, z_device=position_update_config.z_device
+            )
 
             # Create DynaTrack updater if config is provided
             dynatrack_meta = position_update_meta.get("dynatrack")

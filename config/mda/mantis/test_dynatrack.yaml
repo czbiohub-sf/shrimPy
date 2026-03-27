@@ -2,13 +2,20 @@
 setup:
   properties:
     - ['XY', 'Velocity', '10000']
-    - ['Z', 'UseSequences', 'Yes']
+    - ['PiezoZ', 'UseSequences', 'Yes']
+
+stage_positions:
+  - x: 0
+    y: 0
+    name: "Pos0"
+    properties:
+      - ['ObjectiveZ', 'Position', '0']
 
 # Define time plan
 time_plan:
   prioritize_duration: true
-  interval: 0
-  loops: 3
+  interval: 10
+  loops: 5
 
 # Define z plan
 z_plan:
@@ -43,8 +50,21 @@ metadata:
     version: 0.10.2.dev23+g22b8c0aff.d20260106
   mantis:
     reset_hardware_sequencing_settings:
-      - ['Z', 'UseSequences', 'No']
+      - ['PiezoZ', 'UseSequences', 'No']
     autofocus:
       enabled: false
       method: demo-PFS
-      stage: Z
+      stage: ObjectiveZ
+    position_update:
+      enabled: true
+      update_channel: 0
+      z_device: ObjectiveZ
+      dynatrack:
+        scale_yx: 0.1494
+        scale_z: 0.174
+        # shift_limits:
+        #   z: [0.5, 2.0]
+        #   y: [2.0, 10.0]
+        #   x: [2.0, 10.0]
+        tracking_interval: 1
+        shift_log_path: shift_log.csv
