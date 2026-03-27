@@ -5,6 +5,7 @@ from __future__ import annotations
 import click
 
 from shrimpy.cli.acquire import acquire
+from shrimpy.cli.gui import gui
 
 
 @click.group()
@@ -19,6 +20,7 @@ def cli():
 
 # Register command groups
 cli.add_command(acquire)
+cli.add_command(gui)
 
 
 if __name__ == "__main__":

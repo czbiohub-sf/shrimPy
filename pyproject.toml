@@ -25,6 +25,7 @@ dependencies = [
   "numpy",
   "ome-writers[acquire-zarr]",
   "pymmcore>=11.14.0.75.0",
+  "pymmcore-gui",
   "pymmcore-plus",
   "pymmcore-widgets",
   "PyYAML",
@@ -62,6 +63,7 @@ packages = ["shrimpy"]
 # ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
 # pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "main" }
 ome-writers = { path = "../ome-writers", editable = true }
+pymmcore-gui = { path = "../pymmcore-gui", editable = true }
 pymmcore-plus = { path = "../pymmcore-plus", editable = true }
 useq-schema = { path = "../useq-schema", editable = true }
 
