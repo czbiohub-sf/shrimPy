@@ -329,9 +329,10 @@ class DynaTrackUpdater(PositionUpdater):
         self._shift_log_path: Path | None = (
             Path(config.shift_log_path) if config.shift_log_path else None
         )
-        # Debug zarr store for preprocessed stacks (set by MantisEngine)
+        # Debug HCS zarr store for preprocessed stacks (set by MantisEngine)
         self._debug_zarr_path: Path | None = None
-        self._debug_zarr = None
+        self._debug_store = None
+        self._debug_position_names: dict[int, str] = {}  # set by MantisEngine
 
     @property
     def config(self) -> DynaTrackConfig:
@@ -505,9 +506,10 @@ class DynaTrackUpdater(PositionUpdater):
         timepoint_index: int,
         position_index: int,
     ) -> None:
-        """Save all preprocessed channels to an OME-Zarr FOV store.
+        """Save all preprocessed channels to an HCS OME-Zarr store.
 
-        Stores as TCZYX using iohub with proper channel names.
+        Each MDA position maps to a position in the HCS plate, using
+        matching position names from the acquisition sequence.
         """
         if self._debug_zarr_path is None:
             return
@@ -518,18 +520,13 @@ class DynaTrackUpdater(PositionUpdater):
         czyx = np.stack([channels[name] for name in channel_names])
         nc, nz, ny, nx = czyx.shape
 
-        if self._debug_zarr is None:
-            self._debug_zarr = open_ome_zarr(
+        # Create the HCS store on first call
+        if self._debug_store is None:
+            self._debug_store = open_ome_zarr(
                 str(self._debug_zarr_path),
-                layout="fov",
+                layout="hcs",
                 mode="w",
                 channel_names=channel_names,
-            )
-            self._debug_zarr.create_zeros(
-                "0",
-                shape=(0, nc, nz, ny, nx),
-                chunks=(1, nc, nz, ny, nx),
-                dtype=czyx.dtype,
             )
             logger.info(
                 "DynaTrack: debug store created at %s (channels=%s)",
@@ -537,10 +534,25 @@ class DynaTrackUpdater(PositionUpdater):
                 channel_names,
             )
 
-        self._debug_zarr["0"].append(czyx[np.newaxis], axis=0)
+        # Create position on first encounter
+        pos_name = self._debug_position_names.get(position_index, f"p{position_index}")
+        pos_key = f"0/{position_index}/{pos_name}"
+        if pos_key not in dict(self._debug_store.positions()):
+            pos = self._debug_store.create_position("0", str(position_index), pos_name)
+            pos.create_zeros(
+                "0",
+                shape=(0, nc, nz, ny, nx),
+                chunks=(1, nc, nz, ny, nx),
+                dtype=czyx.dtype,
+            )
+            logger.info("DynaTrack: debug position '%s' created", pos_name)
+
+        _, pos_node = next((k, v) for k, v in self._debug_store.positions() if k == pos_key)
+        pos_node["0"].append(czyx[np.newaxis], axis=0)
         logger.debug(
-            "DynaTrack: saved debug t=%d p=%d (store shape=%s)",
+            "DynaTrack: saved debug t=%d p=%d '%s' (shape=%s)",
             timepoint_index,
             position_index,
-            self._debug_zarr["0"].shape,
+            pos_name,
+            pos_node["0"].shape,
         )

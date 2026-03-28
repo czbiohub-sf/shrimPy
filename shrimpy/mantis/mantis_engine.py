@@ -174,6 +174,10 @@ class MantisEngine(MDAEngine):
                 # Save preprocessed stacks for debugging
                 if dynatrack_config.save_debug and preprocessor and self._data_path:
                     updater._debug_zarr_path = self._data_path.parent / "dynatrack_debug.zarr"
+                    updater._debug_position_names = {
+                        idx: pos.name or f"p{idx}"
+                        for idx, pos in enumerate(sequence.stage_positions)
+                    }
                 logger.info(
                     f"DynaTrack enabled: scale_yx={dynatrack_config.scale_yx}, "
                     f"scale_z={dynatrack_config.scale_z}, "
