@@ -155,30 +155,9 @@ class MantisEngine(MDAEngine):
                         self._data_path / "dynatrack_log.csv"
                     )
                 dynatrack_config = DynaTrackConfig(**dynatrack_meta)
-
-                # Build preprocessor if configured
-                preprocessor = None
-                if dynatrack_config.preprocessing:
-                    from shrimpy.mantis.dynatrack_preprocessing import (
-                        build_preprocessor,
-                    )
-
-                    roi = microscope_meta.get("roi")
-                    if roi:
-                        img_width, img_height = roi[-2], roi[-1]
-                    else:
-                        img_width = self.mmcore.getImageWidth()
-                        img_height = self.mmcore.getImageHeight()
-                    zyx_shape = (
-                        max(sequence.sizes.get("z", 1), 1),
-                        img_height,
-                        img_width,
-                    )
-                    preprocessor = build_preprocessor(dynatrack_config, zyx_shape)
-
-                updater = DynaTrackUpdater(config=dynatrack_config, preprocessor=preprocessor)
-                # Save preprocessed stacks for debugging
-                if dynatrack_config.save_debug and preprocessor and self._data_path:
+                updater = DynaTrackUpdater(config=dynatrack_config)
+                # Debug zarr path and position names (activated after preprocessor is built)
+                if dynatrack_config.save_debug and self._data_path:
                     updater._debug_zarr_path = self._data_path.parent / "dynatrack_debug.zarr"
                     updater._debug_position_names = {
                         idx: pos.name or f"p{idx}"
@@ -210,9 +189,28 @@ class MantisEngine(MDAEngine):
 
         logger.info("Mantis hardware setup completed successfully")
 
-        # Call parent setup last so SummaryMetaV1 captures the fully
-        # configured hardware state (ROI, focus device, etc.).
-        return super().setup_sequence(sequence)
+        # Call parent setup so SummaryMetaV1 captures the fully configured
+        # hardware state and the setup event applies the ROI.
+        result = super().setup_sequence(sequence)
+
+        # Build the preprocessor after the setup event has applied the ROI,
+        # so getImageHeight/Width reflects the actual acquired frame size.
+        if self._position_update_manager is not None and isinstance(
+            self._position_update_manager._updater, DynaTrackUpdater
+        ):
+            updater = self._position_update_manager._updater
+            if updater.config.preprocessing and updater._preprocessor is None:
+                from shrimpy.mantis.dynatrack_preprocessing import build_preprocessor
+
+                zyx_shape = (
+                    max(sequence.sizes.get("z", 1), 1),
+                    self.mmcore.getImageHeight(),
+                    self.mmcore.getImageWidth(),
+                )
+                logger.info(f"DynaTrack: building preprocessor for shape {zyx_shape}")
+                updater._preprocessor = build_preprocessor(updater.config, zyx_shape)
+
+        return result
 
     def event_iterator(self, events: Iterable[MDAEvent]):
         """Wrap event iteration to apply position updates before logging.
