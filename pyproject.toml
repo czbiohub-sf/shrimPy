@@ -73,8 +73,8 @@ ome-writers = { path = "../ome-writers", editable = true } # add-plate-row-col b
 pymmcore-gui = { path = "../pymmcore-gui", editable = true } # no recent pipy release
 pymmcore-plus = { path = "../pymmcore-plus", editable = true } # dev branch
 useq-schema = { path = "../useq-schema", editable = true } # add-plate-row-col branch
-viscy = { path = "../viscy", editable = true } # PR #395
-# waveorder = { path = "../waveorder", editable = true }
+viscy = { path = "../viscy", editable = true } # waveorder dependency, issue
+waveorder = { git = "https://github.com/mehta-lab/waveorder", branch = "iohub_dep" }
 torch = { index = "pytorch" }
 
 [[tool.uv.index]]

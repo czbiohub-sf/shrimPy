@@ -91,6 +91,13 @@ def mantis(
 
         core = RobustCMMCore()
 
+    # Pre-import torch before MM loads its DLLs to avoid DLL conflict on Windows
+    # (shm.dll fails with WinError 127 if MM CUDA DLLs are loaded first)
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        pass
+
     core.loadSystemConfiguration(mm_config)
 
     if unicore:
