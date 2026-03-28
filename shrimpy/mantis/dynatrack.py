@@ -532,6 +532,7 @@ class DynaTrackUpdater(PositionUpdater):
                 layout="hcs",
                 mode="w",
                 channel_names=channel_names,
+                version="0.5",
             )
             logger.info(
                 "DynaTrack: debug store created at %s (channels=%s)",
@@ -547,7 +548,7 @@ class DynaTrackUpdater(PositionUpdater):
             pos.create_zeros(
                 "0",
                 shape=(0, nc, nz, ny, nx),
-                chunks=(1, nc, nz, ny, nx),
+                chunks=(1, 1, min(32, nz), ny, nx),
                 dtype=czyx.dtype,
             )
             logger.info("DynaTrack: debug position '%s' created", pos_name)
