@@ -31,6 +31,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _resolve_deskew_params(config: dict[str, Any]) -> dict[str, Any]:
+    """Convert user-facing deskew config to biahub API parameters.
+
+    Accepts ``pixel_size_um`` and ``scan_step_um`` and computes
+    ``px_to_scan_ratio = pixel_size_um / scan_step_um``.
+    """
+    params = dict(config)
+    pixel_size_um = params.pop("pixel_size_um", None)
+    scan_step_um = params.pop("scan_step_um", None)
+    if pixel_size_um is not None and scan_step_um is not None:
+        params["px_to_scan_ratio"] = pixel_size_um / scan_step_um
+    return params
+
+
 def _resolve_device() -> torch.device:
     """Return the best available torch device (lazy import)."""
     from waveorder.device import resolve_device
@@ -67,13 +81,21 @@ def build_preprocessor(
     if not pipeline or channel == "raw":
         return None
 
-    if "phase" not in pipeline:
-        logger.warning("DynaTrack preprocessing requires 'phase' step; got %s", pipeline)
+    if "phase" not in pipeline and "deskew" not in pipeline:
+        logger.warning(
+            "DynaTrack preprocessing requires 'deskew' and/or 'phase' step; got %s",
+            pipeline,
+        )
         return None
 
     preprocessor = _LabelfreePreprocessor(
         zyx_shape=zyx_shape,
-        phase_config=config.phase_config or {},
+        deskew_config=(
+            _resolve_deskew_params(config.deskew_config)
+            if "deskew" in pipeline and config.deskew_config
+            else None
+        ),
+        phase_config=config.phase_config if "phase" in pipeline else None,
         vs_config=config.vs_config if "vs" in pipeline else None,
         output_channel=channel,
     )
@@ -93,11 +115,13 @@ class _LabelfreePreprocessor:
     def __init__(
         self,
         zyx_shape: tuple[int, int, int],
-        phase_config: dict[str, Any],
+        deskew_config: dict[str, Any] | None,
+        phase_config: dict[str, Any] | None,
         vs_config: dict[str, Any] | None,
         output_channel: str,
     ) -> None:
         self._zyx_shape = zyx_shape
+        self._deskew_config = deskew_config
         self._phase_config = phase_config
         self._vs_config = vs_config
         self._output_channel = output_channel
@@ -114,7 +138,24 @@ class _LabelfreePreprocessor:
         doesn't pay the initialization cost.
         """
         self._device = _resolve_device()
-        self._compute_transfer_function()
+
+        # If deskewing, the phase TF must use the deskewed shape
+        if self._deskew_config is not None and self._phase_config is not None:
+            from biahub.deskew import get_deskewed_data_shape
+
+            deskewed_shape, _ = get_deskewed_data_shape(
+                raw_data_shape=self._zyx_shape,
+                **self._deskew_config,
+            )
+            logger.info(
+                "DynaTrack: deskew will reshape %s -> %s",
+                self._zyx_shape,
+                deskewed_shape,
+            )
+            self._zyx_shape = deskewed_shape
+
+        if self._phase_config is not None:
+            self._compute_transfer_function()
 
         if self._vs_config is not None:
             logger.info("DynaTrack: pre-loading VS model...")
@@ -169,14 +210,49 @@ class _LabelfreePreprocessor:
         """
         channels: dict[str, np.ndarray] = {}
 
-        volume_phase = self._reconstruct_phase(volume_bf)
-        channels["phase"] = volume_phase
+        # 1. Deskew
+        if self._deskew_config is not None:
+            volume_bf = self._deskew(volume_bf)
 
+        # 2. Phase reconstruction
+        if self._phase_config is not None:
+            volume_phase = self._reconstruct_phase(volume_bf)
+            channels["phase"] = volume_phase
+        else:
+            volume_phase = volume_bf
+
+        # 3. Virtual staining
         if self._vs_config is not None:
             vs_result = self._predict_vs(volume_phase)
             channels.update(vs_result)
 
+        # If no phase or VS, return the (possibly deskewed) raw volume
+        if not channels:
+            channels["raw"] = volume_bf
+
         return channels
+
+    def _deskew(self, volume: np.ndarray) -> np.ndarray:
+        """Apply deskewing via biahub."""
+        from biahub.deskew import deskew as biahub_deskew
+
+        logger.info("DynaTrack: deskewing volume %s...", volume.shape)
+        t0 = _time.monotonic()
+
+        device = str(self._device) if self._device is not None else "cpu"
+        result = biahub_deskew(
+            raw_data=volume,
+            device=device,
+            **self._deskew_config,
+        )
+
+        logger.info(
+            "DynaTrack: deskew took %.1fs (%s -> %s)",
+            _time.monotonic() - t0,
+            volume.shape,
+            result.shape,
+        )
+        return result
 
     def _reconstruct_phase(self, volume_bf: np.ndarray) -> np.ndarray:
         """Apply phase reconstruction via waveorder on the target device."""

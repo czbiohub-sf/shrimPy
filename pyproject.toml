@@ -46,9 +46,10 @@ dev = [
   "ipykernel",
 ]
 dynatrack = [
+  "biahub",
   "torch",
-  "waveorder",
   "viscy",
+  "waveorder",
 ]
 
 [project.scripts]
@@ -67,11 +68,13 @@ packages = ["shrimpy"]
 [tool.uv.sources]
 # ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
 # pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "main" }
+biahub = { path = "../biahub", editable = true }
 ome-writers = { path = "../ome-writers", editable = true }
 pymmcore-gui = { path = "../pymmcore-gui", editable = true }
 pymmcore-plus = { path = "../pymmcore-plus", editable = true }
 useq-schema = { path = "../useq-schema", editable = true }
 viscy = { path = "../viscy", editable = true }
+waveorder = { path = "../waveorder", editable = true }
 torch = { index = "pytorch" }
 
 [[tool.uv.index]]

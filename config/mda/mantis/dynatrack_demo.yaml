@@ -71,11 +71,18 @@ metadata:
         #   y: [2.0, 10.0]
         #   x: [2.0, 10.0]
 
-        # Preprocessing: reconstruct phase and predict virtual staining
-        # before computing shifts via phase cross-correlation.
-        # Options: ['phase'] or ['phase', 'vs']
-        preprocessing: ['phase', 'vs']
+        # Preprocessing pipeline: deskew -> phase recon -> virtual staining
+        # Options: ['deskew', 'phase', 'vs'], ['deskew', 'phase'], ['phase', 'vs'], ['phase']
+        preprocessing: ['deskew', 'phase', 'vs']
         # preprocessing: ['phase']
+
+        # Biahub deskew parameters for light-sheet data
+        deskew_config:
+          ls_angle_deg: 36.17
+          pixel_size_um: 0.116
+          scan_step_um: 0.313
+          keep_overhang: true
+          average_n_slices: 3
         # Which channel to use for shift estimation:
         # 'raw', 'phase', 'vs_nuclei', 'vs_membrane'
         shift_estimation_channel: 'vs_nuclei'

@@ -60,6 +60,10 @@ class DynaTrackConfig:
         Used by external factory functions to build the preprocessor callable.
     phase_config : dict[str, Any] | None
         Optical parameters for phase reconstruction (waveorder).
+    deskew_config : dict[str, Any] | None
+        Deskew parameters for light-sheet data (biahub). Keys:
+        ``ls_angle_deg``, ``px_to_scan_ratio``, ``keep_overhang``,
+        ``average_n_slices``.
     vs_config : dict[str, Any] | None
         Model and checkpoint config for virtual staining (viscy).
     shift_log_path : str | Path | None
@@ -76,6 +80,7 @@ class DynaTrackConfig:
     tracking_interval: int = 1
     shift_estimation_channel: str = "raw"
     preprocessing: list[str] | None = None
+    deskew_config: dict[str, Any] | None = None
     phase_config: dict[str, Any] | None = None
     vs_config: dict[str, Any] | None = None
     shift_log_path: str | Path | None = None
