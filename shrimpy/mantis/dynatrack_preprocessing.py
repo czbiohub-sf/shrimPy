@@ -213,11 +213,6 @@ class _LabelfreePreprocessor:
         # 1. Deskew
         if self._deskew_config is not None:
             volume_bf = self._deskew(volume_bf)
-            # Replace zero-valued overhang regions with the volume mean
-            # to avoid artifacts in phase reconstruction
-            mask = volume_bf == 0
-            if mask.any():
-                volume_bf[mask] = volume_bf[~mask].mean()
 
         # 2. Phase reconstruction
         if self._phase_config is not None:
