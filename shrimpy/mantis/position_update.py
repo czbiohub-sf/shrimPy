@@ -263,10 +263,14 @@ class PositionUpdateManager:
             return
 
         if self._worker is not None:
-            # Submit to worker process, then poll for result in background thread
-            self._worker.submit(timepoint_index, position_index, position, data)
+            # Submit and wait in background thread (serialized by single-worker executor)
+            # so only one position's data is in the mp.Queue at a time
             self._pending_future = self._executor.submit(
-                self._wait_for_worker_result, timepoint_index, position_index
+                self._submit_and_wait_worker,
+                timepoint_index,
+                position_index,
+                position,
+                data,
             )
         else:
             self._pending_future = self._executor.submit(
@@ -306,8 +310,20 @@ class PositionUpdateManager:
                 f"t={timepoint_index}, keeping previous position"
             )
 
-    def _wait_for_worker_result(self, timepoint_index: int, position_index: int) -> None:
-        """Wait for the worker process to return a result and update the store."""
+    def _submit_and_wait_worker(
+        self,
+        timepoint_index: int,
+        position_index: int,
+        position: PositionCoordinates,
+        data: list[np.ndarray] | None,
+    ) -> None:
+        """Submit data to the worker and wait for the result.
+
+        Runs in a background thread. By serializing submit + wait, only one
+        position's frame data is in the mp.Queue at a time, reducing memory.
+        """
+        self._worker.submit(timepoint_index, position_index, position, data)
+        del data  # free main-process copy after it's been pickled to the queue
         result = self._worker.get_result(timeout=120)
         if result is None:
             logger.warning(

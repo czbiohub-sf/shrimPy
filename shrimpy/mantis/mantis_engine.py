@@ -63,7 +63,7 @@ class MantisEngine(MDAEngine):
         kwargs.setdefault("force_set_xy_position", False)
         # Set acquisition timeout to guard against stalling due to dropped frames
         # or missed trigger pulses
-        kwargs.setdefault("timeout_base", 2.0)
+        kwargs.setdefault("timeout_base", 10.0)
         kwargs.setdefault("timeout_multiplier", 1.0)
         kwargs.setdefault("timeout_first_frame", None)
         kwargs.setdefault("timeout_action", "warn")
