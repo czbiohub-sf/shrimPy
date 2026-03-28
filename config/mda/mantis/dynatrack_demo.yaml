@@ -16,7 +16,7 @@ stage_positions:
 # Define time plan
 time_plan:
   prioritize_duration: true
-  interval: 60
+  interval: 15
   loops: 3
 
 # Define z plan
@@ -65,6 +65,7 @@ metadata:
         scale_yx: 0.1494
         scale_z: 0.174
         tracking_interval: 1
+        save_debug: true
         # shift_limits:
         #   z: [0.5, 2.0]
         #   y: [2.0, 10.0]
@@ -73,12 +74,12 @@ metadata:
         # Preprocessing: reconstruct phase and predict virtual staining
         # before computing shifts via phase cross-correlation.
         # Options: ['phase'] or ['phase', 'vs']
-        # preprocessing: ['phase', 'vs']
-        preprocessing: ['phase']
+        preprocessing: ['phase', 'vs']
+        # preprocessing: ['phase']
         # Which channel to use for shift estimation:
         # 'raw', 'phase', 'vs_nuclei', 'vs_membrane'
-        # shift_estimation_channel: 'vs_nuclei'
-        shift_estimation_channel: 'phase'
+        shift_estimation_channel: 'vs_nuclei'
+        # shift_estimation_channel: 'phase'
 
         # Waveorder phase reconstruction parameters
         phase_config:
@@ -116,4 +117,4 @@ metadata:
                 head_conv_pool: false
               test_time_augmentations: true
               tta_type: median
-          ckpt_path: /hpc/projects/comp.micro/virtual_staining/models/fcmae-3d/fit_v2/pretrain_end2end/lightning_logs/finetune_VS_end2end_v1_test6_prefetch2_nopersistwork_restart_2/checkpoints/epoch=64-step=24960.ckpt
+          ckpt_path: C:\\Users\\labelfree\\Documents\\epoch=64-step=24960.ckpt

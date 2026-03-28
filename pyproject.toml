@@ -46,6 +46,7 @@ dev = [
   "ipykernel",
 ]
 dynatrack = [
+  "torch",
   "waveorder",
   "viscy",
 ]
@@ -70,6 +71,13 @@ ome-writers = { path = "../ome-writers", editable = true }
 pymmcore-gui = { path = "../pymmcore-gui", editable = true }
 pymmcore-plus = { path = "../pymmcore-plus", editable = true }
 useq-schema = { path = "../useq-schema", editable = true }
+viscy = { path = "../viscy", editable = true }
+torch = { index = "pytorch" }
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu118"
+explicit = true
 
 [tool.ruff]
 # Ruff replaces black, isort, flake8, and pylint
