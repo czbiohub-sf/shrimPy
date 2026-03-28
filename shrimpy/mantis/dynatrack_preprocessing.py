@@ -230,6 +230,7 @@ class _LabelfreePreprocessor:
         if not channels:
             channels["raw"] = volume_bf
 
+        self._log_gpu_memory()
         return channels
 
     def _deskew(self, volume: np.ndarray) -> np.ndarray:
@@ -346,9 +347,14 @@ class _LabelfreePreprocessor:
         device = self._device
         model = model_class(**init_args).to(device).eval()
 
+        # Extract the bare nn.Module and discard the Lightning wrapper
+        bare_model = model.model
+        del model
+        gc.collect()
+
         wrapper = (
             AugmentedPredictionVSUNet(
-                model=model.model,
+                model=bare_model,
                 forward_transforms=[lambda t: t],
                 inverse_transforms=[lambda t: t],
             )
@@ -358,3 +364,20 @@ class _LabelfreePreprocessor:
 
         wrapper.on_predict_start()
         return wrapper
+
+    @staticmethod
+    def _log_gpu_memory() -> None:
+        """Log GPU memory usage if CUDA is available."""
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                alloc = torch.cuda.memory_allocated() / 1e6
+                reserved = torch.cuda.memory_reserved() / 1e6
+                logger.debug(
+                    "DynaTrack GPU memory: %.0f MB allocated, %.0f MB reserved",
+                    alloc,
+                    reserved,
+                )
+        except ImportError:
+            pass
