@@ -141,7 +141,8 @@ class PositionUpdater:
 class PositionUpdateManager:
     """Manages async position updates after each position is acquired.
 
-    Holds the PositionStore and a single-worker ThreadPoolExecutor.
+    Holds the PositionStore and a single-worker ThreadPoolExecutor (or a
+    separate worker process for DynaTrack with preprocessing).
     After each position's z-stack completes, the updater is called with
     all current positions, the index of the completed position, and the
     acquired frame data. It returns updated coordinates for that position.
@@ -158,6 +159,7 @@ class PositionUpdateManager:
         self._updater = updater or PositionUpdater()
         self._executor: ThreadPoolExecutor | None = None
         self._pending_future: Future | None = None
+        self._worker = None  # DynaTrackWorker for subprocess mode
 
     def apply_position_update(self, event: MDAEvent) -> MDAEvent:
         """Replace event's x/y/z with current values from the position store.
@@ -217,15 +219,29 @@ class PositionUpdateManager:
     def start(self) -> None:
         """Initialize the executor. Called during setup_sequence."""
         if self.config.enabled:
-            self._executor = ThreadPoolExecutor(max_workers=1)
+            if self._worker is not None:
+                # Worker process mode — start the subprocess
+                self._worker.start()
+                # Drain any pending results in a background thread
+                self._executor = ThreadPoolExecutor(max_workers=1)
+            else:
+                self._executor = ThreadPoolExecutor(max_workers=1)
             self._pending_future = None
 
     def shutdown(self) -> None:
-        """Shutdown the executor. Called during teardown_sequence."""
-        if self._executor is not None:
+        """Shutdown the executor and worker process."""
+        # Drain final result from worker process
+        if self._worker is not None:
             if self._pending_future is not None and not self._pending_future.done():
                 logger.info("Waiting for position updater to complete final update...")
-                self._pending_future.result(timeout=60)
+                self._pending_future.result(timeout=120)
+            self._worker.shutdown()
+            self._worker = None
+        elif self._pending_future is not None and not self._pending_future.done():
+            logger.info("Waiting for position updater to complete final update...")
+            self._pending_future.result(timeout=60)
+
+        if self._executor is not None:
             self._executor.shutdown(wait=True)
             self._executor = None
 
@@ -237,7 +253,7 @@ class PositionUpdateManager:
     ) -> None:
         """Called when a position's z-stack has been fully acquired.
 
-        Submits the update computation to the thread pool.
+        Submits the update computation to the thread/process pool.
         """
         if not self.config.enabled or self._executor is None:
             return
@@ -246,9 +262,16 @@ class PositionUpdateManager:
         if position is None:
             return
 
-        self._pending_future = self._executor.submit(
-            self._run_updater, timepoint_index, position_index, position, data
-        )
+        if self._worker is not None:
+            # Submit to worker process, then poll for result in background thread
+            self._worker.submit(timepoint_index, position_index, position, data)
+            self._pending_future = self._executor.submit(
+                self._wait_for_worker_result, timepoint_index, position_index
+            )
+        else:
+            self._pending_future = self._executor.submit(
+                self._run_updater, timepoint_index, position_index, position, data
+            )
 
     def _run_updater(
         self,
@@ -282,3 +305,21 @@ class PositionUpdateManager:
                 f"Position update failed for p={position_index} at "
                 f"t={timepoint_index}, keeping previous position"
             )
+
+    def _wait_for_worker_result(self, timepoint_index: int, position_index: int) -> None:
+        """Wait for the worker process to return a result and update the store."""
+        result = self._worker.get_result(timeout=120)
+        if result is None:
+            logger.warning(
+                f"Position update: no result from worker for p={position_index} "
+                f"t={timepoint_index}"
+            )
+            return
+        self.position_store.update_position(
+            result["position_index"], result["x"], result["y"], result["z"]
+        )
+        logger.info(
+            f"Position update (worker): p={result['position_index']} "
+            f"t={result['timepoint_index']} -> x={result['x']:.2f}, "
+            f"y={result['y']:.2f}, z={result['z']} ({result['elapsed']:.1f}s)"
+        )

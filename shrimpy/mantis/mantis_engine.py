@@ -177,7 +177,11 @@ class MantisEngine(MDAEngine):
                 position_store=position_store,
                 updater=updater,
             )
-            self._position_update_manager.start()
+            # start() is deferred to after super().setup_sequence() if
+            # preprocessing is configured, so the worker process can use
+            # the actual ROI shape. Otherwise start immediately.
+            if not (dynatrack_meta and DynaTrackConfig(**dynatrack_meta).preprocessing):
+                self._position_update_manager.start()
             self._position_update_frames = {}
             self._position_update_expected_slices = max(sequence.sizes.get("z", 1), 1)
             self.mmcore.mda.events.frameReady.connect(self._on_frame_ready)
@@ -199,16 +203,25 @@ class MantisEngine(MDAEngine):
             self._position_update_manager._updater, DynaTrackUpdater
         ):
             updater = self._position_update_manager._updater
-            if updater.config.preprocessing and updater._preprocessor is None:
-                from shrimpy.mantis.dynatrack_preprocessing import build_preprocessor
+            zyx_shape = (
+                max(sequence.sizes.get("z", 1), 1),
+                self.mmcore.getImageHeight(),
+                self.mmcore.getImageWidth(),
+            )
 
-                zyx_shape = (
-                    max(sequence.sizes.get("z", 1), 1),
-                    self.mmcore.getImageHeight(),
-                    self.mmcore.getImageWidth(),
+            if updater.config.preprocessing:
+                # Offload to a worker process for GPU isolation
+                from shrimpy.mantis.dynatrack_worker import DynaTrackWorker
+
+                logger.info(f"DynaTrack: starting worker process for shape {zyx_shape}")
+                worker = DynaTrackWorker(
+                    config=updater.config,
+                    zyx_shape=zyx_shape,
+                    debug_zarr_path=updater._debug_zarr_path,
+                    debug_position_names=updater._debug_position_names,
                 )
-                logger.info(f"DynaTrack: building preprocessor for shape {zyx_shape}")
-                updater._preprocessor = build_preprocessor(updater.config, zyx_shape)
+                self._position_update_manager._worker = worker
+                self._position_update_manager.start()
 
         return result
 
