@@ -163,10 +163,16 @@ class MantisEngine(MDAEngine):
                         build_preprocessor,
                     )
 
+                    roi = microscope_meta.get("roi")
+                    if roi:
+                        img_width, img_height = roi[-2], roi[-1]
+                    else:
+                        img_width = self.mmcore.getImageWidth()
+                        img_height = self.mmcore.getImageHeight()
                     zyx_shape = (
                         max(sequence.sizes.get("z", 1), 1),
-                        self.mmcore.getImageHeight(),
-                        self.mmcore.getImageWidth(),
+                        img_height,
+                        img_width,
                     )
                     preprocessor = build_preprocessor(dynatrack_config, zyx_shape)
 
