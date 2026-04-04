@@ -716,16 +716,25 @@ class TestBackpressure:
 
         manager.shutdown()
 
-        # Count how many times a new submission found a still-pending future.
-        # With drain at timepoint boundaries, this should be rare (only
-        # within a single timepoint where positions complete quickly).
-        # Without drain, most submissions after the first will find a
-        # pending future because the slow updater can't keep up.
+        # Within a single timepoint, overlaps are expected: 3 positions
+        # submit faster than the 0.3s updater processes them, so positions
+        # 2 and 3 find position 1 still pending. That's fine — the drain
+        # only fires between timepoints.
+        #
+        # Without drain: nearly all submissions overlap (11/12).
+        # With drain: at most (positions_per_timepoint - 1) per timepoint,
+        # i.e. 2 × 4 = 8 out of 12. The key is no cross-timepoint
+        # accumulation — the queue never holds more than one timepoint's
+        # worth of work.
+        n_positions = 3
+        n_timepoints = 4
+        max_expected_overlaps = (n_positions - 1) * n_timepoints
         overlaps = sum(pending_at_submit)
         total = len(pending_at_submit)
-        assert overlaps <= total // 2, (
-            f"{overlaps}/{total} submissions found a pending future — "
-            "executor queue is growing without backpressure"
+        assert overlaps <= max_expected_overlaps, (
+            f"{overlaps}/{total} submissions found a pending future "
+            f"(expected at most {max_expected_overlaps}) — "
+            "executor queue is accumulating across timepoints"
         )
 
 

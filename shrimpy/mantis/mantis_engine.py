@@ -231,9 +231,24 @@ class MantisEngine(MDAEngine):
         By applying position updates here (before the MDA runner emits
         ``eventStarted``), the logged event reflects the corrected
         coordinates rather than the original sequence values.
+
+        At timepoint boundaries the iterator drains any pending DynaTrack
+        update so that (a) position corrections are applied before the new
+        timepoint starts and (b) frame data does not accumulate unboundedly
+        in the executor queue.
         """
+        last_t: int | None = None
         for event in super().event_iterator(events):
             if self._position_update_manager is not None:
+                idx = (
+                    event.events[0].index
+                    if isinstance(event, SequencedEvent)
+                    else event.index
+                )
+                t_idx = idx.get("t", 0)
+                if last_t is not None and t_idx != last_t:
+                    self._position_update_manager.drain_pending()
+                last_t = t_idx
                 event = self._position_update_manager.apply_position_update(event)
             yield event
 
