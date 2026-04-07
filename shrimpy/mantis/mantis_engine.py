@@ -139,14 +139,6 @@ class MantisEngine(MDAEngine):
         if self._xy_stage_device:
             self.mmcore.waitForDevice(self._xy_stage_device)
 
-        # Set Z position for the event only if not using autofocus; calling
-        # setPosition will disengage continuous autofocus. The autofocus algorithm
-        # sets the z position independently.
-        # TODO: probably not needed, Z position is passed thru device properties in most cases
-        if not self._use_autofocus and self._autofocus_stage and event.z_pos is not None:
-            self.mmcore.setPosition(self._autofocus_stage, event.z_pos)
-            self.mmcore.waitForDevice(self._autofocus_stage)
-
         # Engage autofocus
         self._engage_autofocus(event)
 
