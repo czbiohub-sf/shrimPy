@@ -113,6 +113,15 @@ class MantisEngine(MDAEngine):
 
         core = self.mmcore
 
+        # Ensure the circular buffer is large enough for a full z-stack
+        n_z = max(sequence.sizes.get("z", 1), 1)
+        frame_bytes = core.getImageWidth() * core.getImageHeight() * core.getBytesPerPixel()
+        required_mb = int(n_z * frame_bytes / 1e6 * 2)  # 2x for safety margin
+        current_mb = core.getCircularBufferMemorySize()
+        if required_mb > current_mb:
+            core.setCircularBufferMemorySize(required_mb)
+            logger.info(f"Increased circular buffer from {current_mb} MB to {required_mb} MB")
+
         # Extract mantis settings from metadata
         microscope_meta = sequence.metadata.get("mantis", {}) if sequence.metadata else {}
 
@@ -233,6 +242,10 @@ class MantisEngine(MDAEngine):
         coordinates rather than the original sequence values.
         """
         for event in super().event_iterator(events):
+            # Flush any completed z-stacks to the position updater.
+            # This runs between events (not during frame acquisition),
+            # avoiding GIL contention with the circular buffer drain loop.
+            self._flush_completed_stacks()
             if self._position_update_manager is not None:
                 event = self._position_update_manager.apply_position_update(event)
             yield event
@@ -271,8 +284,9 @@ class MantisEngine(MDAEngine):
     def _on_frame_ready(self, img: np.ndarray, event: MDAEvent) -> None:
         """Buffer frames for position updating via frameReady callback.
 
-        Counts z-slices per (timepoint, position) and triggers the updater
-        as soon as all expected slices have been collected.
+        Pre-allocates a contiguous numpy array for the z-stack and copies
+        each frame directly into it, avoiding list appends and reducing
+        memory fragmentation. This keeps the circular buffer draining fast.
         """
         if self._position_update_manager is None:
             return
@@ -286,19 +300,43 @@ class MantisEngine(MDAEngine):
         p_idx = event.index.get("p", 0)
         tp = (t_idx, p_idx)
 
+        # Pre-allocate on first frame for this (t, p)
         if tp not in self._position_update_frames:
-            self._position_update_frames[tp] = []
-        self._position_update_frames[tp].append(img.copy())
+            nz = self._position_update_expected_slices
+            stack = np.empty((nz, *img.shape), dtype=img.dtype)
+            self._position_update_frames[tp] = (stack, 0)
 
-        # Flush when all z-slices for this position have arrived
-        if len(self._position_update_frames[tp]) >= self._position_update_expected_slices:
-            frames = self._position_update_frames.pop(tp)
+        stack, count = self._position_update_frames[tp]
+        if count < stack.shape[0]:
+            stack[count] = img
+        self._position_update_frames[tp] = (stack, count + 1)
+
+    def _flush_completed_stacks(self) -> None:
+        """Submit completed z-stacks to the position updater.
+
+        Called from event_iterator (between events) rather than from
+        _on_frame_ready, so the heavy queue submission doesn't compete
+        with the circular buffer drain loop for the GIL.
+        """
+        if self._position_update_manager is None:
+            return
+
+        completed = [
+            tp
+            for tp, (stack, count) in self._position_update_frames.items()
+            if count >= self._position_update_expected_slices
+        ]
+        for tp in completed:
+            stack, count = self._position_update_frames.pop(tp)
+            t_idx, p_idx = tp
+            frames = [stack[i] for i in range(stack.shape[0])]
             self._position_update_manager.on_position_complete(t_idx, p_idx, frames)
 
     def teardown_sequence(self, sequence):
-        # Position update: disconnect callback and shutdown
+        # Position update: disconnect callback, flush final stacks, and shutdown
         if self._position_update_manager is not None:
             self.mmcore.mda.events.frameReady.disconnect(self._on_frame_ready)
+            self._flush_completed_stacks()
             self._position_update_frames = {}
             self._position_update_manager.shutdown()
             self._position_update_manager = None
