@@ -2459,6 +2459,7 @@ wheels = [
 name = "shrimpy"
 source = { editable = "." }
 dependencies = [
+    { name = "acquire-zarr" },
     { name = "click" },
     { name = "numpy" },
     { name = "ome-writers", extra = ["acquire-zarr"] },
@@ -2486,6 +2487,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "acquire-zarr", specifier = "==0.6.0" },
     { name = "build", marker = "extra == 'build'" },
     { name = "click" },
     { name = "numpy" },
