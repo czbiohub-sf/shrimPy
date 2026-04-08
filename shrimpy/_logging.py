@@ -6,6 +6,9 @@ from datetime import datetime
 from pathlib import Path
 from subprocess import PIPE, STDOUT, Popen
 
+# set pymmcore-plus log level to INFO
+os.environ["PYMM_LOG_LEVEL"] = "INFO"
+
 
 class _IgnorePropertyChangedWarnings(logging.Filter):
     """Suppress noisy warnings from pymmcore-plus when a device property cannot
