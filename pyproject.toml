@@ -59,7 +59,7 @@ packages = ["shrimpy"]
 
 [tool.uv.sources]
 ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
-pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "main" }
+pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "dev" }
 # ome-writers = { path = "../ome-writers", editable = true }
 # pymmcore-plus = { path = "../pymmcore-plus", editable = true }
 

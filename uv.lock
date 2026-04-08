@@ -2111,8 +2111,8 @@ wheels = [
 
 [[package]]
 name = "pymmcore-plus"
-version = "0.18.2.dev1+g352570a29"
-source = { git = "https://github.com/ieivanov/pymmcore-plus?branch=main#352570a2921d8f0a8b41323d86125753f54b2fa5" }
+version = "0.18.2.dev11+g8f18f7495"
+source = { git = "https://github.com/ieivanov/pymmcore-plus?branch=dev#8f18f74955e35173958563682b9efc789f30aef6" }
 dependencies = [
     { name = "numpy" },
     { name = "ome-types" },
@@ -2491,7 +2491,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "ome-writers", extras = ["acquire-zarr"], git = "https://github.com/ieivanov/ome-writers?branch=main" },
     { name = "pymmcore", specifier = ">=11.14.0.75.0" },
-    { name = "pymmcore-plus", git = "https://github.com/ieivanov/pymmcore-plus?branch=main" },
+    { name = "pymmcore-plus", git = "https://github.com/ieivanov/pymmcore-plus?branch=dev" },
     { name = "pymmcore-widgets" },
     { name = "pyyaml" },
     { name = "qtpy" },
