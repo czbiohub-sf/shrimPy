@@ -77,6 +77,7 @@ def mantis(
         logger.warning(f"Logging config not found at {config_file}, using defaults")
 
     core = RobustCMMCore()
+    logger.info(f"Loading Micro-Manager configuration from {mm_config}")
     core.loadSystemConfiguration(mm_config)
     engine = MantisEngine(core)
     engine.acquire(output_dir=output_dir, name=name, mda_config=mda_config)
