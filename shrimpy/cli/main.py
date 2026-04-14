@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
+import os
+
 import click
+
+# Set pymmcore-plus log level before it gets imported.
+# pymmcore-plus reads PYMM_LOG_LEVEL at import time as a module-level constant,
+# so this must be set before any pymmcore-plus import occurs.
+if not os.environ.get("PYMM_LOG_LEVEL"):
+    os.environ["PYMM_LOG_LEVEL"] = "INFO"
 
 from shrimpy.cli.acquire import acquire
 from shrimpy.cli.gui import gui

@@ -11,7 +11,6 @@ import numpy as np
 
 from ome_writers import (
     AcquisitionSettings,
-    useq_to_acquisition_settings,
 )
 from pymmcore_plus.core import CMMCorePlus
 from pymmcore_plus.core._constants import Keyword
@@ -249,14 +248,6 @@ class MantisEngine(MDAEngine):
         if self._xy_stage_device:
             self.mmcore.waitForDevice(self._xy_stage_device)
 
-        # Set Z position for the event only if not using autofocus; calling
-        # setPosition will disengage continuous autofocus. The autofocus algorithm
-        # sets the z position independently.
-        # TODO: probably not needed, Z position is passed thru device properties in most cases
-        if not self._use_autofocus and self._autofocus_stage and event.z_pos is not None:
-            self.mmcore.setPosition(self._autofocus_stage, event.z_pos)
-            self.mmcore.waitForDevice(self._autofocus_stage)
-
         # Engage autofocus
         self._engage_autofocus(event)
 
@@ -492,59 +483,6 @@ class MantisEngine(MDAEngine):
 
             logger.error(f"Autofocus call failed after {len(z_offsets)} attempts")
 
-    def _create_stream_settings(
-        self, sequence: MDASequence, data_path: str | Path
-    ) -> AcquisitionSettings:
-        """Create acquisition settings for an OME-ZARR stream.
-
-        Parameters
-        ----------
-        sequence : MDASequence
-            The acquisition sequence (used to determine dimensions and chunk shapes).
-        data_path : str | Path
-            Path where the .ome.zarr store will be created.
-
-        Returns
-        -------
-        AcquisitionSettings
-            Settings to pass to ``create_stream()``.
-        """
-        core = self.mmcore
-        # ROI is read from metadata because it may not have been applied yet
-        roi = sequence.metadata.get("mantis", {}).get("roi")
-        if roi:
-            image_width, image_height = roi[-2], roi[-1]
-        else:
-            image_width = core.getImageWidth()
-            image_height = core.getImageHeight()
-        pixel_size_um = core.getPixelSizeUm()
-
-        # TODO: current implementation of ome-writers handlers overwrites provided chunking
-        chunk_shapes = {
-            "t": 1,
-            "c": 1,
-            "z": min(512, sequence.sizes["z"]),
-            "y": image_height,
-            "x": image_width,
-        }
-
-        acq_settings = useq_to_acquisition_settings(
-            sequence,
-            image_width=image_width,
-            image_height=image_height,
-            pixel_size_um=pixel_size_um,
-            chunk_shapes=chunk_shapes,
-        )
-
-        return AcquisitionSettings(
-            root_path=data_path,
-            dtype="uint16",
-            compression="blosc-zstd",
-            format="acquire-zarr",
-            overwrite=False,
-            **acq_settings,
-        )
-
     def acquire(
         self,
         output_dir: str | Path,
@@ -573,8 +511,6 @@ class MantisEngine(MDAEngine):
             sequence = MDASequence.from_file(mda_config)
 
         data_path = output_dir / f"{name}.ome.zarr"
-        self._data_path = data_path
-        settings = self._create_stream_settings(sequence, data_path)
 
         # Write summary metadata after the zarr store is created
         # TODO: remove once ome-writers supports root-level metadata natively
@@ -587,7 +523,14 @@ class MantisEngine(MDAEngine):
         self.mmcore.mda.events.sequenceStarted.connect(_write_summary_metadata)
 
         logger.info(f"Starting acquisition: {name}")
-        self.mmcore.mda.run(sequence, output=settings)
+        self.mmcore.mda.run(
+            sequence,
+            output=AcquisitionSettings(
+                root_path=data_path, compression="blosc-zstd", format="acquire-zarr"
+            ),
+            dimension_overrides={"z": {"chunk_size": min(512, sequence.sizes["z"])}},
+            overwrite=False,
+        )
         logger.info("Acquisition completed successfully")
 
 

@@ -98,6 +98,7 @@ def mantis(
     except ImportError:
         pass
 
+    logger.info(f"Loading Micro-Manager configuration from {mm_config}")
     core.loadSystemConfiguration(mm_config)
 
     if unicore:

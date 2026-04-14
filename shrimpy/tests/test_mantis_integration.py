@@ -100,9 +100,12 @@ def test_demo_mda_acquisition(demo_engine, demo_mda_sequence, tmp_path):
     assert len(zarr_dirs) == 1, f"Expected 1 zarr dir, found {zarr_dirs}"
 
     # Load dataset with iohub and inspect metadata
-    dataset = open_ome_zarr(zarr_dirs[0], version="0.5")
-    assert isinstance(dataset, Plate)
+    dataset = open_ome_zarr(zarr_dirs[0])
+    # Verify zarr v3 OME-NGFF v0.5 format
+    assert dataset.zgroup.metadata.zarr_format == 3
+    assert dataset.version == "0.5"
 
+    assert isinstance(dataset, Plate)
     positions = list(dataset.positions())
     num_positions = len(positions)
     _pos_name, _pos = positions[0]
@@ -123,6 +126,21 @@ def test_demo_mda_acquisition(demo_engine, demo_mda_sequence, tmp_path):
     assert all(
         channel.config in dataset.channel_names for channel in demo_mda_sequence.channels
     )
+
+    # --- Verify zstd compression via blosc codec in sharding pipeline ---
+    from zarr.codecs import BloscCodec, ShardingCodec
+
+    codecs = _data.metadata.codecs
+    sharding = next((c for c in codecs if isinstance(c, ShardingCodec)), None)
+    assert sharding is not None, f"Expected ShardingCodec, got {codecs}"
+    blosc = next((c for c in sharding.codecs if isinstance(c, BloscCodec)), None)
+    assert blosc is not None, f"Expected BloscCodec in sharding, got {sharding.codecs}"
+    assert blosc.cname.value == "zstd", f"Expected zstd compression, got {blosc.cname}"
+
+    # --- Verify z chunk_shape != 1 ---
+    # dimension order: (t, c, z, y, x)
+    z_chunk = _data.chunks[-3]
+    assert z_chunk != 1, f"Expected z chunk_shape != 1, got chunks={_data.chunks}"
 
 
 def test_summary_metadata_written_to_zarr(demo_engine, demo_mda_sequence, tmp_path):
