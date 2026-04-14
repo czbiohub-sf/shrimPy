@@ -256,6 +256,11 @@ class MantisEngine(MDAEngine):
             num_frames = len(event.events) if isinstance(event, SequencedEvent) else 1
             raise SkipEvent(num_frames=num_frames, reason="autofocus failed")
 
+        # DEBUG:
+        free_capacity = self.mmcore.getBufferFreeCapacity()
+        total_capacity = self.mmcore.getBufferTotalCapacity()
+        logger.debug(f"Circular buffer capacity: {free_capacity} / {total_capacity} frames")
+
         # Call parent setup_event
         super().setup_event(event)
 
