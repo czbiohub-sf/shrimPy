@@ -29,15 +29,15 @@ BRUNO_DST = Path(r"Z:\OPS")
 mmc = Core()
 
 acquisition_directory = Path(r'G:\OPS')
-acquisition_name = 'OPS0142'
-start_time = '2026-03-20 04:30:00'
+acquisition_name = 'OPS0151'
+start_time = '2026-04-14 04:15:00'
 # start_time = 'now'
 well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
 min_fov_distance_from_well_edge = 800  # in um
 well_centers = {
-    'A1': (1569, -118, 6285),
-    'A2': (40909, -118, 6335),
-    'A3': (80249, -118, 6433),
+    'A1': (1489, -9, 6353),
+    'A2': (40829, -9, 6368),
+    'A3': (80169, -9, 6424),
 }  # (x, y, z) in um
 
 phenotyping_magnification = 20
@@ -50,10 +50,10 @@ pixel_size = 6.5  # in um
 phenotyping_channel_group = 'Channels'
 # phenotyping_channel = '5-MultiCam_DAPI_mCherry_BF'
 # phenotyping_channel = '5-MultiCam_GFP_Cy5_BF'
-phenotyping_channel = '5-MultiCam_GFP_mCherry_BF'
+# phenotyping_channel = '5-MultiCam_GFP_mCherry_BF'
 # phenotyping_channel = '4-MultiCam_GFP_BF'
 # phenotyping_channel = '4-MultiCam_CL488_BF'
-# phenotyping_channel = '4-MultiCam_mCherry_BF'
+phenotyping_channel = '4-MultiCam_mCherry_BF'
 # phenotyping_channel = '4-MultiCam_Cy5_BF'
 # phenotyping_channel = '1-Zyla_BF'
 tracking_channel_group = 'Channels'
@@ -473,5 +473,7 @@ else:
             # shutil.copytree(acq_dir, dst)
             copy_with_progress_bar(acq_dir, dst)
             logger.info(f'Data transfer to Bruno finished successfully')
+            Path(dst / 'transfer.done').touch()  # create empty file to indicate transfer is complete
+
 
 # %%
