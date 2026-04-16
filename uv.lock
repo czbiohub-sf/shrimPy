@@ -2157,8 +2157,8 @@ wheels = [
 
 [[package]]
 name = "pymmcore-plus"
-version = "0.18.1"
-source = { registry = "https://pypi.org/simple" }
+version = "0.18.2.dev3+gd8a92547e"
+source = { git = "https://github.com/ieivanov/pymmcore-plus?branch=main#d8a92547e159cf1b8064d16309f7ca4cb8096a62" }
 dependencies = [
     { name = "numpy" },
     { name = "ome-types" },
@@ -2170,10 +2170,6 @@ dependencies = [
     { name = "typer" },
     { name = "typing-extensions" },
     { name = "useq-schema" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/03/13/2cec57bb4b2d6c139d4c360d03bfadad421f03b8d1cf2cb13bdc5e06626e/pymmcore_plus-0.18.1.tar.gz", hash = "sha256:6f435d61034d7e0b854c7dd74d222d195aa5c82d5698eb1ac90a88260d33668d", size = 288018, upload-time = "2026-04-02T12:44:06.404Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/32/e3/edbc204df0a709b9e294f000a2e4c64a162c92c4cf0125c7eeeb21395518/pymmcore_plus-0.18.1-py3-none-any.whl", hash = "sha256:d27060781a575fd88e41fa2be042991e3e593f5dfaca537645db1d47aa8f892f", size = 255994, upload-time = "2026-04-02T12:44:04.948Z" },
 ]
 
 [package.optional-dependencies]
@@ -2554,7 +2550,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "ome-writers", extras = ["acquire-zarr"], specifier = ">=0.3.2" },
     { name = "pymmcore", specifier = ">=11.14.0.75.0" },
-    { name = "pymmcore-plus" },
+    { name = "pymmcore-plus", git = "https://github.com/ieivanov/pymmcore-plus?branch=main" },
     { name = "pymmcore-widgets" },
     { name = "pyyaml" },
     { name = "qtpy" },
