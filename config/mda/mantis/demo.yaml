@@ -11,34 +11,31 @@ setup:
 
 # Define stage positions
 stage_positions:
-  a1_center_xy: [0, 0]
-  plate:
-    columns: 6
-    name: 24-well
-    rows: 4
-    well_size:
-    - 15.6
-    - 15.6
-    well_spacing:
-    - 19.0
-    - 19.0
-  selected_wells:
-  - [0] # rows
-  - [0, 1] # columns
-  well_points_plan:
-    rows: 2
-    columns: 2
-    fov_height: 180.0
-    fov_width: 180.0
-    overlap:
-    - -10.0
-    - -10.0
+- x: 14370.0
+  y: 11230.0
+  plate_row: 0
+  plate_col: 0
+- x: 23370.0
+  y: 11230.0
+  plate_row: 0
+  plate_col: 1
+- x: 14370.0
+  y: 20230.0
+  plate_row: 1
+  plate_col: 0
+  properties:
+
+grid_plan:
+  rows: 2
+  columns: 2
+  fov_width: 180
+  fov_height: 180
+  overlap: -10
 
 # Define time plan
 time_plan:
-  prioritize_duration: true
   interval: 5.0
-  duration: 15.0
+  loops: 3
 
 # Define z plan
 z_plan:
@@ -51,7 +48,7 @@ z_plan:
 channels:
 - config: DAPI
   group: Channel
-  exposure: 10.0
+  exposure: 5.0
   do_stack: true
   z_offset: 0.0
   acquire_every: 1
@@ -64,13 +61,6 @@ channels:
   acquire_every: 1
   camera: null
 
-# Define axis order
-axis_order:
-- t
-- p
-- c
-- z
-
 autofocus_plan: null
 keep_shutter_open_across: []
 
@@ -82,6 +72,6 @@ metadata:
     reset_hardware_sequencing_settings:
       - ['Z', 'UseSequences', 'No']
     autofocus:
-      enabled: true
+      enabled: false
       method: demo-PFS
       stage: Z
