@@ -208,7 +208,7 @@ def _phase_cross_corr(
     prod = fimg1 * fimg2.conj()
     del fimg1, fimg2
 
-    corr = torch.fft.irfftn(prod)
+    corr = torch.fft.irfftn(prod, s=shape)
     del prod
 
     corr = torch.fft.fftshift(corr.abs())
