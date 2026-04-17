@@ -23,7 +23,6 @@ stage_positions:
   y: 20230.0
   plate_row: 1
   plate_col: 0
-  properties:
 
 grid_plan:
   rows: 2
