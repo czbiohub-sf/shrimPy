@@ -516,6 +516,7 @@ class MantisEngine(MDAEngine):
             sequence = MDASequence.from_file(mda_config)
 
         data_path = output_dir / f"{name}.ome.zarr"
+        self._data_path = data_path
 
         # Write summary metadata after the zarr store is created
         # TODO: remove once ome-writers supports root-level metadata natively
