@@ -217,6 +217,7 @@ def _phase_cross_corr(
     corr_shape = tuple(corr.shape)
     del corr
     if device.type == "cuda":
+        torch.cuda.synchronize()
         torch.cuda.empty_cache()
 
     peak = np.unravel_index(argmax, corr_shape)
@@ -481,7 +482,9 @@ class DynaTrackUpdater(PositionUpdater):
             f"DynaTrack[mem]: before compute_shift p={position_index} t={timepoint_index} "
             f"rss={_rss_gb():.2f} GB"
         )
+        t_pcc = _time.monotonic()
         shift_xyz = self._compute_shift(reference_stack, current_stack)
+        logger.info(f"DynaTrack: phase cross corr took {_time.monotonic() - t_pcc:.2f}s")
         logger.info(
             f"DynaTrack[mem]: after compute_shift p={position_index} t={timepoint_index} "
             f"rss={_rss_gb():.2f} GB"
