@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -8,6 +9,14 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
+import psutil
+
+_PROC = psutil.Process(os.getpid())
+
+
+def _rss_gb() -> float:
+    return _PROC.memory_info().rss / (1024**3)
+
 
 if TYPE_CHECKING:
     from useq import MDAEvent, MDASequence
@@ -262,6 +271,13 @@ class PositionUpdateManager:
         if position is None:
             return
 
+        data_gb = sum(a.nbytes for a in data) / 1024**3 if data else 0.0
+        queue_depth = self._executor._work_queue.qsize()
+        logger.info(
+            f"PosUpdateMgr[mem]: before submit p={position_index} t={timepoint_index} "
+            f"rss={_rss_gb():.2f} GB data={data_gb:.2f} GB queue_depth={queue_depth}"
+        )
+
         if self._worker is not None:
             # Submit and wait in background thread (serialized by single-worker executor)
             # so only one position's data is in the mp.Queue at a time
@@ -276,6 +292,11 @@ class PositionUpdateManager:
             self._pending_future = self._executor.submit(
                 self._run_updater, timepoint_index, position_index, position, data
             )
+
+        logger.info(
+            f"PosUpdateMgr[mem]: after submit p={position_index} t={timepoint_index} "
+            f"rss={_rss_gb():.2f} GB queue_depth={self._executor._work_queue.qsize()}"
+        )
 
     def _run_updater(
         self,

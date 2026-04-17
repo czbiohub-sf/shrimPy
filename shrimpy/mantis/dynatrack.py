@@ -9,18 +9,28 @@ from __future__ import annotations
 
 import csv
 import logging
+import os
 
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+import psutil
 
 from shrimpy.mantis.position_update import PositionCoordinates, PositionUpdater
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import Any
+
+
+_PROC = psutil.Process(os.getpid())
+
+
+def _rss_gb() -> float:
+    return _PROC.memory_info().rss / (1024**3)
+
 
 logger = logging.getLogger(__name__)
 
@@ -179,22 +189,40 @@ def _phase_cross_corr(
     ref_img = _match_shape(ref_img, shape)
     mov_img = _match_shape(mov_img, shape)
 
-    fimg1 = np.fft.rfftn(ref_img)
-    fimg2 = np.fft.rfftn(mov_img)
+    import torch
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    ref_t = torch.from_numpy(ref_img.astype(np.float32, copy=False)).to(
+        device, non_blocking=True
+    )
+    fimg1 = torch.fft.rfftn(ref_t)
+    del ref_t
+
+    mov_t = torch.from_numpy(mov_img.astype(np.float32, copy=False)).to(
+        device, non_blocking=True
+    )
+    fimg2 = torch.fft.rfftn(mov_t)
+    del mov_t
 
     prod = fimg1 * fimg2.conj()
     del fimg1, fimg2
 
-    corr = np.fft.irfftn(prod)
+    corr = torch.fft.irfftn(prod)
     del prod
 
-    corr = np.fft.fftshift(np.abs(corr))
+    corr = torch.fft.fftshift(corr.abs())
 
-    argmax = np.argmax(corr)
-    peak = np.unravel_index(argmax, corr.shape)
-    peak = tuple(s // 2 - p for s, p in zip(corr.shape, peak, strict=True))
+    argmax = int(torch.argmax(corr).item())
+    corr_shape = tuple(corr.shape)
+    del corr
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
 
-    logger.debug("phase cross corr: peak at %s", peak)
+    peak = np.unravel_index(argmax, corr_shape)
+    peak = tuple(int(s // 2) - int(p) for s, p in zip(corr_shape, peak, strict=True))
+
+    logger.debug("phase cross corr: peak at %s (device=%s)", peak, device)
 
     return peak
 
@@ -377,10 +405,20 @@ class DynaTrackUpdater(PositionUpdater):
 
         import time as _time
 
+        logger.info(
+            f"DynaTrack[mem]: entry p={position_index} t={timepoint_index} "
+            f"rss={_rss_gb():.2f} GB"
+        )
+
         current_stack = np.stack(data)
         logger.info(
             f"DynaTrack: p={position_index} t={timepoint_index} "
-            f"stack shape={current_stack.shape}"
+            f"stack shape={current_stack.shape} dtype={current_stack.dtype} "
+            f"size={current_stack.nbytes / 1024**3:.2f} GB"
+        )
+        logger.info(
+            f"DynaTrack[mem]: after np.stack p={position_index} t={timepoint_index} "
+            f"rss={_rss_gb():.2f} GB"
         )
 
         # Apply optional preprocessing (e.g. phase reconstruction, VS)
@@ -390,6 +428,11 @@ class DynaTrackUpdater(PositionUpdater):
             logger.info(
                 f"DynaTrack: preprocessing took {_time.monotonic() - t0:.1f}s "
                 f"(channels={list(channels.keys())})"
+            )
+            ch_bytes = sum(a.nbytes for a in channels.values())
+            logger.info(
+                f"DynaTrack[mem]: after preprocessor p={position_index} t={timepoint_index} "
+                f"rss={_rss_gb():.2f} GB channels_total={ch_bytes / 1024**3:.2f} GB"
             )
             self._save_debug_channels(channels, timepoint_index, position_index)
             # Select the configured channel for shift estimation
@@ -402,13 +445,23 @@ class DynaTrackUpdater(PositionUpdater):
                     f"output {list(channels.keys())}, using first channel"
                 )
                 current_stack = next(iter(channels.values()))
+            logger.info(
+                f"DynaTrack[mem]: after channel select p={position_index} t={timepoint_index} "
+                f"rss={_rss_gb():.2f} GB"
+            )
 
         # Store reference on first encounter
         if position_index not in self._reference_stacks:
             self._reference_stacks[position_index] = current_stack
+            ref_total = sum(a.nbytes for a in self._reference_stacks.values())
             logger.info(
                 f"DynaTrack: stored reference stack for p={position_index} "
                 f"(shape={current_stack.shape})"
+            )
+            logger.info(
+                f"DynaTrack[mem]: after store_ref p={position_index} t={timepoint_index} "
+                f"rss={_rss_gb():.2f} GB refs={len(self._reference_stacks)} "
+                f"refs_total={ref_total / 1024**3:.2f} GB"
             )
             return position
 
@@ -424,7 +477,15 @@ class DynaTrackUpdater(PositionUpdater):
             return position
 
         reference_stack = self._reference_stacks[position_index]
+        logger.info(
+            f"DynaTrack[mem]: before compute_shift p={position_index} t={timepoint_index} "
+            f"rss={_rss_gb():.2f} GB"
+        )
         shift_xyz = self._compute_shift(reference_stack, current_stack)
+        logger.info(
+            f"DynaTrack[mem]: after compute_shift p={position_index} t={timepoint_index} "
+            f"rss={_rss_gb():.2f} GB"
+        )
 
         updated = PositionCoordinates(
             x=position.x + shift_xyz[0],
@@ -447,6 +508,10 @@ class DynaTrackUpdater(PositionUpdater):
                 stage_coords=updated,
             )
 
+        logger.info(
+            f"DynaTrack[mem]: exit p={position_index} t={timepoint_index} "
+            f"rss={_rss_gb():.2f} GB"
+        )
         return updated
 
     def _compute_shift(

@@ -37,11 +37,13 @@ class DynaTrackWorker:
         zyx_shape: tuple[int, int, int],
         debug_zarr_path: Path | None = None,
         debug_position_names: dict[int, str] | None = None,
+        log_file_path: Path | None = None,
     ) -> None:
         self._config = config
         self._zyx_shape = zyx_shape
         self._debug_zarr_path = debug_zarr_path
         self._debug_position_names = debug_position_names or {}
+        self._log_file_path = log_file_path
         self._process: mp.Process | None = None
         self._input_queue: mp.Queue | None = None
         self._output_queue: mp.Queue | None = None
@@ -61,6 +63,7 @@ class DynaTrackWorker:
                 self._output_queue,
                 self._debug_zarr_path,
                 self._debug_position_names,
+                self._log_file_path,
             ),
             daemon=True,
         )
@@ -136,13 +139,28 @@ def _worker_loop(
     output_queue: mp.Queue,
     debug_zarr_path: Path | None = None,
     debug_position_names: dict[int, str] | None = None,
+    log_file_path: Path | None = None,
 ) -> None:
     """Main loop for the DynaTrack worker process."""
-    # Configure logging in the subprocess
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    # Configure logging in the subprocess: attach a FileHandler to the
+    # shrimpy logger that writes to the same file as the parent process,
+    # plus a console StreamHandler for live visibility.
+    fmt = logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(name)s.%(funcName)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
+    shrimpy_logger = logging.getLogger("shrimpy")
+    shrimpy_logger.setLevel(logging.DEBUG)
+    if log_file_path is not None:
+        file_handler = logging.FileHandler(str(log_file_path))
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(fmt)
+        shrimpy_logger.addHandler(file_handler)
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.INFO)
+    stream_handler.setFormatter(fmt)
+    shrimpy_logger.addHandler(stream_handler)
+
     log = logging.getLogger("shrimpy.mantis.dynatrack_worker")
 
     try:
