@@ -406,7 +406,7 @@ class DynaTrackUpdater(PositionUpdater):
 
         import time as _time
 
-        logger.info(
+        logger.debug(
             f"DynaTrack[mem]: entry p={position_index} t={timepoint_index} "
             f"rss={_rss_gb():.2f} GB"
         )
@@ -417,7 +417,7 @@ class DynaTrackUpdater(PositionUpdater):
             f"stack shape={current_stack.shape} dtype={current_stack.dtype} "
             f"size={current_stack.nbytes / 1024**3:.2f} GB"
         )
-        logger.info(
+        logger.debug(
             f"DynaTrack[mem]: after np.stack p={position_index} t={timepoint_index} "
             f"rss={_rss_gb():.2f} GB"
         )
@@ -431,7 +431,7 @@ class DynaTrackUpdater(PositionUpdater):
                 f"(channels={list(channels.keys())})"
             )
             ch_bytes = sum(a.nbytes for a in channels.values())
-            logger.info(
+            logger.debug(
                 f"DynaTrack[mem]: after preprocessor p={position_index} t={timepoint_index} "
                 f"rss={_rss_gb():.2f} GB channels_total={ch_bytes / 1024**3:.2f} GB"
             )
@@ -446,7 +446,7 @@ class DynaTrackUpdater(PositionUpdater):
                     f"output {list(channels.keys())}, using first channel"
                 )
                 current_stack = next(iter(channels.values()))
-            logger.info(
+            logger.debug(
                 f"DynaTrack[mem]: after channel select p={position_index} t={timepoint_index} "
                 f"rss={_rss_gb():.2f} GB"
             )
@@ -459,7 +459,7 @@ class DynaTrackUpdater(PositionUpdater):
                 f"DynaTrack: stored reference stack for p={position_index} "
                 f"(shape={current_stack.shape})"
             )
-            logger.info(
+            logger.debug(
                 f"DynaTrack[mem]: after store_ref p={position_index} t={timepoint_index} "
                 f"rss={_rss_gb():.2f} GB refs={len(self._reference_stacks)} "
                 f"refs_total={ref_total / 1024**3:.2f} GB"
@@ -478,14 +478,14 @@ class DynaTrackUpdater(PositionUpdater):
             return position
 
         reference_stack = self._reference_stacks[position_index]
-        logger.info(
+        logger.debug(
             f"DynaTrack[mem]: before compute_shift p={position_index} t={timepoint_index} "
             f"rss={_rss_gb():.2f} GB"
         )
         t_pcc = _time.monotonic()
         shift_xyz = self._compute_shift(reference_stack, current_stack)
         logger.info(f"DynaTrack: phase cross corr took {_time.monotonic() - t_pcc:.2f}s")
-        logger.info(
+        logger.debug(
             f"DynaTrack[mem]: after compute_shift p={position_index} t={timepoint_index} "
             f"rss={_rss_gb():.2f} GB"
         )
@@ -517,7 +517,7 @@ class DynaTrackUpdater(PositionUpdater):
                 stage_coords=updated,
             )
 
-        logger.info(
+        logger.debug(
             f"DynaTrack[mem]: exit p={position_index} t={timepoint_index} "
             f"rss={_rss_gb():.2f} GB"
         )
