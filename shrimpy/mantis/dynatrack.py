@@ -491,7 +491,7 @@ class DynaTrackUpdater(PositionUpdater):
         )
 
         # NOTE the signs
-        if self.deskew_config is not None:
+        if "deskew" in self._config.preprocessing:
             # Deskew rotates the volume in the XY plate
             # Swap X/Y shift to match this rotation.
             _x = position.x + shift_xyz[1]
