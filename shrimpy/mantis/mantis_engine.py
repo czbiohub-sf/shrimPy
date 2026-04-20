@@ -364,6 +364,9 @@ class MantisEngine(MDAEngine):
                 # Skip setting Z position if autofocus is enabled to avoid
                 # disengaging autofocus lock; autofocus algorithm will set Z
                 # position independently
+                logger.debug(
+                    "Skipping Z set on autofocus stage: %s.%s = %s", device, prop, value
+                )
                 continue
             super()._set_event_properties([(device, prop, value)])
 
