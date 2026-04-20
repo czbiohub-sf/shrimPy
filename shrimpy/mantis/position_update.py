@@ -273,7 +273,7 @@ class PositionUpdateManager:
 
         data_gb = sum(a.nbytes for a in data) / 1024**3 if data else 0.0
         queue_depth = self._executor._work_queue.qsize()
-        logger.info(
+        logger.debug(
             f"PosUpdateMgr[mem]: before submit p={position_index} t={timepoint_index} "
             f"rss={_rss_gb():.2f} GB data={data_gb:.2f} GB queue_depth={queue_depth}"
         )
@@ -293,7 +293,7 @@ class PositionUpdateManager:
                 self._run_updater, timepoint_index, position_index, position, data
             )
 
-        logger.info(
+        logger.debug(
             f"PosUpdateMgr[mem]: after submit p={position_index} t={timepoint_index} "
             f"rss={_rss_gb():.2f} GB queue_depth={self._executor._work_queue.qsize()}"
         )
