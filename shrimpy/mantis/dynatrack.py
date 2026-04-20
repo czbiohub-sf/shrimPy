@@ -490,11 +490,17 @@ class DynaTrackUpdater(PositionUpdater):
             f"rss={_rss_gb():.2f} GB"
         )
 
-        updated = PositionCoordinates(
-            x=position.x + shift_xyz[0],
-            y=position.y + shift_xyz[1],
-            z=(position.z or 0) + shift_xyz[2] if position.z is not None else None,
-        )
+        # NOTE the signs
+        if self.deskew_config is not None:
+            # Deskew rotates the volume in the XY plate
+            # Swap X/Y shift to match this rotation.
+            _x = position.x + shift_xyz[1]
+            _y = position.y + shift_xyz[0]
+        else:
+            _x = position.x + shift_xyz[0]
+            _y = position.y + shift_xyz[1]
+        _z = (position.z or 0) + shift_xyz[2] if position.z is not None else None
+        updated = PositionCoordinates(_x, _y, _z)
 
         logger.info(
             f"DynaTrack: p={position_index} t={timepoint_index} "
