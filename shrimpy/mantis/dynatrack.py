@@ -24,6 +24,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import Any
 
+    import torch
+
 
 _PROC = psutil.Process(os.getpid())
 
@@ -120,50 +122,62 @@ def _next_fast_len(n: int) -> int:
         n += 1
 
 
-def _center_crop(arr: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
-    """Crop the center of *arr* to *shape*."""
-    assert arr.ndim == len(shape)
-    starts = tuple((cur_s - s) // 2 for cur_s, s in zip(arr.shape, shape, strict=True))
+def _center_crop(t: torch.Tensor, shape: tuple[int, ...]) -> torch.Tensor:
+    """Crop the center of *t* to *shape*."""
+    assert t.ndim == len(shape)
+    starts = tuple((cur_s - s) // 2 for cur_s, s in zip(t.shape, shape, strict=True))
     assert all(s >= 0 for s in starts)
     slicing = tuple(slice(s, s + d) for s, d in zip(starts, shape, strict=True))
-    return arr[slicing]
+    return t[slicing]
 
 
 def _pad_to_shape(
-    arr: np.ndarray, shape: tuple[int, ...], mode: str = "reflect"
-) -> np.ndarray:
-    """Pad *arr* to *shape* using *mode* (see ``np.pad``)."""
-    assert arr.ndim == len(shape)
-    dif = tuple(s - a for s, a in zip(shape, arr.shape, strict=True))
+    t: torch.Tensor, shape: tuple[int, ...], mode: str = "reflect"
+) -> torch.Tensor:
+    """Pad *t* to *shape* using *mode* (``torch.nn.functional.pad`` semantics)."""
+    from torch.nn.functional import pad as torch_pad
+
+    assert t.ndim == len(shape)
+    dif = [s - a for s, a in zip(shape, t.shape, strict=True)]
     assert all(d >= 0 for d in dif)
-    pad_width = [[s // 2, s - s // 2] for s in dif]
-    return np.pad(arr, pad_width=pad_width, mode=mode)
+    if all(d == 0 for d in dif):
+        return t
+    # pad sizes are ordered from the last axis to the first
+    pad_arg: list[int] = []
+    for d in reversed(dif):
+        left = d // 2
+        pad_arg.extend([left, d - left])
+    # reflect/replicate require ndim == 2 + n_pad_dims; wrap in unit
+    # batch+channel dims so the trick works for any input rank.
+    orig_shape = tuple(t.shape)
+    t = t.reshape((1, 1) + orig_shape)
+    t = torch_pad(t, pad_arg, mode=mode)
+    return t.reshape(tuple(t.shape[2:]))
 
 
-def _match_shape(img: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
-    """Pad or crop *img* to match *shape*."""
-    shape_arr = np.array(shape)
-    if np.any(shape_arr > np.array(img.shape)):
-        padded_shape = tuple(np.maximum(img.shape, shape))
-        img = _pad_to_shape(img, padded_shape, mode="reflect")
-    if np.any(shape_arr < np.array(img.shape)):
-        img = _center_crop(img, tuple(shape))
-    return img
+def _match_shape(t: torch.Tensor, shape: tuple[int, ...]) -> torch.Tensor:
+    """Pad or crop *t* to match *shape*."""
+    if any(s > d for s, d in zip(shape, t.shape, strict=True)):
+        padded_shape = tuple(max(d, s) for d, s in zip(t.shape, shape, strict=True))
+        t = _pad_to_shape(t, padded_shape, mode="reflect")
+    if any(s < d for s, d in zip(shape, t.shape, strict=True)):
+        t = _center_crop(t, tuple(shape))
+    return t
 
 
 def _phase_cross_corr(
-    ref_img: np.ndarray,
-    mov_img: np.ndarray,
+    ref_img: torch.Tensor,
+    mov_img: torch.Tensor,
     maximum_shift: float = 1.0,
 ) -> tuple[int, ...]:
     """FFT-based phase cross-correlation returning pixel shifts in ZYX order.
 
     Parameters
     ----------
-    ref_img : np.ndarray
-        Reference image (2-D or 3-D).
-    mov_img : np.ndarray
-        Moved image, same dimensionality as *ref_img*.
+    ref_img : torch.Tensor
+        Reference image (2-D or 3-D) on the target compute device.
+    mov_img : torch.Tensor
+        Moved image, same dimensionality and device as *ref_img*.
     maximum_shift : float
         Maximum translation normalised by axis size (controls FFT padding).
 
@@ -173,35 +187,29 @@ def _phase_cross_corr(
         Pixel shift for each axis (positive = *mov_img* shifted in the
         positive direction relative to *ref_img*).
     """
+    import torch
+
+    ref_t = ref_img.to(dtype=torch.float32)
+    mov_t = mov_img.to(dtype=torch.float32)
+
     shape = tuple(
         _next_fast_len(int(max(s1, s2) * maximum_shift))
-        for s1, s2 in zip(ref_img.shape, mov_img.shape, strict=True)
+        for s1, s2 in zip(ref_t.shape, mov_t.shape, strict=True)
     )
 
     logger.debug(
         "phase cross corr: fft shape %s for arrays %s and %s (max_shift=%.2f)",
         shape,
-        ref_img.shape,
-        mov_img.shape,
+        tuple(ref_t.shape),
+        tuple(mov_t.shape),
         maximum_shift,
     )
 
-    ref_img = _match_shape(ref_img, shape)
-    mov_img = _match_shape(mov_img, shape)
+    ref_t = _match_shape(ref_t, shape)
+    mov_t = _match_shape(mov_t, shape)
 
-    import torch
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    ref_t = torch.from_numpy(ref_img.astype(np.float32, copy=False)).to(
-        device, non_blocking=True
-    )
     fimg1 = torch.fft.rfftn(ref_t)
     del ref_t
-
-    mov_t = torch.from_numpy(mov_img.astype(np.float32, copy=False)).to(
-        device, non_blocking=True
-    )
     fimg2 = torch.fft.rfftn(mov_t)
     del mov_t
 
@@ -215,6 +223,7 @@ def _phase_cross_corr(
 
     argmax = int(torch.argmax(corr).item())
     corr_shape = tuple(corr.shape)
+    device = corr.device
     del corr
     if device.type == "cuda":
         torch.cuda.synchronize()
@@ -345,21 +354,22 @@ class DynaTrackUpdater(PositionUpdater):
     ----------
     config : DynaTrackConfig
         Tracking configuration.
-    preprocessor : Callable[[np.ndarray], dict[str, np.ndarray]] | None
+    preprocessor : Callable[[np.ndarray], dict[str, torch.Tensor]] | None
         Optional callable that transforms a z-stack and returns a dict of
-        channel name to ZYX array (e.g. ``{'phase': ..., 'vs_nuclei': ...}``).
-        The channel specified by ``config.shift_estimation_channel`` is used
-        for phase cross-correlation. When ``None``, the raw z-stack is used.
+        channel name to ZYX tensor on the target device (e.g.
+        ``{'phase': ..., 'vs_nuclei': ...}``). The channel specified by
+        ``config.shift_estimation_channel`` is used for phase
+        cross-correlation. When ``None``, the raw z-stack is used.
     """
 
     def __init__(
         self,
         config: DynaTrackConfig,
-        preprocessor: Callable[[np.ndarray], dict[str, np.ndarray]] | None = None,
+        preprocessor: Callable[[np.ndarray], dict[str, torch.Tensor]] | None = None,
     ) -> None:
         self._config = config
         self._preprocessor = preprocessor
-        self._reference_stacks: dict[int, np.ndarray] = {}
+        self._reference_stacks: dict[int, torch.Tensor] = {}
         self._shift_log_path: Path | None = (
             Path(config.shift_log_path) if config.shift_log_path else None
         )
@@ -411,21 +421,32 @@ class DynaTrackUpdater(PositionUpdater):
             f"rss={_rss_gb():.2f} GB"
         )
 
-        current_stack = np.stack(data)
+        import torch
+
+        raw_stack = np.stack(data)
         logger.info(
             f"DynaTrack: p={position_index} t={timepoint_index} "
-            f"stack shape={current_stack.shape} dtype={current_stack.dtype} "
-            f"size={current_stack.nbytes / 1024**3:.2f} GB"
+            f"stack shape={raw_stack.shape} dtype={raw_stack.dtype} "
+            f"size={raw_stack.nbytes / 1024**3:.2f} GB"
         )
         logger.debug(
             f"DynaTrack[mem]: after np.stack p={position_index} t={timepoint_index} "
             f"rss={_rss_gb():.2f} GB"
         )
 
-        # Apply optional preprocessing (e.g. phase reconstruction, VS)
+        # All downstream ops run on tensors. Move to CUDA if available;
+        # the preprocessor (if any) already targets the same device.
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        current_stack: torch.Tensor = torch.as_tensor(
+            raw_stack, device=device, dtype=torch.float32
+        )
+
+        # Apply optional preprocessing (e.g. phase reconstruction, VS).
+        # Preprocessor returns torch tensors on device; convert to numpy at
+        # the PCC/saving boundaries below.
         if self._preprocessor is not None:
             t0 = _time.monotonic()
-            channels = self._preprocessor(current_stack)
+            channels = self._preprocessor(raw_stack)
             logger.info(
                 f"DynaTrack: preprocessing took {_time.monotonic() - t0:.1f}s "
                 f"(channels={list(channels.keys())})"
@@ -436,16 +457,18 @@ class DynaTrackUpdater(PositionUpdater):
                 f"rss={_rss_gb():.2f} GB channels_total={ch_bytes / 1024**3:.2f} GB"
             )
             self._save_debug_channels(channels, timepoint_index, position_index)
-            # Select the configured channel for shift estimation
+            # Select the configured channel for shift estimation. Stays as a
+            # torch tensor on device; PCC consumes tensors directly.
             channel_name = self._config.shift_estimation_channel
             if channel_name in channels:
-                current_stack = channels[channel_name]
+                selected = channels[channel_name]
             else:
                 logger.warning(
                     f"DynaTrack: channel '{channel_name}' not in preprocessor "
                     f"output {list(channels.keys())}, using first channel"
                 )
-                current_stack = next(iter(channels.values()))
+                selected = next(iter(channels.values()))
+            current_stack = selected.detach()
             logger.debug(
                 f"DynaTrack[mem]: after channel select p={position_index} t={timepoint_index} "
                 f"rss={_rss_gb():.2f} GB"
@@ -525,16 +548,16 @@ class DynaTrackUpdater(PositionUpdater):
 
     def _compute_shift(
         self,
-        reference: np.ndarray,
-        current: np.ndarray,
+        reference: torch.Tensor,
+        current: torch.Tensor,
     ) -> tuple[float, float, float]:
         """Compute the (x, y, z) shift between reference and current z-stacks.
 
         Parameters
         ----------
-        reference : np.ndarray
+        reference : torch.Tensor
             Reference z-stack, shape (Z, Y, X).
-        current : np.ndarray
+        current : torch.Tensor
             Current z-stack, shape (Z, Y, X).
 
         Returns
@@ -581,7 +604,7 @@ class DynaTrackUpdater(PositionUpdater):
 
     def _save_debug_channels(
         self,
-        channels: dict[str, np.ndarray],
+        channels: dict[str, torch.Tensor],
         timepoint_index: int,
         position_index: int,
     ) -> None:
@@ -596,7 +619,7 @@ class DynaTrackUpdater(PositionUpdater):
         from iohub.ngff import open_ome_zarr
 
         channel_names = sorted(channels.keys())
-        czyx = np.stack([channels[name] for name in channel_names])
+        czyx = np.stack([channels[name].detach().cpu().numpy() for name in channel_names])
         nc, nz, ny, nx = czyx.shape
 
         # Create the HCS store on first call

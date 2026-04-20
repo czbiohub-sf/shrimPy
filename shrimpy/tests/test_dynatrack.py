@@ -4,6 +4,7 @@ import csv
 
 import numpy as np
 import pytest
+import torch
 
 from shrimpy.mantis.dynatrack import (
     DynaTrackConfig,
@@ -23,43 +24,43 @@ from shrimpy.mantis.position_update import PositionCoordinates
 
 class TestCenterCrop:
     def test_basic_2d(self):
-        arr = np.arange(20).reshape(4, 5)
-        result = _center_crop(arr, (2, 3))
-        assert result.shape == (2, 3)
+        t = torch.arange(20).reshape(4, 5)
+        result = _center_crop(t, (2, 3))
+        assert tuple(result.shape) == (2, 3)
 
     def test_noop_when_same_shape(self):
-        arr = np.ones((4, 5))
-        result = _center_crop(arr, (4, 5))
-        np.testing.assert_array_equal(result, arr)
+        t = torch.ones(4, 5)
+        result = _center_crop(t, (4, 5))
+        assert torch.equal(result, t)
 
 
 class TestPadToShape:
     def test_basic_2d(self):
-        arr = np.ones((2, 3))
-        result = _pad_to_shape(arr, (4, 5), mode="constant")
-        assert result.shape == (4, 5)
+        t = torch.ones(2, 3)
+        result = _pad_to_shape(t, (4, 5), mode="constant")
+        assert tuple(result.shape) == (4, 5)
 
     def test_noop_when_same_shape(self):
-        arr = np.ones((4, 5))
-        result = _pad_to_shape(arr, (4, 5), mode="constant")
-        np.testing.assert_array_equal(result, arr)
+        t = torch.ones(4, 5)
+        result = _pad_to_shape(t, (4, 5), mode="constant")
+        assert torch.equal(result, t)
 
 
 class TestMatchShape:
     def test_pad_smaller(self):
-        arr = np.ones((2, 3))
-        result = _match_shape(arr, (4, 5))
-        assert result.shape == (4, 5)
+        t = torch.ones(2, 3)
+        result = _match_shape(t, (4, 5))
+        assert tuple(result.shape) == (4, 5)
 
     def test_crop_larger(self):
-        arr = np.ones((6, 7))
-        result = _match_shape(arr, (4, 5))
-        assert result.shape == (4, 5)
+        t = torch.ones(6, 7)
+        result = _match_shape(t, (4, 5))
+        assert tuple(result.shape) == (4, 5)
 
     def test_mixed_pad_and_crop(self):
-        arr = np.ones((2, 7))
-        result = _match_shape(arr, (4, 5))
-        assert result.shape == (4, 5)
+        t = torch.ones(2, 7)
+        result = _match_shape(t, (4, 5))
+        assert tuple(result.shape) == (4, 5)
 
 
 # ---------------------------------------------------------------------------
@@ -70,16 +71,16 @@ class TestMatchShape:
 class TestPhaseCrossCorr:
     def test_no_shift_returns_zeros(self):
         rng = np.random.default_rng(42)
-        img = rng.random((32, 32))
-        shifts = _phase_cross_corr(img, img.copy())
+        img = torch.as_tensor(rng.random((32, 32)), dtype=torch.float32)
+        shifts = _phase_cross_corr(img, img.clone())
         assert shifts == (0, 0)
 
     def test_known_2d_shift(self):
         """Translate an image by a known amount and verify detected shift."""
         rng = np.random.default_rng(42)
-        ref = rng.random((64, 64))
+        ref = torch.as_tensor(rng.random((64, 64)), dtype=torch.float32)
         dy, dx = 3, -5
-        mov = np.roll(np.roll(ref, dy, axis=0), dx, axis=1)
+        mov = torch.roll(ref, shifts=(dy, dx), dims=(0, 1))
         shifts = _phase_cross_corr(ref, mov)
         # The detected shift matches the roll direction
         assert shifts[0] == dy
@@ -88,9 +89,9 @@ class TestPhaseCrossCorr:
     def test_known_3d_shift(self):
         """Translate a 3D stack by a known amount."""
         rng = np.random.default_rng(42)
-        ref = rng.random((8, 32, 32))
+        ref = torch.as_tensor(rng.random((8, 32, 32)), dtype=torch.float32)
         dz, dy, dx = 1, 2, -3
-        mov = np.roll(np.roll(np.roll(ref, dz, axis=0), dy, axis=1), dx, axis=2)
+        mov = torch.roll(ref, shifts=(dz, dy, dx), dims=(0, 1, 2))
         shifts = _phase_cross_corr(ref, mov)
         assert shifts[0] == dz
         assert shifts[1] == dy
@@ -186,9 +187,9 @@ class TestComputeShift:
     def test_pixel_to_micron_conversion(self):
         """Verify that pixel shifts are scaled by the correct factors."""
         rng = np.random.default_rng(42)
-        ref = rng.random((8, 64, 64))
+        ref = torch.as_tensor(rng.random((8, 64, 64)), dtype=torch.float32)
         dz, dy, dx = 1, 2, -3
-        mov = np.roll(np.roll(np.roll(ref, dz, axis=0), dy, axis=1), dx, axis=2)
+        mov = torch.roll(ref, shifts=(dz, dy, dx), dims=(0, 1, 2))
 
         scale_yx = 0.5  # um/px
         scale_z = 2.0  # um/z-step
@@ -204,9 +205,9 @@ class TestComputeShift:
     def test_dampening_applied(self):
         """Dampening factors should scale the output shift."""
         rng = np.random.default_rng(42)
-        ref = rng.random((8, 64, 64))
+        ref = torch.as_tensor(rng.random((8, 64, 64)), dtype=torch.float32)
         dz, dy, dx = 1, 2, -3
-        mov = np.roll(np.roll(np.roll(ref, dz, axis=0), dy, axis=1), dx, axis=2)
+        mov = torch.roll(ref, shifts=(dz, dy, dx), dims=(0, 1, 2))
 
         scale_yx = 0.5
         scale_z = 2.0
@@ -226,10 +227,10 @@ class TestComputeShift:
     def test_shift_limits_applied(self):
         """Shift limits should zero out or clip shifts."""
         rng = np.random.default_rng(42)
-        ref = rng.random((8, 64, 64))
+        ref = torch.as_tensor(rng.random((8, 64, 64)), dtype=torch.float32)
         # Large shift in x (3 px * 10 um/px = 30 um) should be clipped to 5 um
         dx = -3
-        mov = np.roll(ref, dx, axis=2)
+        mov = torch.roll(ref, shifts=dx, dims=2)
 
         scale_yx = 10.0
         scale_z = 2.0
