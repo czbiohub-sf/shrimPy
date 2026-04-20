@@ -45,14 +45,14 @@ dev = [
   "pre-commit~=4.5",
   "pytest~=9.0",
   "ruff~=0.15",
-  "iohub==0.3.0a6",
+  "iohub==0.3.0a7",
   "ipykernel",
 ]
 dynatrack = [
   "biahub",
   "torch",
   "viscy",
-  "waveorder",
+  "waveorder==3.0.2",
 ]
 
 [project.scripts]
@@ -71,13 +71,14 @@ packages = ["shrimpy"]
 [tool.uv.sources]
 # ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
 # pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "main" }
-biahub = { path = "../biahub", editable = true } # no pipy release
+# biahub = { path = "../biahub", editable = true } # no pipy release
+biahub = { git = "https://github.com/czbiohub-sf/biahub", branch = "fast_deskew" }
 ome-writers = { path = "../ome-writers", editable = true } # add-plate-row-col branch
 pymmcore-gui = { path = "../pymmcore-gui", editable = true } # no recent pipy release
 pymmcore-plus = { path = "../pymmcore-plus", editable = true } # dev branch
 useq-schema = { path = "../useq-schema", editable = true } # add-plate-row-col branch
-viscy = { path = "../viscy", editable = true } # waveorder dependency, issue
-waveorder = { git = "https://github.com/mehta-lab/waveorder", branch = "iohub_dep" }
+# viscy = { path = "../viscy", editable = true } # waveorder dependency, issue
+viscy = { git = "https://github.com/mehta-lab/VisCy", rev = "6ba3446db8b02383e25e1bc5424a20268249ee7d" }
 torch = { index = "pytorch" }
 
 [[tool.uv.index]]

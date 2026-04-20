@@ -234,18 +234,17 @@ class _LabelfreePreprocessor:
         return channels
 
     def _deskew(self, volume: np.ndarray) -> np.ndarray:
-        """Apply deskewing via biahub."""
-        from biahub.deskew import deskew as biahub_deskew
+        """Apply deskewing via biahub's ``fast_deskew_zyx`` on the target device."""
+        import torch
+
+        from biahub.deskew import fast_deskew_zyx
 
         logger.info("DynaTrack: deskewing volume %s...", volume.shape)
         t0 = _time.monotonic()
 
-        device = str(self._device) if self._device is not None else "cpu"
-        result = biahub_deskew(
-            raw_data=volume,
-            device=device,
-            **self._deskew_config,
-        )
+        t_volume = torch.as_tensor(volume, device=self._device, dtype=torch.float32)
+        t_result = fast_deskew_zyx(raw_data=t_volume, **self._deskew_config)
+        result = t_result.cpu().numpy()
 
         logger.info(
             "DynaTrack: deskew took %.1fs (%s -> %s)",
@@ -268,7 +267,7 @@ class _LabelfreePreprocessor:
         logger.info("DynaTrack: reconstructing phase on %s...", self._device)
         t0 = _time.monotonic()
 
-        # Move volume to device and reconstruct
+        # Move volume to device (no-op if already a tensor on device) and reconstruct
         t_volume = torch.as_tensor(volume_bf, device=self._device, dtype=torch.float32)
 
         inverse_config = dict(self._phase_config.get("apply_inverse", {}))

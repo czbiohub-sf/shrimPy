@@ -347,13 +347,15 @@ wheels = [
 
 [[package]]
 name = "biahub"
-source = { editable = "../biahub" }
+version = "0.0.1rc2.post13"
+source = { git = "https://github.com/czbiohub-sf/biahub?branch=fast_deskew#a81d5cd5981173e0f7b557dbbbdbf117943895f9" }
 dependencies = [
     { name = "antspyx" },
+    { name = "click" },
     { name = "dask", extra = ["array"] },
     { name = "humanize" },
     { name = "imageio-ffmpeg" },
-    { name = "iohub", extra = ["tensorstore"] },
+    { name = "iohub" },
     { name = "largestinteriorrectangle" },
     { name = "llvmlite" },
     { name = "markdown" },
@@ -374,52 +376,6 @@ dependencies = [
     { name = "tqdm" },
     { name = "waveorder" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "antspyx" },
-    { name = "biahub", extras = ["build", "gui", "segment", "shard", "track"], marker = "extra == 'all'" },
-    { name = "biahub", extras = ["build", "segment", "shard", "track"], marker = "extra == 'dev'" },
-    { name = "black", marker = "extra == 'dev'", specifier = "==25.1" },
-    { name = "build", marker = "extra == 'build'" },
-    { name = "cellpose", marker = "extra == 'segment'" },
-    { name = "dask", extras = ["array"] },
-    { name = "flake8", marker = "extra == 'dev'", specifier = "==7.2" },
-    { name = "humanize" },
-    { name = "imageio-ffmpeg" },
-    { name = "iohub", extras = ["tensorstore"], specifier = "==0.3.0a6" },
-    { name = "isort", marker = "extra == 'dev'", specifier = "==6.0" },
-    { name = "largestinteriorrectangle" },
-    { name = "llvmlite", specifier = ">=0.41.0" },
-    { name = "markdown" },
-    { name = "matplotlib" },
-    { name = "mkdocs-click", marker = "extra == 'doc'", specifier = ">=0.8" },
-    { name = "monai" },
-    { name = "napari", marker = "extra == 'gui'" },
-    { name = "napari-animation", marker = "extra == 'gui'" },
-    { name = "natsort" },
-    { name = "numba", specifier = ">=0.58.0" },
-    { name = "numpy" },
-    { name = "pandas", specifier = "~=2.1" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = "~=4.2" },
-    { name = "pydantic", specifier = ">2,<3" },
-    { name = "pyqt6", marker = "extra == 'gui'" },
-    { name = "pystackreg" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = "==8.4" },
-    { name = "scikit-learn" },
-    { name = "scipy", specifier = "<1.16" },
-    { name = "stitch", git = "https://github.com/ahillsley/stitching?rev=jen" },
-    { name = "submitit" },
-    { name = "tensorstore", marker = "extra == 'shard'" },
-    { name = "toml" },
-    { name = "torch" },
-    { name = "tqdm" },
-    { name = "twine", marker = "extra == 'build'" },
-    { name = "ultrack", marker = "extra == 'track'", specifier = ">=0.7.0rc2" },
-    { name = "waveorder" },
-    { name = "zensical", marker = "extra == 'doc'", specifier = ">=0.0.11" },
-]
-provides-extras = ["segment", "track", "gui", "shard", "build", "all", "dev", "doc"]
 
 [[package]]
 name = "blessed"
@@ -1806,7 +1762,7 @@ wheels = [
 
 [[package]]
 name = "iohub"
-version = "0.3.0a6"
+version = "0.3.0a7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "blosc2" },
@@ -1823,9 +1779,9 @@ dependencies = [
     { name = "xarray" },
     { name = "zarr" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e1/42/e2d01e86a3e7e1124e1c9377773ba2f0b3d4b223691cbb75fbf22b7ea347/iohub-0.3.0a6.tar.gz", hash = "sha256:917b1fd7bc09f4e2541cc673568a0a0a59440bb78a3ddb20a391c2cf4a05f5d2", size = 360663, upload-time = "2026-02-13T15:56:04.151Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/35/65/440e76b98aa90d61c7a6a32ccdd3f62c3a1c85b4c167fdd7ca3805b56531/iohub-0.3.0a7.tar.gz", hash = "sha256:6a29dfbd33a362658052996f0493b4d999e9e1945c730be6f2ee7c3bb16cae3f", size = 450560, upload-time = "2026-03-23T17:37:00.854Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/51/fe/4899d56c95d20ef83e69d1a9e72b3e3a825cd478d2b9969404210b8a4277/iohub-0.3.0a6-py3-none-any.whl", hash = "sha256:8463f73ead0868fcb72ea6fb3649b371b9090c3f033e1d45ecd06420403c059d", size = 74755, upload-time = "2026-02-13T15:56:02.793Z" },
+    { url = "https://files.pythonhosted.org/packages/32/0f/4893daeaf2e54ca05de7c6b4d122e19f271ea46c4184f409b6a68ad34c69/iohub-0.3.0a7-py3-none-any.whl", hash = "sha256:ab6881d9aaba8d50c7d06eba4b48233d1d4788d2ec993c8416c2f5be2a8db106", size = 65124, upload-time = "2026-03-23T17:36:58.422Z" },
 ]
 
 [package.optional-dependencies]
@@ -5306,17 +5262,17 @@ provides-extras = ["build"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "iohub", specifier = "==0.3.0a6" },
+    { name = "iohub", specifier = "==0.3.0a7" },
     { name = "ipykernel" },
     { name = "pre-commit", specifier = "~=4.5" },
     { name = "pytest", specifier = "~=9.0" },
     { name = "ruff", specifier = "~=0.15" },
 ]
 dynatrack = [
-    { name = "biahub", editable = "../biahub" },
+    { name = "biahub", git = "https://github.com/czbiohub-sf/biahub?branch=fast_deskew" },
     { name = "torch", index = "https://download.pytorch.org/whl/cu118" },
-    { name = "viscy", editable = "../viscy" },
-    { name = "waveorder", git = "https://github.com/mehta-lab/waveorder?branch=iohub_dep" },
+    { name = "viscy", git = "https://github.com/mehta-lab/VisCy?rev=6ba3446db8b02383e25e1bc5424a20268249ee7d" },
+    { name = "waveorder", specifier = "==3.0.2" },
 ]
 
 [[package]]
@@ -5622,14 +5578,14 @@ dependencies = [
     { name = "typing-extensions" },
 ]
 wheels = [
-    { url = "https://download.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:a596d91c747d1fa601724e85b9c8797c8d7c62140aa1acf245773e911254bc45" },
-    { url = "https://download.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp311-cp311-win_amd64.whl", hash = "sha256:584e5ee99d29286b93be2fba3b3f1f5b9d7a4b9055a288eb31b33100a1f09ed9" },
-    { url = "https://download.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:91454dcfdb81f181fdf216d6d6d9912fbd8795578b90384b3b8b8132737072bb" },
-    { url = "https://download.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp312-cp312-win_amd64.whl", hash = "sha256:80855ec840b7b06372ff43535d01393a8ec101842618d1f9ed629572b52aed71" },
-    { url = "https://download.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:a3f02b2795165eaf6dfe18c963519049a45a9c588488795cebc5015dac77ab46" },
-    { url = "https://download.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp313-cp313-win_amd64.whl", hash = "sha256:3122e59a5fe4e9ee991e7ad4e7002afa549b2873e421759df6454f20f53a6c74" },
-    { url = "https://download.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp313-cp313t-manylinux_2_28_x86_64.whl", hash = "sha256:627b7248b429d97b3955f1d0375aad1192b8f20f37556384848b6c622e491eb5" },
-    { url = "https://download.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp313-cp313t-win_amd64.whl", hash = "sha256:e06a205f15b3a045924d72f788af0664ca5f20e610eaac7162189721cf31a771" },
+    { url = "https://download-r2.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:a596d91c747d1fa601724e85b9c8797c8d7c62140aa1acf245773e911254bc45" },
+    { url = "https://download-r2.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp311-cp311-win_amd64.whl", hash = "sha256:584e5ee99d29286b93be2fba3b3f1f5b9d7a4b9055a288eb31b33100a1f09ed9" },
+    { url = "https://download-r2.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:91454dcfdb81f181fdf216d6d6d9912fbd8795578b90384b3b8b8132737072bb" },
+    { url = "https://download-r2.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp312-cp312-win_amd64.whl", hash = "sha256:80855ec840b7b06372ff43535d01393a8ec101842618d1f9ed629572b52aed71" },
+    { url = "https://download-r2.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:a3f02b2795165eaf6dfe18c963519049a45a9c588488795cebc5015dac77ab46" },
+    { url = "https://download-r2.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp313-cp313-win_amd64.whl", hash = "sha256:3122e59a5fe4e9ee991e7ad4e7002afa549b2873e421759df6454f20f53a6c74" },
+    { url = "https://download-r2.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp313-cp313t-manylinux_2_28_x86_64.whl", hash = "sha256:627b7248b429d97b3955f1d0375aad1192b8f20f37556384848b6c622e491eb5" },
+    { url = "https://download-r2.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp313-cp313t-win_amd64.whl", hash = "sha256:e06a205f15b3a045924d72f788af0664ca5f20e610eaac7162189721cf31a771" },
 ]
 
 [[package]]
@@ -5889,7 +5845,8 @@ wheels = [
 
 [[package]]
 name = "viscy"
-source = { editable = "../viscy" }
+version = "0.4.0a4.dev14+g6ba3446db"
+source = { git = "https://github.com/mehta-lab/VisCy?rev=6ba3446db8b02383e25e1bc5424a20268249ee7d#6ba3446db8b02383e25e1bc5424a20268249ee7d" }
 dependencies = [
     { name = "anndata" },
     { name = "iohub", extra = ["tensorstore"] },
@@ -5908,58 +5865,6 @@ dependencies = [
     { name = "waveorder" },
     { name = "xarray" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "anndata", specifier = ">=0.12.2" },
-    { name = "captum", marker = "extra == 'metrics'", specifier = ">=0.7" },
-    { name = "cellpose", marker = "extra == 'metrics'", specifier = ">=3.0.10" },
-    { name = "cmap", marker = "extra == 'visual'" },
-    { name = "dash", marker = "extra == 'visual'" },
-    { name = "gradio", marker = "extra == 'visual'", specifier = ">=5.49.1" },
-    { name = "graphviz", marker = "extra == 'visual'" },
-    { name = "hypothesis", marker = "extra == 'dev'" },
-    { name = "imbalanced-learn", marker = "extra == 'metrics'", specifier = ">=0.12" },
-    { name = "iohub", extras = ["tensorstore"], specifier = ">=0.3.0a2" },
-    { name = "ipykernel", marker = "extra == 'visual'" },
-    { name = "joblib", marker = "extra == 'metrics'" },
-    { name = "jsonargparse", extras = ["signatures"], specifier = ">=4.20.1" },
-    { name = "jupyter", marker = "extra == 'examples'" },
-    { name = "jupytext", marker = "extra == 'examples'" },
-    { name = "kornia" },
-    { name = "lightning", specifier = ">=2.3" },
-    { name = "mahotas", marker = "extra == 'metrics'" },
-    { name = "matplotlib", specifier = ">=3.9" },
-    { name = "monai", specifier = ">=1.4" },
-    { name = "napari", marker = "extra == 'examples'" },
-    { name = "nbformat", marker = "extra == 'visual'" },
-    { name = "numpy" },
-    { name = "onnxruntime", marker = "extra == 'dev'" },
-    { name = "phate", marker = "extra == 'phate'" },
-    { name = "plotly", marker = "extra == 'visual'" },
-    { name = "pre-commit", marker = "extra == 'dev'" },
-    { name = "ptflops", marker = "extra == 'metrics'", specifier = ">=0.7" },
-    { name = "pydantic", marker = "extra == 'metrics'", specifier = ">=2" },
-    { name = "pytest", marker = "extra == 'dev'" },
-    { name = "pytest-cov", marker = "extra == 'dev'" },
-    { name = "pytorch-metric-learning", specifier = ">2" },
-    { name = "ruff", marker = "extra == 'dev'" },
-    { name = "scikit-image" },
-    { name = "scikit-learn", marker = "extra == 'metrics'", specifier = ">=1.1.3" },
-    { name = "seaborn", marker = "extra == 'visual'" },
-    { name = "tensorboard", specifier = ">=2.13" },
-    { name = "timm", specifier = ">=0.9.5" },
-    { name = "torch", specifier = ">=2.4.1" },
-    { name = "torchmetrics", extras = ["detection"], marker = "extra == 'metrics'", specifier = ">=1.6.3" },
-    { name = "torchview", marker = "extra == 'visual'" },
-    { name = "transformers", marker = "extra == 'examples'", specifier = ">=4.51.3" },
-    { name = "umap-learn", marker = "extra == 'metrics'" },
-    { name = "viscy", extras = ["examples", "metrics", "phate", "visual"], marker = "extra == 'dev'" },
-    { name = "wandb" },
-    { name = "waveorder" },
-    { name = "xarray", specifier = "<=2025.9" },
-]
-provides-extras = ["dev", "examples", "metrics", "phate", "visual"]
 
 [[package]]
 name = "vispy"
@@ -6032,8 +5937,8 @@ wheels = [
 
 [[package]]
 name = "waveorder"
-version = "2.2.0rc1.dev1428+06cd57f"
-source = { git = "https://github.com/mehta-lab/waveorder?branch=iohub_dep#06cd57f234cb697595819f296006d00f48b8c213" }
+version = "3.0.2"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "colorspacious" },
@@ -6052,6 +5957,10 @@ dependencies = [
     { name = "tensorboard" },
     { name = "torch" },
     { name = "wget" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e6/84/4f96a32f0441b4989feec616226a52b7d169646471e1deca621ebfab22d8/waveorder-3.0.2.tar.gz", hash = "sha256:25b00436faa9d5d8b356a2f0d254cfdb6b94ca9a46b791108bb938c411f853cb", size = 67126563, upload-time = "2026-04-01T15:02:16.791Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d4/33/2ac072c3ff9000ba168dd84d43bd36c6d6f73ed6b8c7bf099f093d496117/waveorder-3.0.2-py3-none-any.whl", hash = "sha256:6ef3e4f5ae67bbf36726a9c3a3f64f61f812f1b64bef7d340ed6c02feca881e6", size = 274958, upload-time = "2026-04-01T15:02:14.328Z" },
 ]
 
 [[package]]
