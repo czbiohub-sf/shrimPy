@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 
 from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
+import psutil
 
 from ome_writers import (
     AcquisitionSettings,
@@ -36,6 +38,20 @@ SLOW_XY_STAGE_SPEED = 2.0  # in mm/s, used for short moves to maintain autofocus
 FAST_XY_STAGE_SPEED = 5.75  # in mm/s, used for long moves
 NEGLIGIBLE_XY_DISTANCE = 1  # in um, moves below this are ignored
 SHORT_XY_DISTANCE = 2000  # in um, threshold between slow and fast speed
+
+_PROC = psutil.Process(os.getpid())
+
+
+def _rss_gb() -> float:
+    return _PROC.memory_info().rss / (1024**3)
+
+
+def _find_shrimpy_log_file() -> Path | None:
+    """Return the path of the FileHandler attached to the shrimpy logger."""
+    for handler in logging.getLogger("shrimpy").handlers:
+        if isinstance(handler, logging.FileHandler):
+            return Path(handler.baseFilename)
+    return None
 
 
 class MantisEngine(MDAEngine):
@@ -213,11 +229,18 @@ class MantisEngine(MDAEngine):
                 from shrimpy.mantis.dynatrack_worker import DynaTrackWorker
 
                 logger.info(f"DynaTrack: starting worker process for shape {zyx_shape}")
+                log_file_path = _find_shrimpy_log_file()
+                if log_file_path is None:
+                    logger.warning(
+                        "DynaTrack: no FileHandler found on shrimpy logger; "
+                        "worker subprocess logs will go to stderr only"
+                    )
                 worker = DynaTrackWorker(
                     config=updater.config,
                     zyx_shape=zyx_shape,
                     debug_zarr_path=updater._debug_zarr_path,
                     debug_position_names=updater._debug_position_names,
+                    log_file_path=log_file_path,
                 )
                 self._position_update_manager._worker = worker
                 self._position_update_manager.start()
@@ -260,6 +283,10 @@ class MantisEngine(MDAEngine):
         free_capacity = self.mmcore.getBufferFreeCapacity()
         total_capacity = self.mmcore.getBufferTotalCapacity()
         logger.debug(f"Circular buffer capacity: {free_capacity} / {total_capacity} frames")
+        logger.info(
+            f"MantisEngine[mem]: setup_event rss={_rss_gb():.2f} GB "
+            f"mm_buf_used={total_capacity - free_capacity}/{total_capacity}"
+        )
 
         # Call parent setup_event
         super().setup_event(event)
@@ -289,6 +316,16 @@ class MantisEngine(MDAEngine):
         # Flush when all z-slices for this position have arrived
         if len(self._position_update_frames[tp]) >= self._position_update_expected_slices:
             frames = self._position_update_frames.pop(tp)
+            n_pending_tps = len(self._position_update_frames)
+            pending_bytes = sum(
+                sum(a.nbytes for a in frames_list)
+                for frames_list in self._position_update_frames.values()
+            )
+            logger.info(
+                f"MantisEngine[mem]: stack complete p={p_idx} t={t_idx} "
+                f"rss={_rss_gb():.2f} GB frames_buf_pending={n_pending_tps} "
+                f"({pending_bytes / 1024**3:.2f} GB)"
+            )
             self._position_update_manager.on_position_complete(t_idx, p_idx, frames)
 
     def teardown_sequence(self, sequence):
@@ -327,6 +364,9 @@ class MantisEngine(MDAEngine):
                 # Skip setting Z position if autofocus is enabled to avoid
                 # disengaging autofocus lock; autofocus algorithm will set Z
                 # position independently
+                logger.debug(
+                    "Skipping Z set on autofocus stage: %s.%s = %s", device, prop, value
+                )
                 continue
             super()._set_event_properties([(device, prop, value)])
 

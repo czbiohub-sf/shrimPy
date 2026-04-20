@@ -139,8 +139,8 @@ class _LabelfreePreprocessor:
         """
         self._device = _resolve_device()
 
-        # If deskewing, the phase TF must use the deskewed shape
-        if self._deskew_config is not None and self._phase_config is not None:
+        # If deskewing, downstream shape is deskewed + rotated (np.rot90 in _deskew).
+        if self._deskew_config is not None:
             from biahub.deskew import get_deskewed_data_shape
 
             deskewed_shape, _ = get_deskewed_data_shape(
