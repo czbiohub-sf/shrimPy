@@ -283,7 +283,7 @@ class MantisEngine(MDAEngine):
         free_capacity = self.mmcore.getBufferFreeCapacity()
         total_capacity = self.mmcore.getBufferTotalCapacity()
         logger.debug(f"Circular buffer capacity: {free_capacity} / {total_capacity} frames")
-        logger.info(
+        logger.debug(
             f"MantisEngine[mem]: setup_event rss={_rss_gb():.2f} GB "
             f"mm_buf_used={total_capacity - free_capacity}/{total_capacity}"
         )
@@ -321,7 +321,7 @@ class MantisEngine(MDAEngine):
                 sum(a.nbytes for a in frames_list)
                 for frames_list in self._position_update_frames.values()
             )
-            logger.info(
+            logger.debug(
                 f"MantisEngine[mem]: stack complete p={p_idx} t={t_idx} "
                 f"rss={_rss_gb():.2f} GB frames_buf_pending={n_pending_tps} "
                 f"({pending_bytes / 1024**3:.2f} GB)"

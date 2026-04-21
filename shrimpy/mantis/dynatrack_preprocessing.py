@@ -12,7 +12,6 @@ Install via::
 
 from __future__ import annotations
 
-import gc
 import logging
 import time as _time
 
@@ -193,8 +192,13 @@ class _LabelfreePreprocessor:
             elapsed,
         )
 
-    def __call__(self, volume_bf: np.ndarray) -> dict[str, np.ndarray]:
+    def __call__(self, volume_bf: np.ndarray) -> dict[str, torch.Tensor]:
         """Preprocess a brightfield z-stack.
+
+        The input numpy volume is moved to the target device once; all
+        subsequent steps (deskew, phase, VS) operate on torch tensors and
+        return tensors on-device. Callers convert to numpy only when
+        needed (saving, CPU-only consumers).
 
         Parameters
         ----------
@@ -203,23 +207,29 @@ class _LabelfreePreprocessor:
 
         Returns
         -------
-        dict[str, np.ndarray]
-            Mapping of channel name to ZYX array. Always includes
-            ``'phase'``; may also include ``'vs_nuclei'`` and
-            ``'vs_membrane'`` when VS is enabled.
+        dict[str, torch.Tensor]
+            Mapping of channel name to ZYX tensor on the target device.
+            Always includes ``'phase'`` when phase recon is enabled; may
+            also include ``'vs_nuclei'`` and ``'vs_membrane'`` when VS is
+            enabled.
         """
-        channels: dict[str, np.ndarray] = {}
+        import torch
+
+        channels: dict[str, torch.Tensor] = {}
+
+        # Move to device once; downstream steps stay on-device.
+        volume = torch.as_tensor(volume_bf, device=self._device, dtype=torch.float32)
 
         # 1. Deskew
         if self._deskew_config is not None:
-            volume_bf = self._deskew(volume_bf)
+            volume = self._deskew(volume)
 
         # 2. Phase reconstruction
         if self._phase_config is not None:
-            volume_phase = self._reconstruct_phase(volume_bf)
+            volume_phase = self._reconstruct_phase(volume)
             channels["phase"] = volume_phase
         else:
-            volume_phase = volume_bf
+            volume_phase = volume
 
         # 3. Virtual staining
         if self._vs_config is not None:
@@ -228,37 +238,30 @@ class _LabelfreePreprocessor:
 
         # If no phase or VS, return the (possibly deskewed) raw volume
         if not channels:
-            channels["raw"] = volume_bf
+            channels["raw"] = volume
 
         self._log_gpu_memory()
         return channels
 
-    def _deskew(self, volume: np.ndarray) -> np.ndarray:
-        """Apply deskewing via biahub."""
-        from biahub.deskew import deskew as biahub_deskew
+    def _deskew(self, volume: torch.Tensor) -> torch.Tensor:
+        """Apply deskewing via biahub's ``fast_deskew_zyx`` on the target device."""
+        from biahub.deskew import fast_deskew_zyx
 
-        logger.info("DynaTrack: deskewing volume %s...", volume.shape)
+        logger.info("DynaTrack: deskewing volume %s...", tuple(volume.shape))
         t0 = _time.monotonic()
 
-        device = str(self._device) if self._device is not None else "cpu"
-        result = biahub_deskew(
-            raw_data=volume,
-            device=device,
-            **self._deskew_config,
-        )
+        result = fast_deskew_zyx(raw_data=volume, **self._deskew_config)
 
         logger.info(
             "DynaTrack: deskew took %.1fs (%s -> %s)",
             _time.monotonic() - t0,
-            volume.shape,
-            result.shape,
+            tuple(volume.shape),
+            tuple(result.shape),
         )
         return result
 
-    def _reconstruct_phase(self, volume_bf: np.ndarray) -> np.ndarray:
+    def _reconstruct_phase(self, volume_bf: torch.Tensor) -> torch.Tensor:
         """Apply phase reconstruction via waveorder on the target device."""
-        import torch
-
         from waveorder.models.phase_thick_3d import apply_inverse_transfer_function
 
         # Compute transfer function once and cache
@@ -268,32 +271,23 @@ class _LabelfreePreprocessor:
         logger.info("DynaTrack: reconstructing phase on %s...", self._device)
         t0 = _time.monotonic()
 
-        # Move volume to device and reconstruct
-        t_volume = torch.as_tensor(volume_bf, device=self._device, dtype=torch.float32)
-
         inverse_config = dict(self._phase_config.get("apply_inverse", {}))
         z_padding = self._phase_config.get("transfer_function", {}).get("z_padding", 0)
 
         t_phase = apply_inverse_transfer_function(
-            t_volume, *self._transfer_function, z_padding=z_padding, **inverse_config
+            volume_bf, *self._transfer_function, z_padding=z_padding, **inverse_config
         )
 
-        phase = t_phase.detach().cpu().numpy()
-        del t_volume, t_phase
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
         logger.info("DynaTrack: phase reconstruction took %.1fs", _time.monotonic() - t0)
-        return phase
+        return t_phase
 
-    def _predict_vs(self, volume_phase: np.ndarray) -> dict[str, np.ndarray]:
+    def _predict_vs(self, volume_phase: torch.Tensor) -> dict[str, torch.Tensor]:
         """Apply virtual staining via viscy.
 
         Returns
         -------
-        dict[str, np.ndarray]
-            ``{'vs_nuclei': ..., 'vs_membrane': ...}`` ZYX arrays.
+        dict[str, torch.Tensor]
+            ``{'vs_nuclei': ..., 'vs_membrane': ...}`` ZYX tensors on device.
         """
         import torch
 
@@ -304,31 +298,24 @@ class _LabelfreePreprocessor:
         logger.info("DynaTrack: predicting virtual staining...")
         t0 = _time.monotonic()
 
-        device = self._device
         # viscy expects (B, C, Z, Y, X) input
-        t_input = torch.as_tensor(
-            volume_phase[np.newaxis, np.newaxis], device=device, dtype=torch.float32
-        )
+        t_input = volume_phase.to(dtype=torch.float32)[None, None]
 
         with torch.no_grad():
             t_output = self._vs_model.predict_sliding_windows(t_input)
 
         # Output shape: (B, C_out, Z, Y, X) where C_out = [nuclei, membrane]
         result = {
-            "vs_nuclei": t_output[0, 0].detach().cpu().numpy(),
-            "vs_membrane": t_output[0, 1].detach().cpu().numpy(),
+            "vs_nuclei": t_output[0, 0].detach(),
+            "vs_membrane": t_output[0, 1].detach(),
         }
-
-        del t_input, t_output
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
 
         logger.info("DynaTrack: VS prediction took %.1fs", _time.monotonic() - t0)
         return result
 
     def _load_vs_model(self):
         """Load and wrap the VS model for inference."""
+        import gc
         import importlib
 
         from viscy.translation.engine import AugmentedPredictionVSUNet

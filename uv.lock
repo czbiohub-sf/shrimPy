@@ -2,18 +2,10 @@ version = 1
 revision = 3
 requires-python = ">=3.11, <4.0"
 resolution-markers = [
-    "python_full_version >= '3.14' and sys_platform == 'win32'",
-    "python_full_version >= '3.14' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
-    "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32'",
-    "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
-    "python_full_version == '3.12.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version < '3.12' and sys_platform == 'win32'",
-    "python_full_version < '3.12' and sys_platform == 'emscripten'",
-    "python_full_version < '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version >= '3.14'",
+    "python_full_version == '3.13.*'",
+    "python_full_version == '3.12.*'",
+    "python_full_version < '3.12'",
 ]
 
 [[package]]
@@ -347,13 +339,15 @@ wheels = [
 
 [[package]]
 name = "biahub"
-source = { editable = "../biahub" }
+version = "0.0.1rc2.post13"
+source = { git = "https://github.com/czbiohub-sf/biahub?branch=fast_deskew#a81d5cd5981173e0f7b557dbbbdbf117943895f9" }
 dependencies = [
     { name = "antspyx" },
+    { name = "click" },
     { name = "dask", extra = ["array"] },
     { name = "humanize" },
     { name = "imageio-ffmpeg" },
-    { name = "iohub", extra = ["tensorstore"] },
+    { name = "iohub" },
     { name = "largestinteriorrectangle" },
     { name = "llvmlite" },
     { name = "markdown" },
@@ -374,52 +368,6 @@ dependencies = [
     { name = "tqdm" },
     { name = "waveorder" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "antspyx" },
-    { name = "biahub", extras = ["build", "gui", "segment", "shard", "track"], marker = "extra == 'all'" },
-    { name = "biahub", extras = ["build", "segment", "shard", "track"], marker = "extra == 'dev'" },
-    { name = "black", marker = "extra == 'dev'", specifier = "==25.1" },
-    { name = "build", marker = "extra == 'build'" },
-    { name = "cellpose", marker = "extra == 'segment'" },
-    { name = "dask", extras = ["array"] },
-    { name = "flake8", marker = "extra == 'dev'", specifier = "==7.2" },
-    { name = "humanize" },
-    { name = "imageio-ffmpeg" },
-    { name = "iohub", extras = ["tensorstore"], specifier = "==0.3.0a6" },
-    { name = "isort", marker = "extra == 'dev'", specifier = "==6.0" },
-    { name = "largestinteriorrectangle" },
-    { name = "llvmlite", specifier = ">=0.41.0" },
-    { name = "markdown" },
-    { name = "matplotlib" },
-    { name = "mkdocs-click", marker = "extra == 'doc'", specifier = ">=0.8" },
-    { name = "monai" },
-    { name = "napari", marker = "extra == 'gui'" },
-    { name = "napari-animation", marker = "extra == 'gui'" },
-    { name = "natsort" },
-    { name = "numba", specifier = ">=0.58.0" },
-    { name = "numpy" },
-    { name = "pandas", specifier = "~=2.1" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = "~=4.2" },
-    { name = "pydantic", specifier = ">2,<3" },
-    { name = "pyqt6", marker = "extra == 'gui'" },
-    { name = "pystackreg" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = "==8.4" },
-    { name = "scikit-learn" },
-    { name = "scipy", specifier = "<1.16" },
-    { name = "stitch", git = "https://github.com/ahillsley/stitching?rev=jen" },
-    { name = "submitit" },
-    { name = "tensorstore", marker = "extra == 'shard'" },
-    { name = "toml" },
-    { name = "torch" },
-    { name = "tqdm" },
-    { name = "twine", marker = "extra == 'build'" },
-    { name = "ultrack", marker = "extra == 'track'", specifier = ">=0.7.0rc2" },
-    { name = "waveorder" },
-    { name = "zensical", marker = "extra == 'doc'", specifier = ">=0.0.11" },
-]
-provides-extras = ["segment", "track", "gui", "shard", "build", "all", "dev", "doc"]
 
 [[package]]
 name = "blessed"
@@ -902,7 +850,7 @@ name = "cryptography"
 version = "46.0.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cffi", marker = "platform_python_implementation != 'PyPy' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "cffi", marker = "platform_python_implementation != 'PyPy'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a4/ba/04b1bd4218cbc58dc90ce967106d51582371b898690f3ae0402876cc4f34/cryptography-46.0.6.tar.gz", hash = "sha256:27550628a518c5c6c903d84f637fbecf287f6cb9ced3804838a1295dc1fd0759", size = 750542, upload-time = "2026-03-25T23:34:53.396Z" }
 wheels = [
@@ -1806,7 +1754,7 @@ wheels = [
 
 [[package]]
 name = "iohub"
-version = "0.3.0a6"
+version = "0.3.0a7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "blosc2" },
@@ -1823,9 +1771,9 @@ dependencies = [
     { name = "xarray" },
     { name = "zarr" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e1/42/e2d01e86a3e7e1124e1c9377773ba2f0b3d4b223691cbb75fbf22b7ea347/iohub-0.3.0a6.tar.gz", hash = "sha256:917b1fd7bc09f4e2541cc673568a0a0a59440bb78a3ddb20a391c2cf4a05f5d2", size = 360663, upload-time = "2026-02-13T15:56:04.151Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/35/65/440e76b98aa90d61c7a6a32ccdd3f62c3a1c85b4c167fdd7ca3805b56531/iohub-0.3.0a7.tar.gz", hash = "sha256:6a29dfbd33a362658052996f0493b4d999e9e1945c730be6f2ee7c3bb16cae3f", size = 450560, upload-time = "2026-03-23T17:37:00.854Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/51/fe/4899d56c95d20ef83e69d1a9e72b3e3a825cd478d2b9969404210b8a4277/iohub-0.3.0a6-py3-none-any.whl", hash = "sha256:8463f73ead0868fcb72ea6fb3649b371b9090c3f033e1d45ecd06420403c059d", size = 74755, upload-time = "2026-02-13T15:56:02.793Z" },
+    { url = "https://files.pythonhosted.org/packages/32/0f/4893daeaf2e54ca05de7c6b4d122e19f271ea46c4184f409b6a68ad34c69/iohub-0.3.0a7-py3-none-any.whl", hash = "sha256:ab6881d9aaba8d50c7d06eba4b48233d1d4788d2ec993c8416c2f5be2a8db106", size = 65124, upload-time = "2026-03-23T17:36:58.422Z" },
 ]
 
 [package.optional-dependencies]
@@ -3161,7 +3109,7 @@ name = "nvidia-cudnn-cu11"
 version = "9.1.0.70"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu11", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "nvidia-cublas-cu11" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/00/3b/0b776f04e364cd99e4cf152c2a9eadb5934c67c9a91429da55169a9447fd/nvidia_cudnn_cu11-9.1.0.70-py3-none-manylinux2014_x86_64.whl", hash = "sha256:e6135ac63fe9d5b0b89cfb35c3fc1c1349f2b995becadf2e9dc21bca89d9633d", size = 663919573, upload-time = "2024-04-22T15:20:24.839Z" },
@@ -3190,7 +3138,7 @@ name = "nvidia-cusolver-cu11"
 version = "11.4.1.48"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu11", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "nvidia-cublas-cu11" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/55/ee/939ff0104991dd7bdabb4c9767994c612ba0e1c9a55672a1ddd42f5e5b16/nvidia_cusolver_cu11-11.4.1.48-py3-none-manylinux1_x86_64.whl", hash = "sha256:ca538f545645b7e6629140786d3127fe067b3d5a085bd794cde5bfe877c8926f", size = 128240842, upload-time = "2022-10-03T23:30:24.348Z" },
@@ -3249,7 +3197,8 @@ wheels = [
 
 [[package]]
 name = "ome-writers"
-source = { editable = "../ome-writers" }
+version = "0.3.1.dev8+gf8d97e05b"
+source = { git = "https://github.com/ieivanov/ome-writers?branch=add-plate-row-col#f8d97e05b1a9084e391df8613854a0f17ec2bb5b" }
 dependencies = [
     { name = "numpy" },
     { name = "pydantic" },
@@ -3271,137 +3220,6 @@ tifffile = [
     { name = "ome-types" },
     { name = "pydantic" },
     { name = "tifffile" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "acquire-zarr", marker = "python_full_version < '3.14' and extra == 'acquire-zarr'", specifier = ">=0.6.0" },
-    { name = "acquire-zarr", marker = "python_full_version < '3.14' and extra == 'all'", specifier = ">=0.6.0" },
-    { name = "imagecodecs", marker = "extra == 'all'", specifier = ">=2024.9.22" },
-    { name = "imagecodecs", marker = "extra == 'tifffile'", specifier = ">=2024.9.22" },
-    { name = "numpy", specifier = ">=2" },
-    { name = "ome-types", marker = "extra == 'all'", specifier = ">=0.6.1" },
-    { name = "ome-types", marker = "extra == 'tifffile'", specifier = ">=0.6.1" },
-    { name = "pydantic", specifier = ">=2.8" },
-    { name = "pydantic", marker = "extra == 'all'", specifier = ">=2.8" },
-    { name = "pydantic", marker = "extra == 'tifffile'", specifier = ">=2.8" },
-    { name = "pydantic-extra-types", specifier = ">=2.11.0" },
-    { name = "tensorstore", marker = "python_full_version >= '3.11' and extra == 'all'", specifier = ">=0.1.80" },
-    { name = "tensorstore", marker = "python_full_version >= '3.11' and extra == 'tensorstore'", specifier = ">=0.1.80" },
-    { name = "tifffile", marker = "extra == 'all'", specifier = ">=2024.8.30" },
-    { name = "tifffile", marker = "extra == 'tifffile'", specifier = ">=2024.8.30" },
-    { name = "typing-extensions", specifier = ">=4.10.0" },
-    { name = "yaozarrs", extras = ["io"], specifier = ">=0.2.4" },
-    { name = "yaozarrs", extras = ["write-tensorstore"], marker = "extra == 'all'", specifier = ">=0.2.4" },
-    { name = "yaozarrs", extras = ["write-tensorstore"], marker = "extra == 'tensorstore'", specifier = ">=0.2.4" },
-    { name = "yaozarrs", extras = ["write-zarr"], marker = "extra == 'all'", specifier = ">=0.2.4" },
-    { name = "yaozarrs", extras = ["write-zarr"], marker = "extra == 'zarr-python'", specifier = ">=0.2.4" },
-    { name = "yaozarrs", extras = ["write-zarr"], marker = "extra == 'zarrs-python'", specifier = ">=0.2.4" },
-    { name = "zarrs", marker = "python_full_version >= '3.11' and extra == 'all'", specifier = ">=0.2.1" },
-    { name = "zarrs", marker = "python_full_version >= '3.11' and extra == 'zarrs-python'", specifier = ">=0.2.1" },
-]
-provides-extras = ["acquire-zarr", "all", "tensorstore", "tifffile", "zarr-python", "zarrs-python"]
-
-[package.metadata.requires-dev]
-acquire-zarr = [
-    { name = "ome-writers", extras = ["acquire-zarr"], editable = "../ome-writers" },
-    { name = "pytest", specifier = ">=8.4.2" },
-    { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "tensorstore", specifier = ">=0.1.78" },
-    { name = "useq-schema", specifier = ">=0.8.4" },
-    { name = "yaozarrs", extras = ["io"], specifier = ">=0.2.4" },
-]
-bioformats = [
-    { name = "ome-writers", extras = ["tifffile"], editable = "../ome-writers" },
-    { name = "pytest", specifier = ">=8.4.2" },
-    { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "scyjava", specifier = ">=1.12.1" },
-    { name = "useq-schema", specifier = ">=0.8.4" },
-    { name = "yaozarrs", extras = ["io"], specifier = ">=0.2.4" },
-]
-dev = [
-    { name = "ipython", specifier = ">=8.37.0" },
-    { name = "ome-writers", extras = ["acquire-zarr"], editable = "../ome-writers" },
-    { name = "ome-writers", extras = ["tensorstore"], editable = "../ome-writers" },
-    { name = "ome-writers", extras = ["tifffile"], editable = "../ome-writers" },
-    { name = "ome-writers", extras = ["zarr-python"], editable = "../ome-writers" },
-    { name = "ome-writers", extras = ["zarrs-python"], editable = "../ome-writers" },
-    { name = "pdbpp", marker = "sys_platform != 'win32'", specifier = ">=0.12.0" },
-    { name = "pdbpp", marker = "python_full_version < '3.13' and sys_platform != 'win32'", specifier = ">=0.11.7" },
-    { name = "prek", specifier = ">=0.2.28" },
-    { name = "pyright", specifier = ">=1.1.405" },
-    { name = "pytest", specifier = ">=8.4.2" },
-    { name = "pytest-benchmark", specifier = ">=5.1.0" },
-    { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "rich", specifier = ">=14.1.0" },
-    { name = "ruff", specifier = ">=0.13.0" },
-    { name = "tensorstore", specifier = ">=0.1.78" },
-    { name = "tensorstore-stubs", specifier = ">=0.1.2" },
-    { name = "ty", specifier = ">=0.0.12" },
-    { name = "typer", specifier = ">=0.22.0" },
-    { name = "useq-schema", specifier = ">=0.8.4" },
-    { name = "yaozarrs", extras = ["io"], specifier = ">=0.2.4" },
-]
-docs = [
-    { name = "griffe-fieldz", specifier = ">=0.4.0" },
-    { name = "mkdocstrings-python", specifier = ">=2.0.1" },
-    { name = "zensical", specifier = ">=0.0.18" },
-]
-pymmcore = [
-    { name = "ndv", extras = ["pyqt", "vispy"], specifier = ">=0.4.1" },
-    { name = "pymmcore-plus", specifier = ">=0.17.1" },
-]
-tensorstore = [
-    { name = "ome-writers", extras = ["tensorstore"], editable = "../ome-writers" },
-    { name = "pytest", specifier = ">=8.4.2" },
-    { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "tensorstore-stubs", specifier = ">=0.1.2" },
-    { name = "useq-schema", specifier = ">=0.8.4" },
-    { name = "yaozarrs", extras = ["io"], specifier = ">=0.2.4" },
-]
-test = [
-    { name = "pytest", specifier = ">=8.4.2" },
-    { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "useq-schema", specifier = ">=0.8.4" },
-    { name = "yaozarrs", extras = ["io"], specifier = ">=0.2.4" },
-]
-test-codspeed = [
-    { name = "ome-writers", extras = ["all"], editable = "../ome-writers" },
-    { name = "pytest", specifier = ">=8.4.2" },
-    { name = "pytest-codspeed", specifier = ">=4.3.0" },
-    { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "useq-schema", specifier = ">=0.8.4" },
-    { name = "yaozarrs", extras = ["io"], specifier = ">=0.2.4" },
-]
-tifffile = [
-    { name = "ome-writers", extras = ["tifffile"], editable = "../ome-writers" },
-    { name = "pytest", specifier = ">=8.4.2" },
-    { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "useq-schema", specifier = ">=0.8.4" },
-    { name = "yaozarrs", extras = ["io"], specifier = ">=0.2.4" },
-]
-zarr-python = [
-    { name = "ome-writers", extras = ["zarr-python"], editable = "../ome-writers" },
-    { name = "pytest", specifier = ">=8.4.2" },
-    { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "useq-schema", specifier = ">=0.8.4" },
-    { name = "yaozarrs", extras = ["io"], specifier = ">=0.2.4" },
-]
-zarrs-python = [
-    { name = "ome-writers", extras = ["zarrs-python"], editable = "../ome-writers" },
-    { name = "pytest", specifier = ">=8.4.2" },
-    { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "useq-schema", specifier = ">=0.8.4" },
-    { name = "yaozarrs", extras = ["io"], specifier = ">=0.2.4" },
 ]
 
 [[package]]
@@ -3525,7 +3343,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "ptyprocess" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [
@@ -4130,7 +3948,8 @@ wheels = [
 
 [[package]]
 name = "pymmcore-gui"
-source = { editable = "../pymmcore-gui" }
+version = "0.1.dev373+g3e40fed1c"
+source = { git = "https://github.com/pymmcore-plus/pymmcore-gui?branch=main#3e40fed1c8e72e164a293467311edda6918b245e" }
 dependencies = [
     { name = "ndv", extra = ["vispy"] },
     { name = "ome-writers", extra = ["tensorstore", "tifffile"] },
@@ -4147,61 +3966,10 @@ dependencies = [
     { name = "tqdm" },
 ]
 
-[package.metadata]
-requires-dist = [
-    { name = "ndv", extras = ["vispy"], specifier = ">=0.5.0rc4" },
-    { name = "ome-writers", extras = ["tensorstore", "tifffile"], specifier = ">=0.3.0" },
-    { name = "pydantic-settings", specifier = ">=2.7.1" },
-    { name = "pymmcore-plus", extras = ["cli"], specifier = ">=0.18.0" },
-    { name = "pymmcore-widgets", specifier = ">=0.12.0" },
-    { name = "pyqt6", specifier = "==6.9.1" },
-    { name = "pyqt6ads", specifier = "==4.4.0.post2" },
-    { name = "pyyaml", specifier = ">=6.0.2" },
-    { name = "qtconsole", specifier = ">=5.6.1" },
-    { name = "rich" },
-    { name = "sentry-sdk", specifier = ">=2.20.0" },
-    { name = "superqt", extras = ["cmap", "iconify"], specifier = ">=0.7.1" },
-    { name = "tqdm", specifier = ">=4.67.1" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "diff-cover", specifier = ">=9.2.4" },
-    { name = "ipython", specifier = ">=8.30.0" },
-    { name = "mypy", specifier = ">=1.13.0" },
-    { name = "prek", specifier = ">=0.3.5" },
-    { name = "pyautogui", specifier = ">=0.9.54" },
-    { name = "pyinstaller", specifier = ">=6.11.1" },
-    { name = "pyright", specifier = ">=1.1.392.post0" },
-    { name = "pyside6-stubs", git = "https://github.com/tlambert03/PySide6-stubs?rev=v6.9.1" },
-    { name = "pytest", specifier = ">=8.3.4" },
-    { name = "pytest-cov", specifier = ">=6.0.0" },
-    { name = "pytest-order", specifier = ">=1.3.0" },
-    { name = "pytest-qt", specifier = ">=4.4.0" },
-    { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "rich", specifier = ">=13.9.4" },
-    { name = "ruff", specifier = ">=0.8.3" },
-    { name = "rust-just", specifier = ">=1.38.0" },
-    { name = "types-pyautogui", specifier = ">=0.9.3.20241230" },
-    { name = "types-pygments", specifier = ">=2.19.0.20250107" },
-    { name = "types-pyinstaller", specifier = ">=6.11.0.20241028" },
-    { name = "types-pyyaml", specifier = ">=6.0.12.20241230" },
-]
-pyside6 = [
-    { name = "pyside6", specifier = "==6.9.1" },
-    { name = "pyside6-qtads", specifier = "==4.4.0.1" },
-]
-test = [
-    { name = "pyautogui", specifier = ">=0.9.54" },
-    { name = "pytest", specifier = ">=8.3.4" },
-    { name = "pytest-cov", specifier = ">=6.0.0" },
-    { name = "pytest-order", specifier = ">=1.3.0" },
-    { name = "pytest-qt", specifier = ">=4.4.0" },
-]
-
 [[package]]
 name = "pymmcore-plus"
-source = { editable = "../pymmcore-plus" }
+version = "0.18.2.dev12+ga92e2ce70"
+source = { git = "https://github.com/ieivanov/pymmcore-plus?branch=dev#a92e2ce701d94e4861e5cb36d262e055a464f8bc" }
 dependencies = [
     { name = "numpy" },
     { name = "ome-types" },
@@ -4219,148 +3987,6 @@ dependencies = [
 cli = [
     { name = "rich" },
     { name = "typer" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=1.25.2" },
-    { name = "numpy", marker = "python_full_version >= '3.12'", specifier = ">=1.26.0" },
-    { name = "numpy", marker = "python_full_version >= '3.13'", specifier = ">=2.1.0" },
-    { name = "ome-types", specifier = ">=0.6.0" },
-    { name = "ome-writers", extras = ["tensorstore"], specifier = ">=0.3.0" },
-    { name = "ome-writers", extras = ["tensorstore", "tifffile"], marker = "extra == 'io'", specifier = ">=0.3.0" },
-    { name = "pillow", marker = "extra == 'simulate'", specifier = ">=11.0" },
-    { name = "platformdirs", specifier = ">=3.0.0" },
-    { name = "psygnal", specifier = ">=0.10" },
-    { name = "pymmcore", specifier = ">=11.10.0.74.0" },
-    { name = "pyqt5", marker = "extra == 'pyqt5'", specifier = ">=5.15.4" },
-    { name = "pyqt6", marker = "extra == 'pyqt6'", specifier = ">=6.4.2" },
-    { name = "pyside2", marker = "extra == 'pyside2'", specifier = ">=5.15.2.1" },
-    { name = "pyside6", marker = "extra == 'pyside6'", specifier = "==6.7.3" },
-    { name = "rich", specifier = ">=10.2.0" },
-    { name = "rich", marker = "extra == 'cli'", specifier = ">=10.2.0" },
-    { name = "typer", specifier = ">=0.13.0" },
-    { name = "typer", marker = "extra == 'cli'", specifier = ">=0.13.0" },
-    { name = "typing-extensions", specifier = ">=4" },
-    { name = "useq-schema", specifier = ">=0.9" },
-]
-provides-extras = ["cli", "io", "pyqt5", "pyqt6", "pyside2", "pyside6", "simulate"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "ipython", specifier = ">=8.18.0" },
-    { name = "lxml", specifier = ">=6.0" },
-    { name = "msgpack", specifier = ">=1" },
-    { name = "msgspec", specifier = ">=0.19" },
-    { name = "mypy", specifier = ">=1.14.1" },
-    { name = "opencv-python", specifier = ">=4.11.0.86" },
-    { name = "pdbpp", marker = "sys_platform != 'win32'", specifier = ">=0.11.6" },
-    { name = "pre-commit", specifier = ">=4.1.0" },
-    { name = "prek", specifier = ">=0.3.4" },
-    { name = "pydantic", marker = "python_full_version >= '3.13'", specifier = ">2.7.4" },
-    { name = "pymmcore-plus", extras = ["io", "simulate"], editable = "../pymmcore-plus" },
-    { name = "pymmcore-plus", extras = ["pyqt6"], editable = "../pymmcore-plus" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-cov", specifier = ">=7" },
-    { name = "pytest-qt", specifier = "==4.4" },
-    { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "qtpy", specifier = ">=2" },
-    { name = "ruff", specifier = ">=0.9.4" },
-    { name = "xarray", specifier = ">=2024.1" },
-]
-docs = [
-    { name = "mkdocs", specifier = ">=1.4" },
-    { name = "mkdocs-autorefs", specifier = "==1.3.1" },
-    { name = "mkdocs-material", specifier = ">=9.5" },
-    { name = "mkdocs-typer", specifier = "==0.0.3" },
-    { name = "mkdocstrings", specifier = "==0.22.0" },
-    { name = "mkdocstrings-python", specifier = "==1.1.2" },
-]
-nano = [{ name = "pymmcore-nano", specifier = ">=12.2.0.75.1" }]
-pyqt5 = [
-    { name = "ipython", specifier = ">=8.18.0" },
-    { name = "lxml", specifier = ">=6.0" },
-    { name = "msgpack", specifier = ">=1" },
-    { name = "msgspec", specifier = ">=0.19" },
-    { name = "pymmcore-plus", extras = ["io", "simulate"], editable = "../pymmcore-plus" },
-    { name = "pymmcore-plus", extras = ["pyqt5"], editable = "../pymmcore-plus" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-cov", specifier = ">=7" },
-    { name = "pytest-qt", specifier = "==4.4" },
-    { name = "qtpy", specifier = ">=2" },
-    { name = "xarray", specifier = ">=2024.1" },
-]
-pyqt6 = [
-    { name = "ipython", specifier = ">=8.18.0" },
-    { name = "lxml", specifier = ">=6.0" },
-    { name = "msgpack", specifier = ">=1" },
-    { name = "msgspec", specifier = ">=0.19" },
-    { name = "pymmcore-plus", extras = ["io", "simulate"], editable = "../pymmcore-plus" },
-    { name = "pymmcore-plus", extras = ["pyqt6"], editable = "../pymmcore-plus" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-cov", specifier = ">=7" },
-    { name = "pytest-qt", specifier = "==4.4" },
-    { name = "qtpy", specifier = ">=2" },
-    { name = "xarray", specifier = ">=2024.1" },
-]
-pyside2 = [
-    { name = "ipython", specifier = ">=8.18.0" },
-    { name = "lxml", specifier = ">=6.0" },
-    { name = "msgpack", specifier = ">=1" },
-    { name = "msgspec", specifier = ">=0.19" },
-    { name = "pymmcore-plus", extras = ["io", "simulate"], editable = "../pymmcore-plus" },
-    { name = "pymmcore-plus", extras = ["pyside2"], editable = "../pymmcore-plus" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-cov", specifier = ">=7" },
-    { name = "pytest-qt", specifier = "==4.4" },
-    { name = "qtpy", specifier = ">=2" },
-    { name = "xarray", specifier = ">=2024.1" },
-]
-pyside6 = [
-    { name = "ipython", specifier = ">=8.18.0" },
-    { name = "lxml", specifier = ">=6.0" },
-    { name = "msgpack", specifier = ">=1" },
-    { name = "msgspec", specifier = ">=0.19" },
-    { name = "pymmcore-plus", extras = ["io", "simulate"], editable = "../pymmcore-plus" },
-    { name = "pymmcore-plus", extras = ["pyside6"], editable = "../pymmcore-plus" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-cov", specifier = ">=7" },
-    { name = "pytest-qt", specifier = "==4.4" },
-    { name = "qtpy", specifier = ">=2" },
-    { name = "xarray", specifier = ">=2024.1" },
-]
-test = [
-    { name = "ipython", specifier = ">=8.18.0" },
-    { name = "lxml", specifier = ">=6.0" },
-    { name = "msgpack", specifier = ">=1" },
-    { name = "msgspec", specifier = ">=0.19" },
-    { name = "pymmcore-plus", extras = ["io", "simulate"], editable = "../pymmcore-plus" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-cov", specifier = ">=7" },
-    { name = "xarray", specifier = ">=2024.1" },
-]
-test-codspeed = [
-    { name = "ipython", specifier = ">=8.18.0" },
-    { name = "lxml", specifier = ">=6.0" },
-    { name = "msgpack", specifier = ">=1" },
-    { name = "msgspec", specifier = ">=0.19" },
-    { name = "pymmcore-plus", extras = ["io", "simulate"], editable = "../pymmcore-plus" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-codspeed", specifier = ">=3.2.0" },
-    { name = "pytest-cov", specifier = ">=7" },
-    { name = "xarray", specifier = ">=2024.1" },
-]
-test-qt = [
-    { name = "ipython", specifier = ">=8.18.0" },
-    { name = "lxml", specifier = ">=6.0" },
-    { name = "msgpack", specifier = ">=1" },
-    { name = "msgspec", specifier = ">=0.19" },
-    { name = "pymmcore-plus", extras = ["io", "simulate"], editable = "../pymmcore-plus" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-cov", specifier = ">=7" },
-    { name = "pytest-qt", specifier = "==4.4" },
-    { name = "qtpy", specifier = ">=2" },
-    { name = "xarray", specifier = ">=2024.1" },
 ]
 
 [[package]]
@@ -5150,8 +4776,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
-    { name = "jeepney", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "cryptography" },
+    { name = "jeepney" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [
@@ -5292,31 +4918,31 @@ requires-dist = [
     { name = "build", marker = "extra == 'build'" },
     { name = "click" },
     { name = "numpy" },
-    { name = "ome-writers", extras = ["acquire-zarr"], editable = "../ome-writers" },
+    { name = "ome-writers", extras = ["acquire-zarr"], git = "https://github.com/ieivanov/ome-writers?branch=add-plate-row-col" },
     { name = "pymmcore", specifier = ">=11.14.0.75.0" },
-    { name = "pymmcore-gui", editable = "../pymmcore-gui" },
-    { name = "pymmcore-plus", editable = "../pymmcore-plus" },
+    { name = "pymmcore-gui", git = "https://github.com/pymmcore-plus/pymmcore-gui?branch=main" },
+    { name = "pymmcore-plus", git = "https://github.com/ieivanov/pymmcore-plus?branch=dev" },
     { name = "pymmcore-widgets" },
     { name = "pyyaml" },
     { name = "qtpy" },
     { name = "twine", marker = "extra == 'build'" },
-    { name = "useq-schema", editable = "../useq-schema" },
+    { name = "useq-schema", git = "https://github.com/ieivanov/useq-schema?branch=add-plate-row-col" },
 ]
 provides-extras = ["build"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "iohub", specifier = "==0.3.0a6" },
+    { name = "iohub", specifier = "==0.3.0a7" },
     { name = "ipykernel" },
     { name = "pre-commit", specifier = "~=4.5" },
     { name = "pytest", specifier = "~=9.0" },
     { name = "ruff", specifier = "~=0.15" },
 ]
 dynatrack = [
-    { name = "biahub", editable = "../biahub" },
+    { name = "biahub", git = "https://github.com/czbiohub-sf/biahub?branch=fast_deskew" },
     { name = "torch", index = "https://download.pytorch.org/whl/cu118" },
-    { name = "viscy", editable = "../viscy" },
-    { name = "waveorder", git = "https://github.com/mehta-lab/waveorder?branch=iohub_dep" },
+    { name = "viscy", git = "https://github.com/mehta-lab/VisCy?rev=6ba3446db8b02383e25e1bc5424a20268249ee7d" },
+    { name = "waveorder", specifier = "==3.0.2" },
 ]
 
 [[package]]
@@ -5622,14 +5248,14 @@ dependencies = [
     { name = "typing-extensions" },
 ]
 wheels = [
-    { url = "https://download.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:a596d91c747d1fa601724e85b9c8797c8d7c62140aa1acf245773e911254bc45" },
-    { url = "https://download.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp311-cp311-win_amd64.whl", hash = "sha256:584e5ee99d29286b93be2fba3b3f1f5b9d7a4b9055a288eb31b33100a1f09ed9" },
-    { url = "https://download.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:91454dcfdb81f181fdf216d6d6d9912fbd8795578b90384b3b8b8132737072bb" },
-    { url = "https://download.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp312-cp312-win_amd64.whl", hash = "sha256:80855ec840b7b06372ff43535d01393a8ec101842618d1f9ed629572b52aed71" },
-    { url = "https://download.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:a3f02b2795165eaf6dfe18c963519049a45a9c588488795cebc5015dac77ab46" },
-    { url = "https://download.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp313-cp313-win_amd64.whl", hash = "sha256:3122e59a5fe4e9ee991e7ad4e7002afa549b2873e421759df6454f20f53a6c74" },
-    { url = "https://download.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp313-cp313t-manylinux_2_28_x86_64.whl", hash = "sha256:627b7248b429d97b3955f1d0375aad1192b8f20f37556384848b6c622e491eb5" },
-    { url = "https://download.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp313-cp313t-win_amd64.whl", hash = "sha256:e06a205f15b3a045924d72f788af0664ca5f20e610eaac7162189721cf31a771" },
+    { url = "https://download-r2.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:a596d91c747d1fa601724e85b9c8797c8d7c62140aa1acf245773e911254bc45" },
+    { url = "https://download-r2.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp311-cp311-win_amd64.whl", hash = "sha256:584e5ee99d29286b93be2fba3b3f1f5b9d7a4b9055a288eb31b33100a1f09ed9" },
+    { url = "https://download-r2.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:91454dcfdb81f181fdf216d6d6d9912fbd8795578b90384b3b8b8132737072bb" },
+    { url = "https://download-r2.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp312-cp312-win_amd64.whl", hash = "sha256:80855ec840b7b06372ff43535d01393a8ec101842618d1f9ed629572b52aed71" },
+    { url = "https://download-r2.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:a3f02b2795165eaf6dfe18c963519049a45a9c588488795cebc5015dac77ab46" },
+    { url = "https://download-r2.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp313-cp313-win_amd64.whl", hash = "sha256:3122e59a5fe4e9ee991e7ad4e7002afa549b2873e421759df6454f20f53a6c74" },
+    { url = "https://download-r2.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp313-cp313t-manylinux_2_28_x86_64.whl", hash = "sha256:627b7248b429d97b3955f1d0375aad1192b8f20f37556384848b6c622e491eb5" },
+    { url = "https://download-r2.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp313-cp313t-win_amd64.whl", hash = "sha256:e06a205f15b3a045924d72f788af0664ca5f20e610eaac7162189721cf31a771" },
 ]
 
 [[package]]
@@ -5718,7 +5344,7 @@ name = "triton"
 version = "3.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "setuptools", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "setuptools" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/21/2f/3e56ea7b58f80ff68899b1dbe810ff257c9d177d288c6b0f55bf2fe4eb50/triton-3.3.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:b31e3aa26f8cb3cc5bf4e187bf737cbacf17311e1112b781d4a059353dfd731b", size = 155689937, upload-time = "2025-05-29T23:39:44.182Z" },
@@ -5816,60 +5442,13 @@ wheels = [
 
 [[package]]
 name = "useq-schema"
-source = { editable = "../useq-schema" }
+version = "0.9.3"
+source = { git = "https://github.com/ieivanov/useq-schema?branch=add-plate-row-col#61efb768a475735a50beff67d93c77a99996de3e" }
 dependencies = [
     { name = "numpy" },
     { name = "pydantic" },
     { name = "shapely" },
     { name = "typing-extensions" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "matplotlib", marker = "python_full_version >= '3.12' and extra == 'plot'", specifier = ">=3.7.3" },
-    { name = "matplotlib", marker = "python_full_version >= '3.13' and extra == 'plot'", specifier = ">=3.9.2" },
-    { name = "matplotlib", marker = "python_full_version >= '3.14' and extra == 'plot'", specifier = ">=3.10.5" },
-    { name = "matplotlib", marker = "extra == 'plot'", specifier = ">=3.7" },
-    { name = "numpy", specifier = ">=1.25.2" },
-    { name = "numpy", marker = "python_full_version >= '3.12'", specifier = ">=1.26.0" },
-    { name = "numpy", marker = "python_full_version >= '3.13'", specifier = ">=2.1.0" },
-    { name = "numpy", marker = "python_full_version >= '3.14'", specifier = ">=2.3.2" },
-    { name = "pydantic", specifier = ">=2.10" },
-    { name = "pydantic", marker = "python_full_version >= '3.14'", specifier = ">=2.12" },
-    { name = "pyyaml", marker = "extra == 'yaml'", specifier = ">=5.0" },
-    { name = "shapely", specifier = ">=2.0.7" },
-    { name = "shapely", marker = "python_full_version >= '3.14'", specifier = ">=2.1.2" },
-    { name = "typing-extensions", specifier = ">=4" },
-]
-provides-extras = ["plot", "yaml"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "ipython", specifier = ">=8.18.1" },
-    { name = "mypy", specifier = ">=1.15.0" },
-    { name = "pdbpp", marker = "sys_platform != 'win32'", specifier = ">=0.11.6" },
-    { name = "pre-commit-uv", specifier = ">=4.1.0" },
-    { name = "psygnal", specifier = ">=0.13.0" },
-    { name = "pyright", specifier = ">=1.1.401" },
-    { name = "pytest", specifier = ">=8.0" },
-    { name = "pytest-cov", specifier = ">=6.1.1" },
-    { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "pyyaml", specifier = ">=6.0.2" },
-    { name = "rich", specifier = ">=14.0.0" },
-    { name = "ruff", specifier = ">=0.11.9" },
-    { name = "types-pyyaml", specifier = ">=6.0.12.20250402" },
-    { name = "useq-schema", extras = ["plot"], editable = "../useq-schema" },
-]
-docs = [
-    { name = "mkdocs", specifier = ">=1.4" },
-    { name = "mkdocs-material", specifier = ">=9.6.13" },
-    { name = "mkdocstrings-python", specifier = ">=1.16.10" },
-]
-test = [
-    { name = "psygnal", specifier = ">=0.13.0" },
-    { name = "pytest", specifier = ">=8.0" },
-    { name = "pytest-cov", specifier = ">=6.1.1" },
-    { name = "pyyaml", specifier = ">=6.0.2" },
 ]
 
 [[package]]
@@ -5889,7 +5468,8 @@ wheels = [
 
 [[package]]
 name = "viscy"
-source = { editable = "../viscy" }
+version = "0.4.0a4.dev14+g6ba3446db"
+source = { git = "https://github.com/mehta-lab/VisCy?rev=6ba3446db8b02383e25e1bc5424a20268249ee7d#6ba3446db8b02383e25e1bc5424a20268249ee7d" }
 dependencies = [
     { name = "anndata" },
     { name = "iohub", extra = ["tensorstore"] },
@@ -5908,58 +5488,6 @@ dependencies = [
     { name = "waveorder" },
     { name = "xarray" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "anndata", specifier = ">=0.12.2" },
-    { name = "captum", marker = "extra == 'metrics'", specifier = ">=0.7" },
-    { name = "cellpose", marker = "extra == 'metrics'", specifier = ">=3.0.10" },
-    { name = "cmap", marker = "extra == 'visual'" },
-    { name = "dash", marker = "extra == 'visual'" },
-    { name = "gradio", marker = "extra == 'visual'", specifier = ">=5.49.1" },
-    { name = "graphviz", marker = "extra == 'visual'" },
-    { name = "hypothesis", marker = "extra == 'dev'" },
-    { name = "imbalanced-learn", marker = "extra == 'metrics'", specifier = ">=0.12" },
-    { name = "iohub", extras = ["tensorstore"], specifier = ">=0.3.0a2" },
-    { name = "ipykernel", marker = "extra == 'visual'" },
-    { name = "joblib", marker = "extra == 'metrics'" },
-    { name = "jsonargparse", extras = ["signatures"], specifier = ">=4.20.1" },
-    { name = "jupyter", marker = "extra == 'examples'" },
-    { name = "jupytext", marker = "extra == 'examples'" },
-    { name = "kornia" },
-    { name = "lightning", specifier = ">=2.3" },
-    { name = "mahotas", marker = "extra == 'metrics'" },
-    { name = "matplotlib", specifier = ">=3.9" },
-    { name = "monai", specifier = ">=1.4" },
-    { name = "napari", marker = "extra == 'examples'" },
-    { name = "nbformat", marker = "extra == 'visual'" },
-    { name = "numpy" },
-    { name = "onnxruntime", marker = "extra == 'dev'" },
-    { name = "phate", marker = "extra == 'phate'" },
-    { name = "plotly", marker = "extra == 'visual'" },
-    { name = "pre-commit", marker = "extra == 'dev'" },
-    { name = "ptflops", marker = "extra == 'metrics'", specifier = ">=0.7" },
-    { name = "pydantic", marker = "extra == 'metrics'", specifier = ">=2" },
-    { name = "pytest", marker = "extra == 'dev'" },
-    { name = "pytest-cov", marker = "extra == 'dev'" },
-    { name = "pytorch-metric-learning", specifier = ">2" },
-    { name = "ruff", marker = "extra == 'dev'" },
-    { name = "scikit-image" },
-    { name = "scikit-learn", marker = "extra == 'metrics'", specifier = ">=1.1.3" },
-    { name = "seaborn", marker = "extra == 'visual'" },
-    { name = "tensorboard", specifier = ">=2.13" },
-    { name = "timm", specifier = ">=0.9.5" },
-    { name = "torch", specifier = ">=2.4.1" },
-    { name = "torchmetrics", extras = ["detection"], marker = "extra == 'metrics'", specifier = ">=1.6.3" },
-    { name = "torchview", marker = "extra == 'visual'" },
-    { name = "transformers", marker = "extra == 'examples'", specifier = ">=4.51.3" },
-    { name = "umap-learn", marker = "extra == 'metrics'" },
-    { name = "viscy", extras = ["examples", "metrics", "phate", "visual"], marker = "extra == 'dev'" },
-    { name = "wandb" },
-    { name = "waveorder" },
-    { name = "xarray", specifier = "<=2025.9" },
-]
-provides-extras = ["dev", "examples", "metrics", "phate", "visual"]
 
 [[package]]
 name = "vispy"
@@ -6032,8 +5560,8 @@ wheels = [
 
 [[package]]
 name = "waveorder"
-version = "2.2.0rc1.dev1428+06cd57f"
-source = { git = "https://github.com/mehta-lab/waveorder?branch=iohub_dep#06cd57f234cb697595819f296006d00f48b8c213" }
+version = "3.0.2"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "colorspacious" },
@@ -6052,6 +5580,10 @@ dependencies = [
     { name = "tensorboard" },
     { name = "torch" },
     { name = "wget" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e6/84/4f96a32f0441b4989feec616226a52b7d169646471e1deca621ebfab22d8/waveorder-3.0.2.tar.gz", hash = "sha256:25b00436faa9d5d8b356a2f0d254cfdb6b94ca9a46b791108bb938c411f853cb", size = 67126563, upload-time = "2026-04-01T15:02:16.791Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d4/33/2ac072c3ff9000ba168dd84d43bd36c6d6f73ed6b8c7bf099f093d496117/waveorder-3.0.2-py3-none-any.whl", hash = "sha256:6ef3e4f5ae67bbf36726a9c3a3f64f61f812f1b64bef7d340ed6c02feca881e6", size = 274958, upload-time = "2026-04-01T15:02:14.328Z" },
 ]
 
 [[package]]
