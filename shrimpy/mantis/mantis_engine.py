@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 
 from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
+import psutil
 
 from ome_writers import (
     AcquisitionSettings,
@@ -20,6 +22,13 @@ from pymmcore_plus.metadata import SummaryMetaV1
 from pymmcore_plus.metadata.serialize import to_builtins
 from useq import MDAEvent, MDASequence
 
+from shrimpy.mantis.dynatrack import DynaTrackConfig, DynaTrackUpdater
+from shrimpy.mantis.position_update import (
+    PositionStore,
+    PositionUpdateConfig,
+    PositionUpdateManager,
+)
+
 # Get the logger instance (will be configured by the CLI entry point)
 logger = logging.getLogger(__name__)
 
@@ -29,6 +38,20 @@ SLOW_XY_STAGE_SPEED = 2.0  # in mm/s, used for short moves to maintain autofocus
 FAST_XY_STAGE_SPEED = 5.75  # in mm/s, used for long moves
 NEGLIGIBLE_XY_DISTANCE = 1  # in um, moves below this are ignored
 SHORT_XY_DISTANCE = 2000  # in um, threshold between slow and fast speed
+
+_PROC = psutil.Process(os.getpid())
+
+
+def _rss_gb() -> float:
+    return _PROC.memory_info().rss / (1024**3)
+
+
+def _find_shrimpy_log_file() -> Path | None:
+    """Return the path of the FileHandler attached to the shrimpy logger."""
+    for handler in logging.getLogger("shrimpy").handlers:
+        if isinstance(handler, logging.FileHandler):
+            return Path(handler.baseFilename)
+    return None
 
 
 class MantisEngine(MDAEngine):
@@ -55,7 +78,7 @@ class MantisEngine(MDAEngine):
         kwargs.setdefault("force_set_xy_position", False)
         # Set acquisition timeout to guard against stalling due to dropped frames
         # or missed trigger pulses
-        kwargs.setdefault("timeout_base", 2.0)
+        kwargs.setdefault("timeout_base", 10.0)
         kwargs.setdefault("timeout_multiplier", 1.0)
         kwargs.setdefault("timeout_first_frame", None)
         kwargs.setdefault("timeout_action", "warn")
@@ -67,6 +90,10 @@ class MantisEngine(MDAEngine):
         self._autofocus_fail_at_index = None
         self._xy_stage_device = None
         self._xy_stage_speed = None
+        self._position_update_manager: PositionUpdateManager | None = None
+        self._position_update_frames: dict[tuple[int, int], list[np.ndarray]] = {}
+        self._position_update_expected_slices: int = 1
+        self._data_path: Path | None = None
 
         # Register event callbacks for logging
         mmc.mda.set_engine(self)
@@ -120,11 +147,117 @@ class MantisEngine(MDAEngine):
         self._xy_stage_device = core.getXYStageDevice()
         logger.debug(f"XY stage device: {self._xy_stage_device}")
 
+        # Setup position updating
+        position_update_meta = microscope_meta.get("position_update", {})
+        position_update_config = PositionUpdateConfig(
+            enabled=position_update_meta.get("enabled", False),
+            update_channel=position_update_meta.get("update_channel"),
+            z_device=position_update_meta.get("z_device"),
+        )
+        if position_update_config.enabled and sequence.stage_positions:
+            position_store = PositionStore()
+            position_store.initialize_from_sequence(
+                sequence, z_device=position_update_config.z_device
+            )
+
+            # Create DynaTrack updater if config is provided
+            dynatrack_meta = position_update_meta.get("dynatrack")
+            if dynatrack_meta:
+                # Save shift log alongside the zarr store
+                if self._data_path:
+                    dynatrack_meta = dict(dynatrack_meta)
+                    dynatrack_meta["shift_log_path"] = str(
+                        self._data_path / "dynatrack_log.csv"
+                    )
+                dynatrack_config = DynaTrackConfig(**dynatrack_meta)
+                updater = DynaTrackUpdater(config=dynatrack_config)
+                # Debug zarr path and position names (activated after preprocessor is built)
+                if dynatrack_config.save_debug and self._data_path:
+                    updater._debug_zarr_path = self._data_path.parent / "dynatrack_debug.zarr"
+                    updater._debug_position_names = {
+                        idx: pos.name or f"p{idx}"
+                        for idx, pos in enumerate(sequence.stage_positions)
+                    }
+                logger.info(
+                    f"DynaTrack enabled: scale_yx={dynatrack_config.scale_yx}, "
+                    f"scale_z={dynatrack_config.scale_z}, "
+                    f"interval={dynatrack_config.tracking_interval}, "
+                    f"channel={dynatrack_config.shift_estimation_channel}"
+                )
+            else:
+                updater = None
+
+            self._position_update_manager = PositionUpdateManager(
+                config=position_update_config,
+                position_store=position_store,
+                updater=updater,
+            )
+            # start() is deferred to after super().setup_sequence() if
+            # preprocessing is configured, so the worker process can use
+            # the actual ROI shape. Otherwise start immediately.
+            if not (dynatrack_meta and DynaTrackConfig(**dynatrack_meta).preprocessing):
+                self._position_update_manager.start()
+            self._position_update_frames = {}
+            self._position_update_expected_slices = max(sequence.sizes.get("z", 1), 1)
+            self.mmcore.mda.events.frameReady.connect(self._on_frame_ready)
+            logger.info(
+                f"Position updating enabled with {position_store.num_positions} positions"
+            )
+        else:
+            self._position_update_manager = None
+
         logger.info("Mantis hardware setup completed successfully")
 
-        # Call parent setup last so SummaryMetaV1 captures the fully
-        # configured hardware state (ROI, focus device, etc.).
-        return super().setup_sequence(sequence)
+        # Call parent setup so SummaryMetaV1 captures the fully configured
+        # hardware state and the setup event applies the ROI.
+        result = super().setup_sequence(sequence)
+
+        # Build the preprocessor after the setup event has applied the ROI,
+        # so getImageHeight/Width reflects the actual acquired frame size.
+        if self._position_update_manager is not None and isinstance(
+            self._position_update_manager._updater, DynaTrackUpdater
+        ):
+            updater = self._position_update_manager._updater
+            zyx_shape = (
+                max(sequence.sizes.get("z", 1), 1),
+                self.mmcore.getImageHeight(),
+                self.mmcore.getImageWidth(),
+            )
+
+            if updater.config.preprocessing:
+                # Offload to a worker process for GPU isolation
+                from shrimpy.mantis.dynatrack_worker import DynaTrackWorker
+
+                logger.info(f"DynaTrack: starting worker process for shape {zyx_shape}")
+                log_file_path = _find_shrimpy_log_file()
+                if log_file_path is None:
+                    logger.warning(
+                        "DynaTrack: no FileHandler found on shrimpy logger; "
+                        "worker subprocess logs will go to stderr only"
+                    )
+                worker = DynaTrackWorker(
+                    config=updater.config,
+                    zyx_shape=zyx_shape,
+                    debug_zarr_path=updater._debug_zarr_path,
+                    debug_position_names=updater._debug_position_names,
+                    log_file_path=log_file_path,
+                )
+                self._position_update_manager._worker = worker
+                self._position_update_manager.start()
+
+        return result
+
+    def event_iterator(self, events: Iterable[MDAEvent]):
+        """Wrap event iteration to apply position updates before logging.
+
+        By applying position updates here (before the MDA runner emits
+        ``eventStarted``), the logged event reflects the corrected
+        coordinates rather than the original sequence values.
+        """
+        for event in super().event_iterator(events):
+            if self._position_update_manager is not None:
+                event = self._position_update_manager.apply_position_update(event)
+            yield event
 
     def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
@@ -146,10 +279,63 @@ class MantisEngine(MDAEngine):
             num_frames = len(event.events) if isinstance(event, SequencedEvent) else 1
             raise SkipEvent(num_frames=num_frames, reason="autofocus failed")
 
+        # DEBUG:
+        free_capacity = self.mmcore.getBufferFreeCapacity()
+        total_capacity = self.mmcore.getBufferTotalCapacity()
+        logger.debug(f"Circular buffer capacity: {free_capacity} / {total_capacity} frames")
+        logger.debug(
+            f"MantisEngine[mem]: setup_event rss={_rss_gb():.2f} GB "
+            f"mm_buf_used={total_capacity - free_capacity}/{total_capacity}"
+        )
+
         # Call parent setup_event
         super().setup_event(event)
 
+    def _on_frame_ready(self, img: np.ndarray, event: MDAEvent) -> None:
+        """Buffer frames for position updating via frameReady callback.
+
+        Counts z-slices per (timepoint, position) and triggers the updater
+        as soon as all expected slices have been collected.
+        """
+        if self._position_update_manager is None:
+            return
+
+        # Only cache frames from the configured channel (None = all channels)
+        update_channel = self._position_update_manager.config.update_channel
+        if update_channel is not None and event.index.get("c") != update_channel:
+            return
+
+        t_idx = event.index.get("t", 0)
+        p_idx = event.index.get("p", 0)
+        tp = (t_idx, p_idx)
+
+        if tp not in self._position_update_frames:
+            self._position_update_frames[tp] = []
+        self._position_update_frames[tp].append(img.copy())
+
+        # Flush when all z-slices for this position have arrived
+        if len(self._position_update_frames[tp]) >= self._position_update_expected_slices:
+            frames = self._position_update_frames.pop(tp)
+            n_pending_tps = len(self._position_update_frames)
+            pending_bytes = sum(
+                sum(a.nbytes for a in frames_list)
+                for frames_list in self._position_update_frames.values()
+            )
+            logger.debug(
+                f"MantisEngine[mem]: stack complete p={p_idx} t={t_idx} "
+                f"rss={_rss_gb():.2f} GB frames_buf_pending={n_pending_tps} "
+                f"({pending_bytes / 1024**3:.2f} GB)"
+            )
+            self._position_update_manager.on_position_complete(t_idx, p_idx, frames)
+
     def teardown_sequence(self, sequence):
+        # Position update: disconnect callback and shutdown
+        if self._position_update_manager is not None:
+            self.mmcore.mda.events.frameReady.disconnect(self._on_frame_ready)
+            self._position_update_frames = {}
+            self._position_update_manager.shutdown()
+            self._position_update_manager = None
+
         super().teardown_sequence(sequence)
 
         core = self.mmcore
@@ -178,6 +364,9 @@ class MantisEngine(MDAEngine):
                 # Skip setting Z position if autofocus is enabled to avoid
                 # disengaging autofocus lock; autofocus algorithm will set Z
                 # position independently
+                logger.debug(
+                    "Skipping Z set on autofocus stage: %s.%s = %s", device, prop, value
+                )
                 continue
             super()._set_event_properties([(device, prop, value)])
 
@@ -367,6 +556,7 @@ class MantisEngine(MDAEngine):
             sequence = MDASequence.from_file(mda_config)
 
         data_path = output_dir / f"{name}.ome.zarr"
+        self._data_path = data_path
 
         # Write summary metadata after the zarr store is created
         # TODO: remove once ome-writers supports root-level metadata natively
