@@ -69,15 +69,12 @@ local_scheme = "no-local-version"
 packages = ["shrimpy"]
 
 [tool.uv.sources]
-# ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
-# pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "main" }
-# biahub = { path = "../biahub", editable = true } # no pipy release
+ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "add-plate-row-col" }
+pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "dev" }
 biahub = { git = "https://github.com/czbiohub-sf/biahub", branch = "fast_deskew" }
-ome-writers = { path = "../ome-writers", editable = true } # add-plate-row-col branch
-pymmcore-gui = { path = "../pymmcore-gui", editable = true } # no recent pipy release
-pymmcore-plus = { path = "../pymmcore-plus", editable = true } # dev branch
-useq-schema = { path = "../useq-schema", editable = true } # add-plate-row-col branch
-# viscy = { path = "../viscy", editable = true } # waveorder dependency, issue
+pymmcore-gui = { git = "https://github.com/pymmcore-plus/pymmcore-gui", branch = "main" }
+useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "add-plate-row-col" }
+# viscy issues with waveorder and iohub dependencies
 viscy = { git = "https://github.com/mehta-lab/VisCy", rev = "6ba3446db8b02383e25e1bc5424a20268249ee7d" }
 torch = { index = "pytorch" }
 
