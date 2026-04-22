@@ -237,6 +237,20 @@ class PositionUpdateManager:
                 self._executor = ThreadPoolExecutor(max_workers=1)
             self._pending_future = None
 
+    def drain_pending(self, timeout: float = 120) -> None:
+        """Block until the in-flight position update completes.
+
+        Called at timepoint boundaries to apply backpressure: the
+        acquisition pauses briefly between timepoints rather than
+        accumulating unbounded frame data in the executor queue.
+        """
+        if self._pending_future is not None and not self._pending_future.done():
+            logger.info("Draining pending position update before next timepoint...")
+            try:
+                self._pending_future.result(timeout=timeout)
+            except Exception:
+                logger.warning("Pending position update timed out or failed during drain")
+
     def shutdown(self) -> None:
         """Shutdown the executor and worker process."""
         # Drain final result from worker process
