@@ -95,6 +95,7 @@ class DynaTrackConfig:
     deskew_config: dict[str, Any] | None = None
     phase_config: dict[str, Any] | None = None
     vs_config: dict[str, Any] | None = None
+    image_to_stage_matrix_xyz: list[list[float]] | None = None
     shift_log_path: str | Path | None = None
     save_debug: bool = False
 
@@ -507,32 +508,34 @@ class DynaTrackUpdater(PositionUpdater):
             f"rss={_rss_gb():.2f} GB"
         )
         t_pcc = _time.monotonic()
-        shift_zyx = self._compute_shift(reference_stack_zyx, current_stack_zyx)
+        shift_image_xyz = self._compute_shift(reference_stack_zyx, current_stack_zyx)
         logger.info(f"DynaTrack: phase cross corr took {_time.monotonic() - t_pcc:.2f}s")
         logger.debug(
             f"DynaTrack[mem]: after compute_shift p={position_index} t={timepoint_index} "
             f"rss={_rss_gb():.2f} GB"
         )
 
-        # NOTE the signs
-        if "deskew" in self._config.preprocessing:
-            # Deskew rotates the volume in the XY plate
-            # Swap X/Y shift to match this rotation.
-            # 
-            _x = position.x + shift_zyx[1]
-            _y = position.y + shift_zyx[0]
 
+        # 1. Decouple position in image space from position in stage space
+        # First get the stage position in image space with configurable transform matrix
+        # Add the shift to get the new position in image space
+        # Convert the new position in image space to stage position
+        # Update the position in stage space
 
-            
+        if self._config.image_to_stage_matrix_xyz is not None:
+            T = np.asarray(self._config.image_to_stage_matrix_xyz)
+            shift_stage_xyz = T @ shift_image_xyz
         else:
-            _x = position.x + shift_zyx[2]
-            _y = position.y + shift_zyx[1]
-        _z = (position.z or 0) + shift_zyx[0] if position.z is not None else None
+            shift_stage_xyz = shift_image_xyz
+
+        _x = position.x + shift_stage_xyz[0]
+        _y = position.y + shift_stage_xyz[1]
+        _z = (position.z or 0) + shift_stage_xyz[2] if position.z is not None else None
         updated = PositionCoordinates(_x, _y, _z)
 
         logger.info(
             f"DynaTrack: p={position_index} t={timepoint_index} "
-            f"shift_zyx=({shift_zyx[0]:.2f}, {shift_zyx[1]:.2f}, {shift_zyx[2]:.2f})"
+            f"shift_xyz_um=({shift_image_xyz[0]:.2f}, {shift_image_xyz[1]:.2f}, {shift_image_xyz[2]:.2f})"
         )
 
         # Log shift to CSV immediately
@@ -601,11 +604,11 @@ class DynaTrackUpdater(PositionUpdater):
         )
 
         # 5. Reorder from (z, y, x) to (x, y, z) for PositionCoordinates
-        # x_um = float(shifts_zyx_um[2])
-        # y_um = float(shifts_zyx_um[1])
-        # z_um = float(shifts_zyx_um[0])
+        x_um = float(shifts_zyx_um[2])
+        y_um = float(shifts_zyx_um[1])
+        z_um = float(shifts_zyx_um[0])
 
-        return shifts_zyx_um
+        return (x_um, y_um, z_um)
 
     def _save_debug_channels(
         self,
