@@ -369,7 +369,7 @@ class DynaTrackUpdater(PositionUpdater):
     ) -> None:
         self._config = config
         self._preprocessor = preprocessor
-        self._reference_stacks: dict[int, torch.Tensor] = {}
+        self._reference_stacks_zyx: dict[int, torch.Tensor] = {}
         self._shift_log_path: Path | None = (
             Path(config.shift_log_path) if config.shift_log_path else None
         )
@@ -446,45 +446,46 @@ class DynaTrackUpdater(PositionUpdater):
         # the PCC/saving boundaries below.
         if self._preprocessor is not None:
             t0 = _time.monotonic()
-            channels = self._preprocessor(raw_stack)
+            channels_zyx = self._preprocessor(raw_stack)
             logger.info(
                 f"DynaTrack: preprocessing took {_time.monotonic() - t0:.1f}s "
-                f"(channels={list(channels.keys())})"
+                f"(channels={list(channels_zyx.keys())})"
             )
-            ch_bytes = sum(a.nbytes for a in channels.values())
+            ch_bytes = sum(a.nbytes for a in channels_zyx.values())
             logger.debug(
                 f"DynaTrack[mem]: after preprocessor p={position_index} t={timepoint_index} "
                 f"rss={_rss_gb():.2f} GB channels_total={ch_bytes / 1024**3:.2f} GB"
             )
-            self._save_debug_channels(channels, timepoint_index, position_index)
+            self._save_debug_channels(channels_zyx, timepoint_index, position_index)
             # Select the configured channel for shift estimation. Stays as a
             # torch tensor on device; PCC consumes tensors directly.
             channel_name = self._config.shift_estimation_channel
-            if channel_name in channels:
-                selected = channels[channel_name]
+            if channel_name in channels_zyx:
+                selected = channels_zyx[channel_name]
             else:
                 logger.warning(
                     f"DynaTrack: channel '{channel_name}' not in preprocessor "
-                    f"output {list(channels.keys())}, using first channel"
+                    f"output {list(channels_zyx.keys())}, using first channel"
                 )
-                selected = next(iter(channels.values()))
-            current_stack = selected.detach()
+                selected = next(iter(channels_zyx.values()))
+            current_stack_zyx = selected.detach()
             logger.debug(
                 f"DynaTrack[mem]: after channel select p={position_index} t={timepoint_index} "
                 f"rss={_rss_gb():.2f} GB"
             )
 
         # Store reference on first encounter
-        if position_index not in self._reference_stacks:
-            self._reference_stacks[position_index] = current_stack
-            ref_total = sum(a.nbytes for a in self._reference_stacks.values())
+        if position_index not in self._reference_stacks_zyx:
+            self._reference_stacks_zyx[position_index] = current_stack_zyx
+            ref_total = sum(a.nbytes for a in self._reference_stacks_zyx.values())
             logger.info(
                 f"DynaTrack: stored reference stack for p={position_index} "
-                f"(shape={current_stack.shape})"
+                f"(zyx_shape={current_stack_zyx.shape})"
+
             )
             logger.debug(
                 f"DynaTrack[mem]: after store_ref p={position_index} t={timepoint_index} "
-                f"rss={_rss_gb():.2f} GB refs={len(self._reference_stacks)} "
+                f"rss={_rss_gb():.2f} GB refs={len(self._reference_stacks_zyx)} "
                 f"refs_total={ref_total / 1024**3:.2f} GB"
             )
             return position
@@ -500,13 +501,13 @@ class DynaTrackUpdater(PositionUpdater):
             )
             return position
 
-        reference_stack = self._reference_stacks[position_index]
+        reference_stack_zyx = self._reference_stacks_zyx[position_index]
         logger.debug(
             f"DynaTrack[mem]: before compute_shift p={position_index} t={timepoint_index} "
             f"rss={_rss_gb():.2f} GB"
         )
         t_pcc = _time.monotonic()
-        shift_xyz = self._compute_shift(reference_stack, current_stack)
+        shift_zyx = self._compute_shift(reference_stack_zyx, current_stack_zyx)
         logger.info(f"DynaTrack: phase cross corr took {_time.monotonic() - t_pcc:.2f}s")
         logger.debug(
             f"DynaTrack[mem]: after compute_shift p={position_index} t={timepoint_index} "
@@ -517,17 +518,21 @@ class DynaTrackUpdater(PositionUpdater):
         if "deskew" in self._config.preprocessing:
             # Deskew rotates the volume in the XY plate
             # Swap X/Y shift to match this rotation.
-            _x = position.x + shift_xyz[1]
-            _y = position.y + shift_xyz[0]
+            # 
+            _x = position.x + shift_zyx[1]
+            _y = position.y + shift_zyx[0]
+
+
+            
         else:
-            _x = position.x + shift_xyz[0]
-            _y = position.y + shift_xyz[1]
-        _z = (position.z or 0) + shift_xyz[2] if position.z is not None else None
+            _x = position.x + shift_zyx[2]
+            _y = position.y + shift_zyx[1]
+        _z = (position.z or 0) + shift_zyx[0] if position.z is not None else None
         updated = PositionCoordinates(_x, _y, _z)
 
         logger.info(
             f"DynaTrack: p={position_index} t={timepoint_index} "
-            f"shift=({shift_xyz[0]:.2f}, {shift_xyz[1]:.2f}, {shift_xyz[2]:.2f})"
+            f"shift_zyx=({shift_zyx[0]:.2f}, {shift_zyx[1]:.2f}, {shift_zyx[2]:.2f})"
         )
 
         # Log shift to CSV immediately
@@ -548,16 +553,16 @@ class DynaTrackUpdater(PositionUpdater):
 
     def _compute_shift(
         self,
-        reference: torch.Tensor,
-        current: torch.Tensor,
+        reference_zyx: torch.Tensor,
+        current_zyx: torch.Tensor,
     ) -> tuple[float, float, float]:
         """Compute the (x, y, z) shift between reference and current z-stacks.
 
         Parameters
         ----------
-        reference : torch.Tensor
+        reference_zyx : torch.Tensor
             Reference z-stack, shape (Z, Y, X).
-        current : torch.Tensor
+        current_zyx : torch.Tensor
             Current z-stack, shape (Z, Y, X).
 
         Returns
@@ -568,7 +573,7 @@ class DynaTrackUpdater(PositionUpdater):
         cfg = self._config
 
         # 1. Phase cross-correlation in pixel space (returns ZYX order)
-        shifts_zyx_px = _phase_cross_corr(reference, current, cfg.maximum_shift)
+        shifts_zyx_px = _phase_cross_corr(reference_zyx, current_zyx, cfg.maximum_shift)
 
         # 2. Convert pixels to microns
         shifts_zyx_um = np.array(
@@ -596,11 +601,11 @@ class DynaTrackUpdater(PositionUpdater):
         )
 
         # 5. Reorder from (z, y, x) to (x, y, z) for PositionCoordinates
-        x_um = float(shifts_zyx_um[2])
-        y_um = float(shifts_zyx_um[1])
-        z_um = float(shifts_zyx_um[0])
+        # x_um = float(shifts_zyx_um[2])
+        # y_um = float(shifts_zyx_um[1])
+        # z_um = float(shifts_zyx_um[0])
 
-        return (x_um, y_um, z_um)
+        return shifts_zyx_um
 
     def _save_debug_channels(
         self,
