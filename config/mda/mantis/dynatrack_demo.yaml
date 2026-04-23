@@ -83,6 +83,10 @@ metadata:
           scan_step_um: 0.15
           keep_overhang: false
           average_n_slices: 3
+          image_to_stage_matrix_xyz: 
+            - [0.0, 1.0, 0.0]
+            - [1.0, 0.0, 0.0]
+            - [0.0, 0.0, 1.0]
         # Which channel to use for shift estimation:
         # 'raw', 'phase', 'vs_nuclei', 'vs_membrane'
         shift_estimation_channel: 'vs_nuclei'
