@@ -185,7 +185,7 @@ class TestPositionUpdater:
         received_data = {}
 
         class TestUpdater(PositionUpdater):
-            def update(self, t_idx, p_idx, position, data=None):
+            def update(self, t_idx, p_idx, position, data=None, **kwargs):
                 received_data["frames"] = data
                 return position
 
@@ -215,7 +215,7 @@ class TestPositionUpdateManager:
         called_with = {}
 
         class SpyUpdater(PositionUpdater):
-            def update(self, t_idx, p_idx, position, data=None):
+            def update(self, t_idx, p_idx, position, data=None, **kwargs):
                 called_with["t_idx"] = t_idx
                 called_with["p_idx"] = p_idx
                 called_with["position"] = position
@@ -237,7 +237,7 @@ class TestPositionUpdateManager:
 
     def test_updates_store_with_results(self, enabled_config, position_store):
         class ShiftUpdater(PositionUpdater):
-            def update(self, t_idx, p_idx, position, data=None):
+            def update(self, t_idx, p_idx, position, data=None, **kwargs):
                 return PositionCoordinates(
                     x=position.x + 10.0,
                     y=position.y + 20.0,
@@ -259,7 +259,7 @@ class TestPositionUpdateManager:
         original = position_store.get_position(0)
 
         class FailingUpdater(PositionUpdater):
-            def update(self, t_idx, p_idx, position, data=None):
+            def update(self, t_idx, p_idx, position, data=None, **kwargs):
                 raise RuntimeError("updater crashed")
 
         manager = PositionUpdateManager(
@@ -279,7 +279,7 @@ class TestPositionUpdateManager:
         completed = threading.Event()
 
         class SlowUpdater(PositionUpdater):
-            def update(self, t_idx, p_idx, position, data=None):
+            def update(self, t_idx, p_idx, position, data=None, **kwargs):
                 time.sleep(0.2)
                 completed.set()
                 return position
@@ -396,7 +396,7 @@ class TestMantisEnginePositionUpdate:
         received_data = {}
 
         class SpyUpdater(PositionUpdater):
-            def update(self, t_idx, p_idx, position, data=None):
+            def update(self, t_idx, p_idx, position, data=None, **kwargs):
                 received_data["frames"] = data
                 return position
 
@@ -586,7 +586,7 @@ class TestPositionUpdateIntegration:
         engine = MantisEngine(demo_core)
 
         class ShiftUpdater(PositionUpdater):
-            def update(self, t_idx, p_idx, position, data=None):
+            def update(self, t_idx, p_idx, position, data=None, **kwargs):
                 return PositionCoordinates(
                     x=position.x + 1.0,
                     y=position.y + 1.0,

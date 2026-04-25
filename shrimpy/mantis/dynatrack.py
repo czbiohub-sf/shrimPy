@@ -389,6 +389,7 @@ class DynaTrackUpdater(PositionUpdater):
         position_index: int,
         position: PositionCoordinates,
         data: list[np.ndarray] | None = None,
+        acquired_at: PositionCoordinates | None = None,
     ) -> PositionCoordinates:
         """Compute updated position by tracking drift from reference z-stack.
 
@@ -399,9 +400,16 @@ class DynaTrackUpdater(PositionUpdater):
         position_index : int
             The position that was just acquired.
         position : PositionCoordinates
-            Current coordinates for this position.
+            Current coordinates for this position (snapshot of the store at
+            submission time). Used as a fallback baseline only.
         data : list[np.ndarray] | None
             Frames acquired for this position (one 2D array per z-slice).
+        acquired_at : PositionCoordinates | None
+            Stage coordinates at the moment the stack was acquired. The
+            computed shift is added to this value, so corrections compensate
+            the drift between the reference and where the stack actually was.
+            Falling back to ``position`` when ``None`` reproduces the previous
+            (race-prone) behaviour.
 
         Returns
         -------
@@ -438,7 +446,7 @@ class DynaTrackUpdater(PositionUpdater):
         # All downstream ops run on tensors. Move to CUDA if available;
         # the preprocessor (if any) already targets the same device.
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        current_stack: torch.Tensor = torch.as_tensor(
+        current_stack_zyx: torch.Tensor = torch.as_tensor(
             raw_stack, device=device, dtype=torch.float32
         )
 
@@ -482,7 +490,6 @@ class DynaTrackUpdater(PositionUpdater):
             logger.info(
                 f"DynaTrack: stored reference stack for p={position_index} "
                 f"(zyx_shape={current_stack_zyx.shape})"
-
             )
             logger.debug(
                 f"DynaTrack[mem]: after store_ref p={position_index} t={timepoint_index} "
@@ -515,7 +522,6 @@ class DynaTrackUpdater(PositionUpdater):
             f"rss={_rss_gb():.2f} GB"
         )
 
-
         # 1. Decouple position in image space from position in stage space
         # First get the stage position in image space with configurable transform matrix
         # Add the shift to get the new position in image space
@@ -523,16 +529,38 @@ class DynaTrackUpdater(PositionUpdater):
         # Update the position in stage space
 
         if self._config.image_to_stage_matrix_xyz is not None:
-            T = np.asarray(self._config.image_to_stage_matrix_xyz)
-            shift_stage_xyz = T @ shift_image_xyz
+            transform_xyz = np.asarray(self._config.image_to_stage_matrix_xyz)
+            shift_stage_xyz = transform_xyz @ shift_image_xyz
+            logger.info(
+                f"DynaTrack: applied image-to-stage matrix transform to shift: "
+                f"image_xyz=({shift_image_xyz[0]:.2f}, {shift_image_xyz[1]:.2f}, {shift_image_xyz[2]:.2f}) um -> "
+                f"stage_xyz=({shift_stage_xyz[0]:.2f}, {shift_stage_xyz[1]:.2f}, {shift_stage_xyz[2]:.2f}) um"
+            )
         else:
             shift_stage_xyz = shift_image_xyz
 
-        _x = position.x + shift_stage_xyz[0]
-        _y = position.y + shift_stage_xyz[1]
-        _z = (position.z or 0) + shift_stage_xyz[2] if position.z is not None else None
+        # Compensate the drift between the reference and where the stack was
+        # actually acquired. Using `acquired_at` (the commanded stage coords
+        # at acquisition time) as the baseline avoids accumulating shifts when
+        # a previous update lands too late to influence the next acquisition.
+        baseline = acquired_at if acquired_at is not None else position
+        if acquired_at is None:
+            logger.warning(
+                f"DynaTrack: no acquired_at for p={position_index} t={timepoint_index}, "
+                f"falling back to current store value (race-prone)"
+            )
+        logger.info(
+            f"DynaTrack: baseline (acquired_at) p={position_index} t={timepoint_index} "
+            f"x={baseline.x} y={baseline.y} z={baseline.z}"
+        )
+        _x = baseline.x + shift_stage_xyz[0]
+        _y = baseline.y + shift_stage_xyz[1]
+        _z = (baseline.z or 0) + shift_stage_xyz[2] if baseline.z is not None else None
         updated = PositionCoordinates(_x, _y, _z)
-
+        logger.info(
+            f"DynaTrack: updated position p={position_index} t={timepoint_index} "
+            f"x={updated.x} y={updated.y} z={updated.z}"
+        )
         logger.info(
             f"DynaTrack: p={position_index} t={timepoint_index} "
             f"shift_xyz_um=({shift_image_xyz[0]:.2f}, {shift_image_xyz[1]:.2f}, {shift_image_xyz[2]:.2f})"

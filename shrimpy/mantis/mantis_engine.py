@@ -24,6 +24,7 @@ from useq import MDAEvent, MDASequence
 
 from shrimpy.mantis.dynatrack import DynaTrackConfig, DynaTrackUpdater
 from shrimpy.mantis.position_update import (
+    PositionCoordinates,
     PositionStore,
     PositionUpdateConfig,
     PositionUpdateManager,
@@ -92,6 +93,7 @@ class MantisEngine(MDAEngine):
         self._xy_stage_speed = None
         self._position_update_manager: PositionUpdateManager | None = None
         self._position_update_frames: dict[tuple[int, int], list[np.ndarray]] = {}
+        self._position_update_acquired_at: dict[tuple[int, int], PositionCoordinates] = {}
         self._position_update_expected_slices: int = 1
         self._data_path: Path | None = None
 
@@ -173,7 +175,7 @@ class MantisEngine(MDAEngine):
                 updater = DynaTrackUpdater(config=dynatrack_config)
                 # Debug zarr path and position names (activated after preprocessor is built)
                 if dynatrack_config.save_debug and self._data_path:
-                    updater._debug_zarr_path = self._data_path.parent / "dynatrack_debug.zarr"
+                    updater._debug_zarr_path = self._data_path / "dynatrack_debug.zarr"
                     updater._debug_position_names = {
                         idx: pos.name or f"p{idx}"
                         for idx, pos in enumerate(sequence.stage_positions)
@@ -311,11 +313,48 @@ class MantisEngine(MDAEngine):
 
         if tp not in self._position_update_frames:
             self._position_update_frames[tp] = []
+            # Capture the stage coordinates at the moment this stack started
+            # acquiring. Used as the baseline for shift compensation so that
+            # late-arriving updates don't accumulate against stale store values.
+            #
+            # For Z-sequenced acquisitions, per-slice events carry ``event.z_pos``
+            # = slice z (the fast axis), not the focus stage. Read the focus
+            # position from the core directly when ``z_device`` is configured.
+            z_device = self._position_update_manager.config.z_device
+            acq_z: float | None = None
+            if z_device:
+                try:
+                    acq_z = float(self.mmcore.getPosition(z_device))
+                except Exception:
+                    logger.warning(
+                        f"DynaTrack: failed to read {z_device} position for "
+                        f"acquired_at baseline; falling back to event.z_pos"
+                    )
+                    acq_z = None
+            if acq_z is None:
+                acq_z = event.z_pos
+            acq_x = event.x_pos
+            acq_y = event.y_pos
+            if acq_x is None or acq_y is None:
+                try:
+                    cx, cy = self.mmcore.getXYPosition()
+                    if acq_x is None:
+                        acq_x = cx
+                    if acq_y is None:
+                        acq_y = cy
+                except Exception:
+                    pass
+            self._position_update_acquired_at[tp] = PositionCoordinates(
+                x=acq_x if acq_x is not None else 0.0,
+                y=acq_y if acq_y is not None else 0.0,
+                z=acq_z,
+            )
         self._position_update_frames[tp].append(img.copy())
 
         # Flush when all z-slices for this position have arrived
         if len(self._position_update_frames[tp]) >= self._position_update_expected_slices:
             frames = self._position_update_frames.pop(tp)
+            acquired_at = self._position_update_acquired_at.pop(tp, None)
             n_pending_tps = len(self._position_update_frames)
             pending_bytes = sum(
                 sum(a.nbytes for a in frames_list)
@@ -326,13 +365,16 @@ class MantisEngine(MDAEngine):
                 f"rss={_rss_gb():.2f} GB frames_buf_pending={n_pending_tps} "
                 f"({pending_bytes / 1024**3:.2f} GB)"
             )
-            self._position_update_manager.on_position_complete(t_idx, p_idx, frames)
+            self._position_update_manager.on_position_complete(
+                t_idx, p_idx, frames, acquired_at=acquired_at
+            )
 
     def teardown_sequence(self, sequence):
         # Position update: disconnect callback and shutdown
         if self._position_update_manager is not None:
             self.mmcore.mda.events.frameReady.disconnect(self._on_frame_ready)
             self._position_update_frames = {}
+            self._position_update_acquired_at = {}
             self._position_update_manager.shutdown()
             self._position_update_manager = None
 
