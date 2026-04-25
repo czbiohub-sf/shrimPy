@@ -81,6 +81,7 @@ class DynaTrackWorker:
         position_index: int,
         position: PositionCoordinates,
         data: list[np.ndarray],
+        acquired_at: PositionCoordinates | None = None,
     ) -> None:
         """Send a job to the worker process (non-blocking)."""
         self._input_queue.put(
@@ -89,6 +90,11 @@ class DynaTrackWorker:
                 "timepoint_index": timepoint_index,
                 "position_index": position_index,
                 "position": (position.x, position.y, position.z),
+                "acquired_at": (
+                    (acquired_at.x, acquired_at.y, acquired_at.z)
+                    if acquired_at is not None
+                    else None
+                ),
                 "data": data,
             }
         )
@@ -204,6 +210,10 @@ def _worker_loop(
             from shrimpy.mantis.position_update import PositionCoordinates
 
             position = PositionCoordinates(x=px, y=py, z=pz)
+            acq = msg.get("acquired_at")
+            acquired_at = (
+                PositionCoordinates(x=acq[0], y=acq[1], z=acq[2]) if acq is not None else None
+            )
             data = msg["data"]
 
             n_frames = len(data) if data else 0
@@ -212,7 +222,7 @@ def _worker_loop(
             )
 
             try:
-                updated = updater.update(t_idx, p_idx, position, data)
+                updated = updater.update(t_idx, p_idx, position, data, acquired_at=acquired_at)
                 elapsed = _time.monotonic() - t0
                 output_queue.put(
                     {
