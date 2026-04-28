@@ -124,6 +124,7 @@ class PositionUpdater:
         position_index: int,
         position: PositionCoordinates,
         data: list[np.ndarray] | None = None,
+        acquired_at: PositionCoordinates | None = None,
     ) -> PositionCoordinates:
         """Return updated coordinates for the given position.
 
@@ -134,10 +135,15 @@ class PositionUpdater:
         position_index : int
             The position that was just acquired.
         position : PositionCoordinates
-            Current coordinates for this position.
+            Current coordinates for this position (snapshot of the store).
         data : list[np.ndarray] | None
             Frames acquired for this position (one 2D array per z-slice),
             or None if frame collection is not available.
+        acquired_at : PositionCoordinates | None
+            Stage coordinates at the moment the stack was acquired. When
+            provided, subclasses should compute corrections relative to this
+            value rather than ``position``, so late-arriving updates don't
+            accumulate against a store value that has moved on.
 
         Returns
         -------
@@ -259,6 +265,7 @@ class PositionUpdateManager:
         timepoint_index: int,
         position_index: int,
         data: list[np.ndarray] | None = None,
+        acquired_at: PositionCoordinates | None = None,
     ) -> None:
         """Called when a position's z-stack has been fully acquired.
 
@@ -275,7 +282,10 @@ class PositionUpdateManager:
         queue_depth = self._executor._work_queue.qsize()
         logger.debug(
             f"PosUpdateMgr[mem]: before submit p={position_index} t={timepoint_index} "
-            f"rss={_rss_gb():.2f} GB data={data_gb:.2f} GB queue_depth={queue_depth}"
+            f"rss={_rss_gb():.2f} GB data={data_gb:.2f} GB queue_depth={queue_depth} "
+            f"acquired_at=({acquired_at.x if acquired_at else None}, "
+            f"{acquired_at.y if acquired_at else None}, "
+            f"{acquired_at.z if acquired_at else None})"
         )
 
         if self._worker is not None:
@@ -287,10 +297,16 @@ class PositionUpdateManager:
                 position_index,
                 position,
                 data,
+                acquired_at,
             )
         else:
             self._pending_future = self._executor.submit(
-                self._run_updater, timepoint_index, position_index, position, data
+                self._run_updater,
+                timepoint_index,
+                position_index,
+                position,
+                data,
+                acquired_at,
             )
 
         logger.debug(
@@ -304,6 +320,7 @@ class PositionUpdateManager:
         position_index: int,
         position: PositionCoordinates,
         data: list[np.ndarray] | None,
+        acquired_at: PositionCoordinates | None = None,
     ) -> None:
         """Execute the updater and write the result to the position store."""
         import time as _time
@@ -315,7 +332,9 @@ class PositionUpdateManager:
             f"({n_frames} frames)"
         )
         try:
-            updated = self._updater.update(timepoint_index, position_index, position, data)
+            updated = self._updater.update(
+                timepoint_index, position_index, position, data, acquired_at=acquired_at
+            )
             elapsed = _time.monotonic() - t0
             self.position_store.update_position(
                 position_index, updated.x, updated.y, updated.z
@@ -337,13 +356,16 @@ class PositionUpdateManager:
         position_index: int,
         position: PositionCoordinates,
         data: list[np.ndarray] | None,
+        acquired_at: PositionCoordinates | None = None,
     ) -> None:
         """Submit data to the worker and wait for the result.
 
         Runs in a background thread. By serializing submit + wait, only one
         position's frame data is in the mp.Queue at a time, reducing memory.
         """
-        self._worker.submit(timepoint_index, position_index, position, data)
+        self._worker.submit(
+            timepoint_index, position_index, position, data, acquired_at=acquired_at
+        )
         del data  # free main-process copy after it's been pickled to the queue
         result = self._worker.get_result(timeout=120)
         if result is None:

@@ -77,6 +77,10 @@ metadata:
         # preprocessing: ['phase']
 
         # Biahub deskew parameters for light-sheet data
+        image_to_stage_matrix_xyz:
+          - [0.0, 1.0, 0.0]
+          - [1.0, 0.0, 0.0]
+          - [0.0, 0.0, 1.0]
         deskew_config:
           ls_angle_deg: 30.0
           pixel_size_um: 0.1133
