@@ -10,8 +10,9 @@ from shrimpy.mantis.dynatrack import (
     DynaTrackConfig,
     DynaTrackUpdater,
     _binary_mask,
-    _calc_weighted_center,
     _center_crop,
+    _center_of_mass,
+    _gaussian_blur_3d,
     _limit_shifts_zyx,
     _match_shape,
     _multiotsu_center_of_mass,
@@ -107,16 +108,36 @@ class TestPhaseCrossCorr:
 # ---------------------------------------------------------------------------
 
 
+class TestGaussianBlur3D:
+    def test_output_shape_unchanged(self):
+        """Blur should preserve the input shape."""
+        vol = torch.rand(8, 32, 32)
+        result = _gaussian_blur_3d(vol, sigma=2.0)
+        assert result.shape == vol.shape
+
+    def test_smooths_values(self):
+        """Blurred volume should have a smaller range than the original."""
+        vol = torch.rand(8, 32, 32)
+        result = _gaussian_blur_3d(vol, sigma=3.0)
+        assert (result.max() - result.min()) <= (vol.max() - vol.min())
+
+    def test_zero_sigma_noop(self):
+        """Sigma=0 should return the input unchanged."""
+        vol = torch.rand(8, 32, 32)
+        result = _gaussian_blur_3d(vol, sigma=0.0)
+        assert torch.equal(result, vol)
+
+
 class TestBinaryMask:
-    def test_returns_labeled_array(self):
-        """Binary mask should return an integer-labeled array."""
+    def test_returns_bool_tensor(self):
+        """Binary mask should return a boolean tensor on the same device."""
         rng = np.random.default_rng(42)
-        # Create a volume with a bright blob so multi-otsu can separate it
         vol = rng.random((8, 32, 32)).astype(np.float64) * 0.2
         vol[3:6, 12:20, 12:20] = 0.9
-        labeled = _binary_mask(vol, sigma=1.0, otsu_component=0)
-        assert labeled.dtype in (np.int32, np.int64)
-        assert labeled.max() > 0  # at least one region found
+        vol_t = torch.as_tensor(vol, dtype=torch.float32)
+        mask = _binary_mask(vol_t, sigma=1.0, otsu_component=0)
+        assert mask.dtype == torch.bool
+        assert mask.sum() > 0  # at least some True voxels
 
     def test_otsu_component_selects_threshold(self):
         """Higher otsu_component should produce a stricter (smaller) mask."""
@@ -124,27 +145,26 @@ class TestBinaryMask:
         vol = rng.random((8, 32, 32)).astype(np.float64) * 0.3
         vol[2:6, 8:24, 8:24] = 0.6
         vol[3:5, 12:20, 12:20] = 0.95
-        mask_0 = _binary_mask(vol, sigma=1.0, otsu_component=0)
-        mask_1 = _binary_mask(vol, sigma=1.0, otsu_component=1)
-        assert (mask_0 > 0).sum() >= (mask_1 > 0).sum()
+        vol_t = torch.as_tensor(vol, dtype=torch.float32)
+        mask_0 = _binary_mask(vol_t, sigma=1.0, otsu_component=0)
+        mask_1 = _binary_mask(vol_t, sigma=1.0, otsu_component=1)
+        assert mask_0.sum() >= mask_1.sum()
 
 
-class TestCalcWeightedCenter:
-    def test_single_region(self):
-        """Single region center should match its centroid."""
-        from skimage.measure import label
-
-        vol = np.zeros((10, 10, 10), dtype=int)
-        vol[3:7, 3:7, 3:7] = 1
-        labeled = label(vol)
-        center = _calc_weighted_center(labeled)
-        np.testing.assert_allclose(center, [4.5, 4.5, 4.5], atol=0.5)
+class TestCenterOfMass:
+    def test_single_blob(self):
+        """Center of mass of a centred blob should be near the middle."""
+        mask = torch.zeros(10, 10, 10, dtype=torch.bool)
+        mask[3:7, 3:7, 3:7] = True
+        center = _center_of_mass(mask)
+        expected = torch.tensor([4.5, 4.5, 4.5])
+        assert torch.allclose(center, expected, atol=0.5)
 
     def test_empty_returns_zeros(self):
-        """Empty labeled image should return zero center."""
-        labeled = np.zeros((10, 10, 10), dtype=int)
-        center = _calc_weighted_center(labeled)
-        np.testing.assert_array_equal(center, [0.0, 0.0, 0.0])
+        """Empty mask should return zero center."""
+        mask = torch.zeros(10, 10, 10, dtype=torch.bool)
+        center = _center_of_mass(mask)
+        assert torch.equal(center, torch.zeros(3))
 
 
 class TestMultiotsuCenterOfMass:
