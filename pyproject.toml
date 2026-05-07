@@ -50,6 +50,7 @@ dev = [
 ]
 dynatrack = [
   "biahub",
+  "scikit-image",
   "torch",
   "viscy",
   "waveorder==3.0.2",
