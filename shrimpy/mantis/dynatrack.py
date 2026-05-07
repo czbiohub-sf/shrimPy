@@ -62,6 +62,12 @@ class DynaTrackConfig:
         "y", "x". Shifts below min are zeroed; shifts above max are clipped.
     tracking_interval : int
         Track every N timepoints (1 = every timepoint).
+    tracking_method : str
+        Shift estimation algorithm. One of ``'pcc'`` (phase
+        cross-correlation, default), ``'multiotsu_center_of_mass'``
+        (multi-Otsu threshold then area-weighted centroid), or
+        ``'multiotsu_pcc'`` (multi-Otsu threshold then PCC on
+        the binary masks).
     shift_estimation_channel : str
         Which representation to use for shift estimation:
         ``'raw'`` (default, no preprocessing), ``'phase'`` (phase
@@ -82,6 +88,11 @@ class DynaTrackConfig:
         Path to a CSV file for incremental shift logging. Each computed
         shift is appended immediately after calculation. Typically set
         automatically by MantisEngine to ``<zarr_store>/dynatrack_log.csv``.
+    otsu_sigma : float
+        Gaussian blur sigma for multi-Otsu methods (default 5.0).
+    otsu_component : int
+        Which multi-Otsu threshold to use: 0 = lower, 1 = upper
+        (default 0).
     """
 
     scale_yx: float
@@ -90,6 +101,7 @@ class DynaTrackConfig:
     dampening: tuple[float, float, float] | None = None
     shift_limits: dict[str, tuple[float, float]] | None = None
     tracking_interval: int = 1
+    tracking_method: str = "pcc"
     shift_estimation_channel: str = "raw"
     preprocessing: list[str] | None = None
     deskew_config: dict[str, Any] | None = None
@@ -97,6 +109,8 @@ class DynaTrackConfig:
     vs_config: dict[str, Any] | None = None
     shift_log_path: str | Path | None = None
     save_debug: bool = False
+    otsu_sigma: float = 5.0
+    otsu_component: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +249,126 @@ def _phase_cross_corr(
     logger.debug("phase cross corr: peak at %s (device=%s)", peak, device)
 
     return peak
+
+
+# ---------------------------------------------------------------------------
+# Multi-Otsu thresholding helpers
+# ---------------------------------------------------------------------------
+
+
+def _binary_mask(
+    img: np.ndarray,
+    sigma: float = 5.0,
+    otsu_component: int = 0,
+) -> np.ndarray:
+    """Threshold a 3-D volume using multi-Otsu and return a labeled mask.
+
+    Parameters
+    ----------
+    img : np.ndarray
+        Input volume (Z, Y, X).
+    sigma : float
+        Gaussian blur sigma applied before thresholding.
+    otsu_component : int
+        Which multi-Otsu threshold to use (0 = lower, 1 = upper).
+
+    Returns
+    -------
+    np.ndarray
+        Integer-labeled connected-component image.
+    """
+    from skimage.exposure import rescale_intensity
+    from skimage.filters import gaussian, threshold_multiotsu
+    from skimage.measure import label
+
+    img = rescale_intensity(img.astype(np.float64), in_range="image", out_range=(0.0, 1.0))
+    img_blur = gaussian(img, sigma=sigma)
+    thresholds = threshold_multiotsu(img_blur)
+    logger.debug("multi-Otsu thresholds: %s (using component %d)", thresholds, otsu_component)
+    threshold = thresholds[min(otsu_component, len(thresholds) - 1)]
+    return label(img_blur > threshold)
+
+
+def _calc_weighted_center(labeled_img: np.ndarray) -> np.ndarray:
+    """Compute the area-weighted centroid of labeled regions.
+
+    Parameters
+    ----------
+    labeled_img : np.ndarray
+        Integer-labeled image from ``skimage.measure.label``.
+
+    Returns
+    -------
+    np.ndarray
+        Weighted centroid coordinates, shape ``(ndim,)``.
+    """
+    from skimage.measure import regionprops
+
+    regions = regionprops(labeled_img)
+    if not regions:
+        return np.zeros(labeled_img.ndim, dtype=float)
+
+    centers = np.array([r.centroid for r in regions])
+    areas = np.array([r.area for r in regions], dtype=float)
+    weights = areas / areas.sum()
+    return (centers * weights[:, np.newaxis]).sum(axis=0)
+
+
+def _multiotsu_center_of_mass(
+    ref_img: torch.Tensor,
+    mov_img: torch.Tensor,
+    sigma: float = 5.0,
+    otsu_component: int = 0,
+) -> tuple[int, ...]:
+    """Compute shift via multi-Otsu thresholding + area-weighted centroid.
+
+    Both images are thresholded independently, labeled, and the shift is
+    the difference between their weighted centroids (ZYX pixel order).
+    """
+    ref_np = ref_img.detach().cpu().numpy()
+    mov_np = mov_img.detach().cpu().numpy()
+
+    ref_labeled = _binary_mask(ref_np, sigma=sigma, otsu_component=otsu_component)
+    mov_labeled = _binary_mask(mov_np, sigma=sigma, otsu_component=otsu_component)
+
+    ref_center = _calc_weighted_center(ref_labeled)
+    mov_center = _calc_weighted_center(mov_labeled)
+
+    shift_zyx = mov_center - ref_center
+    logger.debug(
+        "multiotsu_center_of_mass: ref_center=%s mov_center=%s shift=%s",
+        ref_center,
+        mov_center,
+        shift_zyx,
+    )
+    return tuple(shift_zyx)
+
+
+def _multiotsu_pcc(
+    ref_img: torch.Tensor,
+    mov_img: torch.Tensor,
+    sigma: float = 5.0,
+    otsu_component: int = 0,
+    maximum_shift: float = 1.0,
+) -> tuple[int, ...]:
+    """Compute shift via multi-Otsu thresholding + PCC on binary masks.
+
+    Both images are thresholded independently to create binary masks,
+    then phase cross-correlation is run on the binary volumes.
+    """
+    import torch as _torch
+
+    ref_np = ref_img.detach().cpu().numpy()
+    mov_np = mov_img.detach().cpu().numpy()
+
+    ref_binary = (_binary_mask(ref_np, sigma=sigma, otsu_component=otsu_component) > 0)
+    mov_binary = (_binary_mask(mov_np, sigma=sigma, otsu_component=otsu_component) > 0)
+
+    device = ref_img.device
+    ref_binary_t = _torch.as_tensor(ref_binary, device=device, dtype=_torch.float32)
+    mov_binary_t = _torch.as_tensor(mov_binary, device=device, dtype=_torch.float32)
+
+    return _phase_cross_corr(ref_binary_t, mov_binary_t, maximum_shift)
 
 
 # ---------------------------------------------------------------------------
@@ -507,7 +641,10 @@ class DynaTrackUpdater(PositionUpdater):
         )
         t_pcc = _time.monotonic()
         shift_xyz = self._compute_shift(reference_stack, current_stack)
-        logger.info(f"DynaTrack: phase cross corr took {_time.monotonic() - t_pcc:.2f}s")
+        logger.info(
+            f"DynaTrack: shift estimation ({self._config.tracking_method}) "
+            f"took {_time.monotonic() - t_pcc:.2f}s"
+        )
         logger.debug(
             f"DynaTrack[mem]: after compute_shift p={position_index} t={timepoint_index} "
             f"rss={_rss_gb():.2f} GB"
@@ -567,8 +704,27 @@ class DynaTrackUpdater(PositionUpdater):
         """
         cfg = self._config
 
-        # 1. Phase cross-correlation in pixel space (returns ZYX order)
-        shifts_zyx_px = _phase_cross_corr(reference, current, cfg.maximum_shift)
+        # 1. Compute pixel shifts using the configured method (returns ZYX order)
+        method = cfg.tracking_method
+        if method == "multiotsu_center_of_mass":
+            shifts_zyx_px = _multiotsu_center_of_mass(
+                reference, current, sigma=cfg.otsu_sigma, otsu_component=cfg.otsu_component
+            )
+        elif method == "multiotsu_pcc":
+            shifts_zyx_px = _multiotsu_pcc(
+                reference,
+                current,
+                sigma=cfg.otsu_sigma,
+                otsu_component=cfg.otsu_component,
+                maximum_shift=cfg.maximum_shift,
+            )
+        elif method == "pcc":
+            shifts_zyx_px = _phase_cross_corr(reference, current, cfg.maximum_shift)
+        else:
+            raise ValueError(
+                f"Unknown tracking_method={method!r}. "
+                "Use 'pcc', 'multiotsu_center_of_mass', or 'multiotsu_pcc'."
+            )
 
         # 2. Convert pixels to microns
         shifts_zyx_um = np.array(
