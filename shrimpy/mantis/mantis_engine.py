@@ -21,6 +21,7 @@ from pymmcore_plus.metadata.serialize import to_builtins
 from useq import MDAEvent, MDASequence
 
 from shrimpy.mantis.autoexposure import load_manual_illumination_settings
+from shrimpy.mantis.lasers.vortran import VortranLaser, setup_vortran_laser
 
 # Get the logger instance (will be configured by the CLI entry point)
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ class MantisEngine(MDAEngine):
         self._xy_stage_speed = None
         self._autoexposure_method: str | None = None
         self._illumination_settings = None
-        self._laser_power_property: tuple[str, str] | None = None
+        self._lasers: dict[str, VortranLaser] = {}
         self._current_well_id: str | None = None
 
         # Register event callbacks for logging
@@ -97,6 +98,15 @@ class MantisEngine(MDAEngine):
         """Log stage position changes at debug level."""
         logger.debug(f"XY stage position changed: device={device}, x={x:.2f}, y={y:.2f}")
 
+    def _disconnect_lasers(self) -> None:
+        """Close serial ports for any lasers opened during ``_setup_manual_exposure``."""
+        for name, laser in self._lasers.items():
+            try:
+                laser.disconnect()
+            except Exception as e:
+                logger.warning(f"Failed to disconnect laser '{name}': {e}")
+        self._lasers = {}
+
     def _setup_autoexposure(self, sequence: MDASequence, microscope_meta: dict) -> None:
         """Dispatch autoexposure setup based on ``autoexposure.method``.
 
@@ -110,8 +120,8 @@ class MantisEngine(MDAEngine):
         # Clear any state left over from a prior sequence
         self._autoexposure_method = None
         self._illumination_settings = None
-        self._laser_power_property = None
         self._current_well_id = None
+        self._disconnect_lasers()
 
         cfg = microscope_meta.get("autoexposure")
         if not cfg or not cfg.get("enabled"):
@@ -133,9 +143,10 @@ class MantisEngine(MDAEngine):
 
         - ``csv_path`` (str): path to ``illumination.csv``. The CSV must have
           columns ``well_id``, ``exposure_time_ms``, ``laser_power_mW``.
-        - ``laser_power_property`` ([device, property], optional): which core
-          property to write ``laser_power_mW`` to. If omitted, only the
-          camera exposure time is applied.
+        - ``lasers`` (dict, optional): mapping of laser name → COM port
+          (e.g. ``{"488": "COM6", "561": "COM13"}``). Each laser is opened
+          via :func:`setup_vortran_laser` and the per-well ``laser_power_mW``
+          is written to every configured laser on well transitions.
         """
         csv_path = cfg.get("csv_path")
         if not csv_path:
@@ -158,13 +169,12 @@ class MantisEngine(MDAEngine):
                 f"{sorted(missing)}"
             )
 
-        laser_prop = cfg.get("laser_power_property")
-        if laser_prop is not None:
-            if not (isinstance(laser_prop, (list, tuple)) and len(laser_prop) == 2):
-                raise ValueError(
-                    "autoexposure.laser_power_property must be [device, property]."
-                )
-            self._laser_power_property = (str(laser_prop[0]), str(laser_prop[1]))
+        lasers_cfg = cfg.get("lasers") or {}
+        if not isinstance(lasers_cfg, dict):
+            raise ValueError("autoexposure.lasers must be a mapping of laser name → COM port.")
+        for name, com_port in lasers_cfg.items():
+            logger.info(f"Connecting to Vortran laser '{name}' on {com_port}")
+            self._lasers[str(name)] = setup_vortran_laser(str(com_port))
 
         self._illumination_settings = illumination
         logger.info(
@@ -223,9 +233,9 @@ class MantisEngine(MDAEngine):
                 f"Applying manual autoexposure for well '{well_id}': "
                 f"exposure={exposure_ms} ms, laser_power={laser_power} mW"
             )
-            if self._laser_power_property is not None:
-                device, prop = self._laser_power_property
-                self.mmcore.setProperty(device, prop, laser_power)
+            for name, laser in self._lasers.items():
+                logger.debug(f"Setting laser '{name}' pulse_power to {laser_power} mW")
+                laser.pulse_power = laser_power
             self._current_well_id = well_id
 
         # Rewrite the event so the parent engine applies our exposure
@@ -300,6 +310,9 @@ class MantisEngine(MDAEngine):
 
     def teardown_sequence(self, sequence):
         super().teardown_sequence(sequence)
+
+        # Close any Vortran laser COM ports opened for autoexposure
+        self._disconnect_lasers()
 
         core = self.mmcore
         microscope_meta = sequence.metadata.get("mantis", {}) if sequence.metadata else {}

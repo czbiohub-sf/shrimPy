@@ -29,6 +29,7 @@ dependencies = [
   "pymmcore>=11.14.0.75.0",
   "pymmcore-plus",
   "pymmcore-widgets",
+  "pyserial",
   "PyYAML",
   "qtpy",
   "useq-schema",
@@ -60,10 +61,11 @@ local_scheme = "no-local-version"
 packages = ["shrimpy"]
 
 [tool.uv.sources]
-ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
-pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "dev" }
-# ome-writers = { path = "../ome-writers", editable = true }
-# pymmcore-plus = { path = "../pymmcore-plus", editable = true }
+# ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
+# pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "dev" }
+ome-writers = { path = "../ome-writers", editable = true }
+pymmcore-plus = { path = "../pymmcore-plus", editable = true }
+useq-schema = { path = "../useq-schema", editable = true }
 
 [tool.ruff]
 # Ruff replaces black, isort, flake8, and pylint

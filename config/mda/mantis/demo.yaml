@@ -78,3 +78,8 @@ metadata:
       enabled: true
       method: manual
       csv_path: "D:\\testing\\illumination.csv"
+      # Optional: Vortran laser COM-port mapping. On well transitions, the
+      # per-well laser_power_mW from the CSV is written as pulse_power on
+      # every configured laser. Omit to skip laser control.
+      lasers:
+        488: COM6
