@@ -74,6 +74,7 @@ class MantisEngine(MDAEngine):
         self._illumination_settings = None
         self._lasers: dict[str, VortranLaser] = {}
         self._current_well_id: str | None = None
+        self._last_applied_key: tuple[str, str] | None = None
 
         # Register event callbacks for logging
         mmc.mda.set_engine(self)
@@ -121,6 +122,7 @@ class MantisEngine(MDAEngine):
         self._autoexposure_method = None
         self._illumination_settings = None
         self._current_well_id = None
+        self._last_applied_key = None
         self._disconnect_lasers()
 
         cfg = microscope_meta.get("autoexposure")
@@ -159,14 +161,25 @@ class MantisEngine(MDAEngine):
 
         illumination = load_manual_illumination_settings(csv_path)
 
-        # Validate that every well referenced by the sequence appears in the CSV
+        # Validate that every well referenced by the sequence appears in the CSV.
         sequence_wells = {parse_well_id(p.name) for p in (sequence.stage_positions or [])}
-        csv_wells = set(illumination.index.values)
+        csv_wells = set(illumination.index.get_level_values("well_id"))
         missing = sequence_wells - csv_wells
         if missing:
             raise ValueError(
                 f"illumination.csv is missing well_ids present in the sequence: "
                 f"{sorted(missing)}"
+            )
+
+        # Validate that every channel referenced by the CSV is in the sequence.
+        sequence_channels = {c.config for c in (sequence.channels or [])}
+        csv_channels = set(illumination.index.get_level_values("channel_name"))
+        unknown = csv_channels - sequence_channels
+        if unknown:
+            raise ValueError(
+                f"illumination.csv references channels not present in the "
+                f"MDASequence: {sorted(unknown)} (sequence channels: "
+                f"{sorted(sequence_channels)})"
             )
 
         lasers_cfg = cfg.get("lasers") or {}
@@ -198,21 +211,38 @@ class MantisEngine(MDAEngine):
         )
 
     def _apply_manual_autoexposure(self, event: MDAEvent) -> MDAEvent:
-        """Override event exposure (and apply laser power) for the event's well.
+        """Override event exposure (and apply laser power) per (well, channel).
 
-        Uses the per-well values loaded from the illumination CSV during
-        ``_setup_manual_exposure``.
+        The CSV loaded by ``_setup_manual_exposure`` is indexed by
+        ``(well_id, channel_name)``. We look up
+        ``(event's well_id, event.channel.config)`` in the table:
+
+        - If a row is found, the event's ``exposure`` is replaced with
+          ``exposure_time_ms``. If ``laser_name`` matches a key in
+          ``self._lasers``, that laser's ``pulse_power`` is set to
+          ``laser_power_mW``. Laser writes are throttled to actual
+          ``(well, channel)`` transitions to avoid redundant serial traffic.
+        - If no row matches, the event is returned unchanged.
+
+        ``SequencedEvent`` instances are treated the same as a single event:
+        all sub-events of a hardware-triggered burst share one exposure
+        value (different exposures across sub-events are not allowed), so
+        we only need to rewrite the top-level ``exposure`` field.
         """
         if self._illumination_settings is None:
             return event
 
-        # SequencedEvents carry their pos_name on the first sub-event
+        # SequencedEvents carry their pos_name/channel on the first sub-event
         pos_name = event.pos_name
-        if pos_name is None and isinstance(event, SequencedEvent) and event.events:
-            pos_name = event.events[0].pos_name
+        channel_obj = event.channel
+        if isinstance(event, SequencedEvent) and event.events:
+            if pos_name is None:
+                pos_name = event.events[0].pos_name
+            if channel_obj is None:
+                channel_obj = event.events[0].channel
         well_id = parse_well_id(pos_name)
 
-        if well_id not in self._illumination_settings.index:
+        if well_id not in self._illumination_settings.index.get_level_values("well_id"):
             if well_id != self._current_well_id:
                 logger.warning(
                     f"No illumination settings for well '{well_id}'; "
@@ -220,25 +250,42 @@ class MantisEngine(MDAEngine):
                 )
                 self._current_well_id = well_id
             return event
+        self._current_well_id = well_id
 
-        row = self._illumination_settings.loc[well_id]
+        channel = channel_obj.config if channel_obj else None
+        if channel is None:
+            return event
+        try:
+            row = self._illumination_settings.loc[(well_id, channel)]
+        except KeyError:
+            logger.debug(
+                f"No illumination row for well '{well_id}', channel '{channel}'; "
+                "leaving event unchanged."
+            )
+            return event
+
         exposure_ms = float(row["exposure_time_ms"])
+        laser_name = str(row["laser_name"]) if row["laser_name"] else ""
         laser_power = float(row["laser_power_mW"])
 
-        # Laser power only needs to change on well transitions; exposure must
-        # be re-applied to every event since super().setup_event(event) will
-        # call setExposure(event.exposure) using the override below.
-        if well_id != self._current_well_id:
+        key = (well_id, channel)
+        if key != self._last_applied_key:
             logger.info(
-                f"Applying manual autoexposure for well '{well_id}': "
-                f"exposure={exposure_ms} ms, laser_power={laser_power} mW"
+                f"Applying manual autoexposure for well '{well_id}', channel "
+                f"'{channel}': exposure={exposure_ms} ms, laser '{laser_name}' "
+                f"power={laser_power} mW"
             )
-            for name, laser in self._lasers.items():
-                logger.debug(f"Setting laser '{name}' pulse_power to {laser_power} mW")
-                laser.pulse_power = laser_power
-            self._current_well_id = well_id
+            if laser_name:
+                laser = self._lasers.get(laser_name)
+                if laser is not None:
+                    laser.pulse_power = laser_power
+                else:
+                    logger.warning(
+                        f"Laser '{laser_name}' referenced by illumination CSV is "
+                        "not configured under autoexposure.lasers; skipping power set."
+                    )
+            self._last_applied_key = key
 
-        # Rewrite the event so the parent engine applies our exposure
         return event.model_copy(update={"exposure": exposure_ms})
 
     def setup_sequence(self, sequence: MDASequence) -> SummaryMetaV1 | None:
@@ -592,7 +639,10 @@ def parse_well_id(position_name: str | None) -> str:
     """
     if not position_name:
         return "0"
-    for sep in ("_", "-Site_", "-Pos"):
+    # Order matters: try the more specific HCS/MM separators before the
+    # generic underscore fallback, otherwise "A1-Site_0" would be split on
+    # "_" first and yield "A1-Site" instead of "A1".
+    for sep in ("-Site_", "-Pos", "_"):
         if sep in position_name:
             return position_name.split(sep, 1)[0]
     return position_name

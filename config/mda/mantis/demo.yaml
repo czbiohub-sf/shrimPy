@@ -83,3 +83,4 @@ metadata:
       # every configured laser. Omit to skip laser control.
       lasers:
         488: COM6
+        561: COM13
