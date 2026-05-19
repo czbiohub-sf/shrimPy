@@ -20,6 +20,8 @@ from pymmcore_plus.metadata import SummaryMetaV1
 from pymmcore_plus.metadata.serialize import to_builtins
 from useq import MDAEvent, MDASequence
 
+from shrimpy.mantis.autoexposure import load_manual_illumination_settings
+
 # Get the logger instance (will be configured by the CLI entry point)
 logger = logging.getLogger(__name__)
 
@@ -67,6 +69,10 @@ class MantisEngine(MDAEngine):
         self._autofocus_fail_at_index = None
         self._xy_stage_device = None
         self._xy_stage_speed = None
+        self._autoexposure_method: str | None = None
+        self._illumination_settings = None
+        self._laser_power_property: tuple[str, str] | None = None
+        self._current_well_id: str | None = None
 
         # Register event callbacks for logging
         mmc.mda.set_engine(self)
@@ -90,6 +96,140 @@ class MantisEngine(MDAEngine):
     def _on_xy_stage_position_changed(self, device: str, x: float, y: float) -> None:
         """Log stage position changes at debug level."""
         logger.debug(f"XY stage position changed: device={device}, x={x:.2f}, y={y:.2f}")
+
+    def _setup_autoexposure(self, sequence: MDASequence, microscope_meta: dict) -> None:
+        """Dispatch autoexposure setup based on ``autoexposure.method``.
+
+        Reads ``microscope_meta["autoexposure"]``. The block is opt-in via an
+        ``enabled`` flag (mirroring the ``autofocus`` config). When enabled,
+        ``method`` selects the strategy:
+
+        - ``"manual"`` → :meth:`_setup_manual_exposure` (per-well CSV)
+        - anything else → ``NotImplementedError``
+        """
+        # Clear any state left over from a prior sequence
+        self._autoexposure_method = None
+        self._illumination_settings = None
+        self._laser_power_property = None
+        self._current_well_id = None
+
+        cfg = microscope_meta.get("autoexposure")
+        if not cfg or not cfg.get("enabled"):
+            logger.info("Autoexposure is disabled for this acquisition")
+            return
+
+        method = cfg.get("method")
+        logger.info(f"Enabling autoexposure with method: {method}")
+        if method == "manual":
+            self._setup_manual_exposure(sequence, cfg)
+        else:
+            raise NotImplementedError(f"Autoexposure method '{method}' is not implemented.")
+        self._autoexposure_method = method
+
+    def _setup_manual_exposure(self, sequence: MDASequence, cfg: dict) -> None:
+        """Load the illumination CSV and validate it against the sequence.
+
+        Reads from the ``autoexposure`` config block:
+
+        - ``csv_path`` (str): path to ``illumination.csv``. The CSV must have
+          columns ``well_id``, ``exposure_time_ms``, ``laser_power_mW``.
+        - ``laser_power_property`` ([device, property], optional): which core
+          property to write ``laser_power_mW`` to. If omitted, only the
+          camera exposure time is applied.
+        """
+        csv_path = cfg.get("csv_path")
+        if not csv_path:
+            raise ValueError("autoexposure.method='manual' requires 'csv_path' to be set.")
+        csv_path = Path(csv_path)
+        if not csv_path.is_file():
+            raise FileNotFoundError(
+                f"Manual autoexposure illumination CSV not found: {csv_path}"
+            )
+
+        illumination = load_manual_illumination_settings(csv_path)
+
+        # Validate that every well referenced by the sequence appears in the CSV
+        sequence_wells = {parse_well_id(p.name) for p in (sequence.stage_positions or [])}
+        csv_wells = set(illumination.index.values)
+        missing = sequence_wells - csv_wells
+        if missing:
+            raise ValueError(
+                f"illumination.csv is missing well_ids present in the sequence: "
+                f"{sorted(missing)}"
+            )
+
+        laser_prop = cfg.get("laser_power_property")
+        if laser_prop is not None:
+            if not (isinstance(laser_prop, (list, tuple)) and len(laser_prop) == 2):
+                raise ValueError(
+                    "autoexposure.laser_power_property must be [device, property]."
+                )
+            self._laser_power_property = (str(laser_prop[0]), str(laser_prop[1]))
+
+        self._illumination_settings = illumination
+        logger.info(
+            f"Manual autoexposure enabled with {len(illumination)} wells from {csv_path}"
+        )
+
+    def _apply_autoexposure(self, event: MDAEvent) -> MDAEvent:
+        """Dispatch per-event autoexposure based on the configured method.
+
+        Returns a possibly-modified event. The caller must pass the returned
+        event to ``super().setup_event`` so the engine's own ``setExposure``
+        call uses the override instead of the value baked into the original
+        event.
+        """
+        if self._autoexposure_method is None:
+            return event
+        if self._autoexposure_method == "manual":
+            return self._apply_manual_autoexposure(event)
+        raise NotImplementedError(
+            f"Autoexposure method '{self._autoexposure_method}' is not implemented."
+        )
+
+    def _apply_manual_autoexposure(self, event: MDAEvent) -> MDAEvent:
+        """Override event exposure (and apply laser power) for the event's well.
+
+        Uses the per-well values loaded from the illumination CSV during
+        ``_setup_manual_exposure``.
+        """
+        if self._illumination_settings is None:
+            return event
+
+        # SequencedEvents carry their pos_name on the first sub-event
+        pos_name = event.pos_name
+        if pos_name is None and isinstance(event, SequencedEvent) and event.events:
+            pos_name = event.events[0].pos_name
+        well_id = parse_well_id(pos_name)
+
+        if well_id not in self._illumination_settings.index:
+            if well_id != self._current_well_id:
+                logger.warning(
+                    f"No illumination settings for well '{well_id}'; "
+                    "leaving event exposure unchanged."
+                )
+                self._current_well_id = well_id
+            return event
+
+        row = self._illumination_settings.loc[well_id]
+        exposure_ms = float(row["exposure_time_ms"])
+        laser_power = float(row["laser_power_mW"])
+
+        # Laser power only needs to change on well transitions; exposure must
+        # be re-applied to every event since super().setup_event(event) will
+        # call setExposure(event.exposure) using the override below.
+        if well_id != self._current_well_id:
+            logger.info(
+                f"Applying manual autoexposure for well '{well_id}': "
+                f"exposure={exposure_ms} ms, laser_power={laser_power} mW"
+            )
+            if self._laser_power_property is not None:
+                device, prop = self._laser_power_property
+                self.mmcore.setProperty(device, prop, laser_power)
+            self._current_well_id = well_id
+
+        # Rewrite the event so the parent engine applies our exposure
+        return event.model_copy(update={"exposure": exposure_ms})
 
     def setup_sequence(self, sequence: MDASequence) -> SummaryMetaV1 | None:
         """Setup mantis-specific hardware before the sequence starts.
@@ -120,6 +260,9 @@ class MantisEngine(MDAEngine):
         self._xy_stage_device = core.getXYStageDevice()
         logger.debug(f"XY stage device: {self._xy_stage_device}")
 
+        # Set up autoexposure (per-well exposure time and laser power)
+        self._setup_autoexposure(sequence, microscope_meta)
+
         logger.info("Mantis hardware setup completed successfully")
 
         # Call parent setup last so SummaryMetaV1 captures the fully
@@ -128,6 +271,12 @@ class MantisEngine(MDAEngine):
 
     def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
+        # Override the event's exposure (and apply laser power) per-well.
+        # The returned event must be used for super().setup_event below,
+        # otherwise the parent engine's setExposure(event.exposure) call
+        # would clobber any per-well exposure set here.
+        event = self._apply_autoexposure(event)
+
         # Set XY stage position and engage autofocus
         # Note: this command will not move the stage if the target position is the same
         # as the last commanded position and force_set_xy_position is False.
@@ -309,6 +458,10 @@ class MantisEngine(MDAEngine):
             time.sleep(0.2)  # needed before we can call isContinuousFocusLocked()
             logger.debug("Call to fullFocus() succeeded")
         except Exception:
+            # TODO: Test is this make a difference
+            # We should see fewer instances of autofocus failing on the first channel but engaging on the next channel
+            # If so, engage autofocus only on the first channel
+            time.sleep(5)  # wait for oil to catch up, usually needed when switching wells
             logger.debug("Call to fullFocus() failed")
 
         # Check if autofocus is already engaged
@@ -412,3 +565,21 @@ def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
         if not data_path.exists():
             return indexed_name
         idx += 1
+
+
+def parse_well_id(position_name: str | None) -> str:
+    """Extract the well_id portion from a useq position name.
+
+    Supports the historical mantis position-naming conventions:
+
+    - ``"A1-Site_0"`` → ``"A1"`` (HCS plate format)
+    - ``"1-Pos000_000"`` → ``"1"`` (Micro-Manager position list format)
+    - ``"A1_0000"`` → ``"A1"`` (pymmcore-plus default format)
+    - anything else → the full name (or ``"0"`` if empty)
+    """
+    if not position_name:
+        return "0"
+    for sep in ("_", "-Site_", "-Pos"):
+        if sep in position_name:
+            return position_name.split(sep, 1)[0]
+    return position_name
