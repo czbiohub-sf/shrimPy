@@ -4,7 +4,7 @@ import json
 import logging
 import time
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 import numpy as np
@@ -194,45 +194,18 @@ class MantisEngine(MDAEngine):
             f"Manual autoexposure enabled with {len(illumination)} wells from {csv_path}"
         )
 
-    def _apply_autoexposure(self, event: MDAEvent) -> MDAEvent:
-        """Dispatch per-event autoexposure based on the configured method.
+    def _lookup_illumination_row(self, event: MDAEvent):
+        """Return ``(well_id, channel, row)`` for ``event``, or ``None``.
 
-        Returns a possibly-modified event. The caller must pass the returned
-        event to ``super().setup_event`` so the engine's own ``setExposure``
-        call uses the override instead of the value baked into the original
-        event.
+        Used by both ``event_iterator`` (to rewrite ``exposure``) and
+        ``setup_event`` (to set laser ``pulse_power``). Returns ``None`` when
+        autoexposure is disabled, the event has no channel, or no row matches
+        the event's ``(well_id, channel)`` pair.
         """
-        if self._autoexposure_method is None:
-            return event
-        if self._autoexposure_method == "manual":
-            return self._apply_manual_autoexposure(event)
-        raise NotImplementedError(
-            f"Autoexposure method '{self._autoexposure_method}' is not implemented."
-        )
+        if self._autoexposure_method != "manual" or self._illumination_settings is None:
+            return None
 
-    def _apply_manual_autoexposure(self, event: MDAEvent) -> MDAEvent:
-        """Override event exposure (and apply laser power) per (well, channel).
-
-        The CSV loaded by ``_setup_manual_exposure`` is indexed by
-        ``(well_id, channel_name)``. We look up
-        ``(event's well_id, event.channel.config)`` in the table:
-
-        - If a row is found, the event's ``exposure`` is replaced with
-          ``exposure_time_ms``. If ``laser_name`` matches a key in
-          ``self._lasers``, that laser's ``pulse_power`` is set to
-          ``laser_power_mW``. Laser writes are throttled to actual
-          ``(well, channel)`` transitions to avoid redundant serial traffic.
-        - If no row matches, the event is returned unchanged.
-
-        ``SequencedEvent`` instances are treated the same as a single event:
-        all sub-events of a hardware-triggered burst share one exposure
-        value (different exposures across sub-events are not allowed), so
-        we only need to rewrite the top-level ``exposure`` field.
-        """
-        if self._illumination_settings is None:
-            return event
-
-        # SequencedEvents carry their pos_name/channel on the first sub-event
+        # SequencedEvents carry pos_name/channel on the first sub-event
         pos_name = event.pos_name
         channel_obj = event.channel
         if isinstance(event, SequencedEvent) and event.events:
@@ -241,52 +214,110 @@ class MantisEngine(MDAEngine):
             if channel_obj is None:
                 channel_obj = event.events[0].channel
         well_id = parse_well_id(pos_name)
-
-        if well_id not in self._illumination_settings.index.get_level_values("well_id"):
-            if well_id != self._current_well_id:
-                logger.warning(
-                    f"No illumination settings for well '{well_id}'; "
-                    "leaving event exposure unchanged."
-                )
-                self._current_well_id = well_id
-            return event
-        self._current_well_id = well_id
-
         channel = channel_obj.config if channel_obj else None
         if channel is None:
-            return event
+            return None
+
         try:
             row = self._illumination_settings.loc[(well_id, channel)]
         except KeyError:
-            logger.debug(
-                f"No illumination row for well '{well_id}', channel '{channel}'; "
-                "leaving event unchanged."
-            )
-            return event
+            return None
+        return well_id, channel, row
 
-        exposure_ms = float(row["exposure_time_ms"])
+    def event_iterator(self, events: Iterable[MDAEvent]) -> Iterator[MDAEvent]:
+        """Apply per-(well, channel) exposure overrides, then hand off to the
+        parent's hardware-sequencing pass.
+
+        Doing the override here (instead of in ``setup_event``) means the
+        rewritten exposure is what the ``MDARunner`` logs, and the
+        sequencer downstream sees authoritative exposures when deciding
+        which events can be combined into a :class:`SequencedEvent`.
+        """
+        rewritten = self._override_exposures(events)
+        yield from super().event_iterator(rewritten)
+
+    def _override_exposures(self, events: Iterable[MDAEvent]) -> Iterator[MDAEvent]:
+        """Yield each event with its exposure rewritten from the CSV.
+
+        Events with no matching ``(well_id, channel)`` row pass through
+        unchanged.
+        """
+        for event in events:
+            match = self._lookup_illumination_row(event)
+            if match is None:
+                yield event
+                continue
+            exposure_ms = float(match[2]["exposure_time_ms"])
+            if event.exposure != exposure_ms:
+                yield event.model_copy(update={"exposure": exposure_ms})
+            else:
+                yield event
+
+    def _apply_autoexposure(self, event: MDAEvent) -> None:
+        """Dispatch per-event autoexposure based on the configured method.
+
+        Exposure overrides are handled in :meth:`event_iterator`; this hook
+        is for hardware that needs to be commanded at acquisition time, such
+        as laser power on a COM-port-controlled laser.
+        """
+        if self._autoexposure_method is None:
+            return
+        if self._autoexposure_method == "manual":
+            self._apply_manual_autoexposure(event)
+            return
+        raise NotImplementedError(
+            f"Autoexposure method '{self._autoexposure_method}' is not implemented."
+        )
+
+    def _apply_manual_autoexposure(self, event: MDAEvent) -> None:
+        """Apply per-(well, channel) laser power on transitions.
+
+        Exposure-time override is handled upstream in
+        :meth:`_override_exposures`; this method only writes
+        ``pulse_power`` to the laser named by the matching CSV row.
+        Throttled to actual ``(well, channel)`` transitions to avoid
+        redundant serial traffic.
+        """
+        match = self._lookup_illumination_row(event)
+        if match is None:
+            # Track well transitions for the "no settings for well" warning
+            pos_name = event.pos_name
+            if isinstance(event, SequencedEvent) and event.events and pos_name is None:
+                pos_name = event.events[0].pos_name
+            well_id = parse_well_id(pos_name)
+            if self._illumination_settings is not None and well_id not in (
+                self._illumination_settings.index.get_level_values("well_id")
+            ):
+                if well_id != self._current_well_id:
+                    logger.warning(
+                        f"No illumination settings for well '{well_id}'; "
+                        "leaving laser power unchanged."
+                    )
+                    self._current_well_id = well_id
+            return
+
+        well_id, channel, row = match
+        self._current_well_id = well_id
         laser_name = str(row["laser_name"]) if row["laser_name"] else ""
         laser_power = float(row["laser_power_mW"])
 
         key = (well_id, channel)
-        if key != self._last_applied_key:
-            logger.info(
-                f"Applying manual autoexposure for well '{well_id}', channel "
-                f"'{channel}': exposure={exposure_ms} ms, laser '{laser_name}' "
-                f"power={laser_power} mW"
-            )
-            if laser_name:
-                laser = self._lasers.get(laser_name)
-                if laser is not None:
-                    laser.pulse_power = laser_power
-                else:
-                    logger.warning(
-                        f"Laser '{laser_name}' referenced by illumination CSV is "
-                        "not configured under autoexposure.lasers; skipping power set."
-                    )
-            self._last_applied_key = key
-
-        return event.model_copy(update={"exposure": exposure_ms})
+        if key == self._last_applied_key:
+            return
+        logger.info(
+            f"Applying manual autoexposure for well '{well_id}', channel "
+            f"'{channel}': laser '{laser_name}' power={laser_power} mW"
+        )
+        if laser_name:
+            laser = self._lasers.get(laser_name)
+            if laser is not None:
+                laser.pulse_power = laser_power
+            else:
+                logger.warning(
+                    f"Laser '{laser_name}' referenced by illumination CSV is "
+                    "not configured under autoexposure.lasers; skipping power set."
+                )
+        self._last_applied_key = key
 
     def setup_sequence(self, sequence: MDASequence) -> SummaryMetaV1 | None:
         """Setup mantis-specific hardware before the sequence starts.
@@ -328,11 +359,10 @@ class MantisEngine(MDAEngine):
 
     def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
-        # Override the event's exposure (and apply laser power) per-well.
-        # The returned event must be used for super().setup_event below,
-        # otherwise the parent engine's setExposure(event.exposure) call
-        # would clobber any per-well exposure set here.
-        event = self._apply_autoexposure(event)
+        # Per-event laser power (per (well, channel)). Exposure-time
+        # overrides are applied upstream in event_iterator so they show
+        # up in the MDARunner logs and inform hardware-sequencing.
+        self._apply_autoexposure(event)
 
         # Set XY stage position and engage autofocus
         # Note: this command will not move the stage if the target position is the same
