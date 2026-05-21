@@ -4,7 +4,7 @@ import json
 import logging
 import time
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +19,9 @@ from pymmcore_plus.mda import MDAEngine, SkipEvent
 from pymmcore_plus.metadata import SummaryMetaV1
 from pymmcore_plus.metadata.serialize import to_builtins
 from useq import MDAEvent, MDASequence
+
+from shrimpy.mantis.autoexposure import load_manual_illumination_settings
+from shrimpy.mantis.lasers.vortran import VortranLaser, setup_vortran_laser
 
 # Get the logger instance (will be configured by the CLI entry point)
 logger = logging.getLogger(__name__)
@@ -67,6 +70,11 @@ class MantisEngine(MDAEngine):
         self._autofocus_fail_at_index = None
         self._xy_stage_device = None
         self._xy_stage_speed = None
+        self._autoexposure_method: str | None = None
+        self._illumination_settings = None
+        self._lasers: dict[str, VortranLaser] = {}
+        self._current_well_id: str | None = None
+        self._last_applied_key: tuple[str, str] | None = None
 
         # Register event callbacks for logging
         mmc.mda.set_engine(self)
@@ -90,6 +98,226 @@ class MantisEngine(MDAEngine):
     def _on_xy_stage_position_changed(self, device: str, x: float, y: float) -> None:
         """Log stage position changes at debug level."""
         logger.debug(f"XY stage position changed: device={device}, x={x:.2f}, y={y:.2f}")
+
+    def _disconnect_lasers(self) -> None:
+        """Close serial ports for any lasers opened during ``_setup_manual_exposure``."""
+        for name, laser in self._lasers.items():
+            try:
+                laser.disconnect()
+            except Exception as e:
+                logger.warning(f"Failed to disconnect laser '{name}': {e}")
+        self._lasers = {}
+
+    def _setup_autoexposure(self, sequence: MDASequence, microscope_meta: dict) -> None:
+        """Dispatch autoexposure setup based on ``autoexposure.method``.
+
+        Reads ``microscope_meta["autoexposure"]``. The block is opt-in via an
+        ``enabled`` flag (mirroring the ``autofocus`` config). When enabled,
+        ``method`` selects the strategy:
+
+        - ``"manual"`` → :meth:`_setup_manual_exposure` (per-well CSV)
+        - anything else → ``NotImplementedError``
+        """
+        # Clear any state left over from a prior sequence
+        self._autoexposure_method = None
+        self._illumination_settings = None
+        self._current_well_id = None
+        self._last_applied_key = None
+        self._disconnect_lasers()
+
+        cfg = microscope_meta.get("autoexposure")
+        if not cfg or not cfg.get("enabled"):
+            logger.info("Autoexposure is disabled for this acquisition")
+            return
+
+        method = cfg.get("method")
+        logger.info(f"Enabling autoexposure with method: {method}")
+        if method == "manual":
+            self._setup_manual_exposure(sequence, cfg)
+        else:
+            raise NotImplementedError(f"Autoexposure method '{method}' is not implemented.")
+        self._autoexposure_method = method
+
+    def _setup_manual_exposure(self, sequence: MDASequence, cfg: dict) -> None:
+        """Load the illumination CSV and validate it against the sequence.
+
+        Reads from the ``autoexposure`` config block:
+
+        - ``csv_path`` (str): path to ``illumination.csv``. The CSV must have
+          columns ``well_id``, ``exposure_time_ms``, ``laser_power_mW``.
+        - ``lasers`` (dict, optional): mapping of laser name → COM port
+          (e.g. ``{"488": "COM6", "561": "COM13"}``). Each laser is opened
+          via :func:`setup_vortran_laser` and the per-well ``laser_power_mW``
+          is written to every configured laser on well transitions.
+        """
+        csv_path = cfg.get("csv_path")
+        if not csv_path:
+            raise ValueError("autoexposure.method='manual' requires 'csv_path' to be set.")
+        csv_path = Path(csv_path)
+        if not csv_path.is_file():
+            raise FileNotFoundError(
+                f"Manual autoexposure illumination CSV not found: {csv_path}"
+            )
+
+        illumination = load_manual_illumination_settings(csv_path)
+
+        # Validate that every well referenced by the sequence appears in the CSV.
+        sequence_wells = {parse_well_id(p.name) for p in (sequence.stage_positions or [])}
+        csv_wells = set(illumination.index.get_level_values("well_id"))
+        missing = sequence_wells - csv_wells
+        if missing:
+            raise ValueError(
+                f"illumination.csv is missing well_ids present in the sequence: "
+                f"{sorted(missing)}"
+            )
+
+        # Validate that every channel referenced by the CSV is in the sequence.
+        sequence_channels = {c.config for c in (sequence.channels or [])}
+        csv_channels = set(illumination.index.get_level_values("channel_name"))
+        unknown = csv_channels - sequence_channels
+        if unknown:
+            raise ValueError(
+                f"illumination.csv references channels not present in the "
+                f"MDASequence: {sorted(unknown)} (sequence channels: "
+                f"{sorted(sequence_channels)})"
+            )
+
+        lasers_cfg = cfg.get("lasers") or {}
+        if not isinstance(lasers_cfg, dict):
+            raise ValueError("autoexposure.lasers must be a mapping of laser name → COM port.")
+        for name, com_port in lasers_cfg.items():
+            logger.info(f"Connecting to Vortran laser '{name}' on {com_port}")
+            self._lasers[str(name)] = setup_vortran_laser(str(com_port))
+
+        self._illumination_settings = illumination
+        logger.info(
+            f"Manual autoexposure enabled with {len(illumination)} wells from {csv_path}"
+        )
+
+    def _lookup_illumination_row(self, event: MDAEvent):
+        """Return ``(well_id, channel, row)`` for ``event``, or ``None``.
+
+        Used by both ``event_iterator`` (to rewrite ``exposure``) and
+        ``setup_event`` (to set laser ``pulse_power``). Returns ``None`` when
+        autoexposure is disabled, the event has no channel, or no row matches
+        the event's ``(well_id, channel)`` pair.
+        """
+        if self._autoexposure_method != "manual" or self._illumination_settings is None:
+            return None
+
+        # SequencedEvents carry pos_name/channel on the first sub-event
+        pos_name = event.pos_name
+        channel_obj = event.channel
+        if isinstance(event, SequencedEvent) and event.events:
+            if pos_name is None:
+                pos_name = event.events[0].pos_name
+            if channel_obj is None:
+                channel_obj = event.events[0].channel
+        well_id = parse_well_id(pos_name)
+        channel = channel_obj.config if channel_obj else None
+        if channel is None:
+            return None
+
+        try:
+            row = self._illumination_settings.loc[(well_id, channel)]
+        except KeyError:
+            return None
+        return well_id, channel, row
+
+    def event_iterator(self, events: Iterable[MDAEvent]) -> Iterator[MDAEvent]:
+        """Apply per-(well, channel) exposure overrides, then hand off to the
+        parent's hardware-sequencing pass.
+
+        Doing the override here (instead of in ``setup_event``) means the
+        rewritten exposure is what the ``MDARunner`` logs, and the
+        sequencer downstream sees authoritative exposures when deciding
+        which events can be combined into a :class:`SequencedEvent`.
+        """
+        rewritten = self._override_exposures(events)
+        yield from super().event_iterator(rewritten)
+
+    def _override_exposures(self, events: Iterable[MDAEvent]) -> Iterator[MDAEvent]:
+        """Yield each event with its exposure rewritten from the CSV.
+
+        Events with no matching ``(well_id, channel)`` row pass through
+        unchanged.
+        """
+        for event in events:
+            match = self._lookup_illumination_row(event)
+            if match is None:
+                yield event
+                continue
+            exposure_ms = float(match[2]["exposure_time_ms"])
+            if event.exposure != exposure_ms:
+                yield event.model_copy(update={"exposure": exposure_ms})
+            else:
+                yield event
+
+    def _apply_autoexposure(self, event: MDAEvent) -> None:
+        """Dispatch per-event autoexposure based on the configured method.
+
+        Exposure overrides are handled in :meth:`event_iterator`; this hook
+        is for hardware that needs to be commanded at acquisition time, such
+        as laser power on a COM-port-controlled laser.
+        """
+        if self._autoexposure_method is None:
+            return
+        if self._autoexposure_method == "manual":
+            self._apply_manual_autoexposure(event)
+            return
+        raise NotImplementedError(
+            f"Autoexposure method '{self._autoexposure_method}' is not implemented."
+        )
+
+    def _apply_manual_autoexposure(self, event: MDAEvent) -> None:
+        """Apply per-(well, channel) laser power on transitions.
+
+        Exposure-time override is handled upstream in
+        :meth:`_override_exposures`; this method only writes
+        ``pulse_power`` to the laser named by the matching CSV row.
+        Throttled to actual ``(well, channel)`` transitions to avoid
+        redundant serial traffic.
+        """
+        match = self._lookup_illumination_row(event)
+        if match is None:
+            # Track well transitions for the "no settings for well" warning
+            pos_name = event.pos_name
+            if isinstance(event, SequencedEvent) and event.events and pos_name is None:
+                pos_name = event.events[0].pos_name
+            well_id = parse_well_id(pos_name)
+            if self._illumination_settings is not None and well_id not in (
+                self._illumination_settings.index.get_level_values("well_id")
+            ):
+                if well_id != self._current_well_id:
+                    logger.warning(
+                        f"No illumination settings for well '{well_id}'; "
+                        "leaving laser power unchanged."
+                    )
+                    self._current_well_id = well_id
+            return
+
+        well_id, channel, row = match
+        self._current_well_id = well_id
+        laser_name = str(row["laser_name"]) if row["laser_name"] else ""
+        laser_power = float(row["laser_power_mW"])
+
+        key = (well_id, channel)
+        if key == self._last_applied_key:
+            return
+        logger.info(
+            f"Applying manual autoexposure for well '{well_id}', channel "
+            f"'{channel}': laser '{laser_name}' power={laser_power} mW"
+        )
+        if laser_name:
+            laser = self._lasers.get(laser_name)
+            if laser is not None:
+                laser.pulse_power = laser_power
+            else:
+                logger.warning(
+                    f"Laser '{laser_name}' referenced by illumination CSV is "
+                    "not configured under autoexposure.lasers; skipping power set."
+                )
+        self._last_applied_key = key
 
     def setup_sequence(self, sequence: MDASequence) -> SummaryMetaV1 | None:
         """Setup mantis-specific hardware before the sequence starts.
@@ -120,6 +348,9 @@ class MantisEngine(MDAEngine):
         self._xy_stage_device = core.getXYStageDevice()
         logger.debug(f"XY stage device: {self._xy_stage_device}")
 
+        # Set up autoexposure (per-well exposure time and laser power)
+        self._setup_autoexposure(sequence, microscope_meta)
+
         logger.info("Mantis hardware setup completed successfully")
 
         # Call parent setup last so SummaryMetaV1 captures the fully
@@ -128,6 +359,11 @@ class MantisEngine(MDAEngine):
 
     def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
+        # Per-event laser power (per (well, channel)). Exposure-time
+        # overrides are applied upstream in event_iterator so they show
+        # up in the MDARunner logs and inform hardware-sequencing.
+        self._apply_autoexposure(event)
+
         # Set XY stage position and engage autofocus
         # Note: this command will not move the stage if the target position is the same
         # as the last commanded position and force_set_xy_position is False.
@@ -151,6 +387,9 @@ class MantisEngine(MDAEngine):
 
     def teardown_sequence(self, sequence):
         super().teardown_sequence(sequence)
+
+        # Close any Vortran laser COM ports opened for autoexposure
+        self._disconnect_lasers()
 
         core = self.mmcore
         microscope_meta = sequence.metadata.get("mantis", {}) if sequence.metadata else {}
@@ -309,6 +548,10 @@ class MantisEngine(MDAEngine):
             time.sleep(0.2)  # needed before we can call isContinuousFocusLocked()
             logger.debug("Call to fullFocus() succeeded")
         except Exception:
+            # TODO: Test is this make a difference
+            # We should see fewer instances of autofocus failing on the first channel but engaging on the next channel
+            # If so, engage autofocus only on the first channel
+            time.sleep(5)  # wait for oil to catch up, usually needed when switching wells
             logger.debug("Call to fullFocus() failed")
 
         # Check if autofocus is already engaged
@@ -412,3 +655,24 @@ def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
         if not data_path.exists():
             return indexed_name
         idx += 1
+
+
+def parse_well_id(position_name: str | None) -> str:
+    """Extract the well_id portion from a useq position name.
+
+    Supports the historical mantis position-naming conventions:
+
+    - ``"A1-Site_0"`` → ``"A1"`` (HCS plate format)
+    - ``"1-Pos000_000"`` → ``"1"`` (Micro-Manager position list format)
+    - ``"A1_0000"`` → ``"A1"`` (pymmcore-plus default format)
+    - anything else → the full name (or ``"0"`` if empty)
+    """
+    if not position_name:
+        return "0"
+    # Order matters: try the more specific HCS/MM separators before the
+    # generic underscore fallback, otherwise "A1-Site_0" would be split on
+    # "_" first and yield "A1-Site" instead of "A1".
+    for sep in ("-Site_", "-Pos", "_"):
+        if sep in position_name:
+            return position_name.split(sep, 1)[0]
+    return position_name
