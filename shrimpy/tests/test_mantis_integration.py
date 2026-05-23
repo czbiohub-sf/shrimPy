@@ -143,8 +143,8 @@ def test_demo_mda_acquisition(demo_engine, demo_mda_sequence, tmp_path):
     assert z_chunk != 1, f"Expected z chunk_shape != 1, got chunks={_data.chunks}"
 
 
-def test_summary_metadata_written_to_zarr(demo_engine, demo_mda_sequence, tmp_path):
-    """Verify that summary_metadata.json is written at the zarr root."""
+def test_summary_metadata_in_zarr_json(demo_engine, demo_mda_sequence, tmp_path):
+    """Verify that pymmcore-plus writes summary_metadata into zarr.json."""
     import json
 
     demo_engine.acquire(
@@ -156,12 +156,11 @@ def test_summary_metadata_written_to_zarr(demo_engine, demo_mda_sequence, tmp_pa
     zarr_dirs = list(tmp_path.glob("meta_test_*.ome.zarr"))
     assert len(zarr_dirs) == 1
 
-    meta_path = zarr_dirs[0] / "summary_metadata.json"
-    assert meta_path.exists(), "summary_metadata.json not found at zarr root"
-
-    summary = json.loads(meta_path.read_text())
-    assert summary["format"] == "summary-dict"
-    assert summary["version"] == "1.0"
+    zarr_json = json.loads((zarr_dirs[0] / "zarr.json").read_text())
+    attrs = zarr_json.get("attributes", {})
+    summary = attrs.get("pymmcore_plus", {}).get("summary_metadata", {})
+    assert summary.get("format") == "summary-dict"
+    assert summary.get("version") == "1.0"
     assert "devices" in summary
     assert "system_info" in summary
     assert "image_infos" in summary

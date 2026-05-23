@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import time
 
@@ -17,7 +16,6 @@ from pymmcore_plus.core._constants import Keyword
 from pymmcore_plus.core._sequencing import SequencedEvent
 from pymmcore_plus.mda import MDAEngine, SkipEvent
 from pymmcore_plus.metadata import SummaryMetaV1
-from pymmcore_plus.metadata.serialize import to_builtins
 from useq import MDAEvent, MDASequence
 
 # Get the logger instance (will be configured by the CLI entry point)
@@ -367,16 +365,6 @@ class MantisEngine(MDAEngine):
             sequence = MDASequence.from_file(mda_config)
 
         data_path = output_dir / f"{name}.ome.zarr"
-
-        # Write summary metadata after the zarr store is created
-        # TODO: remove once ome-writers supports root-level metadata natively
-        def _write_summary_metadata(_seq: MDASequence, meta: object) -> None:
-            self.mmcore.mda.events.sequenceStarted.disconnect(_write_summary_metadata)
-            if meta and isinstance(meta, dict):
-                meta_path = data_path / "summary_metadata.json"
-                meta_path.write_text(json.dumps(to_builtins(meta)))
-
-        self.mmcore.mda.events.sequenceStarted.connect(_write_summary_metadata)
 
         logger.info(f"Starting acquisition: {name}")
         self.mmcore.mda.run(
