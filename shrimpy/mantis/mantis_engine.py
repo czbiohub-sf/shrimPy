@@ -310,6 +310,8 @@ class MantisEngine(MDAEngine):
             logger.debug("Call to fullFocus() succeeded")
         except Exception:
             logger.debug("Call to fullFocus() failed")
+            # Wait for viscous immersion oil to catch up, usually needed when switching wells
+            time.sleep(5)
 
         # Check if autofocus is already engaged
         if core.isContinuousFocusLocked():
