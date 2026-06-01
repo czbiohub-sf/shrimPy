@@ -9,9 +9,14 @@ import torch
 from shrimpy.mantis.dynatrack import (
     DynaTrackConfig,
     DynaTrackUpdater,
+    _binary_mask,
     _center_crop,
+    _center_of_mass,
+    _gaussian_blur_3d,
     _limit_shifts_zyx,
     _match_shape,
+    _multiotsu_center_of_mass,
+    _multiotsu_pcc,
     _pad_to_shape,
     _phase_cross_corr,
 )
@@ -96,6 +101,110 @@ class TestPhaseCrossCorr:
         assert shifts[0] == dz
         assert shifts[1] == dy
         assert shifts[2] == dx
+
+
+# ---------------------------------------------------------------------------
+# Multi-Otsu helper tests
+# ---------------------------------------------------------------------------
+
+
+class TestGaussianBlur3D:
+    def test_output_shape_unchanged(self):
+        """Blur should preserve the input shape."""
+        vol = torch.rand(8, 32, 32)
+        result = _gaussian_blur_3d(vol, sigma=2.0)
+        assert result.shape == vol.shape
+
+    def test_smooths_values(self):
+        """Blurred volume should have a smaller range than the original."""
+        vol = torch.rand(8, 32, 32)
+        result = _gaussian_blur_3d(vol, sigma=3.0)
+        assert (result.max() - result.min()) <= (vol.max() - vol.min())
+
+    def test_zero_sigma_noop(self):
+        """Sigma=0 should return the input unchanged."""
+        vol = torch.rand(8, 32, 32)
+        result = _gaussian_blur_3d(vol, sigma=0.0)
+        assert torch.equal(result, vol)
+
+
+class TestBinaryMask:
+    def test_returns_bool_tensor(self):
+        """Binary mask should return a boolean tensor on the same device."""
+        rng = np.random.default_rng(42)
+        vol = rng.random((8, 32, 32)).astype(np.float64) * 0.2
+        vol[3:6, 12:20, 12:20] = 0.9
+        vol_t = torch.as_tensor(vol, dtype=torch.float32)
+        mask = _binary_mask(vol_t, sigma=1.0, otsu_component=0)
+        assert mask.dtype == torch.bool
+        assert mask.sum() > 0  # at least some True voxels
+
+    def test_otsu_component_selects_threshold(self):
+        """Higher otsu_component should produce a stricter (smaller) mask."""
+        rng = np.random.default_rng(42)
+        vol = rng.random((8, 32, 32)).astype(np.float64) * 0.3
+        vol[2:6, 8:24, 8:24] = 0.6
+        vol[3:5, 12:20, 12:20] = 0.95
+        vol_t = torch.as_tensor(vol, dtype=torch.float32)
+        mask_0 = _binary_mask(vol_t, sigma=1.0, otsu_component=0)
+        mask_1 = _binary_mask(vol_t, sigma=1.0, otsu_component=1)
+        assert mask_0.sum() >= mask_1.sum()
+
+
+class TestCenterOfMass:
+    def test_single_blob(self):
+        """Center of mass of a centred blob should be near the middle."""
+        mask = torch.zeros(10, 10, 10, dtype=torch.bool)
+        mask[3:7, 3:7, 3:7] = True
+        center = _center_of_mass(mask)
+        expected = torch.tensor([4.5, 4.5, 4.5])
+        assert torch.allclose(center, expected, atol=0.5)
+
+    def test_empty_returns_zeros(self):
+        """Empty mask should return zero center."""
+        mask = torch.zeros(10, 10, 10, dtype=torch.bool)
+        center = _center_of_mass(mask)
+        assert torch.equal(center, torch.zeros(3))
+
+
+class TestMultiotsuCenterOfMass:
+    def test_detects_shift(self):
+        """Center of mass should detect a spatial shift between two volumes."""
+        rng = np.random.default_rng(42)
+        ref = rng.random((8, 64, 64)).astype(np.float64) * 0.1
+        ref[2:6, 20:40, 20:40] = 0.9  # bright blob
+
+        # Shift the blob by +5 in Y
+        mov = rng.random((8, 64, 64)).astype(np.float64) * 0.1
+        mov[2:6, 25:45, 20:40] = 0.9
+
+        ref_t = torch.as_tensor(ref, dtype=torch.float32)
+        mov_t = torch.as_tensor(mov, dtype=torch.float32)
+        shift = _multiotsu_center_of_mass(ref_t, mov_t, sigma=1.0, otsu_component=0)
+
+        # Y shift should be approximately +5
+        assert abs(shift[1] - 5.0) < 2.0
+        # X and Z should be near zero
+        assert abs(shift[2]) < 2.0
+        assert abs(shift[0]) < 2.0
+
+
+class TestMultiotsuPcc:
+    def test_detects_shift(self):
+        """Multiotsu PCC should detect a known shift via binary mask PCC."""
+        rng = np.random.default_rng(42)
+        ref = rng.random((8, 64, 64)).astype(np.float64) * 0.1
+        ref[2:6, 15:50, 15:50] = 0.9
+
+        mov = rng.random((8, 64, 64)).astype(np.float64) * 0.1
+        mov[2:6, 18:53, 15:50] = 0.9  # shifted +3 in Y
+
+        ref_t = torch.as_tensor(ref, dtype=torch.float32)
+        mov_t = torch.as_tensor(mov, dtype=torch.float32)
+        shift = _multiotsu_pcc(ref_t, mov_t, sigma=1.0, otsu_component=0)
+
+        assert abs(shift[1] - 3) <= 1  # Y shift ~3
+        assert abs(shift[2]) <= 1  # X near zero
 
 
 # ---------------------------------------------------------------------------
@@ -312,6 +421,80 @@ class TestDynaTrackUpdaterFlow:
         result = updater.update(0, 0, pos, [])
         assert result.x == 100.0
         assert result.y == 200.0
+
+
+# ---------------------------------------------------------------------------
+# Full update() flow with multi-Otsu methods
+# ---------------------------------------------------------------------------
+
+
+class TestDynaTrackUpdaterMultiotsu:
+    def _make_blob_frames(self, rng, y_start, n_z=8, ny=64, nx=64):
+        """Create frames with a bright blob at a given Y position."""
+        frames = []
+        for z in range(n_z):
+            frame = rng.random((ny, nx)).astype(np.float64) * 0.1
+            if 2 <= z < 6:
+                frame[y_start : y_start + 20, 20:40] = 0.9
+            frames.append(frame)
+        return frames
+
+    def test_multiotsu_center_of_mass_detects_shift(self):
+        """update() with multiotsu_center_of_mass detects a blob shift."""
+        rng = np.random.default_rng(42)
+        config = DynaTrackConfig(
+            scale_yx=1.0,
+            scale_z=1.0,
+            tracking_method="multiotsu_center_of_mass",
+            otsu_sigma=1.0,
+            preprocessing=[],
+        )
+        updater = DynaTrackUpdater(config=config)
+        pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
+
+        ref_frames = self._make_blob_frames(rng, y_start=15)
+        mov_frames = self._make_blob_frames(rng, y_start=20)  # shifted +5 in Y
+
+        updater.update(0, 0, pos, ref_frames)
+        result = updater.update(1, 0, pos, mov_frames)
+
+        # Y position should have changed
+        assert result.y != 200.0
+
+    def test_multiotsu_pcc_detects_shift(self):
+        """update() with multiotsu_pcc detects a blob shift."""
+        rng = np.random.default_rng(42)
+        config = DynaTrackConfig(
+            scale_yx=1.0,
+            scale_z=1.0,
+            tracking_method="multiotsu_pcc",
+            otsu_sigma=1.0,
+            preprocessing=[],
+        )
+        updater = DynaTrackUpdater(config=config)
+        pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
+
+        ref_frames = self._make_blob_frames(rng, y_start=15)
+        mov_frames = self._make_blob_frames(rng, y_start=20)
+
+        updater.update(0, 0, pos, ref_frames)
+        result = updater.update(1, 0, pos, mov_frames)
+
+        assert result.y != 200.0
+
+    def test_invalid_method_raises(self):
+        """Unknown tracking_method should raise ValueError."""
+        rng = np.random.default_rng(42)
+        config = DynaTrackConfig(
+            scale_yx=1.0, scale_z=1.0, tracking_method="unknown_method", preprocessing=[]
+        )
+        updater = DynaTrackUpdater(config=config)
+        pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
+
+        frames = [rng.random((64, 64)) for _ in range(8)]
+        updater.update(0, 0, pos, frames)  # store ref
+        with pytest.raises(ValueError, match="Unknown tracking_method"):
+            updater.update(1, 0, pos, frames)
 
 
 # ---------------------------------------------------------------------------
