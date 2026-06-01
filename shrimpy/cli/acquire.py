@@ -45,11 +45,18 @@ def acquire():
     default="mantis_acquisition",
     help="Name of the acquisition (used for log files and output)",
 )
+@click.option(
+    "--unicore",
+    is_flag=True,
+    default=False,
+    help="Use UniMMCore instead of standard CMMCorePlus",
+)
 def mantis(
     mm_config: Path,
     mda_config: Path,
     output_dir: Path,
     name: str,
+    unicore: bool,
 ):
     """Run Mantis microscope acquisition.
 
@@ -65,7 +72,6 @@ def mantis(
     # level, which clears all handlers on the "pymmcore-plus" logger. Importing first
     # ensures that call happens before fileConfig() attaches the shrimpy file handler.
     from shrimpy.mantis.mantis_engine import MantisEngine
-    from shrimpy.robust_cmmcore import RobustCMMCore
 
     # Configure logging
     config_file = Path(__file__).parent.parent.parent / "config" / "logging.ini"
@@ -76,9 +82,34 @@ def mantis(
     else:
         logger.warning(f"Logging config not found at {config_file}, using defaults")
 
-    core = RobustCMMCore()
+    if unicore:
+        from pymmcore_plus.experimental.unicore.core._unicore import UniMMCore
+
+        core = UniMMCore()
+    else:
+        from shrimpy.robust_cmmcore import RobustCMMCore
+
+        core = RobustCMMCore()
+
+    # Pre-import torch before MM loads its DLLs to avoid DLL conflict on Windows
+    # (shm.dll fails with WinError 127 if MM CUDA DLLs are loaded first)
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        pass
+
     logger.info(f"Loading Micro-Manager configuration from {mm_config}")
     core.loadSystemConfiguration(mm_config)
+
+    if unicore:
+        from shrimpy.mantis.replay_camera import ReplayCamera
+
+        cam_label = core.getCameraDevice()
+        if cam_label and core.isPyDevice(cam_label):
+            device = core._pydevices[cam_label]
+            if isinstance(device, ReplayCamera):
+                device.connect_z_stage(core)
+                device.connect_to_mda(core)
     engine = MantisEngine(core)
     engine.acquire(output_dir=output_dir, name=name, mda_config=mda_config)
 

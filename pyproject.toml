@@ -27,11 +27,13 @@ dependencies = [
   # TODO: test v0.7.0, even simple acquisitions would fail
   "acquire-zarr==0.6.0",
   "pymmcore>=11.14.0.75.0",
+  "pymmcore-gui",
   "pymmcore-plus",
   "pymmcore-widgets",
   "PyYAML",
   "qtpy",
   "useq-schema",
+  "acquire-zarr==0.6.0",  # v0.7.0 causes acq to crash
 ]
 
 
@@ -43,7 +45,14 @@ dev = [
   "pre-commit~=4.5",
   "pytest~=9.0",
   "ruff~=0.15",
-  "iohub==0.3.0a6"
+  "iohub==0.3.0a7",
+  "ipykernel",
+]
+dynatrack = [
+  "biahub",
+  "torch",
+  "viscy",
+  "waveorder==3.0.2",
 ]
 
 [project.scripts]
@@ -60,10 +69,19 @@ local_scheme = "no-local-version"
 packages = ["shrimpy"]
 
 [tool.uv.sources]
-ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
+ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "add-plate-row-col" }
 pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "dev" }
-# ome-writers = { path = "../ome-writers", editable = true }
-# pymmcore-plus = { path = "../pymmcore-plus", editable = true }
+biahub = { git = "https://github.com/czbiohub-sf/biahub", branch = "fast_deskew" }
+pymmcore-gui = { git = "https://github.com/pymmcore-plus/pymmcore-gui", branch = "main" }
+useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "add-plate-row-col" }
+# viscy issues with waveorder and iohub dependencies
+viscy = { git = "https://github.com/mehta-lab/VisCy", rev = "6ba3446db8b02383e25e1bc5424a20268249ee7d" }
+torch = { index = "pytorch" }
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu118"
+explicit = true
 
 [tool.ruff]
 # Ruff replaces black, isort, flake8, and pylint

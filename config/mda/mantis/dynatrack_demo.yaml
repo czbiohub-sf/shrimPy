@@ -1,0 +1,127 @@
+# Intended to work with MMConfig_demo_ReplayCamera.cfg
+
+# Setup
+setup:
+  properties:
+    - ['XY', 'Velocity', '10000']
+    - ['PiezoZ', 'UseSequences', 'Yes']
+
+stage_positions:
+  - x: 0
+    y: 0
+    name: "Pos0"
+    properties:
+      - ['ObjectiveZ', 'Position', '0']
+
+# Define time plan
+time_plan:
+  prioritize_duration: true
+  interval: 15
+  loops: 3
+
+# Define z plan
+z_plan:
+  top: 10
+  bottom: -10
+  step: 0.174
+  go_up: true
+
+# Define channels
+channels:
+- config: BF
+  group: Channel
+  exposure: 10.0
+  do_stack: true
+  z_offset: 0.0
+  acquire_every: 1
+  camera: null
+
+# Define axis order
+axis_order:
+- t
+- p
+- c
+- z
+
+autofocus_plan: null
+keep_shutter_open_across: []
+
+# Define metadata per microscope
+metadata:
+  pymmcore_widgets:
+    version: 0.10.2.dev23+g22b8c0aff.d20260106
+  mantis:
+    reset_hardware_sequencing_settings:
+      - ['PiezoZ', 'UseSequences', 'No']
+    autofocus:
+      enabled: false
+      method: demo-PFS
+      stage: ObjectiveZ
+    position_update:
+      enabled: true
+      update_channel: 0
+      z_device: ObjectiveZ
+      dynatrack:
+        scale_yx: 0.1494
+        scale_z: 0.174
+        tracking_interval: 1
+        save_debug: true
+        # shift_limits:
+        #   z: [0.5, 2.0]
+        #   y: [2.0, 10.0]
+        #   x: [2.0, 10.0]
+
+        # Preprocessing pipeline: deskew -> phase recon -> virtual staining
+        # Options: ['deskew', 'phase', 'vs'], ['deskew', 'phase'], ['phase', 'vs'], ['phase']
+        preprocessing: ['deskew', 'phase', 'vs']
+        # preprocessing: ['phase']
+
+        # Biahub deskew parameters for light-sheet data
+        deskew_config:
+          ls_angle_deg: 30.0
+          pixel_size_um: 0.1133
+          scan_step_um: 0.15
+          keep_overhang: false
+          average_n_slices: 3
+        # Which channel to use for shift estimation:
+        # 'raw', 'phase', 'vs_nuclei', 'vs_membrane'
+        shift_estimation_channel: 'vs_nuclei'
+        # shift_estimation_channel: 'phase'
+
+        # Waveorder phase reconstruction parameters
+        phase_config:
+          transfer_function:
+            wavelength_illumination: 0.450
+            yx_pixel_size: 0.1494
+            z_pixel_size: 0.174
+            z_padding: 5
+            index_of_refraction_media: 1.4
+            numerical_aperture_detection: 1.35
+            numerical_aperture_illumination: 0.52
+            invert_phase_contrast: false
+          apply_inverse:
+            reconstruction_algorithm: Tikhonov
+            regularization_strength: 0.01
+
+        # VisCy virtual staining model parameters
+        vs_config:
+          model:
+            class_path: viscy.translation.engine.VSUNet
+            init_args:
+              architecture: fcmae
+              model_config:
+                in_channels: 1
+                out_channels: 2
+                in_stack_depth: 21
+                encoder_blocks: [3, 3, 9, 3]
+                dims: [96, 192, 384, 768]
+                encoder_drop_path_rate: 0.0
+                stem_kernel_size: [7, 4, 4]
+                decoder_conv_blocks: 2
+                pretraining: false
+                head_conv: true
+                head_conv_expansion_ratio: 4
+                head_conv_pool: false
+              test_time_augmentations: true
+              tta_type: median
+          ckpt_path: C:\\Users\\labelfree\\Documents\\epoch=64-step=24960.ckpt
