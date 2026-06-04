@@ -389,7 +389,6 @@ class DynaTrackUpdater(PositionUpdater):
         position_index: int,
         position: PositionCoordinates,
         data: list[np.ndarray] | None = None,
-        acquired_at: PositionCoordinates | None = None,
     ) -> PositionCoordinates:
         """Compute updated position by tracking drift from reference z-stack.
 
@@ -400,16 +399,12 @@ class DynaTrackUpdater(PositionUpdater):
         position_index : int
             The position that was just acquired.
         position : PositionCoordinates
-            Current coordinates for this position (snapshot of the store at
-            submission time). Used as a fallback baseline only.
+            Stage coordinates the stack was acquired at. The computed shift is
+            added to this value, so corrections compensate the drift between
+            the reference and where the stack actually was -- not against a
+            store value that a later update may already have moved on.
         data : list[np.ndarray] | None
             Frames acquired for this position (one 2D array per z-slice).
-        acquired_at : PositionCoordinates | None
-            Stage coordinates at the moment the stack was acquired. The
-            computed shift is added to this value, so corrections compensate
-            the drift between the reference and where the stack actually was.
-            Falling back to ``position`` when ``None`` reproduces the previous
-            (race-prone) behaviour.
 
         Returns
         -------
@@ -446,9 +441,6 @@ class DynaTrackUpdater(PositionUpdater):
         # All downstream ops run on tensors. Move to CUDA if available;
         # the preprocessor (if any) already targets the same device.
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        current_stack_zyx: torch.Tensor = torch.as_tensor(
-            raw_stack, device=device, dtype=torch.float32
-        )
 
         # Apply optional preprocessing (e.g. phase reconstruction, VS).
         # Preprocessor returns torch tensors on device; convert to numpy at
@@ -477,11 +469,24 @@ class DynaTrackUpdater(PositionUpdater):
                     f"output {list(channels_zyx.keys())}, using first channel"
                 )
                 selected = next(iter(channels_zyx.values()))
-            current_stack_zyx = selected.detach()
+            # Clone into a compact standalone tensor. A bare ``.detach()`` is a
+            # view that keeps the *entire* preprocessor output alive (all
+            # channels share one parent tensor), so a stored reference would
+            # pin every channel, not just this one. Cloning lets the other
+            # channels + parent be freed below.
+            current_stack_zyx = selected.detach().clone()
+            # Drop the dict + view and return the freed blocks to the GPU so
+            # the caching allocator does not stay pinned at the VS peak.
+            del channels_zyx, selected
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             logger.debug(
                 f"DynaTrack[mem]: after channel select p={position_index} t={timepoint_index} "
                 f"rss={_rss_gb():.2f} GB"
             )
+        else:
+            # No preprocessing: move the raw stack to the device directly.
+            current_stack_zyx = torch.as_tensor(raw_stack, device=device, dtype=torch.float32)
 
         # Store reference on first encounter
         if position_index not in self._reference_stacks_zyx:
@@ -540,17 +545,12 @@ class DynaTrackUpdater(PositionUpdater):
             shift_stage_xyz = shift_image_xyz
 
         # Compensate the drift between the reference and where the stack was
-        # actually acquired. Using `acquired_at` (the commanded stage coords
-        # at acquisition time) as the baseline avoids accumulating shifts when
-        # a previous update lands too late to influence the next acquisition.
-        baseline = acquired_at if acquired_at is not None else position
-        if acquired_at is None:
-            logger.warning(
-                f"DynaTrack: no acquired_at for p={position_index} t={timepoint_index}, "
-                f"falling back to current store value (race-prone)"
-            )
+        # actually acquired. `position` is the commanded stage coords at
+        # acquisition time, so adding the shift here avoids accumulating
+        # against a store value that a later update may already have moved on.
+        baseline = position
         logger.info(
-            f"DynaTrack: baseline (acquired_at) p={position_index} t={timepoint_index} "
+            f"DynaTrack: baseline p={position_index} t={timepoint_index} "
             f"x={baseline.x} y={baseline.y} z={baseline.z}"
         )
         _x = baseline.x + shift_stage_xyz[0]

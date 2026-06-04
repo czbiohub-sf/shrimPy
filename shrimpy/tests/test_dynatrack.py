@@ -269,7 +269,7 @@ class TestDynaTrackUpdaterFlow:
         assert result.x == 100.0
         assert result.y == 200.0
         assert result.z == 50.0
-        assert 0 in updater._reference_stacks
+        assert 0 in updater._reference_stacks_zyx
 
     def test_second_call_detects_shift(self):
         """Second call computes a shift and returns an updated position."""
@@ -375,9 +375,9 @@ class TestPreprocessor:
 
         call_count = [0]
 
-        def identity_preprocessor(stack: np.ndarray) -> np.ndarray:
+        def identity_preprocessor(stack: np.ndarray) -> dict[str, torch.Tensor]:
             call_count[0] += 1
-            return stack
+            return {"raw": torch.as_tensor(stack)}
 
         updater = DynaTrackUpdater(config=config, preprocessor=identity_preprocessor)
         pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
@@ -399,11 +399,11 @@ class TestPreprocessor:
         # Preprocessor that rolls the stack by 2 pixels in Y
         first_call = [True]
 
-        def shifting_preprocessor(stack: np.ndarray) -> np.ndarray:
+        def shifting_preprocessor(stack: np.ndarray) -> dict[str, torch.Tensor]:
             if first_call[0]:
                 first_call[0] = False
-                return stack
-            return np.roll(stack, 2, axis=1)
+                return {"raw": torch.as_tensor(stack)}
+            return {"raw": torch.as_tensor(np.roll(stack, 2, axis=1))}
 
         updater = DynaTrackUpdater(config=config, preprocessor=shifting_preprocessor)
         pos = PositionCoordinates(x=0.0, y=0.0, z=0.0)

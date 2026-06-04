@@ -81,20 +81,18 @@ class DynaTrackWorker:
         position_index: int,
         position: PositionCoordinates,
         data: list[np.ndarray],
-        acquired_at: PositionCoordinates | None = None,
     ) -> None:
-        """Send a job to the worker process (non-blocking)."""
+        """Send a job to the worker process (non-blocking).
+
+        ``position`` is the stage baseline the stack was acquired at; the
+        updater adds the computed shift to it.
+        """
         self._input_queue.put(
             {
                 "type": "update",
                 "timepoint_index": timepoint_index,
                 "position_index": position_index,
                 "position": (position.x, position.y, position.z),
-                "acquired_at": (
-                    (acquired_at.x, acquired_at.y, acquired_at.z)
-                    if acquired_at is not None
-                    else None
-                ),
                 "data": data,
             }
         )
@@ -210,10 +208,6 @@ def _worker_loop(
             from shrimpy.mantis.position_update import PositionCoordinates
 
             position = PositionCoordinates(x=px, y=py, z=pz)
-            acq = msg.get("acquired_at")
-            acquired_at = (
-                PositionCoordinates(x=acq[0], y=acq[1], z=acq[2]) if acq is not None else None
-            )
             data = msg["data"]
 
             n_frames = len(data) if data else 0
@@ -222,7 +216,7 @@ def _worker_loop(
             )
 
             try:
-                updated = updater.update(t_idx, p_idx, position, data, acquired_at=acquired_at)
+                updated = updater.update(t_idx, p_idx, position, data)
                 elapsed = _time.monotonic() - t0
                 output_queue.put(
                     {
@@ -254,3 +248,13 @@ def _worker_loop(
                         "timepoint_index": t_idx,
                     }
                 )
+
+            # Release this job's GPU working set so reserved memory is not
+            # pinned at the VS-inference peak across positions/timepoints.
+            try:
+                import torch as _torch
+
+                if _torch.cuda.is_available():
+                    _torch.cuda.empty_cache()
+            except Exception:
+                pass
