@@ -320,6 +320,68 @@ class TestPositionUpdateManager:
         result = manager.apply_position_update(event)
         assert result is event
 
+    def test_updater_baseline_is_acquired_coords_not_advanced_store(
+        self, enabled_config, position_store
+    ):
+        """Regression: the shift must be anchored to the coords the stack was
+        acquired at, not to a store value a later correction has moved on to.
+
+        Reproduces the pre-fetch race that commit a98c22c fixed: if the store
+        is updated between event-apply (acquisition) and on_position_complete,
+        the updater must still receive the acquisition baseline so corrections
+        don't accumulate against a moving target.
+        """
+        seen = {}
+
+        class SpyUpdater(PositionUpdater):
+            def update(self, t_idx, p_idx, position, data=None):
+                seen["position"] = position
+                return position
+
+        manager = PositionUpdateManager(enabled_config, position_store, updater=SpyUpdater())
+        manager.start()
+
+        # 1. Event for (t=0, p=0) is applied -> baseline recorded from the
+        #    store as it stood at acquisition time (100, 200, 50).
+        event = MDAEvent(x_pos=0.0, y_pos=0.0, z_pos=0.0, index={"t": 0, "p": 0})
+        manager.apply_position_update(event)
+
+        # 2. A later correction lands in the store before this stack completes.
+        position_store.update_position(0, x=999.0, y=888.0, z=777.0)
+
+        # 3. Stack completes -> updater must see the acquisition baseline.
+        manager.on_position_complete(0, 0)
+        manager._pending_future.result(timeout=5)
+        manager.shutdown()
+
+        assert seen["position"].x == 100.0
+        assert seen["position"].y == 200.0
+        assert seen["position"].z == 50.0
+
+    def test_updater_falls_back_to_store_without_baseline(
+        self, enabled_config, position_store
+    ):
+        """When no acquisition baseline was recorded (event never passed
+        through apply_position_update), fall back to the live store snapshot.
+        """
+        seen = {}
+
+        class SpyUpdater(PositionUpdater):
+            def update(self, t_idx, p_idx, position, data=None):
+                seen["position"] = position
+                return position
+
+        manager = PositionUpdateManager(enabled_config, position_store, updater=SpyUpdater())
+        manager.start()
+        # No apply_position_update call -> no baseline recorded for (0, 0).
+        manager.on_position_complete(0, 0)
+        manager._pending_future.result(timeout=5)
+        manager.shutdown()
+
+        assert seen["position"].x == 100.0
+        assert seen["position"].y == 200.0
+        assert seen["position"].z == 50.0
+
 
 # ---------------------------------------------------------------------------
 # MantisEngine integration tests

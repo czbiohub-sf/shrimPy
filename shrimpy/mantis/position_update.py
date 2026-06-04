@@ -124,7 +124,6 @@ class PositionUpdater:
         position_index: int,
         position: PositionCoordinates,
         data: list[np.ndarray] | None = None,
-        acquired_at: PositionCoordinates | None = None,
     ) -> PositionCoordinates:
         """Return updated coordinates for the given position.
 
@@ -135,15 +134,15 @@ class PositionUpdater:
         position_index : int
             The position that was just acquired.
         position : PositionCoordinates
-            Current coordinates for this position (snapshot of the store).
+            Stage coordinates the stack was acquired at (the coordinates the
+            manager commanded onto the acquisition event). Subclasses compute
+            corrections relative to this value, so late-arriving updates don't
+            accumulate against a store value that has since moved on. Falls
+            back to the live store snapshot only when no acquisition baseline
+            was recorded.
         data : list[np.ndarray] | None
             Frames acquired for this position (one 2D array per z-slice),
             or None if frame collection is not available.
-        acquired_at : PositionCoordinates | None
-            Stage coordinates at the moment the stack was acquired. When
-            provided, subclasses should compute corrections relative to this
-            value rather than ``position``, so late-arriving updates don't
-            accumulate against a store value that has moved on.
 
         Returns
         -------
@@ -175,6 +174,11 @@ class PositionUpdateManager:
         self._executor: ThreadPoolExecutor | None = None
         self._pending_future: Future | None = None
         self._worker = None  # DynaTrackWorker for subprocess mode
+        # Stage coords commanded onto each (timepoint, position) acquisition
+        # event, captured in ``apply_position_update``. Used as the baseline
+        # for shift compensation so late-arriving updates don't accumulate
+        # against a store value that has since moved on.
+        self._acquired_at: dict[tuple[int, int], PositionCoordinates] = {}
 
     def apply_position_update(self, event: MDAEvent) -> MDAEvent:
         """Replace event's x/y/z with current values from the position store.
@@ -186,9 +190,10 @@ class PositionUpdateManager:
         from pymmcore_plus.core._sequencing import SequencedEvent
 
         if isinstance(event, SequencedEvent):
-            p_idx = event.events[0].index.get("p")
+            index = event.events[0].index
         else:
-            p_idx = event.index.get("p")
+            index = event.index
+        p_idx = index.get("p")
 
         if p_idx is None:
             return event
@@ -196,6 +201,13 @@ class PositionUpdateManager:
         coords = self.position_store.get_position(p_idx)
         if coords is None:
             return event
+
+        # Record the coords commanded for this stack as the acquisition
+        # baseline. The first applied event of a (t, p) stack wins; all slice
+        # events of one stack carry the same x/y/focus. Frozen here, this value
+        # is immune to the runner's event pre-fetch race.
+        t_idx = index.get("t", 0)
+        self._acquired_at.setdefault((t_idx, p_idx), coords)
 
         update: dict = {}
         if coords.x is not None:
@@ -274,12 +286,14 @@ class PositionUpdateManager:
             self._executor.shutdown(wait=True)
             self._executor = None
 
+        # Drop any baselines for stacks that never completed (e.g. skipped events)
+        self._acquired_at = {}
+
     def on_position_complete(
         self,
         timepoint_index: int,
         position_index: int,
         data: list[np.ndarray] | None = None,
-        acquired_at: PositionCoordinates | None = None,
     ) -> None:
         """Called when a position's z-stack has been fully acquired.
 
@@ -288,7 +302,17 @@ class PositionUpdateManager:
         if not self.config.enabled or self._executor is None:
             return
 
-        position = self.position_store.get_position(position_index)
+        # Baseline for the correction is the coords this stack was acquired at
+        # (recorded in apply_position_update). Fall back to the live store
+        # snapshot only when no baseline was recorded -- e.g. an event that
+        # never passed through apply_position_update.
+        position = self._acquired_at.pop((timepoint_index, position_index), None)
+        if position is None:
+            logger.warning(
+                f"PosUpdateMgr: no acquisition baseline for p={position_index} "
+                f"t={timepoint_index}, falling back to live store (race-prone)"
+            )
+            position = self.position_store.get_position(position_index)
         if position is None:
             return
 
@@ -297,9 +321,7 @@ class PositionUpdateManager:
         logger.debug(
             f"PosUpdateMgr[mem]: before submit p={position_index} t={timepoint_index} "
             f"rss={_rss_gb():.2f} GB data={data_gb:.2f} GB queue_depth={queue_depth} "
-            f"acquired_at=({acquired_at.x if acquired_at else None}, "
-            f"{acquired_at.y if acquired_at else None}, "
-            f"{acquired_at.z if acquired_at else None})"
+            f"baseline=({position.x}, {position.y}, {position.z})"
         )
 
         if self._worker is not None:
@@ -311,7 +333,6 @@ class PositionUpdateManager:
                 position_index,
                 position,
                 data,
-                acquired_at,
             )
         else:
             self._pending_future = self._executor.submit(
@@ -320,7 +341,6 @@ class PositionUpdateManager:
                 position_index,
                 position,
                 data,
-                acquired_at,
             )
 
         logger.debug(
@@ -334,7 +354,6 @@ class PositionUpdateManager:
         position_index: int,
         position: PositionCoordinates,
         data: list[np.ndarray] | None,
-        acquired_at: PositionCoordinates | None = None,
     ) -> None:
         """Execute the updater and write the result to the position store."""
         import time as _time
@@ -346,9 +365,7 @@ class PositionUpdateManager:
             f"({n_frames} frames)"
         )
         try:
-            updated = self._updater.update(
-                timepoint_index, position_index, position, data, acquired_at=acquired_at
-            )
+            updated = self._updater.update(timepoint_index, position_index, position, data)
             elapsed = _time.monotonic() - t0
             self.position_store.update_position(
                 position_index, updated.x, updated.y, updated.z
@@ -370,16 +387,13 @@ class PositionUpdateManager:
         position_index: int,
         position: PositionCoordinates,
         data: list[np.ndarray] | None,
-        acquired_at: PositionCoordinates | None = None,
     ) -> None:
         """Submit data to the worker and wait for the result.
 
         Runs in a background thread. By serializing submit + wait, only one
         position's frame data is in the mp.Queue at a time, reducing memory.
         """
-        self._worker.submit(
-            timepoint_index, position_index, position, data, acquired_at=acquired_at
-        )
+        self._worker.submit(timepoint_index, position_index, position, data)
         del data  # free main-process copy after it's been pickled to the queue
         result = self._worker.get_result(timeout=120)
         if result is None:
