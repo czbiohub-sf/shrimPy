@@ -72,9 +72,9 @@ class DynaTrackConfig:
         becomes unreliable.
     shift_estimation_channel : str
         Which representation to use for shift estimation:
-        ``'raw'`` (default, no preprocessing), ``'phase'`` (phase
-        reconstruction), ``'vs_nuclei'`` or ``'vs_membrane'`` (virtual
-        staining).
+        ``'deskewed'`` (default; the deskewed input volume, e.g. deskew-only
+        tracking), ``'phase'`` (phase reconstruction), ``'vs_nuclei'`` or
+        ``'vs_membrane'`` (virtual staining).
     preprocessing : list[str] | None
         Pipeline steps, e.g. ``['phase']`` or ``['phase', 'vs']``.
         Used by external factory functions to build the preprocessor callable.
@@ -99,7 +99,7 @@ class DynaTrackConfig:
     shift_limits: dict[str, tuple[float, float]] | None = None
     tracking_interval: int = 1
     reference_update_interval: int = 0
-    shift_estimation_channel: str = "raw"
+    shift_estimation_channel: str = "deskewed"
     preprocessing: list[str] | None = None
     deskew_config: dict[str, Any] | None = None
     phase_config: dict[str, Any] | None = None
@@ -692,8 +692,11 @@ class DynaTrackUpdater(PositionUpdater):
                 channel_names,
             )
 
-        # Create position on first encounter
-        pos_name = self._debug_position_names.get(position_index, f"p{position_index}")
+        # Create position on first encounter. OME-Zarr (iohub) requires
+        # alphanumeric path names, so strip non-alphanumeric characters from
+        # the acquisition position name (e.g. "1-Pos0000" -> "1Pos0000").
+        raw_name = self._debug_position_names.get(position_index, f"p{position_index}")
+        pos_name = "".join(ch for ch in raw_name if ch.isalnum()) or f"p{position_index}"
         pos_key = f"0/{position_index}/{pos_name}"
         if pos_key not in dict(self._debug_store.positions()):
             pos = self._debug_store.create_position("0", str(position_index), pos_name)
