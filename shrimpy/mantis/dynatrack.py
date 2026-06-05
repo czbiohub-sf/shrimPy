@@ -62,6 +62,15 @@ class DynaTrackConfig:
         "y", "x". Shifts below min are zeroed; shifts above max are clipped.
     tracking_interval : int
         Track every N timepoints (1 = every timepoint).
+    tracking_method : str
+        Shift estimation algorithm. One of ``'pcc'`` (phase cross-correlation,
+        default), ``'multiotsu_center_of_mass'`` (multi-Otsu threshold then
+        area-weighted centroid), or ``'multiotsu_pcc'`` (multi-Otsu threshold
+        then PCC on the binary masks).
+    otsu_sigma : float
+        Gaussian blur sigma for the multi-Otsu methods (default 5.0).
+    otsu_component : int
+        Which multi-Otsu threshold to use: 0 = lower, 1 = upper (default 0).
     reference_update_interval : int
         Re-anchor the per-position reference every N timepoints (0 = never,
         i.e. keep the fixed t=0 reference). On a re-anchor timepoint the
@@ -98,6 +107,9 @@ class DynaTrackConfig:
     dampening: tuple[float, float, float] | None = None
     shift_limits: dict[str, tuple[float, float]] | None = None
     tracking_interval: int = 1
+    tracking_method: str = "pcc"
+    otsu_sigma: float = 5.0
+    otsu_component: int = 0
     reference_update_interval: int = 0
     shift_estimation_channel: str = "deskewed"
     preprocessing: list[str] | None = None
@@ -245,6 +257,255 @@ def _phase_cross_corr(
     logger.debug("phase cross corr: peak at %s (device=%s)", peak, device)
 
     return peak
+
+
+# ---------------------------------------------------------------------------
+# Multi-Otsu thresholding helpers (GPU)
+# ---------------------------------------------------------------------------
+
+
+def _gaussian_blur_3d(img: torch.Tensor, sigma: float) -> torch.Tensor:
+    """Apply separable 3-D Gaussian blur entirely on *img*'s device.
+
+    Uses three sequential 1-D convolutions (one per axis) with reflect
+    padding, matching the behaviour of ``skimage.filters.gaussian``.
+    """
+    import torch
+    import torch.nn.functional as F  # noqa: N812
+
+    if sigma <= 0:
+        return img
+
+    max_radius = int(4 * sigma + 0.5)
+
+    vol = img[None, None]  # (1, 1, Z, Y, X)
+
+    # Convolve each spatial axis with a 1-D Gaussian kernel.
+    # Reflect padding requires pad < dim, so clamp per axis.
+    for spatial_idx, axis in enumerate((2, 3, 4)):
+        r = min(max_radius, vol.shape[axis] - 1)
+        x = torch.arange(-r, r + 1, device=img.device, dtype=img.dtype)
+        k1d = torch.exp(-0.5 * (x / sigma) ** 2)
+        k1d = k1d / k1d.sum()
+
+        # F.pad expects (x_l, x_r, y_l, y_r, z_l, z_r) — last dim first.
+        # spatial_idx: 0=Z(axis2), 1=Y(axis3), 2=X(axis4)
+        pad = [0] * 6
+        pad_pos = 2 * (2 - spatial_idx)  # Z→4, Y→2, X→0
+        pad[pad_pos] = r
+        pad[pad_pos + 1] = r
+        vol = F.pad(vol, pad, mode="reflect")
+
+        k_shape = [1, 1, 1, 1, 1]
+        k_shape[axis] = len(k1d)
+        vol = F.conv3d(vol, k1d.reshape(k_shape))
+
+    return vol[0, 0]
+
+
+def _multiotsu_threshold(
+    img_blur: torch.Tensor,
+    otsu_component: int = 0,
+    nbins: int = 256,
+) -> float:
+    """Compute multi-Otsu threshold entirely on GPU.
+
+    Builds a histogram with ``torch.histc``, then finds the two
+    thresholds that maximise inter-class variance (3-class Otsu) via a
+    fully vectorised search over all bin-pair splits — all on the
+    tensor's device.
+
+    Parameters
+    ----------
+    img_blur : torch.Tensor
+        Pre-blurred volume on GPU.
+    otsu_component : int
+        Which threshold to return (0 = lower, 1 = upper).
+    nbins : int
+        Number of histogram bins.
+
+    Returns
+    -------
+    float
+        The selected threshold value.
+    """
+    import torch
+
+    vmin = img_blur.min()
+    vmax = img_blur.max()
+    if vmin == vmax:
+        return float(vmin)
+
+    hist = torch.histc(img_blur, bins=nbins, min=float(vmin), max=float(vmax))
+    hist = hist / hist.sum()  # normalise to probability
+
+    bin_centers = torch.linspace(float(vmin), float(vmax), nbins, device=img_blur.device)
+
+    # Cumulative sums for fast inter-class variance computation
+    cum_w = torch.cumsum(hist, dim=0)  # cumulative weight
+    cum_wm = torch.cumsum(hist * bin_centers, dim=0)  # cumulative weighted mean
+    total_mean = cum_wm[-1]
+    del hist
+
+    # 3-class Otsu: choose split boundaries a < b (bin indices) that maximise
+    # the between-class variance, evaluated over all (a, b) pairs at once
+    # instead of a Python double loop (this is the expensive part).
+    #   class 0 = bins [0..a]   class 1 = bins [a+1..b]   class 2 = bins [b+1..]
+    eps = 1e-10
+    w0 = cum_w.unsqueeze(1)  # [N, 1]  weight of class 0 (boundary a)
+    w1 = cum_w.unsqueeze(0) - cum_w.unsqueeze(1)  # [N, N]  class 1 (a < b)
+    w2 = 1.0 - cum_w.unsqueeze(0)  # [1, N]  class 2 (boundary b)
+    m0 = cum_wm.unsqueeze(1) / w0.clamp_min(eps)
+    m1 = (cum_wm.unsqueeze(0) - cum_wm.unsqueeze(1)) / w1.clamp_min(eps)
+    m2 = (total_mean - cum_wm.unsqueeze(0)) / w2.clamp_min(eps)
+    sigma = (
+        w0 * (m0 - total_mean) ** 2 + w1 * (m1 - total_mean) ** 2 + w2 * (m2 - total_mean) ** 2
+    )
+
+    bins = torch.arange(nbins, device=img_blur.device)
+    valid = (
+        (bins.unsqueeze(0) > bins.unsqueeze(1))  # b > a
+        & (bins.unsqueeze(0) <= nbins - 2)  # class 2 non-empty
+        & (w0 > eps)
+        & (w1 > eps)
+        & (w2 > eps)
+    )
+    sigma = sigma.masked_fill(~valid, -1.0)
+
+    flat = int(torch.argmax(sigma))
+    best_a, best_b = divmod(flat, nbins)
+    # the original loop indexed thresholds at t1 = a + 1, t2 = b + 1
+    thresholds = (float(bin_centers[best_a + 1]), float(bin_centers[best_b + 1]))
+    del cum_w, cum_wm, bin_centers, sigma
+    logger.debug("multi-Otsu thresholds: %s (using component %d)", thresholds, otsu_component)
+    idx = min(otsu_component, 1)
+    return thresholds[idx]
+
+
+def _binary_mask(
+    img: torch.Tensor,
+    sigma: float = 5.0,
+    otsu_component: int = 0,
+) -> torch.Tensor:
+    """Rescale, blur, and threshold a 3-D volume on GPU.
+
+    Parameters
+    ----------
+    img : torch.Tensor
+        Input volume (Z, Y, X) on the target device.
+    sigma : float
+        Gaussian blur sigma applied before thresholding.
+    otsu_component : int
+        Which multi-Otsu threshold to use (0 = lower, 1 = upper).
+
+    Returns
+    -------
+    torch.Tensor
+        Boolean mask on the same device as *img*.
+    """
+    import torch
+
+    img = img.to(dtype=torch.float32)
+
+    # Rescale to [0, 1]
+    vmin = img.min()
+    vmax = img.max()
+    if vmax > vmin:
+        img = (img - vmin) / (vmax - vmin)
+    else:
+        return torch.zeros_like(img, dtype=torch.bool)
+
+    img_blur = _gaussian_blur_3d(img, sigma)
+    del img
+    threshold = _multiotsu_threshold(img_blur, otsu_component)
+    mask = img_blur > threshold
+    del img_blur
+    return mask
+
+
+def _center_of_mass(mask: torch.Tensor) -> torch.Tensor:
+    """Compute the center of mass of a boolean mask on GPU.
+
+    Equivalent to the area-weighted centroid: every True voxel
+    contributes equally, so larger connected regions naturally
+    dominate.
+
+    Parameters
+    ----------
+    mask : torch.Tensor
+        Boolean mask (Z, Y, X).
+
+    Returns
+    -------
+    torch.Tensor
+        Center-of-mass coordinates, shape ``(ndim,)``, on the same device.
+    """
+    import torch
+
+    coords = torch.nonzero(mask, as_tuple=False).to(dtype=torch.float32)
+    if coords.shape[0] == 0:
+        return torch.zeros(mask.ndim, device=mask.device)
+    center = coords.mean(dim=0)
+    del coords
+    return center
+
+
+def _multiotsu_center_of_mass(
+    ref_img: torch.Tensor,
+    mov_img: torch.Tensor,
+    sigma: float = 5.0,
+    otsu_component: int = 0,
+) -> tuple[float, ...]:
+    """Compute shift via multi-Otsu thresholding + center of mass on GPU.
+
+    Both images are thresholded independently and the shift is the
+    difference between their centres of mass (ZYX pixel order).
+    All heavy computation stays on the input tensor's device.
+    """
+    ref_mask = _binary_mask(ref_img, sigma=sigma, otsu_component=otsu_component)
+    mov_mask = _binary_mask(mov_img, sigma=sigma, otsu_component=otsu_component)
+
+    ref_center = _center_of_mass(ref_mask)
+    del ref_mask
+    mov_center = _center_of_mass(mov_mask)
+    del mov_mask
+
+    shift_zyx = mov_center - ref_center
+    logger.debug(
+        "multiotsu_center_of_mass: ref_center=%s mov_center=%s shift=%s",
+        ref_center.tolist(),
+        mov_center.tolist(),
+        shift_zyx.tolist(),
+    )
+    del ref_center, mov_center
+    return tuple(float(s) for s in shift_zyx)
+
+
+def _multiotsu_pcc(
+    ref_img: torch.Tensor,
+    mov_img: torch.Tensor,
+    sigma: float = 5.0,
+    otsu_component: int = 0,
+    maximum_shift: float = 1.0,
+) -> tuple[int, ...]:
+    """Compute shift via multi-Otsu thresholding + PCC on binary masks.
+
+    Both images are thresholded on GPU, then phase cross-correlation
+    is run on the binary volumes entirely on device.
+    """
+    import torch
+
+    ref_mask = _binary_mask(ref_img, sigma=sigma, otsu_component=otsu_component)
+    mov_mask = _binary_mask(mov_img, sigma=sigma, otsu_component=otsu_component)
+
+    ref_binary_f = ref_mask.to(dtype=torch.float32)
+    del ref_mask
+    mov_binary_f = mov_mask.to(dtype=torch.float32)
+    del mov_mask
+
+    result = _phase_cross_corr(ref_binary_f, mov_binary_f, maximum_shift)
+    del ref_binary_f, mov_binary_f
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -466,7 +727,6 @@ class DynaTrackUpdater(PositionUpdater):
                 f"DynaTrack[mem]: after preprocessor p={position_index} t={timepoint_index} "
                 f"rss={_rss_gb():.2f} GB channels_total={ch_bytes / 1024**3:.2f} GB"
             )
-            self._save_debug_channels(channels_zyx, timepoint_index, position_index)
             # Select the configured channel for shift estimation. Stays as a
             # torch tensor on device; PCC consumes tensors directly.
             channel_name = self._config.shift_estimation_channel
@@ -478,6 +738,15 @@ class DynaTrackUpdater(PositionUpdater):
                     f"output {list(channels_zyx.keys())}, using first channel"
                 )
                 selected = next(iter(channels_zyx.values()))
+            self._save_debug_channels(channels_zyx, timepoint_index, position_index)
+            # For center-of-mass tracking, save a PNG of the thresholded mask
+            # (Z max-projection) with the computed centroid marked, for a quick
+            # visual check of where the tracker is centring.
+            if (
+                self._debug_zarr_path is not None
+                and self._config.tracking_method == "multiotsu_center_of_mass"
+            ):
+                self._save_center_png(selected, timepoint_index, position_index)
             # Clone into a compact standalone tensor. A bare ``.detach()`` is a
             # view that keeps the *entire* preprocessor output alive (all
             # channels share one parent tensor), so a stored reference would
@@ -623,8 +892,30 @@ class DynaTrackUpdater(PositionUpdater):
         """
         cfg = self._config
 
-        # 1. Phase cross-correlation in pixel space (returns ZYX order)
-        shifts_zyx_px = _phase_cross_corr(reference_zyx, current_zyx, cfg.maximum_shift)
+        # 1. Compute pixel shifts using the configured method (returns ZYX order)
+        method = cfg.tracking_method
+        if method == "pcc":
+            shifts_zyx_px = _phase_cross_corr(reference_zyx, current_zyx, cfg.maximum_shift)
+        elif method == "multiotsu_center_of_mass":
+            shifts_zyx_px = _multiotsu_center_of_mass(
+                reference_zyx,
+                current_zyx,
+                sigma=cfg.otsu_sigma,
+                otsu_component=cfg.otsu_component,
+            )
+        elif method == "multiotsu_pcc":
+            shifts_zyx_px = _multiotsu_pcc(
+                reference_zyx,
+                current_zyx,
+                sigma=cfg.otsu_sigma,
+                otsu_component=cfg.otsu_component,
+                maximum_shift=cfg.maximum_shift,
+            )
+        else:
+            raise ValueError(
+                f"Unknown tracking_method={method!r}. "
+                "Use 'pcc', 'multiotsu_center_of_mass', or 'multiotsu_pcc'."
+            )
 
         # 2. Convert pixels to microns
         shifts_zyx_um = np.array(
@@ -718,3 +1009,45 @@ class DynaTrackUpdater(PositionUpdater):
             pos_name,
             pos_node["0"].shape,
         )
+
+    def _save_center_png(
+        self,
+        volume: torch.Tensor,
+        timepoint_index: int,
+        position_index: int,
+    ) -> None:
+        """Save a PNG of the thresholded mask (Z max-projection) with the
+        center-of-mass marked, for a quick visual check of the tracker's
+        centring. Written to a ``dynatrack_centers/`` folder next to the
+        debug zarr, one PNG per position per timepoint.
+        """
+        if self._debug_zarr_path is None:
+            return
+
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        mask = _binary_mask(
+            volume,
+            sigma=self._config.otsu_sigma,
+            otsu_component=self._config.otsu_component,
+        )
+        cz, cy, cx = (float(c) for c in _center_of_mass(mask).tolist())
+        mip = mask.any(dim=0).detach().cpu().numpy()  # (Y, X) projection over Z
+
+        raw_name = self._debug_position_names.get(position_index, f"p{position_index}")
+        pos_name = "".join(ch for ch in raw_name if ch.isalnum()) or f"p{position_index}"
+        out_dir = self._debug_zarr_path.with_name("dynatrack_centers")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{pos_name}_t{timepoint_index:04d}.png"
+
+        fig, ax = plt.subplots(figsize=(5, 5))
+        ax.imshow(mip, cmap="gray", interpolation="nearest")
+        ax.plot(cx, cy, marker="x", color="red", markersize=14, markeredgewidth=2)
+        ax.set_title(f"{pos_name} t={timepoint_index}  com=({cz:.1f}, {cy:.1f}, {cx:.1f})")
+        ax.axis("off")
+        fig.savefig(out_path, dpi=100, bbox_inches="tight")
+        plt.close(fig)
+        logger.info("DynaTrack: saved center PNG %s", out_path)
