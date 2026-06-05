@@ -528,9 +528,12 @@ class DynaTrackUpdater(PositionUpdater):
         else:
             shift_stage_xyz = shift_image_xyz
 
-        _x = position.x + shift_stage_xyz[0]
-        _y = position.y + shift_stage_xyz[1]
-        _z = (position.z or 0) + shift_stage_xyz[2] if position.z is not None else None
+        # The shift is the measured drift of the current image relative to the
+        # reference, so the stage must move in the OPPOSITE direction to
+        # recenter -- hence subtract.
+        _x = position.x - shift_stage_xyz[0]
+        _y = position.y - shift_stage_xyz[1]
+        _z = (position.z or 0) - shift_stage_xyz[2] if position.z is not None else None
         updated = PositionCoordinates(_x, _y, _z)
 
         logger.info(
