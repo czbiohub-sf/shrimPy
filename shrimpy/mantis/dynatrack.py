@@ -546,16 +546,18 @@ class DynaTrackUpdater(PositionUpdater):
 
         # Compensate the drift between the reference and where the stack was
         # actually acquired. `position` is the commanded stage coords at
-        # acquisition time, so adding the shift here avoids accumulating
-        # against a store value that a later update may already have moved on.
+        # acquisition time (so we don't accumulate against a store value a
+        # later update may already have moved on). The shift is the measured
+        # drift of the current image relative to the reference, so the stage
+        # must move in the OPPOSITE direction to recenter -- hence subtract.
         baseline = position
         logger.info(
             f"DynaTrack: baseline p={position_index} t={timepoint_index} "
             f"x={baseline.x} y={baseline.y} z={baseline.z}"
         )
-        _x = baseline.x + shift_stage_xyz[0]
-        _y = baseline.y + shift_stage_xyz[1]
-        _z = (baseline.z or 0) + shift_stage_xyz[2] if baseline.z is not None else None
+        _x = baseline.x - shift_stage_xyz[0]
+        _y = baseline.y - shift_stage_xyz[1]
+        _z = (baseline.z or 0) - shift_stage_xyz[2] if baseline.z is not None else None
         updated = PositionCoordinates(_x, _y, _z)
         logger.info(
             f"DynaTrack: updated position p={position_index} t={timepoint_index} "
