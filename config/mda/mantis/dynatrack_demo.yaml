@@ -65,6 +65,11 @@ metadata:
         scale_yx: 0.1494
         scale_z: 0.174
         tracking_interval: 1
+        # Re-anchor the reference every N timepoints (0 = never; keep the fixed
+        # t=0 reference). On a re-anchor timepoint the current stack becomes the
+        # new reference and no correction is applied. Use for long timelapses
+        # where the sample changes enough that matching a stale reference fails.
+        reference_update_interval: 0
         save_debug: true
         # shift_limits:
         #   z: [0.5, 2.0]
