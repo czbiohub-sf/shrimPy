@@ -143,7 +143,7 @@ class TestDynaTrackConfig:
         assert cfg.dampening is None
         assert cfg.shift_limits is None
         assert cfg.tracking_interval == 1
-        assert cfg.shift_estimation_channel == "raw"
+        assert cfg.shift_estimation_channel == "deskewed"
         assert cfg.preprocessing is None
         assert cfg.shift_log_path is None
 
@@ -404,7 +404,7 @@ class TestPreprocessor:
 
         def identity_preprocessor(stack: np.ndarray) -> dict[str, torch.Tensor]:
             call_count[0] += 1
-            return {"raw": torch.as_tensor(stack)}
+            return {"deskewed": torch.as_tensor(stack)}
 
         updater = DynaTrackUpdater(config=config, preprocessor=identity_preprocessor)
         pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
@@ -429,8 +429,8 @@ class TestPreprocessor:
         def shifting_preprocessor(stack: np.ndarray) -> dict[str, torch.Tensor]:
             if first_call[0]:
                 first_call[0] = False
-                return {"raw": torch.as_tensor(stack)}
-            return {"raw": torch.as_tensor(np.roll(stack, 2, axis=1))}
+                return {"deskewed": torch.as_tensor(stack)}
+            return {"deskewed": torch.as_tensor(np.roll(stack, 2, axis=1))}
 
         updater = DynaTrackUpdater(config=config, preprocessor=shifting_preprocessor)
         pos = PositionCoordinates(x=0.0, y=0.0, z=0.0)

@@ -77,7 +77,11 @@ def build_preprocessor(
     pipeline = config.preprocessing
     channel = config.shift_estimation_channel
 
-    if not pipeline or channel == "raw":
+    # No pipeline -> no preprocessor (track on the raw, un-deskewed stack).
+    # Deskew-only tracking is expressed as preprocessing=['deskew'] +
+    # shift_estimation_channel='deskewed' (the deskewed volume is emitted
+    # under the "deskewed" key by the preprocessor).
+    if not pipeline:
         return None
 
     if "phase" not in pipeline and "deskew" not in pipeline:
@@ -236,9 +240,9 @@ class _LabelfreePreprocessor:
             vs_result = self._predict_vs(volume_phase)
             channels.update(vs_result)
 
-        # If no phase or VS, return the (possibly deskewed) raw volume
+        # No phase/VS channel -> emit the (deskewed) input volume itself.
         if not channels:
-            channels["raw"] = volume
+            channels["deskewed"] = volume
 
         self._log_gpu_memory()
         return channels
