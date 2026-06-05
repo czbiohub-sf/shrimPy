@@ -76,6 +76,16 @@ metadata:
         scale_yx: 0.1494
         scale_z: 0.174
         tracking_interval: 1
+        # Shift-estimation algorithm: 'pcc' (phase cross-correlation),
+        # 'multiotsu_center_of_mass' (multi-Otsu threshold -> centroid), or
+        # 'multiotsu_pcc' (multi-Otsu threshold -> PCC on the binary masks).
+        # Note: center-of-mass uses the reference only as a fixed target
+        # centroid, so it does NOT need re-anchoring (set reference_update_interval: 0).
+        tracking_method: 'pcc'
+        # tracking_method: 'multiotsu_center_of_mass'
+        # tracking_method: 'multiotsu_pcc'
+        otsu_sigma: 5.0       # Gaussian blur sigma before thresholding (multi-Otsu methods)
+        otsu_component: 1     # which multi-Otsu threshold: 0 = lower, 1 = upper (brightest); use 0 for gfp and 1 for bf
         # Re-anchor the reference every N timepoints (0 = never; keep the fixed
         # t=0 reference). On a re-anchor timepoint the current stack becomes the
         # new reference and no correction is applied. Use for long timelapses
