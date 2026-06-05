@@ -290,10 +290,37 @@ class TestDynaTrackUpdaterFlow:
         # Second call: detect shift
         result = updater.update(1, 0, pos, mov_frames)
 
-        expected_x = 100.0 + dx * scale_yx
-        expected_y = 200.0 + dy * scale_yx
+        # Correction is negative feedback: the stage moves OPPOSITE the
+        # measured image shift (updated = baseline - shift).
+        expected_x = 100.0 - dx * scale_yx
+        expected_y = 200.0 - dy * scale_yx
         assert result.x == pytest.approx(expected_x, abs=1e-6)
         assert result.y == pytest.approx(expected_y, abs=1e-6)
+
+    def test_reference_reanchor_skips_correction_and_updates_ref(self):
+        """With reference_update_interval=N, every Nth timepoint re-anchors the
+        reference to the current stack and applies NO correction."""
+        rng = np.random.default_rng(7)
+        updater = self._make_updater(reference_update_interval=2)
+        pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
+        ref = [rng.random((64, 64)) for _ in range(8)]
+        mov = [np.roll(f, 3, axis=1) for f in ref]  # shifted -> would correct
+
+        updater.update(0, 0, pos, ref)  # t=0: store reference
+        r1 = updater.update(1, 0, pos, mov)  # t=1: shifted -> correction applied
+        assert abs(r1.x - pos.x) > 1.0, "t=1 should produce a correction"
+
+        ref_before = updater._reference_stacks_zyx[0]
+        r2 = updater.update(2, 0, pos, mov)  # t=2: re-anchor timepoint
+        # No correction applied on the re-anchor timepoint.
+        assert (r2.x, r2.y, r2.z) == (pos.x, pos.y, pos.z)
+        # Reference replaced with the current (t=2) stack.
+        assert updater._reference_stacks_zyx[0] is not ref_before
+
+        # t=3 now compares against the new reference (same content) -> ~zero shift.
+        r3 = updater.update(3, 0, pos, mov)
+        assert r3.x == pytest.approx(pos.x, abs=1e-6)
+        assert r3.y == pytest.approx(pos.y, abs=1e-6)
 
     def test_no_data_returns_unchanged(self):
         """When data is None, position is returned unchanged."""
@@ -412,8 +439,9 @@ class TestPreprocessor:
         updater.update(0, 0, pos, frames)
         result = updater.update(1, 0, pos, frames)
 
-        # The preprocessor-introduced shift should be detected
-        assert result.y == pytest.approx(2.0, abs=1e-6)
+        # The preprocessor-introduced shift should be detected and corrected
+        # with negative feedback (stage moves opposite the +2 px image shift).
+        assert result.y == pytest.approx(-2.0, abs=1e-6)
 
 
 # ---------------------------------------------------------------------------
