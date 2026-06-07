@@ -1,0 +1,7 @@
+well_id,channel_name,exposure_time_ms,laser_name,laser_power_mW
+A1,FITC,10,488,1
+A2,FITC,15,488,2
+B1,FITC,20,488,3
+A1,DAPI,6,561,4
+A2,DAPI,7,561,5
+B1,DAPI,8,561,6
