@@ -64,13 +64,35 @@ class DynaTrackConfig:
         Track every N timepoints (1 = every timepoint).
     tracking_method : str
         Shift estimation algorithm. One of ``'pcc'`` (phase cross-correlation,
-        default), ``'multiotsu_center_of_mass'`` (multi-Otsu threshold then
-        area-weighted centroid), or ``'multiotsu_pcc'`` (multi-Otsu threshold
-        then PCC on the binary masks).
+        default), ``'intensity_center_of_mass'`` (intensity-weighted centroid
+        of the current volume relative to the ROI centre in deskew space; no
+        thresholding and no reference stack), ``'roi_center_pcc'`` (cross-
+        correlate the current volume against a synthetic Gaussian blob centred
+        on the ROI centre in deskew space; no reference stack),
+        ``'multiotsu_center_of_mass'`` (multi-Otsu threshold then area-weighted
+        centroid), or ``'multiotsu_pcc'`` (multi-Otsu threshold then PCC on the
+        binary masks). The ``'intensity_center_of_mass'`` and
+        ``'roi_center_pcc'`` methods are referenceless: they target the ROI
+        centre and correct from the first timepoint (no reference is stored).
     otsu_sigma : float
         Gaussian blur sigma for the multi-Otsu methods (default 5.0).
     otsu_component : int
         Which multi-Otsu threshold to use: 0 = lower, 1 = upper (default 0).
+    roi_blob_sigma : float
+        Gaussian sigma (in pixels) of the synthetic centred blob used as the
+        cross-correlation template for ``'roi_center_pcc'`` (default 10.0).
+        Set roughly to the radius of the structure being tracked.
+    roi_background_percentile : float | None
+        For ``'intensity_center_of_mass'``: if set (0-100), subtract this
+        intensity percentile of the volume as a background floor before
+        weighting, so a uniform background pedestal no longer pulls the
+        centroid toward the geometric centre. ``None`` (default) uses raw
+        values. Typical values: 50 (median) to 90 for a strong background.
+    roi_blur_sigma : float
+        For ``'intensity_center_of_mass'``: if > 0, Gaussian-blur the volume
+        before computing the background floor and centroid, suppressing
+        per-pixel noise / camera striping so the centroid follows the smooth
+        bright core. 0 (default) disables blurring.
     reference_update_interval : int
         Re-anchor the per-position reference every N timepoints (0 = never,
         i.e. keep the fixed t=0 reference). On a re-anchor timepoint the
@@ -110,6 +132,9 @@ class DynaTrackConfig:
     tracking_method: str = "pcc"
     otsu_sigma: float = 5.0
     otsu_component: int = 0
+    roi_blob_sigma: float = 10.0
+    roi_background_percentile: float | None = None
+    roi_blur_sigma: float = 0.0
     reference_update_interval: int = 0
     shift_estimation_channel: str = "deskewed"
     preprocessing: list[str] | None = None
@@ -119,6 +144,12 @@ class DynaTrackConfig:
     image_to_stage_matrix_xyz: list[list[float]] | None = None
     shift_log_path: str | Path | None = None
     save_debug: bool = False
+
+
+# Tracking methods whose target is the ROI centre in deskew space rather than
+# an acquired reference stack. These are "referenceless": no reference is
+# stored and correction is applied from the first timepoint.
+_ROI_CENTER_METHODS = frozenset({"intensity_center_of_mass", "roi_center_pcc"})
 
 
 # ---------------------------------------------------------------------------
@@ -450,6 +481,185 @@ def _center_of_mass(mask: torch.Tensor) -> torch.Tensor:
     return center
 
 
+def _percentile(img: torch.Tensor, percentile: float, nbins: int = 256) -> float:
+    """Approximate a percentile (0-100) of *img* via a histogram on GPU.
+
+    ``torch.quantile`` errors on very large tensors (it materialises a sorted
+    copy), so for whole deskewed volumes we estimate the percentile from a
+    256-bin histogram instead -- cheap, on-device, and accurate enough for a
+    background floor.
+    """
+    import torch
+
+    vmin = float(img.min())
+    vmax = float(img.max())
+    if vmax <= vmin:
+        return vmin
+    hist = torch.histc(img, bins=nbins, min=vmin, max=vmax)
+    cdf = torch.cumsum(hist, dim=0)
+    cdf = cdf / cdf[-1]
+    target = torch.tensor(percentile / 100.0, device=cdf.device)
+    idx = int(torch.searchsorted(cdf, target))
+    idx = min(idx, nbins - 1)
+    # Return the upper edge of the selected bin.
+    return vmin + (idx + 1) * (vmax - vmin) / nbins
+
+
+def _intensity_center_of_mass(img: torch.Tensor, background: float = 0.0) -> torch.Tensor:
+    """Compute the intensity-weighted center of mass on GPU.
+
+    Unlike :func:`_center_of_mass`, which treats every masked voxel equally
+    (area-weighted), this weights each voxel by its pixel value so brighter
+    voxels pull the centroid more strongly. No thresholding is applied.
+
+    The per-axis centroid is computed from 1-D weighted marginals (summing
+    the weights over all other axes) rather than an explicit coordinate
+    meshgrid, so memory stays at the size of the input volume.
+
+    Parameters
+    ----------
+    img : torch.Tensor
+        Input volume (Z, Y, X) on the target device; its values are the
+        weights.
+    background : float
+        Constant background subtracted from every voxel before weighting.
+        Voxels at or below it contribute zero, which sharpens the centroid
+        when there is a uniform background pedestal (default 0.0).
+
+    Returns
+    -------
+    torch.Tensor
+        Intensity-weighted center-of-mass coordinates, shape ``(ndim,)``,
+        on the same device.
+    """
+    import torch
+
+    # Subtract the background floor, then clamp: negative values (e.g. phase,
+    # or sub-background voxels) must not pull the centroid the wrong way, so
+    # weights represent non-negative "mass" only.
+    weights = (img.to(dtype=torch.float32) - background).clamp_min(0)
+    total = weights.sum()
+    if total <= 0:
+        del weights
+        return torch.zeros(img.ndim, device=img.device)
+
+    centers = []
+    for axis in range(weights.ndim):
+        other = [d for d in range(weights.ndim) if d != axis]
+        profile = weights.sum(dim=other)  # marginal weight along this axis
+        idx = torch.arange(weights.shape[axis], device=weights.device, dtype=torch.float32)
+        centers.append((profile * idx).sum() / total)
+    del weights
+    return torch.stack(centers)
+
+
+def _intensity_center_of_mass_to_roi_center(
+    current_img: torch.Tensor,
+    background_percentile: float | None = None,
+    blur_sigma: float = 0.0,
+) -> tuple[float, ...]:
+    """Compute shift from the ROI centre to the intensity-weighted centroid.
+
+    The target ("reference") coordinate is the geometric centre of the volume
+    -- i.e. the centre of the ROI in deskew space -- rather than a reference
+    stack's centroid. The shift is the intensity-weighted center of mass of
+    *current_img* minus that ROI centre (ZYX pixel order), so a positive shift
+    means the bright structure sits past the centre on that axis. No reference
+    stack and no thresholding are used. All computation stays on device.
+
+    Parameters
+    ----------
+    current_img : torch.Tensor
+        Current volume (Z, Y, X) on the target device.
+    background_percentile : float | None
+        If given (0-100), subtract that intensity percentile of the volume as
+        a background floor before weighting, so a uniform background pedestal
+        no longer pulls the centroid toward the geometric centre. ``None``
+        (default) uses the raw values.
+    blur_sigma : float
+        If > 0, Gaussian-blur the volume before weighting (and before the
+        background percentile). Suppresses per-pixel noise / camera striping
+        so the centroid follows the smooth bright core rather than jittering
+        on speckle. 0 (default) disables blurring.
+    """
+    import torch
+
+    img = current_img.to(dtype=torch.float32)
+    if blur_sigma and blur_sigma > 0:
+        img = _gaussian_blur_3d(img, blur_sigma)
+
+    background = (
+        _percentile(img, background_percentile) if background_percentile is not None else 0.0
+    )
+    center_of_mass = _intensity_center_of_mass(img, background=background)
+    roi_center = torch.tensor(
+        [(s - 1) / 2.0 for s in img.shape],
+        device=img.device,
+        dtype=torch.float32,
+    )
+    shift_zyx = center_of_mass - roi_center
+    logger.debug(
+        "intensity_center_of_mass: com=%s roi_center=%s background=%.4g "
+        "blur_sigma=%.2g shift=%s",
+        center_of_mass.tolist(),
+        roi_center.tolist(),
+        background,
+        blur_sigma,
+        shift_zyx.tolist(),
+    )
+    del center_of_mass, roi_center, img
+    return tuple(float(s) for s in shift_zyx)
+
+
+def _centered_gaussian_blob(
+    shape: tuple[int, ...],
+    sigma: float,
+    device: torch.device,
+) -> torch.Tensor:
+    """Build a Gaussian blob of *shape* centred on the geometric centre.
+
+    Used as a synthetic cross-correlation template for ``roi_center_pcc``:
+    the centre of the blob is the ROI centre in deskew space. Built as a
+    separable outer product of 1-D Gaussians so memory stays at the volume
+    size.
+    """
+    import torch
+
+    axes_1d = []
+    for n in shape:
+        idx = torch.arange(n, device=device, dtype=torch.float32)
+        center = (n - 1) / 2.0
+        axes_1d.append(torch.exp(-0.5 * ((idx - center) / sigma) ** 2))
+    blob = axes_1d[0]
+    for g in axes_1d[1:]:
+        blob = blob.unsqueeze(-1) * g  # outer product, growing rank
+    return blob
+
+
+def _roi_center_pcc(
+    current_img: torch.Tensor,
+    blob_sigma: float = 10.0,
+    maximum_shift: float = 1.0,
+) -> tuple[int, ...]:
+    """Compute shift by cross-correlating against a centred Gaussian blob.
+
+    The reference is a synthetic Gaussian blob centred on the ROI centre in
+    deskew space (no acquired reference stack). Cross-correlating the current
+    volume against it locates the bright structure relative to the centre, so
+    the returned shift (ZYX pixel order) is the structure's offset from the
+    ROI centre. All computation stays on the input tensor's device.
+    """
+    import torch
+
+    blob = _centered_gaussian_blob(tuple(current_img.shape), blob_sigma, current_img.device)
+    # _phase_cross_corr(ref, mov) returns the shift of *mov* relative to *ref*.
+    # With the centred blob as the reference, that shift is the structure's
+    # displacement from the ROI centre.
+    result = _phase_cross_corr(blob, current_img.to(dtype=torch.float32), maximum_shift)
+    del blob
+    return result
+
+
 def _multiotsu_center_of_mass(
     ref_img: torch.Tensor,
     mov_img: torch.Tensor,
@@ -739,14 +949,15 @@ class DynaTrackUpdater(PositionUpdater):
                 )
                 selected = next(iter(channels_zyx.values()))
             self._save_debug_channels(channels_zyx, timepoint_index, position_index)
-            # For center-of-mass tracking, save a PNG of the thresholded mask
-            # (Z max-projection) with the computed centroid marked, for a quick
-            # visual check of where the tracker is centring.
-            if (
-                self._debug_zarr_path is not None
-                and self._config.tracking_method == "multiotsu_center_of_mass"
-            ):
-                self._save_center_png(selected, timepoint_index, position_index)
+            # For center-of-mass tracking, save a PNG (Z max-projection) with
+            # the computed centroid marked, for a quick visual check of where
+            # the tracker is centring. multiotsu -> thresholded mask;
+            # intensity -> the background-filtered weights the centroid uses.
+            if self._debug_zarr_path is not None:
+                if self._config.tracking_method == "multiotsu_center_of_mass":
+                    self._save_center_png(selected, timepoint_index, position_index)
+                elif self._config.tracking_method == "intensity_center_of_mass":
+                    self._save_intensity_center_png(selected, timepoint_index, position_index)
             # Clone into a compact standalone tensor. A bare ``.detach()`` is a
             # view that keeps the *entire* preprocessor output alive (all
             # channels share one parent tensor), so a stored reference would
@@ -766,28 +977,33 @@ class DynaTrackUpdater(PositionUpdater):
             # No preprocessing: move the raw stack to the device directly.
             current_stack_zyx = torch.as_tensor(raw_stack, device=device, dtype=torch.float32)
 
-        # (Re)anchor the reference: store it on first encounter, and re-anchor
-        # every ``reference_update_interval`` timepoints. On a re-anchor
-        # timepoint we adopt the current image as the new reference and apply
-        # NO correction (return position unchanged) -- the current stage
-        # position becomes the new baseline; correcting here would jump the
-        # stage against a reference we are about to discard.
-        interval = self._config.reference_update_interval
-        if (position_index not in self._reference_stacks_zyx) or (
-            interval and timepoint_index % interval == 0
-        ):
-            self._reference_stacks_zyx[position_index] = current_stack_zyx
-            ref_total = sum(a.nbytes for a in self._reference_stacks_zyx.values())
-            logger.info(
-                f"DynaTrack: stored reference stack for p={position_index} from t={timepoint_index} "
-                f"(zyx_shape={current_stack_zyx.shape})"
-            )
-            logger.debug(
-                f"DynaTrack[mem]: after store_ref p={position_index} t={timepoint_index} "
-                f"rss={_rss_gb():.2f} GB refs={len(self._reference_stacks_zyx)} "
-                f"refs_total={ref_total / 1024**3:.2f} GB"
-            )
-            return position
+        # Referenceless methods target the ROI centre in deskew space, so they
+        # need no stored reference and correct from the very first timepoint.
+        referenceless = self._config.tracking_method in _ROI_CENTER_METHODS
+
+        if not referenceless:
+            # (Re)anchor the reference: store it on first encounter, and re-anchor
+            # every ``reference_update_interval`` timepoints. On a re-anchor
+            # timepoint we adopt the current image as the new reference and apply
+            # NO correction (return position unchanged) -- the current stage
+            # position becomes the new baseline; correcting here would jump the
+            # stage against a reference we are about to discard.
+            interval = self._config.reference_update_interval
+            if (position_index not in self._reference_stacks_zyx) or (
+                interval and timepoint_index % interval == 0
+            ):
+                self._reference_stacks_zyx[position_index] = current_stack_zyx
+                ref_total = sum(a.nbytes for a in self._reference_stacks_zyx.values())
+                logger.info(
+                    f"DynaTrack: stored reference stack for p={position_index} from t={timepoint_index} "
+                    f"(zyx_shape={current_stack_zyx.shape})"
+                )
+                logger.debug(
+                    f"DynaTrack[mem]: after store_ref p={position_index} t={timepoint_index} "
+                    f"rss={_rss_gb():.2f} GB refs={len(self._reference_stacks_zyx)} "
+                    f"refs_total={ref_total / 1024**3:.2f} GB"
+                )
+                return position
 
         # Skip tracking if not on a tracking interval
         if (
@@ -800,7 +1016,11 @@ class DynaTrackUpdater(PositionUpdater):
             )
             return position
 
-        reference_stack_zyx = self._reference_stacks_zyx[position_index]
+        # Referenceless methods ignore the reference argument; pass the current
+        # stack as a placeholder so the signature is satisfied.
+        reference_stack_zyx = (
+            current_stack_zyx if referenceless else self._reference_stacks_zyx[position_index]
+        )
         logger.debug(
             f"DynaTrack[mem]: before compute_shift p={position_index} t={timepoint_index} "
             f"rss={_rss_gb():.2f} GB"
@@ -895,6 +1115,18 @@ class DynaTrackUpdater(PositionUpdater):
         method = cfg.tracking_method
         if method == "pcc":
             shifts_zyx_px = _phase_cross_corr(reference_zyx, current_zyx, cfg.maximum_shift)
+        elif method == "intensity_center_of_mass":
+            shifts_zyx_px = _intensity_center_of_mass_to_roi_center(
+                current_zyx,
+                background_percentile=cfg.roi_background_percentile,
+                blur_sigma=cfg.roi_blur_sigma,
+            )
+        elif method == "roi_center_pcc":
+            shifts_zyx_px = _roi_center_pcc(
+                current_zyx,
+                blob_sigma=cfg.roi_blob_sigma,
+                maximum_shift=cfg.maximum_shift,
+            )
         elif method == "multiotsu_center_of_mass":
             shifts_zyx_px = _multiotsu_center_of_mass(
                 reference_zyx,
@@ -913,7 +1145,8 @@ class DynaTrackUpdater(PositionUpdater):
         else:
             raise ValueError(
                 f"Unknown tracking_method={method!r}. "
-                "Use 'pcc', 'multiotsu_center_of_mass', or 'multiotsu_pcc'."
+                "Use 'pcc', 'intensity_center_of_mass', 'roi_center_pcc', "
+                "'multiotsu_center_of_mass', or 'multiotsu_pcc'."
             )
 
         # 2. Convert pixels to microns
@@ -1050,3 +1283,61 @@ class DynaTrackUpdater(PositionUpdater):
         fig.savefig(out_path, dpi=100, bbox_inches="tight")
         plt.close(fig)
         logger.info("DynaTrack: saved center PNG %s", out_path)
+
+    def _save_intensity_center_png(
+        self,
+        volume: torch.Tensor,
+        timepoint_index: int,
+        position_index: int,
+    ) -> None:
+        """Save a PNG of the background-filtered volume (Z max-projection) for
+        ``intensity_center_of_mass`` tracking, with the intensity-weighted
+        centroid (red x) and the ROI centre (cyan +) marked. This is exactly
+        the weighted image the centroid is computed from, so it shows whether
+        the tracker is locking onto the structure or being pulled to centre by
+        residual background. Written to ``dynatrack_centers/`` next to the
+        debug zarr, one PNG per position per timepoint.
+        """
+        if self._debug_zarr_path is None:
+            return
+
+        import matplotlib
+        import torch
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        # Reproduce the filtering the centroid uses: optional blur, then
+        # subtract the background floor (if configured) and clamp negatives.
+        img = volume.to(dtype=torch.float32)
+        blur_sigma = self._config.roi_blur_sigma
+        if blur_sigma and blur_sigma > 0:
+            img = _gaussian_blur_3d(img, blur_sigma)
+        pct = self._config.roi_background_percentile
+        background = _percentile(img, pct) if pct is not None else 0.0
+        filtered = (img - background).clamp_min(0)
+
+        cz, cy, cx = (
+            float(c) for c in _intensity_center_of_mass(img, background=background).tolist()
+        )
+        rz, ry, rx = ((s - 1) / 2.0 for s in volume.shape)
+        mip = filtered.amax(dim=0).detach().cpu().numpy()  # (Y, X) projection over Z
+
+        raw_name = self._debug_position_names.get(position_index, f"p{position_index}")
+        pos_name = "".join(ch for ch in raw_name if ch.isalnum()) or f"p{position_index}"
+        out_dir = self._debug_zarr_path.with_name("dynatrack_centers")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{pos_name}_t{timepoint_index:04d}.png"
+
+        fig, ax = plt.subplots(figsize=(5, 5))
+        ax.imshow(mip, cmap="magma", interpolation="nearest")
+        ax.plot(rx, ry, marker="+", color="cyan", markersize=16, markeredgewidth=2)
+        ax.plot(cx, cy, marker="x", color="red", markersize=14, markeredgewidth=2)
+        ax.set_title(
+            f"{pos_name} t={timepoint_index}  com=({cz:.1f}, {cy:.1f}, {cx:.1f})  "
+            f"bg={background:.4g}"
+        )
+        ax.axis("off")
+        fig.savefig(out_path, dpi=100, bbox_inches="tight")
+        plt.close(fig)
+        logger.info("DynaTrack: saved intensity-center PNG %s", out_path)
