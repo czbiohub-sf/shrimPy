@@ -269,7 +269,7 @@ class TestDynaTrackUpdaterFlow:
         assert result.x == 100.0
         assert result.y == 200.0
         assert result.z == 50.0
-        assert 0 in updater._reference_stacks
+        assert 0 in updater._reference_stacks_zyx
 
     def test_second_call_detects_shift(self):
         """Second call computes a shift and returns an updated position."""

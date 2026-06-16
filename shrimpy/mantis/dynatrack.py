@@ -438,7 +438,7 @@ class DynaTrackUpdater(PositionUpdater):
         # All downstream ops run on tensors. Move to CUDA if available;
         # the preprocessor (if any) already targets the same device.
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        current_stack: torch.Tensor = torch.as_tensor(
+        current_stack_zyx: torch.Tensor = torch.as_tensor(
             raw_stack, device=device, dtype=torch.float32
         )
 
