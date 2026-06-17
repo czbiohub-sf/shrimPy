@@ -23,9 +23,8 @@ classifiers = [
 dependencies = [
   "click",
   "numpy",
-  "ome-writers[acquire-zarr]",
-  # TODO: test v0.7.0, even simple acquisitions would fail
-  "acquire-zarr==0.6.0",
+  # brings in acquire-zarr==0.7.0, see https://github.com/acquire-project/acquire-zarr/issues/218
+  "ome-writers[acquire-zarr]>=0.3.2",
   "pymmcore>=11.14.0.75.0",
   "pymmcore-plus",
   "pymmcore-widgets",
@@ -60,8 +59,8 @@ local_scheme = "no-local-version"
 packages = ["shrimpy"]
 
 [tool.uv.sources]
-ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
-pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "dev" }
+# ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
+pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "main" }
 # ome-writers = { path = "../ome-writers", editable = true }
 # pymmcore-plus = { path = "../pymmcore-plus", editable = true }
 
