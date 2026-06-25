@@ -45,11 +45,26 @@ def acquire():
     default="mantis_acquisition",
     help="Name of the acquisition (used for log files and output)",
 )
+@click.option(
+    "--napari-viewer",
+    is_flag=True,
+    default=False,
+    help="Show acquired data live in a separate-process napari viewer.",
+)
+@click.option(
+    "--napari-cache-mb",
+    type=float,
+    default=2048.0,
+    show_default=True,
+    help="Approximate RAM budget (MB) for the viewer's in-memory frame cache.",
+)
 def mantis(
     mm_config: Path,
     mda_config: Path,
     output_dir: Path,
     name: str,
+    napari_viewer: bool,
+    napari_cache_mb: float,
 ):
     """Run Mantis microscope acquisition.
 
@@ -80,7 +95,23 @@ def mantis(
     logger.info(f"Loading Micro-Manager configuration from {mm_config}")
     core.loadSystemConfiguration(mm_config)
     engine = MantisEngine(core)
-    engine.acquire(output_dir=output_dir, name=name, mda_config=mda_config)
+
+    feeder = None
+    if napari_viewer:
+        from shrimpy.viewer import ViewerFeeder
+
+        feeder = ViewerFeeder(core, cache_mb=napari_cache_mb)
+        feeder.start()
+
+    try:
+        engine.acquire(output_dir=output_dir, name=name, mda_config=mda_config)
+    finally:
+        if feeder is not None:
+            # Keep the window open after acquisition so the user can inspect the
+            # cached data, then release shared memory once they close it.
+            logger.info("Acquisition done; viewer window left open until closed.")
+            feeder.join()
+            feeder.cleanup()
 
 
 @acquire.command()
