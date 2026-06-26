@@ -19,8 +19,13 @@ import queue as _queue
 
 import numpy as np
 
-from shrimpy.viewer._lazy_array import LazyPlaneArray
-from shrimpy.viewer.deskew import LS_ANGLE_DEG, PIXEL_SIZE_UM, deskewed_layer
+from napari_deskew_preview import (
+    LS_ANGLE_DEG,
+    PIXEL_SIZE_UM,
+    LazyPlaneArray,
+    deskewed_layer,
+)
+
 from shrimpy.viewer.ring_buffer import RingBuffer
 
 logger = logging.getLogger(__name__)
@@ -48,7 +53,7 @@ class LazyRingArray(LazyPlaneArray):
 
     Advertises shape ``(position, t, z_scan, y, x)``; each plane is the frame for
     ``(channel, position, t, z_scan)`` copied from the ring, or zeros if not (yet) present.
-    Deskewed display is handled separately by :class:`~shrimpy.viewer.deskew.DeskewedArray`.
+    Deskewed display is handled separately by :class:`napari_deskew_preview.DeskewedArray`.
     """
 
     def __init__(

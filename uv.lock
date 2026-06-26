@@ -1667,6 +1667,16 @@ wheels = [
 ]
 
 [[package]]
+name = "napari-deskew-preview"
+version = "0.1.0"
+source = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview?rev=20bcfaf8e697ed1aa7005332b86c722dd95f0769#20bcfaf8e697ed1aa7005332b86c722dd95f0769" }
+dependencies = [
+    { name = "napari" },
+    { name = "numpy" },
+    { name = "qtpy" },
+]
+
+[[package]]
 name = "napari-plugin-engine"
 version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3590,6 +3600,7 @@ build = [
 ]
 viewer = [
     { name = "napari", extra = ["pyqt6"] },
+    { name = "napari-deskew-preview" },
 ]
 
 [package.dev-dependencies]
@@ -3606,6 +3617,7 @@ requires-dist = [
     { name = "build", marker = "extra == 'build'" },
     { name = "click" },
     { name = "napari", extras = ["pyqt6"], marker = "extra == 'viewer'" },
+    { name = "napari-deskew-preview", marker = "extra == 'viewer'", git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview?rev=20bcfaf8e697ed1aa7005332b86c722dd95f0769" },
     { name = "numpy" },
     { name = "ome-writers", extras = ["acquire-zarr"], git = "https://github.com/ieivanov/ome-writers?rev=71dc49126c933a5fa3b1fc01c5a6b07ebc98eb9e" },
     { name = "pymmcore", specifier = ">=11.14.0.75.0" },
