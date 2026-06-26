@@ -48,9 +48,12 @@ class ViewerFeeder:
         cached frames is ``cache_mb`` / frame-size, capped at the dataset's frame count.
     """
 
-    def __init__(self, core: CMMCorePlus, *, cache_mb: float = 2048.0) -> None:
+    def __init__(
+        self, core: CMMCorePlus, *, cache_mb: float = 2048.0, deskew: bool = False
+    ) -> None:
         self._core = core
         self._cache_mb = cache_mb
+        self._deskew = deskew
         self._queue: mp.Queue = mp.Queue(maxsize=_QUEUE_MAXSIZE)
         self._proc: mp.Process | None = None
         self._ring: RingBuffer | None = None
@@ -61,6 +64,8 @@ class ViewerFeeder:
         self._n_grid = 1
         # True total frames in the dataset (all axes), used to cap the ring size.
         self._total_frames = 1
+        # Light-sheet scan step (um), read from z_plan.step; needed for deskew.
+        self._scan_step_um: float | None = None
 
     # -- lifecycle -------------------------------------------------------------
 
@@ -120,6 +125,10 @@ class ViewerFeeder:
             self._channels = [c.config for c in sequence.channels] or ["default"]
             # True frame count across every axis (incl. c and g) -- caps the ring size.
             self._total_frames = max(1, int(np.prod([max(1, int(v)) for v in sizes.values()])))
+            # Scan step for deskew: the z_plan step is the light-sheet scan spacing.
+            z_plan = getattr(sequence, "z_plan", None)
+            step = getattr(z_plan, "step", None) if z_plan is not None else None
+            self._scan_step_um = float(step) if step else None
         except Exception:  # noqa: BLE001 - never propagate into the runner
             logger.debug("Failed to read sequence metadata for viewer", exc_info=True)
 
@@ -171,6 +180,11 @@ class ViewerFeeder:
             dtype,
             n_slots * frame_bytes / 1e6,
         )
+        deskew_on = self._deskew and self._scan_step_um is not None
+        if self._deskew and not deskew_on:
+            logger.warning(
+                "Deskew requested but z_plan.step is unavailable; showing raw data."
+            )
         self._put(
             {
                 "kind": "start",
@@ -180,6 +194,8 @@ class ViewerFeeder:
                 "dtype": dtype.str,
                 "sizes": dict(self._sizes),
                 "channels": list(self._channels),
+                "deskew": deskew_on,
+                "scan_step_um": self._scan_step_um or 0.0,
             }
         )
 

@@ -95,6 +95,22 @@ class RingBuffer:
         """
         return np.array(self._array[slot], copy=True)
 
+    def read_rows(self, slots: list[int | None], row: int) -> np.ndarray:
+        """Read one row (``array[slot, row, :]``) from many slots at once.
+
+        Missing slots (``None``) yield a zero row. Used by the deskew projector to
+        gather a single tilt row across the whole scan stack without copying full
+        frames -- ~3.5 MB instead of ~1 GB.
+
+        Returns an array of shape ``(len(slots), frame_width)``.
+        """
+        n_cols = self.frame_shape[1]
+        out = np.zeros((len(slots), n_cols), dtype=self.dtype)
+        present = [i for i, s in enumerate(slots) if s is not None]
+        if present:
+            out[present] = self._array[[slots[i] for i in present], row, :]
+        return out
+
     def close(self) -> None:
         """Detach from shared memory; unlink it too if this instance is the owner."""
         try:

@@ -13,13 +13,14 @@ ring. Indices that have been evicted (or not yet acquired) render as blank plane
 
 from __future__ import annotations
 
-import itertools
 import logging
 import multiprocessing as mp
 import queue as _queue
 
 import numpy as np
 
+from shrimpy.viewer._lazy_array import LazyPlaneArray
+from shrimpy.viewer.deskew import LS_ANGLE_DEG, PIXEL_SIZE_UM, deskewed_layer
 from shrimpy.viewer.ring_buffer import RingBuffer
 
 logger = logging.getLogger(__name__)
@@ -42,25 +43,12 @@ _DRAIN_INTERVAL_MS = 100
 _QUEUE_DRAIN_BATCH = 512
 
 
-class LazyRingArray:
-    """A read-only, numpy-like array view over the ring for a single channel.
+class LazyRingArray(LazyPlaneArray):
+    """Raw, read-only view over the ring for a single channel.
 
-    Advertises shape ``(*index_sizes, *frame_shape)`` but resolves each requested plane
-    on demand via ``index_map``: present frames are copied out of the ring; missing ones
-    return zeros.
-
-    Parameters
-    ----------
-    ring : RingBuffer
-        The shared ring holding pixel data.
-    channel : int
-        The channel index this array represents.
-    index_sizes : tuple[int, ...]
-        Sizes of the leading (p, t, z) axes.
-    frame_shape : tuple[int, ...]
-        Shape of a single (y, x) frame.
-    index_map : dict
-        Shared mapping ``(c, p, t, z) -> slot`` maintained by :class:`_ViewerState`.
+    Advertises shape ``(position, t, z_scan, y, x)``; each plane is the frame for
+    ``(channel, position, t, z_scan)`` copied from the ring, or zeros if not (yet) present.
+    Deskewed display is handled separately by :class:`~shrimpy.viewer.deskew.DeskewedArray`.
     """
 
     def __init__(
@@ -68,76 +56,23 @@ class LazyRingArray:
         ring: RingBuffer,
         channel: int,
         index_sizes: tuple[int, ...],
-        frame_shape: tuple[int, ...],
+        plane_shape: tuple[int, ...],
         index_map: dict[tuple[int, ...], int],
+        dtype: np.dtype | None = None,
     ) -> None:
         self._ring = ring
         self._channel = channel
         self._index_sizes = tuple(index_sizes)
-        self._frame_shape = tuple(frame_shape)
+        self._frame_shape = tuple(plane_shape)
         self._index_map = index_map
-        self.shape = (*self._index_sizes, *self._frame_shape)
-        self.dtype = ring.dtype
-        self.ndim = len(self.shape)
+        self.dtype = np.dtype(dtype) if dtype is not None else ring.dtype
+        self._init_shape()
 
-    def __array__(self, dtype: object = None) -> np.ndarray:
-        # napari occasionally coerces the array (e.g. to probe). Materialize the
-        # current first plane only -- coercing the whole 5D volume would be huge.
-        plane = self[tuple(0 for _ in self._index_sizes)]
-        return np.asarray(plane, dtype=dtype) if dtype is not None else plane
-
-    def __getitem__(self, key: object) -> np.ndarray:
-        """Resolve an index with numpy semantics (int drops an axis, slice keeps it).
-
-        napari's slicing keeps the non-displayed axes and projects (``np.mean``) over
-        them, so we must preserve dimensionality exactly as a real ndarray would.
-        """
-        key = self._normalize_key(key)
-        n_idx = len(self._index_sizes)
-        lead, trail = key[:n_idx], key[n_idx:]
-
-        # Per leading axis: the selected integer coordinates, and whether to keep the axis.
-        per_axis: list[list[int]] = []
-        keep: list[bool] = []
-        for axis, k in enumerate(lead):
-            size = self._index_sizes[axis]
-            if isinstance(k, slice):
-                per_axis.append(list(range(*k.indices(size))))
-                keep.append(True)
-            elif isinstance(k, (int, np.integer)):
-                per_axis.append([int(k) % size])
-                keep.append(False)
-            else:  # array-like fancy index
-                per_axis.append([int(v) % size for v in np.atleast_1d(k)])
-                keep.append(True)
-
-        # Fetch each selected plane (real or blank), applying the trailing y/x index.
-        planes = []
-        for combo in itertools.product(*per_axis):
-            slot = self._index_map.get((self._channel, *combo))
-            plane = (
-                self._ring.read(slot)
-                if slot is not None
-                else np.zeros(self._frame_shape, dtype=self.dtype)
-            )
-            planes.append(plane[trail] if trail else plane)
-
-        plane_shape = planes[0].shape
-        full_lead_shape = tuple(len(c) for c in per_axis)
-        stacked = np.stack(planes).reshape(*full_lead_shape, *plane_shape)
-        # Drop axes that were indexed with an integer (matching numpy semantics).
-        dropper = tuple(slice(None) if keep[a] else 0 for a in range(n_idx))
-        return stacked[dropper]
-
-    def _normalize_key(self, key: object) -> tuple:
-        """Expand to a full-ndim tuple, resolving Ellipsis and padding trailing axes."""
-        if not isinstance(key, tuple):
-            key = (key,)
-        if any(k is Ellipsis for k in key):
-            i = next(j for j, k in enumerate(key) if k is Ellipsis)
-            n_fill = self.ndim - (len(key) - 1)
-            key = key[:i] + (slice(None),) * n_fill + key[i + 1 :]
-        return key + (slice(None),) * (self.ndim - len(key))
+    def _plane(self, position: int, t: int, z: int) -> np.ndarray:
+        slot = self._index_map.get((self._channel, position, t, z))
+        if slot is None:
+            return np.zeros(self._frame_shape, dtype=self.dtype)
+        return self._ring.read(slot)
 
 
 class _ViewerState:
@@ -165,6 +100,18 @@ class _ViewerState:
         self._follow_target: tuple[int, ...] | None = None
         # Last current_step we observed, to tell which axis a user change touched.
         self._last_step: tuple[int, ...] | None = None
+        # Deskew state. Both raw and deskewed array views are built up front (lazy, cheap)
+        # and the Deskew widget swaps which one backs each layer at runtime.
+        self._deskew = False
+        self._deskew_available = False
+        self._projector: object | None = None
+        self._n_zscan = 0
+        self._n_channels = 0
+        self._raw_arrays: list[object] = []
+        self._deskew_arrays: list[object] = []
+        # (c, p, t) stacks whose final scan slice has arrived -- a deskewed plane needs
+        # the whole scan stack, so follow only advances once every channel's stack is in.
+        self._stack_done: set[tuple[int, int, int]] = set()
         self._started = False
 
     def handle(self, msg: dict) -> None:
@@ -181,30 +128,114 @@ class _ViewerState:
             return
         self._started = True
         sizes = msg["sizes"]
-        index_sizes = tuple(int(sizes.get(ax, 1)) for ax in _INDEX_AXES)
         frame_shape = tuple(msg["frame_shape"])
-        dtype = np.dtype(msg["dtype"])
+        raw_dtype = np.dtype(msg["dtype"])
         self._channels = list(msg["channels"])
+        self._n_channels = len(self._channels)
         self._ring = RingBuffer.attach(
-            msg["shm_name"], int(msg["n_slots"]), frame_shape, dtype
+            msg["shm_name"], int(msg["n_slots"]), frame_shape, raw_dtype
         )
         self._slot_owner = [None] * int(msg["n_slots"])
 
-        clim = _default_contrast_limits(dtype)
+        n_position = int(sizes.get("position", 1))
+        n_t = int(sizes.get("t", 1))
+        n_z = int(sizes.get("z", 1))
+        self._n_zscan = n_z
+        scan_step_um = float(msg.get("scan_step_um", 0.0))
+
+        # Raw views (always available).
+        self._raw_arrays = [
+            LazyRingArray(self._ring, c, (n_position, n_t, n_z), frame_shape, self._index_map)
+            for c in range(self._n_channels)
+        ]
+
+        # Deskewed views (available whenever we have a scan step and a real z-stack).
+        self._deskew_available = scan_step_um > 0 and n_z > 1
+        if self._deskew_available:
+            for c in range(self._n_channels):
+                arr, self._projector = deskewed_layer(
+                    self._ring_gather(c),
+                    raw_zyx_shape=(n_z, frame_shape[0], frame_shape[1]),
+                    scan_step_um=scan_step_um,
+                    batch_sizes=(n_position, n_t),
+                )
+                self._deskew_arrays.append(arr)
+            logger.info(
+                "Deskew available: raw %s -> deskewed %s (scan step %.4f um)",
+                (n_z, *frame_shape),
+                self._projector.output_shape,
+                scan_step_um,
+            )
+
+        self._deskew = bool(msg.get("deskew")) and self._deskew_available
+        init_arrays = self._deskew_arrays if self._deskew else self._raw_arrays
+        clim = _default_contrast_limits(init_arrays[0].dtype)
         for c, name in enumerate(self._channels):
-            data = LazyRingArray(self._ring, c, index_sizes, frame_shape, self._index_map)
             layer = self._viewer.add_image(
-                data,
+                init_arrays[c],
                 name=name,
                 contrast_limits=clim,
                 colormap=_colormap_for_channel(name),
-                blending="additive" if len(self._channels) > 1 else "translucent",
+                blending="additive" if self._n_channels > 1 else "translucent",
             )
             self._layers.append(layer)
         # Label the leading sliders; y/x are the displayed image dims.
         self._viewer.dims.axis_labels = _AXIS_LABELS
         self._connect_follow_controls()
-        logger.info("Viewer initialized: %d channel(s), sizes=%s", len(self._channels), sizes)
+        if self._deskew_available:
+            self._add_deskew_widget(scan_step_um, (n_z, *frame_shape))
+        logger.info("Viewer initialized: %d channel(s), sizes=%s", self._n_channels, sizes)
+
+    def _ring_gather(self, channel: int):
+        """A source gather for :func:`deskewed_layer`: one tilt row across the scan stack."""
+        n_zscan = self._n_zscan
+
+        def gather(leading: tuple[int, ...], tilt_row: int) -> np.ndarray:
+            position, t = leading
+            slots = [self._index_map.get((channel, position, t, zs)) for zs in range(n_zscan)]
+            return self._ring.read_rows(slots, tilt_row)
+
+        return gather
+
+    def _add_deskew_widget(self, scan_step_um: float, raw_shape: tuple[int, ...]) -> None:
+        """Add a dock widget that toggles deskewed display on/off at runtime."""
+        try:
+            from qtpy.QtWidgets import QCheckBox, QLabel, QVBoxLayout, QWidget
+
+            panel = QWidget()
+            layout = QVBoxLayout(panel)
+            checkbox = QCheckBox("Deskew display")
+            checkbox.setChecked(self._deskew)
+            checkbox.toggled.connect(self._set_deskew)
+            layout.addWidget(checkbox)
+            info = (
+                f"angle {LS_ANGLE_DEG:g}°, pixel {PIXEL_SIZE_UM:g} um, "
+                f"scan step {scan_step_um:.4g} um\n"
+                f"raw {raw_shape} → deskewed {self._projector.output_shape}"
+            )
+            label = QLabel(info)
+            label.setWordWrap(True)
+            layout.addWidget(label)
+            layout.addStretch()
+            self._viewer.window.add_dock_widget(panel, name="Deskew", area="right")
+        except Exception:  # noqa: BLE001 - widget is optional; never break the viewer
+            logger.debug("Could not add deskew widget", exc_info=True)
+
+    def _set_deskew(self, on: bool) -> None:
+        """Swap every layer between its raw and deskewed view (the widget's toggle)."""
+        if not self._deskew_available or bool(on) == self._deskew:
+            return
+        self._deskew = bool(on)
+        arrays = self._deskew_arrays if self._deskew else self._raw_arrays
+        for layer, array in zip(self._layers, arrays, strict=True):
+            layer.data = array  # napari resets dims/extent to the new shape
+        # The z axis changes meaning (scan <-> deskewed depth); reset follow bookkeeping.
+        self._follow_target = None
+        self._last_step = tuple(self._viewer.dims.current_step)
+        self._viewer.dims.axis_labels = _AXIS_LABELS
+        for layer in self._layers:
+            layer.refresh()
+        logger.info("Deskew display %s", "ON" if self._deskew else "OFF")
 
     def _connect_follow_controls(self) -> None:
         """Wire up auto-advance pause (user scrub) and resume (Home button)."""
@@ -245,8 +276,16 @@ class _ViewerState:
         logger.info("Auto-advance resumed.")
 
     def _complete_at(self, position: int, t: int, z: int) -> bool:
-        """True once every channel has a frame at (position, t, z)."""
-        return all((c, position, t, z) in self._index_map for c in range(len(self._channels)))
+        """True once every channel has a frame at (position, t, z) (raw mode)."""
+        return all((c, position, t, z) in self._index_map for c in range(self._n_channels))
+
+    def _stack_complete(self, position: int, t: int) -> bool:
+        """True once every channel's full scan stack at (position, t) has arrived.
+
+        A deskewed plane needs the whole scan stack, so this gates deskew-mode follow.
+        Keyed on the final scan slice having been seen (robust to dropped middle frames).
+        """
+        return all((c, position, t) in self._stack_done for c in range(self._n_channels))
 
     def _set_step(self, target: tuple[int, ...]) -> None:
         """Advance the followed sliders (position, t) to ``target``, preserving z.
@@ -278,23 +317,31 @@ class _ViewerState:
 
         channel, position, t, z = key
         self._autoset_contrast(channel, slot)
+        # Track stack completion regardless of mode, so toggling deskew on later works.
+        if z == self._n_zscan - 1:
+            self._stack_done.add((channel, position, t))
 
-        # Auto-advance only to (position, t) where ALL channels already have data at the
-        # displayed z. Channels are acquired as interleaved z-stacks (all DAPI z, then
-        # all FITC z), so following the raw latest frame would jump to a position the
-        # lagging channel hasn't reached yet -- showing it black. Gating on completeness
-        # keeps every channel visible. z stays under the user's control.
+        # Auto-advance only to (position, t) where ALL channels have the data needed for
+        # the displayed plane -- otherwise a lagging channel renders black. Channels are
+        # acquired as interleaved z-stacks (all of ch0's z, then all of ch1's z). z stays
+        # under the user's control. In deskew mode each refresh recomputes a plane, so we
+        # only refresh on advance (stack completion), not on every frame.
         try:
-            if self._following:
-                z_axis = _INDEX_AXES.index("z")
-                disp_z = int(self._viewer.dims.current_step[z_axis])
-                if self._complete_at(position, t, disp_z):
+            if self._deskew:
+                if self._following and self._stack_complete(position, t):
                     self._follow_target = (position, t)
                     self._set_step((position, t))
-            # Repaint so a frame written into the currently displayed plane shows up,
-            # whether or not we advanced.
-            for layer in self._layers:
-                layer.refresh()
+                    for layer in self._layers:
+                        layer.refresh()
+            else:
+                if self._following:
+                    disp_z = int(self._viewer.dims.current_step[_INDEX_AXES.index("z")])
+                    if self._complete_at(position, t, disp_z):
+                        self._follow_target = (position, t)
+                        self._set_step((position, t))
+                # Repaint so a frame written into the currently displayed plane shows up.
+                for layer in self._layers:
+                    layer.refresh()
         except Exception:  # noqa: BLE001 - a stale/closed layer must not kill the loop
             logger.debug("Layer refresh failed (ignored)", exc_info=True)
 
