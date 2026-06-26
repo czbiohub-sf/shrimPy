@@ -159,9 +159,10 @@ class _ViewerState:
             for c in range(self._n_channels)
         ]
 
-        # Deskewed views (available whenever we have a scan step and a real z-stack). Built
-        # with the default geometry; the Deskew widget can rebuild them with edited values.
-        self._deskew_available = scan_step_um > 0 and n_z > 1
+        # Deskew is available when the microscope enables it (msg["deskew"], e.g. mantis)
+        # and the data supports it (a scan step and a real z-stack). Built with the default
+        # geometry; the Deskew widget can rebuild them with edited values.
+        self._deskew_available = bool(msg.get("deskew")) and scan_step_um > 0 and n_z > 1
         if self._deskew_available:
             self._build_deskew_arrays(LS_ANGLE_DEG, PIXEL_SIZE_UM, scan_step_um)
             logger.info(
@@ -171,7 +172,8 @@ class _ViewerState:
                 scan_step_um,
             )
 
-        self._deskew = bool(msg.get("deskew")) and self._deskew_available
+        # Deskew is on by default when available; the widget checkbox can turn it off.
+        self._deskew = self._deskew_available
         init_arrays = self._deskew_arrays if self._deskew else self._raw_arrays
         clim = _default_contrast_limits(init_arrays[0].dtype)
         for c, name in enumerate(self._channels):

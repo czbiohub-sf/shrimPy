@@ -54,15 +54,9 @@ def acquire():
 @click.option(
     "--napari-cache-mb",
     type=float,
-    default=2048.0,
+    default=8192.0,
     show_default=True,
     help="Approximate RAM budget (MB) for the viewer's in-memory frame cache.",
-)
-@click.option(
-    "--deskew",
-    is_flag=True,
-    default=False,
-    help="Deskew oblique-plane light-sheet data for display (requires --napari-viewer).",
 )
 def mantis(
     mm_config: Path,
@@ -71,7 +65,6 @@ def mantis(
     name: str,
     napari_viewer: bool,
     napari_cache_mb: float,
-    deskew: bool,
 ):
     """Run Mantis microscope acquisition.
 
@@ -107,10 +100,10 @@ def mantis(
     if napari_viewer:
         from shrimpy.viewer import ViewerFeeder
 
-        feeder = ViewerFeeder(core, cache_mb=napari_cache_mb, deskew=deskew)
+        # Mantis is an oblique-plane light-sheet microscope, so the deskew widget is
+        # shown by default (on, toggleable). Other microscopes pass deskew=False.
+        feeder = ViewerFeeder(core, cache_mb=napari_cache_mb, deskew=True)
         feeder.start()
-    elif deskew:
-        logger.warning("--deskew has no effect without --napari-viewer; ignoring.")
 
     try:
         engine.acquire(output_dir=output_dir, name=name, mda_config=mda_config)

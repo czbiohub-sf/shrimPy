@@ -46,10 +46,14 @@ class ViewerFeeder:
     cache_mb : float
         Approximate RAM budget for the shared-memory ring, in megabytes. The number of
         cached frames is ``cache_mb`` / frame-size, capped at the dataset's frame count.
+    deskew : bool
+        Whether this microscope uses oblique-plane deskew. When True (e.g. mantis), the
+        viewer shows the Deskew widget with deskew on by default (toggleable), provided a
+        scan step and a real z-stack exist. Other microscopes (e.g. iSIM) pass False.
     """
 
     def __init__(
-        self, core: CMMCorePlus, *, cache_mb: float = 2048.0, deskew: bool = False
+        self, core: CMMCorePlus, *, cache_mb: float = 8192.0, deskew: bool = False
     ) -> None:
         self._core = core
         self._cache_mb = cache_mb
