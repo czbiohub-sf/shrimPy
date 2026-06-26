@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "napari-deskew-preview"
+description = "napari widget for quick on-demand deskew preview of oblique-plane light-sheet data (czbiohub-sf internal)"
+version = "0.1.0"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "napari",
+  "qtpy",
+]
+classifiers = [
+  "Framework :: napari",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[project.entry-points."napari.manifest"]
+napari-deskew-preview = "napari_deskew_preview:napari.yaml"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/napari_deskew_preview"]
+
+[tool.ruff]
+line-length = 95
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "I", "N", "UP", "B"]
+ignore = ["E501", "N802", "N815"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
