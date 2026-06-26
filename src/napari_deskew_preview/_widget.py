@@ -1,9 +1,13 @@
 """napari dock widget: quick deskew preview of a selected oblique-plane Image layer.
 
 Treats the selected layer's last three axes as ``(Z_scan, Y_tilt, X_cover)`` and any
-leading axes (T, C, position, ...) as a batch. Adds a lazy deskewed layer that computes one
-plane at a time, so even volumes larger than RAM are viewable. Editing angle / pixel size /
-scan step rebuilds the deskewed layer(s).
+leading axes (T, C, position, ...) as a batch. Replaces the layer's data **in place** with a
+lazy deskewed view that computes one plane at a time, so even volumes larger than RAM are
+viewable. Replacing in place (rather than adding a second layer) keeps a single,
+self-consistent set of dimension sliders -- a raw and a deskewed layer have different axis
+sizes (e.g. scan 1068 vs deskewed depth 256), and napari would otherwise union them into
+oversized sliders. Use "Restore raw" to put the original data back; editing the geometry
+fields rebuilds any layers deskewed by this widget.
 """
 
 from __future__ import annotations
@@ -33,13 +37,13 @@ DEFAULT_SCAN_STEP_UM = 0.3
 
 
 class DeskewWidget(QWidget):
-    """Deskew the selected image layer and keep it in sync with the geometry fields."""
+    """Deskew the selected image layer in place and keep it in sync with the fields."""
 
     def __init__(self, napari_viewer: object) -> None:
         super().__init__()
         self._viewer = napari_viewer
-        # deskewed-layer-name -> raw array-like it was built from (for rebuilds).
-        self._outputs: dict[str, object] = {}
+        # Layers we have deskewed -> their original raw array-like (for rebuild / restore).
+        self._sources: dict[object, object] = {}
 
         layout = QVBoxLayout(self)
         self._angle = self._spin(LS_ANGLE_DEG, 0.0, 89.9, 1.0, 2)
@@ -51,16 +55,20 @@ class DeskewWidget(QWidget):
         form.addRow("Scan step (µm)", self._scan)
         layout.addLayout(form)
 
-        button = QPushButton("Deskew selected layer")
-        button.clicked.connect(self._deskew_selected)
-        layout.addWidget(button)
+        deskew_button = QPushButton("Deskew selected layer")
+        deskew_button.clicked.connect(self._deskew_selected)
+        layout.addWidget(deskew_button)
+
+        restore_button = QPushButton("Restore raw")
+        restore_button.clicked.connect(self._restore_selected)
+        layout.addWidget(restore_button)
 
         self._status = QLabel("Select an image layer, set the scan step, then deskew.")
         self._status.setWordWrap(True)
         layout.addWidget(self._status)
         layout.addStretch()
 
-        # Editing geometry rebuilds any deskewed layers already created.
+        # Editing geometry rebuilds any layers already deskewed by this widget.
         for spin in (self._angle, self._pixel, self._scan):
             spin.valueChanged.connect(self._on_geometry_changed)
 
@@ -87,20 +95,35 @@ class DeskewWidget(QWidget):
         if layer is None or not hasattr(layer, "data"):
             self._status.setText("Select an image layer first.")
             return
-        raw = self._raw_of(layer)
-        if getattr(raw, "ndim", 0) < 3:
-            self._status.setText("Need a layer with at least 3 dimensions (…, Z, Y, X).")
-            return
-        name = f"{layer.name} [deskewed]"
+        # If we already deskewed this layer, rebuild from the stored raw (idempotent);
+        # otherwise capture its current data as the raw source.
+        raw = self._sources.get(layer)
+        if raw is None:
+            raw = self._raw_of(layer)
+            if getattr(raw, "ndim", 0) < 3:
+                self._status.setText("Need a layer with at least 3 dimensions (…, Z, Y, X).")
+                return
+            self._sources[layer] = raw
         try:
-            self._add_or_update(name, raw, source=layer)
+            shape = self._apply(layer, raw)
         except Exception:  # noqa: BLE001 - report, don't crash napari
             logger.exception("Deskew failed")
+            self._sources.pop(layer, None)
             self._status.setText("Deskew failed (see console).")
             return
-        self._status.setText(f"Deskewed → '{name}'")
+        self._status.setText(f"Deskewed '{layer.name}' in place → {shape}")
 
-    def _add_or_update(self, name: str, raw: object, source: object | None = None) -> None:
+    def _restore_selected(self) -> None:
+        layer = self._viewer.layers.selection.active
+        raw = self._sources.pop(layer, None) if layer is not None else None
+        if raw is None:
+            self._status.setText("Selected layer was not deskewed by this widget.")
+            return
+        layer.data = raw
+        self._status.setText(f"Restored raw data for '{layer.name}'.")
+
+    def _apply(self, layer: object, raw: object) -> tuple[int, ...]:
+        """Replace ``layer``'s data in place with the deskewed view of ``raw``."""
         batch_sizes = tuple(int(s) for s in raw.shape[:-3])
         raw_zyx = tuple(int(s) for s in raw.shape[-3:])
         data, projector = deskewed_layer(
@@ -111,26 +134,16 @@ class DeskewWidget(QWidget):
             ls_angle_deg=self._angle.value(),
             pixel_size_um=self._pixel.value(),
         )
-        if name in self._viewer.layers:
-            self._viewer.layers[name].data = data
-        else:
-            kwargs: dict = {}
-            if source is not None:
-                kwargs = {
-                    "colormap": source.colormap,
-                    "blending": source.blending,
-                    "contrast_limits": source.contrast_limits,
-                }
-            self._viewer.add_image(data, name=name, **kwargs)
-        self._outputs[name] = raw
-        logger.info("Deskew '%s' -> %s", name, projector.output_shape)
+        layer.data = data  # in place: a single layer, sliders match the deskewed shape
+        logger.info("Deskew '%s' -> %s", layer.name, data.shape)
+        return tuple(data.shape)
 
     def _on_geometry_changed(self, *_: object) -> None:
-        for name in list(self._outputs):
-            if name not in self._viewer.layers:
-                self._outputs.pop(name, None)
+        for layer in list(self._sources):
+            if layer not in self._viewer.layers:
+                self._sources.pop(layer, None)
                 continue
             try:
-                self._add_or_update(name, self._outputs[name])
+                self._apply(layer, self._sources[layer])
             except Exception:  # noqa: BLE001
-                logger.debug("Rebuild of '%s' failed (ignored)", name, exc_info=True)
+                logger.debug("Rebuild of '%s' failed (ignored)", layer.name, exc_info=True)
