@@ -44,14 +44,26 @@ class DeskewProjector:
         Raw volume shape ``(n_scan, n_tilt, n_cover)`` = (Z_scan, Y_tilt, X_cover).
     scan_step_um : float
         Light-sheet scan step in micrometers (from ``MDASequence.z_plan.step``).
+    ls_angle_deg, pixel_size_um : float
+        Light-sheet angle and lateral pixel size; default to the module constants but are
+        overridable (e.g. from the Deskew widget).
     """
 
-    def __init__(self, raw_zyx_shape: tuple[int, int, int], scan_step_um: float) -> None:
+    def __init__(
+        self,
+        raw_zyx_shape: tuple[int, int, int],
+        scan_step_um: float,
+        *,
+        ls_angle_deg: float = LS_ANGLE_DEG,
+        pixel_size_um: float = PIXEL_SIZE_UM,
+    ) -> None:
         self.n_scan, self.n_tilt, self.n_cover = (int(v) for v in raw_zyx_shape)
         self.scan_step_um = float(scan_step_um)
+        self.ls_angle_deg = float(ls_angle_deg)
+        self.pixel_size_um = float(pixel_size_um)
         # px_to_scan_ratio = lateral pixel size / scan step (object space)
-        self.ratio = PIXEL_SIZE_UM / self.scan_step_um
-        self.ct = float(np.cos(np.deg2rad(LS_ANGLE_DEG)))
+        self.ratio = self.pixel_size_um / self.scan_step_um
+        self.ct = float(np.cos(np.deg2rad(self.ls_angle_deg)))
 
         # Output extents (no z-averaging): Z_out = n_tilt, Y_out = n_cover.
         self.z_out = self.n_tilt
@@ -161,15 +173,21 @@ def deskewed_layer(
     raw_zyx_shape: tuple[int, int, int],
     scan_step_um: float,
     batch_sizes: tuple[int, ...] = (),
+    *,
+    ls_angle_deg: float = LS_ANGLE_DEG,
+    pixel_size_um: float = PIXEL_SIZE_UM,
 ) -> tuple[DeskewedArray, DeskewProjector]:
     """Build a lazy deskewed array from a source-agnostic ``gather`` callable.
 
     ``raw_zyx_shape`` is the per-volume raw shape ``(n_scan, n_tilt, n_cover)``;
     ``batch_sizes`` are any leading axes over volumes (e.g. ``(n_position, n_t)``, or ``()``
-    for a single volume). Returns the array (napari layer data) and the projector (geometry,
-    e.g. ``output_shape``). See :func:`array_gather` for a plain array-like source.
+    for a single volume). ``ls_angle_deg``/``pixel_size_um`` default to the constants but can
+    be overridden. Returns the array (napari layer data) and the projector (geometry, e.g.
+    ``output_shape``). See :func:`array_gather` for a plain array-like source.
     """
-    projector = DeskewProjector(raw_zyx_shape, scan_step_um)
+    projector = DeskewProjector(
+        raw_zyx_shape, scan_step_um, ls_angle_deg=ls_angle_deg, pixel_size_um=pixel_size_um
+    )
     return DeskewedArray(gather, projector, batch_sizes), projector
 
 
