@@ -1669,7 +1669,7 @@ wheels = [
 [[package]]
 name = "napari-deskew-preview"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview?rev=102bd4333169906bf63553ae62c22bb0fe1a7a89#102bd4333169906bf63553ae62c22bb0fe1a7a89" }
+source = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview?rev=f2c660edd00c16b1d33df049d71016c110abb3bc#f2c660edd00c16b1d33df049d71016c110abb3bc" }
 dependencies = [
     { name = "napari" },
     { name = "numpy" },
@@ -3617,7 +3617,7 @@ requires-dist = [
     { name = "build", marker = "extra == 'build'" },
     { name = "click" },
     { name = "napari", extras = ["pyqt6"], marker = "extra == 'viewer'" },
-    { name = "napari-deskew-preview", marker = "extra == 'viewer'", git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview?rev=102bd4333169906bf63553ae62c22bb0fe1a7a89" },
+    { name = "napari-deskew-preview", marker = "extra == 'viewer'", git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview?rev=f2c660edd00c16b1d33df049d71016c110abb3bc" },
     { name = "numpy" },
     { name = "ome-writers", extras = ["acquire-zarr"], git = "https://github.com/ieivanov/ome-writers?rev=71dc49126c933a5fa3b1fc01c5a6b07ebc98eb9e" },
     { name = "pymmcore", specifier = ">=11.14.0.75.0" },

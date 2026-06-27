@@ -28,6 +28,8 @@ from napari_deskew_preview import (
 
 from shrimpy.viewer.ring_buffer import RingBuffer
 
+# Imported lazily inside _add_deskew_widget (needs Qt) to keep this module import-safe.
+
 logger = logging.getLogger(__name__)
 
 # Index axes, in the order they appear as leading dimensions of each layer.
@@ -117,10 +119,7 @@ class _ViewerState:
         self._frame_shape: tuple[int, ...] = ()
         self._raw_arrays: list[object] = []
         self._deskew_arrays: list[object] = []
-        self._shape_label: object | None = None  # Deskew widget's output-shape readout
-        self._angle_spin: object | None = None
-        self._pixel_spin: object | None = None
-        self._scan_spin: object | None = None
+        self._controls: object | None = None  # shared DeskewControls (built in the widget)
         # (c, p, t) stacks whose final scan slice has arrived -- a deskewed plane needs
         # the whole scan stack, so follow only advances once every channel's stack is in.
         self._stack_done: set[tuple[int, int, int]] = set()
@@ -177,8 +176,9 @@ class _ViewerState:
                 scan_step_um,
             )
 
-        # Deskew is on by default when available; the widget checkbox can turn it off.
-        self._deskew = self._deskew_available
+        # The widget opens (when available) but starts on raw; the user clicks
+        # "Display deskewed" to switch.
+        self._deskew = False
         init_arrays = self._deskew_arrays if self._deskew else self._raw_arrays
         clim = _default_contrast_limits(init_arrays[0].dtype)
         for c, name in enumerate(self._channels):
@@ -224,90 +224,34 @@ class _ViewerState:
         self._deskew_arrays = arrays
 
     def _add_deskew_widget(self, scan_step_um: float, raw_shape: tuple[int, ...]) -> None:
-        """Add a dock widget: a deskew on/off toggle plus editable geometry fields."""
+        """Add the shared Deskew dock widget (Display deskewed / Display raw + geometry)."""
         try:
-            from qtpy.QtWidgets import (
-                QCheckBox,
-                QDoubleSpinBox,
-                QFormLayout,
-                QLabel,
-                QVBoxLayout,
-                QWidget,
-            )
+            from napari_deskew_preview._controls import DeskewControls
 
-            panel = QWidget()
-            layout = QVBoxLayout(panel)
-
-            checkbox = QCheckBox("Deskew display")
-            checkbox.setChecked(self._deskew)
-            checkbox.toggled.connect(self._set_deskew)
-            layout.addWidget(checkbox)
-
-            def _spin(value: float, lo: float, hi: float, step: float, decimals: int):
-                spin = QDoubleSpinBox()
-                spin.setRange(lo, hi)
-                spin.setSingleStep(step)
-                spin.setDecimals(decimals)
-                spin.setKeyboardTracking(False)  # emit only on enter / focus-out / arrows
-                spin.setValue(value)
-                return spin
-
-            self._angle_spin = _spin(LS_ANGLE_DEG, 0.0, 89.9, 1.0, 2)
-            self._pixel_spin = _spin(PIXEL_SIZE_UM, 1e-4, 100.0, 0.001, 4)
-            self._scan_spin = _spin(scan_step_um, 1e-4, 1000.0, 0.01, 4)
-            form = QFormLayout()
-            form.addRow("Angle (°)", self._angle_spin)
-            form.addRow("Pixel size (µm)", self._pixel_spin)
-            form.addRow("Scan step (µm)", self._scan_spin)
-            layout.addLayout(form)
-            for spin in (self._angle_spin, self._pixel_spin, self._scan_spin):
-                spin.valueChanged.connect(self._on_geometry_changed)
-
-            self._shape_label = QLabel()
-            self._shape_label.setWordWrap(True)
-            self._update_shape_label(raw_shape)
-            layout.addWidget(self._shape_label)
-            layout.addStretch()
-            self._viewer.window.add_dock_widget(panel, name="Deskew", area="right")
+            self._controls = DeskewControls(scan_step_um=scan_step_um)
+            self._controls.displayDeskewedRequested.connect(self._display_deskewed)
+            self._controls.displayRawRequested.connect(self._display_raw)
+            self._controls.geometryChanged.connect(self._on_geometry_changed)
+            self._update_shape_status(raw_shape)
+            self._viewer.window.add_dock_widget(self._controls, name="Deskew", area="right")
         except Exception:  # noqa: BLE001 - widget is optional; never break the viewer
             logger.debug("Could not add deskew widget", exc_info=True)
 
-    def _update_shape_label(self, raw_shape: tuple[int, ...]) -> None:
-        if self._shape_label is not None and self._projector is not None:
-            self._shape_label.setText(
-                f"raw {raw_shape} → deskewed {self._projector.output_shape}"
+    def _update_shape_status(self, raw_shape: tuple[int, ...]) -> None:
+        if self._controls is not None and self._projector is not None:
+            mode = "deskewed" if self._deskew else "raw"
+            self._controls.set_status(
+                f"showing {mode}\nraw {raw_shape} → deskewed {self._projector.output_shape}"
             )
 
-    def _on_geometry_changed(self, *_: object) -> None:
-        """Rebuild deskewed views from the edited angle / pixel size / scan step."""
-        if not self._deskew_available:
-            return
-        try:
-            self._build_deskew_arrays(
-                self._angle_spin.value(),
-                self._pixel_spin.value(),
-                self._scan_spin.value(),
-            )
-            self._update_shape_label((self._n_zscan, *self._frame_shape))
-            if self._deskew:  # currently showing deskew -> swap to the rebuilt arrays
-                for layer, array in zip(self._layers, self._deskew_arrays, strict=True):
-                    layer.data = array
-                self._follow_target = None
-                self._last_step = tuple(self._viewer.dims.current_step)
-                for layer in self._layers:
-                    layer.refresh()
-            logger.info(
-                "Deskew geometry: angle %.2f°, pixel %.4f um, scan %.4f um -> %s",
-                self._angle_spin.value(),
-                self._pixel_spin.value(),
-                self._scan_spin.value(),
-                self._projector.output_shape,
-            )
-        except Exception:  # noqa: BLE001 - bad value must not break the viewer
-            logger.debug("Deskew geometry update failed (ignored)", exc_info=True)
+    def _display_deskewed(self) -> None:
+        self._apply_deskew(True)
 
-    def _set_deskew(self, on: bool) -> None:
-        """Swap every layer between its raw and deskewed view (the widget's toggle)."""
+    def _display_raw(self) -> None:
+        self._apply_deskew(False)
+
+    def _apply_deskew(self, on: bool) -> None:
+        """Swap every layer between its raw and deskewed view."""
         if not self._deskew_available or bool(on) == self._deskew:
             return
         self._deskew = bool(on)
@@ -320,7 +264,34 @@ class _ViewerState:
         self._viewer.dims.axis_labels = _AXIS_LABELS
         for layer in self._layers:
             layer.refresh()
+        self._update_shape_status((self._n_zscan, *self._frame_shape))
         logger.info("Deskew display %s", "ON" if self._deskew else "OFF")
+
+    def _on_geometry_changed(self) -> None:
+        """Rebuild deskewed views from the edited angle / pixel size / scan step."""
+        if not self._deskew_available or self._controls is None:
+            return
+        try:
+            self._build_deskew_arrays(
+                self._controls.angle, self._controls.pixel_size, self._controls.scan_step
+            )
+            self._update_shape_status((self._n_zscan, *self._frame_shape))
+            if self._deskew:  # currently showing deskew -> swap to the rebuilt arrays
+                for layer, array in zip(self._layers, self._deskew_arrays, strict=True):
+                    layer.data = array
+                self._follow_target = None
+                self._last_step = tuple(self._viewer.dims.current_step)
+                for layer in self._layers:
+                    layer.refresh()
+            logger.info(
+                "Deskew geometry: angle %.2f°, pixel %.4f um, scan %.4f um -> %s",
+                self._controls.angle,
+                self._controls.pixel_size,
+                self._controls.scan_step,
+                self._projector.output_shape,
+            )
+        except Exception:  # noqa: BLE001 - bad value must not break the viewer
+            logger.debug("Deskew geometry update failed (ignored)", exc_info=True)
 
     def _connect_follow_controls(self) -> None:
         """Wire up auto-advance pause (user scrub) and resume (Home button)."""
