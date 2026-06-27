@@ -232,17 +232,9 @@ class _ViewerState:
             self._controls.displayDeskewedRequested.connect(self._display_deskewed)
             self._controls.displayRawRequested.connect(self._display_raw)
             self._controls.geometryChanged.connect(self._on_geometry_changed)
-            self._update_shape_status(raw_shape)
             self._viewer.window.add_dock_widget(self._controls, name="Deskew", area="right")
         except Exception:  # noqa: BLE001 - widget is optional; never break the viewer
             logger.debug("Could not add deskew widget", exc_info=True)
-
-    def _update_shape_status(self, raw_shape: tuple[int, ...]) -> None:
-        if self._controls is not None and self._projector is not None:
-            mode = "deskewed" if self._deskew else "raw"
-            self._controls.set_status(
-                f"showing {mode}\nraw {raw_shape} → deskewed {self._projector.output_shape}"
-            )
 
     def _display_deskewed(self) -> None:
         self._apply_deskew(True)
@@ -264,7 +256,6 @@ class _ViewerState:
         self._viewer.dims.axis_labels = _AXIS_LABELS
         for layer in self._layers:
             layer.refresh()
-        self._update_shape_status((self._n_zscan, *self._frame_shape))
         logger.info("Deskew display %s", "ON" if self._deskew else "OFF")
 
     def _on_geometry_changed(self) -> None:
@@ -275,7 +266,6 @@ class _ViewerState:
             self._build_deskew_arrays(
                 self._controls.angle, self._controls.pixel_size, self._controls.scan_step
             )
-            self._update_shape_status((self._n_zscan, *self._frame_shape))
             if self._deskew:  # currently showing deskew -> swap to the rebuilt arrays
                 for layer, array in zip(self._layers, self._deskew_arrays, strict=True):
                     layer.data = array

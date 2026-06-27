@@ -65,7 +65,7 @@ packages = ["shrimpy"]
 # require acquire-zarr>=0.7.0, which conflicts with the acquire-zarr==0.6.0 pin above.
 ome-writers = { git = "https://github.com/ieivanov/ome-writers", rev = "71dc49126c933a5fa3b1fc01c5a6b07ebc98eb9e" }
 pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", rev = "8f18f74955e35173958563682b9efc789f30aef6" }
-napari-deskew-preview = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview", rev = "f2c660edd00c16b1d33df049d71016c110abb3bc" }
+napari-deskew-preview = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview", rev = "730de5cb5ddb2821128389f13884a6c4e0243a33" }
 # ome-writers = { path = "../ome-writers", editable = true }
 # pymmcore-plus = { path = "../pymmcore-plus", editable = true }
 
