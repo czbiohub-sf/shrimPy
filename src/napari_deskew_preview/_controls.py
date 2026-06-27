@@ -11,11 +11,10 @@ Imports qtpy, so this module (unlike the deskew core) requires a Qt environment.
 
 from __future__ import annotations
 
-from qtpy.QtCore import Signal
+from qtpy.QtCore import Qt, Signal
 from qtpy.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
-    QLabel,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -49,6 +48,8 @@ class DeskewControls(QWidget):
     geometryChanged : emitted when angle / pixel size / scan step changes.
     """
 
+    _LEFT = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+
     displayDeskewedRequested = Signal()
     displayRawRequested = Signal()
     geometryChanged = Signal()
@@ -63,6 +64,7 @@ class DeskewControls(QWidget):
         self._pixel = _make_spin(PIXEL_SIZE_UM, 1e-4, 100.0, 0.001, 4)
         self._scan = _make_spin(scan_step_um, 1e-4, 1000.0, 0.01, 4)
         form = QFormLayout()
+        form.setLabelAlignment(self._LEFT)  # field labels left-aligned, not right
         form.addRow("Angle (°)", self._angle)
         form.addRow("Pixel size (µm)", self._pixel)
         form.addRow("Scan step (µm)", self._scan)
@@ -76,9 +78,6 @@ class DeskewControls(QWidget):
         raw_button.clicked.connect(lambda: self.displayRawRequested.emit())
         layout.addWidget(raw_button)
 
-        self._status = QLabel("")
-        self._status.setWordWrap(True)
-        layout.addWidget(self._status)
         layout.addStretch()
 
         for spin in (self._angle, self._pixel, self._scan):
@@ -95,6 +94,3 @@ class DeskewControls(QWidget):
     @property
     def scan_step(self) -> float:
         return float(self._scan.value())
-
-    def set_status(self, text: str) -> None:
-        self._status.setText(text)

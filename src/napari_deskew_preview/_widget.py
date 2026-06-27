@@ -68,8 +68,7 @@ class DeskewWidget(QWidget):
                 self._sources.pop(layer, None)
                 skipped += 1
         self._recenter()
-        note = f", skipped {skipped}" if skipped else ""
-        self._controls.set_status(f"Displaying deskewed: {done} layer(s){note}.")
+        logger.info("Displaying deskewed: %d layer(s), skipped %d", done, skipped)
 
     def _display_raw(self) -> None:
         """Restore every layer we deskewed back to its raw data, then recenter."""
@@ -81,9 +80,7 @@ class DeskewWidget(QWidget):
             layer.data = raw
             done += 1
         self._recenter()
-        self._controls.set_status(
-            f"Displaying raw: {done} layer(s)." if done else "Nothing to restore."
-        )
+        logger.info("Displaying raw: %d layer(s)", done)
 
     def _recenter(self) -> None:
         """Recenter after a switch: reset the camera (like Home) and center the Z slider.
