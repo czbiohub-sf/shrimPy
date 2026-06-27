@@ -24,17 +24,16 @@ pip install "napari-deskew-preview @ git+https://github.com/czbiohub-sf/napari-d
 ## Use
 
 1. Open napari and load your raw oblique data (e.g. an OME-Zarr position via
-   `napari-ome-zarr`). The widget treats the layer's **last three axes as
+   `napari-ome-zarr`). The widget treats each layer's **last three axes as
    `(Z_scan, Y_tilt, X_cover)`** and any leading axes (T, C, position) as a batch.
 2. `Plugins → Deskew Preview`.
 3. Set **Angle**, **Pixel size**, and **Scan step** (defaults: 30°, 0.1133 µm) and click
-   **Deskew selected layer**. The layer's data is replaced **in place** with a lazy
-   deskewed view; editing the fields rebuilds it, and **Restore raw** puts the original
-   data back.
+   **Display deskewed**. **Display raw** switches back. Both apply to **all** image layers
+   and recenter the view; editing the fields rebuilds the deskewed layers.
 
-   Replacing in place (rather than adding a second layer) is deliberate: a raw and a
-   deskewed layer have different axis sizes (e.g. scan `1068` vs deskewed depth `256`), so
-   keeping both would make napari union their extents into oversized sliders.
+   The data is replaced **in place** (not added as a second layer): a raw and a deskewed
+   layer have different axis sizes (e.g. scan `1068` vs deskewed depth `256`), so keeping
+   both would make napari union their extents into oversized sliders.
 
 ## Library API (source-agnostic)
 

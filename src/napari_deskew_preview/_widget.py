@@ -1,13 +1,16 @@
-"""napari dock widget: quick deskew preview of a selected oblique-plane Image layer.
+"""napari dock widget: quick deskew preview of oblique-plane light-sheet Image layers.
 
-Treats the selected layer's last three axes as ``(Z_scan, Y_tilt, X_cover)`` and any
-leading axes (T, C, position, ...) as a batch. Replaces the layer's data **in place** with a
-lazy deskewed view that computes one plane at a time, so even volumes larger than RAM are
-viewable. Replacing in place (rather than adding a second layer) keeps a single,
-self-consistent set of dimension sliders -- a raw and a deskewed layer have different axis
-sizes (e.g. scan 1068 vs deskewed depth 256), and napari would otherwise union them into
-oversized sliders. Use "Restore raw" to put the original data back; editing the geometry
-fields rebuilds any layers deskewed by this widget.
+"Display deskewed" / "Display raw" apply to **all** image layers and recenter the view
+afterwards (like the Home button), since switching shape would otherwise leave the image
+off-center. Each layer's last three axes are treated as ``(Z_scan, Y_tilt, X_cover)`` and any
+leading axes (T, C, position, ...) as a batch.
+
+The layer data is replaced **in place** with a lazy deskewed view that computes one plane at
+a time, so even volumes larger than RAM are viewable. Replacing in place (rather than adding
+a second layer) keeps a single, self-consistent set of dimension sliders -- a raw and a
+deskewed layer have different axis sizes (e.g. scan 1068 vs deskewed depth 256), and napari
+would otherwise union them into oversized sliders. Editing the geometry fields rebuilds any
+layers currently deskewed by this widget.
 """
 
 from __future__ import annotations
@@ -55,15 +58,15 @@ class DeskewWidget(QWidget):
         form.addRow("Scan step (µm)", self._scan)
         layout.addLayout(form)
 
-        deskew_button = QPushButton("Deskew selected layer")
-        deskew_button.clicked.connect(self._deskew_selected)
+        deskew_button = QPushButton("Display deskewed")
+        deskew_button.clicked.connect(self._display_deskewed)
         layout.addWidget(deskew_button)
 
-        restore_button = QPushButton("Restore raw")
-        restore_button.clicked.connect(self._restore_selected)
-        layout.addWidget(restore_button)
+        raw_button = QPushButton("Display raw")
+        raw_button.clicked.connect(self._display_raw)
+        layout.addWidget(raw_button)
 
-        self._status = QLabel("Select an image layer, set the scan step, then deskew.")
+        self._status = QLabel("Set the scan step, then 'Display deskewed'.")
         self._status.setWordWrap(True)
         layout.addWidget(self._status)
         layout.addStretch()
@@ -90,37 +93,52 @@ class DeskewWidget(QWidget):
         data = layer.data
         return data[0] if isinstance(data, list) else data
 
-    def _deskew_selected(self) -> None:
-        layer = self._viewer.layers.selection.active
-        if layer is None or not hasattr(layer, "data"):
-            self._status.setText("Select an image layer first.")
-            return
-        # If we already deskewed this layer, rebuild from the stored raw (idempotent);
-        # otherwise capture its current data as the raw source.
-        raw = self._sources.get(layer)
-        if raw is None:
-            raw = self._raw_of(layer)
-            if getattr(raw, "ndim", 0) < 3:
-                self._status.setText("Need a layer with at least 3 dimensions (…, Z, Y, X).")
-                return
-            self._sources[layer] = raw
-        try:
-            shape = self._apply(layer, raw)
-        except Exception:  # noqa: BLE001 - report, don't crash napari
-            logger.exception("Deskew failed")
-            self._sources.pop(layer, None)
-            self._status.setText("Deskew failed (see console).")
-            return
-        self._status.setText(f"Deskewed '{layer.name}' in place → {shape}")
+    def _display_deskewed(self) -> None:
+        """Deskew every image layer in place, then recenter the view."""
+        done = skipped = 0
+        for layer in list(self._viewer.layers):
+            if not hasattr(layer, "data"):
+                continue
+            # Reuse the stored raw if we already deskewed this layer (idempotent),
+            # otherwise capture its current data as the raw source.
+            raw = self._sources.get(layer)
+            if raw is None:
+                raw = self._raw_of(layer)
+                if getattr(raw, "ndim", 0) < 3:
+                    skipped += 1
+                    continue
+                self._sources[layer] = raw
+            try:
+                self._apply(layer, raw)
+                done += 1
+            except Exception:  # noqa: BLE001 - report, don't crash napari
+                logger.exception("Deskew failed for '%s'", getattr(layer, "name", "?"))
+                self._sources.pop(layer, None)
+                skipped += 1
+        self._recenter()
+        note = f", skipped {skipped}" if skipped else ""
+        self._status.setText(f"Displaying deskewed: {done} layer(s){note}.")
 
-    def _restore_selected(self) -> None:
-        layer = self._viewer.layers.selection.active
-        raw = self._sources.pop(layer, None) if layer is not None else None
-        if raw is None:
-            self._status.setText("Selected layer was not deskewed by this widget.")
-            return
-        layer.data = raw
-        self._status.setText(f"Restored raw data for '{layer.name}'.")
+    def _display_raw(self) -> None:
+        """Restore every layer we deskewed back to its raw data, then recenter."""
+        done = 0
+        for layer in list(self._viewer.layers):
+            raw = self._sources.pop(layer, None)
+            if raw is None:
+                continue
+            layer.data = raw
+            done += 1
+        self._recenter()
+        self._status.setText(
+            f"Displaying raw: {done} layer(s)." if done else "Nothing to restore."
+        )
+
+    def _recenter(self) -> None:
+        """Reset the camera to fit the (re-shaped) data, like the Home button."""
+        try:
+            self._viewer.reset_view()
+        except Exception:  # noqa: BLE001 - never break on a viewer without reset_view
+            logger.debug("reset_view failed (ignored)", exc_info=True)
 
     def _apply(self, layer: object, raw: object) -> tuple[int, ...]:
         """Replace ``layer``'s data in place with the deskewed view of ``raw``."""
