@@ -176,9 +176,9 @@ class _ViewerState:
                 scan_step_um,
             )
 
-        # The widget opens (when available) but starts on raw; the user clicks
-        # "Display deskewed" to switch.
-        self._deskew = False
+        # When deskew is available (e.g. mantis), start on the deskewed view; the widget's
+        # "Display raw" button switches back.
+        self._deskew = self._deskew_available
         init_arrays = self._deskew_arrays if self._deskew else self._raw_arrays
         clim = _default_contrast_limits(init_arrays[0].dtype)
         for c, name in enumerate(self._channels):
