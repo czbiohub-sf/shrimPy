@@ -134,11 +134,24 @@ class DeskewWidget(QWidget):
         )
 
     def _recenter(self) -> None:
-        """Reset the camera to fit the (re-shaped) data, like the Home button."""
+        """Recenter after a switch: reset the camera (like Home) and center the Z slider.
+
+        Switching raw<->deskew changes the depth-axis length (e.g. scan 1068 vs deskewed
+        depth 256), so the Z slider would otherwise stay put / clamp to an edge.
+        """
         try:
             self._viewer.reset_view()
         except Exception:  # noqa: BLE001 - never break on a viewer without reset_view
             logger.debug("reset_view failed (ignored)", exc_info=True)
+        try:
+            dims = self._viewer.dims
+            if dims.ndim >= 3:
+                axis = dims.ndim - 3  # the Z (depth) slider, third from last
+                step = list(dims.current_step)
+                step[axis] = int(dims.nsteps[axis]) // 2
+                dims.current_step = tuple(step)
+        except Exception:  # noqa: BLE001
+            logger.debug("Centering Z slider failed (ignored)", exc_info=True)
 
     def _apply(self, layer: object, raw: object) -> tuple[int, ...]:
         """Replace ``layer``'s data in place with the deskewed view of ``raw``."""
