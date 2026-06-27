@@ -36,7 +36,7 @@ from napari_deskew_preview.deskew import (
 logger = logging.getLogger(__name__)
 
 # Default scan step (um); the user sets this for their acquisition.
-DEFAULT_SCAN_STEP_UM = 0.3
+DEFAULT_SCAN_STEP_UM = 0.15
 
 
 class DeskewWidget(QWidget):
