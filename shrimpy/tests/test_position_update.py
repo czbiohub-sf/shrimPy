@@ -576,6 +576,168 @@ class TestMantisEnginePositionUpdate:
 # ---------------------------------------------------------------------------
 
 
+class TestBackpressure:
+    """Verify that position update drains pending work at timepoint boundaries.
+
+    Without backpressure, a slow updater causes frame data to accumulate
+    unboundedly in the ThreadPoolExecutor queue — one full z-stack per
+    position per timepoint. This eventually exhausts RAM and triggers
+    MemoryError: Buffer overflowed from the Micro-Manager circular buffer.
+    """
+
+    def test_slow_updater_queue_bounded_across_timepoints(self, engine):
+        """Pending updates must be drained between timepoints.
+
+        Simulate a slow updater (0.5s per position) across 3 timepoints
+        with 3 positions and 2 z-slices each. Record when each event is
+        *yielded* by event_iterator and when each update *completes*.
+
+        Without backpressure, event_iterator yields timepoint 1 events
+        immediately while timepoint 0 updates are still running on the
+        executor. With drain, event_iterator blocks at the boundary until
+        the pending update finishes, so all t=0 updates complete before
+        any t=1 event is yielded.
+        """
+        store = PositionStore()
+        for i in range(3):
+            store.update_position(i, x=float(i * 100), y=float(i * 100), z=0.0)
+
+        update_completions: list[tuple[int, int, float]] = []
+        event_yields: list[tuple[int, int, float]] = []
+
+        class SlowUpdater(PositionUpdater):
+            def update(self, t_idx, p_idx, position, data=None):
+                time.sleep(0.5)
+                update_completions.append((t_idx, p_idx, time.monotonic()))
+                return position
+
+        config = PositionUpdateConfig(enabled=True, update_channel=0)
+        manager = PositionUpdateManager(config, store, updater=SlowUpdater())
+        manager.start()
+
+        engine._position_update_manager = manager
+        engine._position_update_frames = {}
+        engine._position_update_expected_slices = 2
+
+        # Build events: 3 timepoints × 3 positions × 2 z-slices
+        events = []
+        for t in range(3):
+            for p in range(3):
+                for z in range(2):
+                    events.append(MDAEvent(
+                        index={"t": t, "p": p, "c": 0, "z": z},
+                        x_pos=float(p * 100),
+                        y_pos=float(p * 100),
+                    ))
+
+        frame = np.zeros((64, 64), dtype=np.uint16)
+
+        with patch("shrimpy.mantis.mantis_engine.MDAEngine.event_iterator", return_value=iter(events)):
+            for event in engine.event_iterator(events):
+                t_idx = event.index.get("t", 0)
+                p_idx = event.index.get("p", 0)
+                event_yields.append((t_idx, p_idx, time.monotonic()))
+                engine._on_frame_ready(frame, event)
+
+        manager.shutdown()
+
+        # All 9 updates should have completed (3t × 3p)
+        assert len(update_completions) == 9
+
+        # The critical check: when event_iterator yields the first event
+        # of timepoint 1, all timepoint 0 updates must already be done.
+        t0_last_completion = max(ts for t, p, ts in update_completions if t == 0)
+        t1_first_yield = min(ts for t, p, ts in event_yields if t == 1)
+
+        assert t0_last_completion < t1_first_yield, (
+            f"Timepoint 0 last update completed at {t0_last_completion:.3f}, "
+            f"but timepoint 1 first event yielded at {t1_first_yield:.3f} — "
+            "event_iterator is not draining pending updates at timepoint boundary"
+        )
+
+    def test_executor_queue_depth_bounded(self, engine):
+        """The executor should not accumulate more than one pending future.
+
+        Without backpressure, on_position_complete submits to the executor
+        without waiting — the internal queue grows by one z-stack per
+        position. With drain at timepoint boundaries, the queue is flushed
+        before new work is submitted.
+
+        We measure this by counting how many futures are submitted while
+        previous ones are still pending.
+        """
+        store = PositionStore()
+        for i in range(3):
+            store.update_position(i, x=float(i * 100), y=float(i * 100), z=0.0)
+
+        pending_at_submit: list[int] = []
+        _orig_submit = PositionUpdateManager.on_position_complete
+
+        class SlowUpdater(PositionUpdater):
+            def update(self, t_idx, p_idx, position, data=None):
+                time.sleep(0.3)
+                return position
+
+        config = PositionUpdateConfig(enabled=True, update_channel=0)
+        manager = PositionUpdateManager(config, store, updater=SlowUpdater())
+        manager.start()
+
+        # Monkey-patch to track whether a future is still pending at submit time
+        orig_on_position_complete = manager.on_position_complete.__func__
+
+        def tracking_on_position_complete(self_mgr, t_idx, p_idx, data=None):
+            if self_mgr._pending_future is not None and not self_mgr._pending_future.done():
+                pending_at_submit.append(1)
+            else:
+                pending_at_submit.append(0)
+            return orig_on_position_complete(self_mgr, t_idx, p_idx, data)
+
+        manager.on_position_complete = lambda t, p, data=None: tracking_on_position_complete(manager, t, p, data)
+
+        engine._position_update_manager = manager
+        engine._position_update_frames = {}
+        engine._position_update_expected_slices = 1
+
+        # 4 timepoints × 3 positions × 1 z-slice
+        events = []
+        for t in range(4):
+            for p in range(3):
+                events.append(MDAEvent(
+                    index={"t": t, "p": p, "c": 0, "z": 0},
+                    x_pos=float(p * 100),
+                    y_pos=float(p * 100),
+                ))
+
+        frame = np.zeros((64, 64), dtype=np.uint16)
+
+        with patch("shrimpy.mantis.mantis_engine.MDAEngine.event_iterator", return_value=iter(events)):
+            for event in engine.event_iterator(events):
+                engine._on_frame_ready(frame, event)
+
+        manager.shutdown()
+
+        # Within a single timepoint, overlaps are expected: 3 positions
+        # submit faster than the 0.3s updater processes them, so positions
+        # 2 and 3 find position 1 still pending. That's fine — the drain
+        # only fires between timepoints.
+        #
+        # Without drain: nearly all submissions overlap (11/12).
+        # With drain: at most (positions_per_timepoint - 1) per timepoint,
+        # i.e. 2 × 4 = 8 out of 12. The key is no cross-timepoint
+        # accumulation — the queue never holds more than one timepoint's
+        # worth of work.
+        n_positions = 3
+        n_timepoints = 4
+        max_expected_overlaps = (n_positions - 1) * n_timepoints
+        overlaps = sum(pending_at_submit)
+        total = len(pending_at_submit)
+        assert overlaps <= max_expected_overlaps, (
+            f"{overlaps}/{total} submissions found a pending future "
+            f"(expected at most {max_expected_overlaps}) — "
+            "executor queue is accumulating across timepoints"
+        )
+
+
 class TestPositionUpdateIntegration:
     def test_positions_shift_across_acquisitions(self, demo_core, mantis_metadata):
         """End-to-end: a mock updater shifts position by (+1, +1, +0.5) per call.
