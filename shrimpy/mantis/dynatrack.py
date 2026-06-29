@@ -482,7 +482,6 @@ class DynaTrackUpdater(PositionUpdater):
             logger.info(
                 f"DynaTrack: stored reference stack for p={position_index} "
                 f"(zyx_shape={current_stack_zyx.shape})"
-
             )
             logger.debug(
                 f"DynaTrack[mem]: after store_ref p={position_index} t={timepoint_index} "
@@ -515,18 +514,16 @@ class DynaTrackUpdater(PositionUpdater):
             f"rss={_rss_gb():.2f} GB"
         )
 
-
         # 1. Decouple position in image space from position in stage space
         # First get the stage position in image space with configurable transform matrix
         # Add the shift to get the new position in image space
         # Convert the new position in image space to stage position
         # Update the position in stage space
 
-        if self._config.image_to_stage_matrix_xyz is not None:
-            T = np.asarray(self._config.image_to_stage_matrix_xyz)
-            shift_stage_xyz = T @ shift_image_xyz
-        else:
-            shift_stage_xyz = shift_image_xyz
+        image_to_stage_matrix_xyz = self._config.image_to_stage_matrix_xyz
+        if image_to_stage_matrix_xyz is None:
+            image_to_stage_matrix_xyz = np.eye(3)
+        shift_stage_xyz = image_to_stage_matrix_xyz @ shift_image_xyz
 
         # The shift is the measured drift of the current image relative to the
         # reference, so the stage must move in the OPPOSITE direction to
