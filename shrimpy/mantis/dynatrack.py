@@ -62,6 +62,14 @@ class DynaTrackConfig:
         "y", "x". Shifts below min are zeroed; shifts above max are clipped.
     tracking_interval : int
         Track every N timepoints (1 = every timepoint).
+    reference_update_interval : int
+        Re-anchor the per-position reference every N timepoints (0 = never,
+        i.e. keep the fixed t=0 reference). On a re-anchor timepoint the
+        current stack becomes the new reference and NO shift correction is
+        applied (the current stage position is accepted as the new baseline),
+        which avoids a jump. Useful for long timelapses where the sample
+        changes enough that phase-correlation against a stale reference
+        becomes unreliable.
     shift_estimation_channel : str
         Which representation to use for shift estimation:
         ``'raw'`` (default, no preprocessing), ``'phase'`` (phase
@@ -90,6 +98,7 @@ class DynaTrackConfig:
     dampening: tuple[float, float, float] | None = None
     shift_limits: dict[str, tuple[float, float]] | None = None
     tracking_interval: int = 1
+    reference_update_interval: int = 0
     shift_estimation_channel: str = "raw"
     preprocessing: list[str] | None = None
     deskew_config: dict[str, Any] | None = None
@@ -383,6 +392,19 @@ class DynaTrackUpdater(PositionUpdater):
     def config(self) -> DynaTrackConfig:
         return self._config
 
+    def wants_reference_refresh(self, timepoint_index: int) -> bool:
+        """True on a scheduled re-anchor timepoint (see ``update``).
+
+        Mirrors the interval test in ``update``: when
+        ``reference_update_interval`` is set, every Nth timepoint adopts the
+        current stack as the new reference and applies no correction. The
+        manager uses this so a missing baseline suppresses only a correction,
+        never a due reference refresh. (First-encounter capture is not included
+        here -- it always has a baseline, so it never reaches this check.)
+        """
+        interval = self._config.reference_update_interval
+        return bool(interval) and timepoint_index % interval == 0
+
     def update(
         self,
         timepoint_index: int,
@@ -487,12 +509,20 @@ class DynaTrackUpdater(PositionUpdater):
             # No preprocessing: move the raw stack to the device directly.
             current_stack_zyx = torch.as_tensor(raw_stack, device=device, dtype=torch.float32)
 
-        # Store reference on first encounter
-        if position_index not in self._reference_stacks_zyx:
+        # (Re)anchor the reference: store it on first encounter, and re-anchor
+        # every ``reference_update_interval`` timepoints. On a re-anchor
+        # timepoint we adopt the current image as the new reference and apply
+        # NO correction (return position unchanged) -- the current stage
+        # position becomes the new baseline; correcting here would jump the
+        # stage against a reference we are about to discard.
+        interval = self._config.reference_update_interval
+        if (position_index not in self._reference_stacks_zyx) or (
+            interval and timepoint_index % interval == 0
+        ):
             self._reference_stacks_zyx[position_index] = current_stack_zyx
             ref_total = sum(a.nbytes for a in self._reference_stacks_zyx.values())
             logger.info(
-                f"DynaTrack: stored reference stack for p={position_index} "
+                f"DynaTrack: stored reference stack for p={position_index} from t={timepoint_index} "
                 f"(zyx_shape={current_stack_zyx.shape})"
             )
             logger.debug(

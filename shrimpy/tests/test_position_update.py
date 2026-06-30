@@ -393,6 +393,37 @@ class TestPositionUpdateManager:
         assert "position" not in seen
         manager.shutdown()
 
+    def test_no_baseline_proceeds_on_reference_refresh(self, enabled_config, position_store):
+        """A missing baseline skips only a *correction*, not a scheduled
+        reference refresh. When the updater reports this is a refresh timepoint
+        (wants_reference_refresh -> True), the update still runs: the refresh
+        applies no correction, so the live-store snapshot is a harmless baseline
+        and the reference must still be re-anchored.
+        """
+        seen = {}
+
+        class RefreshUpdater(PositionUpdater):
+            def wants_reference_refresh(self, timepoint_index):
+                return True
+
+            def update(self, t_idx, p_idx, position, data=None):
+                seen["position"] = position
+                return position
+
+        manager = PositionUpdateManager(
+            enabled_config, position_store, updater=RefreshUpdater()
+        )
+        manager.start()
+        # No apply_position_update call -> no baseline recorded for (0, 0), but
+        # this is a refresh timepoint, so the updater must still run.
+        manager.on_position_complete(0, 0)
+        assert manager._pending_future is not None
+        manager._pending_future.result(timeout=5)
+        manager.shutdown()
+        # Proceeded using the live-store snapshot as the baseline.
+        assert seen["position"].x == 100.0
+        assert seen["position"].y == 200.0
+
 
 # ---------------------------------------------------------------------------
 # MantisEngine integration tests
