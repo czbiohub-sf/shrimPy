@@ -400,9 +400,8 @@ class DynaTrackUpdater(PositionUpdater):
             The position that was just acquired.
         position : PositionCoordinates
             Stage coordinates the stack was acquired at. The computed shift is
-            added to this value, so corrections compensate the drift between
-            the reference and where the stack actually was -- not against a
-            store value that a later update may already have moved on.
+            used to adjust this value to compensate for drift relative to the
+            reference.
         data : list[np.ndarray] | None
             Frames acquired for this position (one 2D array per z-slice).
 

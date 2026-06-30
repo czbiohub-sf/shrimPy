@@ -84,8 +84,8 @@ class DynaTrackWorker:
     ) -> None:
         """Send a job to the worker process (non-blocking).
 
-        ``position`` is the stage baseline the stack was acquired at; the
-        updater adds the computed shift to it.
+        ``position`` carried the stage coordinates where the stack was acquired.
+        It is updated using the computed shift.
         """
         self._input_queue.put(
             {
