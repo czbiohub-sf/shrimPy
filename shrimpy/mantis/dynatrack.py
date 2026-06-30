@@ -532,15 +532,15 @@ class DynaTrackUpdater(PositionUpdater):
         # Add the shift to get the new position in image space
         # Convert the new position in image space to stage position
         # Update the position in stage space
-        image_to_stage_matrix_xyz = self._config.image_to_stage_matrix_xyz
-        if image_to_stage_matrix_xyz is None:
-            image_to_stage_matrix_xyz = np.eye(3)
-        shift_stage_xyz = np.asarray(image_to_stage_matrix_xyz) @ shift_image_xyz
-        logger.info(
-            f"DynaTrack: applied image-to-stage matrix transform to shift: "
-            f"image_xyz=({shift_image_xyz[0]:.2f}, {shift_image_xyz[1]:.2f}, {shift_image_xyz[2]:.2f}) um -> "
-            f"stage_xyz=({shift_stage_xyz[0]:.2f}, {shift_stage_xyz[1]:.2f}, {shift_stage_xyz[2]:.2f}) um"
-        )
+        if transform_xyz := self._config.image_to_stage_matrix_xyz is not None:
+            shift_stage_xyz = np.asarray(transform_xyz) @ shift_image_xyz
+            logger.info(
+                f"DynaTrack: applied image-to-stage matrix transform to shift: "
+                f"image_xyz=({shift_image_xyz[0]:.2f}, {shift_image_xyz[1]:.2f}, {shift_image_xyz[2]:.2f}) um -> "
+                f"stage_xyz=({shift_stage_xyz[0]:.2f}, {shift_stage_xyz[1]:.2f}, {shift_stage_xyz[2]:.2f}) um"
+            )
+        else:
+            shift_stage_xyz = shift_image_xyz
 
         # Compensate the drift between the reference and where the stack was
         # actually acquired. `position` is the commanded stage coords at
