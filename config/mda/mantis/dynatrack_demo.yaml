@@ -35,6 +35,15 @@ channels:
   z_offset: 0.0
   acquire_every: 1
   camera: null
+# For deskewed-GFP (fluorescence) tracking, add a fluorescence channel as
+# index 1 and point `update_channel: 1` at it (see position_update below):
+# - config: GFP
+#   group: Channel
+#   exposure: 10.0
+#   do_stack: true
+#   z_offset: 0.0
+#   acquire_every: 1
+#   camera: null
 
 # Define axis order
 axis_order:
@@ -59,6 +68,8 @@ metadata:
       stage: ObjectiveZ
     position_update:
       enabled: true
+      # Channel index fed to the tracker (0 = first channel, BF here).
+      # For deskewed-GFP tracking set this to the GFP channel index (e.g. 1).
       update_channel: 0
       z_device: ObjectiveZ
       dynatrack:
@@ -77,8 +88,9 @@ metadata:
         #   x: [2.0, 10.0]
 
         # Preprocessing pipeline: deskew -> phase recon -> virtual staining
-        # Options: ['deskew', 'phase', 'vs'], ['deskew', 'phase'], ['phase', 'vs'], ['phase']
+        # Options: ['deskew','phase','vs'], ['deskew','phase'], ['phase','vs'], ['phase'], ['deskew']
         preprocessing: ['deskew', 'phase', 'vs']
+        # preprocessing: ['deskew']   # deskewed-GFP (fluorescence) tracking: deskew only
         # preprocessing: ['phase']
 
         # Biahub deskew parameters for light-sheet data
@@ -96,9 +108,11 @@ metadata:
           scan_step_um: 0.15
           keep_overhang: false
           average_n_slices: 3
-        # Which channel to use for shift estimation:
-        # 'raw', 'phase', 'vs_nuclei', 'vs_membrane'
+        # Which representation to use for shift estimation:
+        # 'deskewed' (deskew-only output, e.g. deskewed GFP), 'phase',
+        # 'vs_nuclei', 'vs_membrane'
         shift_estimation_channel: 'vs_nuclei'
+        # shift_estimation_channel: 'deskewed'   # deskewed-GFP (fluorescence) tracking
         # shift_estimation_channel: 'phase'
 
         # Waveorder phase reconstruction parameters
