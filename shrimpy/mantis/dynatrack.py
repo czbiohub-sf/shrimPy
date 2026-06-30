@@ -531,7 +531,8 @@ class DynaTrackUpdater(PositionUpdater):
         # Add the shift to get the new position in image space
         # Convert the new position in image space to stage position
         # Update the position in stage space
-        if transform_xyz := self._config.image_to_stage_matrix_xyz is not None:
+        transform_xyz = self._config.image_to_stage_matrix_xyz
+        if transform_xyz is not None:
             shift_stage_xyz = np.asarray(transform_xyz) @ shift_image_xyz
             logger.info(
                 f"DynaTrack: applied image-to-stage matrix transform to shift: "
