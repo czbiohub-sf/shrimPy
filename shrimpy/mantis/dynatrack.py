@@ -916,9 +916,8 @@ class DynaTrackUpdater(PositionUpdater):
             The position that was just acquired.
         position : PositionCoordinates
             Stage coordinates the stack was acquired at. The computed shift is
-            added to this value, so corrections compensate the drift between
-            the reference and where the stack actually was -- not against a
-            store value that a later update may already have moved on.
+            used to adjust this value to compensate for drift relative to the
+            reference.
         data : list[np.ndarray] | None
             Frames acquired for this position (one 2D array per z-slice).
 
@@ -1074,10 +1073,9 @@ class DynaTrackUpdater(PositionUpdater):
         # Add the shift to get the new position in image space
         # Convert the new position in image space to stage position
         # Update the position in stage space
-
-        if self._config.image_to_stage_matrix_xyz is not None:
-            transform_xyz = np.asarray(self._config.image_to_stage_matrix_xyz)
-            shift_stage_xyz = transform_xyz @ shift_image_xyz
+        transform_xyz = self._config.image_to_stage_matrix_xyz
+        if transform_xyz is not None:
+            shift_stage_xyz = np.asarray(transform_xyz) @ shift_image_xyz
             logger.info(
                 f"DynaTrack: applied image-to-stage matrix transform to shift: "
                 f"image_xyz=({shift_image_xyz[0]:.2f}, {shift_image_xyz[1]:.2f}, {shift_image_xyz[2]:.2f}) um -> "
