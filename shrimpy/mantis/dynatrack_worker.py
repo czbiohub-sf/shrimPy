@@ -82,7 +82,11 @@ class DynaTrackWorker:
         position: PositionCoordinates,
         data: list[np.ndarray],
     ) -> None:
-        """Send a job to the worker process (non-blocking)."""
+        """Send a job to the worker process (non-blocking).
+
+        ``position`` carried the stage coordinates where the stack was acquired.
+        It is updated using the computed shift.
+        """
         self._input_queue.put(
             {
                 "type": "update",
@@ -244,3 +248,13 @@ def _worker_loop(
                         "timepoint_index": t_idx,
                     }
                 )
+
+            # Release this job's GPU working set so reserved memory is not
+            # pinned at the VS-inference peak across positions/timepoints.
+            try:
+                import torch as _torch
+
+                if _torch.cuda.is_available():
+                    _torch.cuda.empty_cache()
+            except Exception:
+                pass

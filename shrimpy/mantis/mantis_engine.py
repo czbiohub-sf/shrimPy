@@ -173,7 +173,7 @@ class MantisEngine(MDAEngine):
                 updater = DynaTrackUpdater(config=dynatrack_config)
                 # Debug zarr path and position names (activated after preprocessor is built)
                 if dynatrack_config.save_debug and self._data_path:
-                    updater._debug_zarr_path = self._data_path.parent / "dynatrack_debug.zarr"
+                    updater._debug_zarr_path = self._data_path / "dynatrack_debug.zarr"
                     updater._debug_position_names = {
                         idx: pos.name or f"p{idx}"
                         for idx, pos in enumerate(sequence.stage_positions)

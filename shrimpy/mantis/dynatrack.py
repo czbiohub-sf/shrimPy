@@ -399,7 +399,9 @@ class DynaTrackUpdater(PositionUpdater):
         position_index : int
             The position that was just acquired.
         position : PositionCoordinates
-            Current coordinates for this position.
+            Stage coordinates the stack was acquired at. The computed shift is
+            used to adjust this value to compensate for drift relative to the
+            reference.
         data : list[np.ndarray] | None
             Frames acquired for this position (one 2D array per z-slice).
 
@@ -438,9 +440,6 @@ class DynaTrackUpdater(PositionUpdater):
         # All downstream ops run on tensors. Move to CUDA if available;
         # the preprocessor (if any) already targets the same device.
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        current_stack_zyx: torch.Tensor = torch.as_tensor(
-            raw_stack, device=device, dtype=torch.float32
-        )
 
         # Apply optional preprocessing (e.g. phase reconstruction, VS).
         # Preprocessor returns torch tensors on device; convert to numpy at
@@ -469,11 +468,24 @@ class DynaTrackUpdater(PositionUpdater):
                     f"output {list(channels_zyx.keys())}, using first channel"
                 )
                 selected = next(iter(channels_zyx.values()))
-            current_stack_zyx = selected.detach()
+            # Clone into a compact standalone tensor. A bare ``.detach()`` is a
+            # view that keeps the *entire* preprocessor output alive (all
+            # channels share one parent tensor), so a stored reference would
+            # pin every channel, not just this one. Cloning lets the other
+            # channels + parent be freed below.
+            current_stack_zyx = selected.detach().clone()
+            # Drop the dict + view and return the freed blocks to the GPU so
+            # the caching allocator does not stay pinned at the VS peak.
+            del channels_zyx, selected
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             logger.debug(
                 f"DynaTrack[mem]: after channel select p={position_index} t={timepoint_index} "
                 f"rss={_rss_gb():.2f} GB"
             )
+        else:
+            # No preprocessing: move the raw stack to the device directly.
+            current_stack_zyx = torch.as_tensor(raw_stack, device=device, dtype=torch.float32)
 
         # Store reference on first encounter
         if position_index not in self._reference_stacks_zyx:
@@ -519,20 +531,37 @@ class DynaTrackUpdater(PositionUpdater):
         # Add the shift to get the new position in image space
         # Convert the new position in image space to stage position
         # Update the position in stage space
+        transform_xyz = self._config.image_to_stage_matrix_xyz
+        if transform_xyz is not None:
+            shift_stage_xyz = np.asarray(transform_xyz) @ shift_image_xyz
+            logger.info(
+                f"DynaTrack: applied image-to-stage matrix transform to shift: "
+                f"image_xyz=({shift_image_xyz[0]:.2f}, {shift_image_xyz[1]:.2f}, {shift_image_xyz[2]:.2f}) um -> "
+                f"stage_xyz=({shift_stage_xyz[0]:.2f}, {shift_stage_xyz[1]:.2f}, {shift_stage_xyz[2]:.2f}) um"
+            )
+        else:
+            shift_stage_xyz = shift_image_xyz
 
-        image_to_stage_matrix_xyz = self._config.image_to_stage_matrix_xyz
-        if image_to_stage_matrix_xyz is None:
-            image_to_stage_matrix_xyz = np.eye(3)
-        shift_stage_xyz = image_to_stage_matrix_xyz @ shift_image_xyz
-
+        # Compensate the drift between the reference and where the stack was
+        # actually acquired. `position` is the commanded stage coords at
+        # acquisition time, so subtracting the shift here avoids accumulating
+        # against a store value that a later update may already have moved on.
         # The shift is the measured drift of the current image relative to the
         # reference, so the stage must move in the OPPOSITE direction to
         # recenter -- hence subtract.
-        _x = position.x - shift_stage_xyz[0]
-        _y = position.y - shift_stage_xyz[1]
-        _z = (position.z or 0) - shift_stage_xyz[2] if position.z is not None else None
+        baseline = position
+        logger.info(
+            f"DynaTrack: baseline p={position_index} t={timepoint_index} "
+            f"x={baseline.x} y={baseline.y} z={baseline.z}"
+        )
+        _x = baseline.x - shift_stage_xyz[0]
+        _y = baseline.y - shift_stage_xyz[1]
+        _z = (baseline.z or 0) - shift_stage_xyz[2] if baseline.z is not None else None
         updated = PositionCoordinates(_x, _y, _z)
-
+        logger.info(
+            f"DynaTrack: updated position p={position_index} t={timepoint_index} "
+            f"x={updated.x} y={updated.y} z={updated.z}"
+        )
         logger.info(
             f"DynaTrack: p={position_index} t={timepoint_index} "
             f"shift_xyz_um=({shift_image_xyz[0]:.2f}, {shift_image_xyz[1]:.2f}, {shift_image_xyz[2]:.2f})"

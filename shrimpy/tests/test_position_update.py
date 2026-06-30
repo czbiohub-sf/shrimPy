@@ -185,7 +185,7 @@ class TestPositionUpdater:
         received_data = {}
 
         class TestUpdater(PositionUpdater):
-            def update(self, t_idx, p_idx, position, data=None):
+            def update(self, t_idx, p_idx, position, data=None, **kwargs):
                 received_data["frames"] = data
                 return position
 
@@ -203,6 +203,15 @@ class TestPositionUpdater:
 # ---------------------------------------------------------------------------
 
 
+def _record_baseline(manager, t, p):
+    """Simulate the event iterator recording the acquisition baseline for
+    (t, p) before the stack's frames complete. The real flow always does this
+    via ``apply_position_update``; without a baseline the manager now skips the
+    correction rather than anchoring it to a race-prone live-store value.
+    """
+    manager.apply_position_update(MDAEvent(index={"t": t, "p": p}))
+
+
 class TestPositionUpdateManager:
     def test_disabled_is_noop(self, disabled_config, position_store):
         manager = PositionUpdateManager(disabled_config, position_store)
@@ -215,7 +224,7 @@ class TestPositionUpdateManager:
         called_with = {}
 
         class SpyUpdater(PositionUpdater):
-            def update(self, t_idx, p_idx, position, data=None):
+            def update(self, t_idx, p_idx, position, data=None, **kwargs):
                 called_with["t_idx"] = t_idx
                 called_with["p_idx"] = p_idx
                 called_with["position"] = position
@@ -224,6 +233,7 @@ class TestPositionUpdateManager:
 
         manager = PositionUpdateManager(enabled_config, position_store, updater=SpyUpdater())
         manager.start()
+        _record_baseline(manager, 0, 1)
         frames = [np.zeros((4, 4), dtype=np.uint16)]
         manager.on_position_complete(0, 1, data=frames)
         manager._pending_future.result(timeout=5)
@@ -237,7 +247,7 @@ class TestPositionUpdateManager:
 
     def test_updates_store_with_results(self, enabled_config, position_store):
         class ShiftUpdater(PositionUpdater):
-            def update(self, t_idx, p_idx, position, data=None):
+            def update(self, t_idx, p_idx, position, data=None, **kwargs):
                 return PositionCoordinates(
                     x=position.x + 10.0,
                     y=position.y + 20.0,
@@ -246,6 +256,7 @@ class TestPositionUpdateManager:
 
         manager = PositionUpdateManager(enabled_config, position_store, updater=ShiftUpdater())
         manager.start()
+        _record_baseline(manager, 0, 0)
         manager.on_position_complete(0, 0)
         manager._pending_future.result(timeout=5)
         manager.shutdown()
@@ -259,13 +270,14 @@ class TestPositionUpdateManager:
         original = position_store.get_position(0)
 
         class FailingUpdater(PositionUpdater):
-            def update(self, t_idx, p_idx, position, data=None):
+            def update(self, t_idx, p_idx, position, data=None, **kwargs):
                 raise RuntimeError("updater crashed")
 
         manager = PositionUpdateManager(
             enabled_config, position_store, updater=FailingUpdater()
         )
         manager.start()
+        _record_baseline(manager, 0, 0)
         manager.on_position_complete(0, 0)
         manager._pending_future.result(timeout=5)
         manager.shutdown()
@@ -279,13 +291,14 @@ class TestPositionUpdateManager:
         completed = threading.Event()
 
         class SlowUpdater(PositionUpdater):
-            def update(self, t_idx, p_idx, position, data=None):
+            def update(self, t_idx, p_idx, position, data=None, **kwargs):
                 time.sleep(0.2)
                 completed.set()
                 return position
 
         manager = PositionUpdateManager(enabled_config, position_store, updater=SlowUpdater())
         manager.start()
+        _record_baseline(manager, 0, 0)
         manager.on_position_complete(0, 0)
         manager.shutdown()
         assert completed.is_set()
@@ -319,6 +332,66 @@ class TestPositionUpdateManager:
         event = MDAEvent(x_pos=100.0, y_pos=200.0, index={"t": 0, "p": 99})
         result = manager.apply_position_update(event)
         assert result is event
+
+    def test_updater_baseline_is_acquired_coords_not_advanced_store(
+        self, enabled_config, position_store
+    ):
+        """Regression: the shift must be anchored to the coords the stack was
+        acquired at, not to a store value a later correction has moved on to.
+
+        Reproduces the pre-fetch race that commit a98c22c fixed: if the store
+        is updated between event-apply (acquisition) and on_position_complete,
+        the updater must still receive the acquisition baseline so corrections
+        don't accumulate against a moving target.
+        """
+        seen = {}
+
+        class SpyUpdater(PositionUpdater):
+            def update(self, t_idx, p_idx, position, data=None):
+                seen["position"] = position
+                return position
+
+        manager = PositionUpdateManager(enabled_config, position_store, updater=SpyUpdater())
+        manager.start()
+
+        # 1. Event for (t=0, p=0) is applied -> baseline recorded from the
+        #    store as it stood at acquisition time (100, 200, 50).
+        event = MDAEvent(x_pos=0.0, y_pos=0.0, z_pos=0.0, index={"t": 0, "p": 0})
+        manager.apply_position_update(event)
+
+        # 2. A later correction lands in the store before this stack completes.
+        position_store.update_position(0, x=999.0, y=888.0, z=777.0)
+
+        # 3. Stack completes -> updater must see the acquisition baseline.
+        manager.on_position_complete(0, 0)
+        manager._pending_future.result(timeout=5)
+        manager.shutdown()
+
+        assert seen["position"].x == 100.0
+        assert seen["position"].y == 200.0
+        assert seen["position"].z == 50.0
+
+    def test_no_baseline_skips_correction(self, enabled_config, position_store):
+        """When no acquisition baseline was recorded (event never passed
+        through apply_position_update), the correction is skipped rather than
+        anchored to a race-prone live-store value. Because shifts anchor to a
+        fixed reference, the next timepoint re-centers, so skipping is safe.
+        """
+        seen = {}
+
+        class SpyUpdater(PositionUpdater):
+            def update(self, t_idx, p_idx, position, data=None):
+                seen["position"] = position
+                return position
+
+        manager = PositionUpdateManager(enabled_config, position_store, updater=SpyUpdater())
+        manager.start()
+        # No apply_position_update call -> no baseline recorded for (0, 0).
+        manager.on_position_complete(0, 0)
+        # Nothing is submitted and the updater is never called.
+        assert manager._pending_future is None
+        assert "position" not in seen
+        manager.shutdown()
 
 
 # ---------------------------------------------------------------------------
@@ -368,6 +441,7 @@ class TestMantisEnginePositionUpdate:
         store.update_position(0, x=10.0, y=20.0, z=5.0)
         manager = PositionUpdateManager(PositionUpdateConfig(enabled=True), store)
         manager.start()
+        _record_baseline(manager, 0, 0)
         engine._position_update_manager = manager
         engine._position_update_frames = {}
         engine._position_update_expected_slices = 3
@@ -396,7 +470,7 @@ class TestMantisEnginePositionUpdate:
         received_data = {}
 
         class SpyUpdater(PositionUpdater):
-            def update(self, t_idx, p_idx, position, data=None):
+            def update(self, t_idx, p_idx, position, data=None, **kwargs):
                 received_data["frames"] = data
                 return position
 
@@ -404,6 +478,7 @@ class TestMantisEnginePositionUpdate:
             PositionUpdateConfig(enabled=True), store, updater=SpyUpdater()
         )
         manager.start()
+        _record_baseline(manager, 0, 0)
         engine._position_update_manager = manager
         engine._position_update_frames = {}
         engine._position_update_expected_slices = 2
@@ -426,6 +501,8 @@ class TestMantisEnginePositionUpdate:
         store.update_position(1, x=30.0, y=40.0, z=15.0)
         manager = PositionUpdateManager(PositionUpdateConfig(enabled=True), store)
         manager.start()
+        _record_baseline(manager, 0, 0)
+        _record_baseline(manager, 0, 1)
         engine._position_update_manager = manager
         engine._position_update_frames = {}
         engine._position_update_expected_slices = 2
@@ -624,15 +701,19 @@ class TestBackpressure:
         for t in range(3):
             for p in range(3):
                 for z in range(2):
-                    events.append(MDAEvent(
-                        index={"t": t, "p": p, "c": 0, "z": z},
-                        x_pos=float(p * 100),
-                        y_pos=float(p * 100),
-                    ))
+                    events.append(
+                        MDAEvent(
+                            index={"t": t, "p": p, "c": 0, "z": z},
+                            x_pos=float(p * 100),
+                            y_pos=float(p * 100),
+                        )
+                    )
 
         frame = np.zeros((64, 64), dtype=np.uint16)
 
-        with patch("shrimpy.mantis.mantis_engine.MDAEngine.event_iterator", return_value=iter(events)):
+        with patch(
+            "shrimpy.mantis.mantis_engine.MDAEngine.event_iterator", return_value=iter(events)
+        ):
             for event in engine.event_iterator(events):
                 t_idx = event.index.get("t", 0)
                 p_idx = event.index.get("p", 0)
@@ -692,7 +773,9 @@ class TestBackpressure:
                 pending_at_submit.append(0)
             return orig_on_position_complete(self_mgr, t_idx, p_idx, data)
 
-        manager.on_position_complete = lambda t, p, data=None: tracking_on_position_complete(manager, t, p, data)
+        manager.on_position_complete = lambda t, p, data=None: tracking_on_position_complete(
+            manager, t, p, data
+        )
 
         engine._position_update_manager = manager
         engine._position_update_frames = {}
@@ -702,15 +785,19 @@ class TestBackpressure:
         events = []
         for t in range(4):
             for p in range(3):
-                events.append(MDAEvent(
-                    index={"t": t, "p": p, "c": 0, "z": 0},
-                    x_pos=float(p * 100),
-                    y_pos=float(p * 100),
-                ))
+                events.append(
+                    MDAEvent(
+                        index={"t": t, "p": p, "c": 0, "z": 0},
+                        x_pos=float(p * 100),
+                        y_pos=float(p * 100),
+                    )
+                )
 
         frame = np.zeros((64, 64), dtype=np.uint16)
 
-        with patch("shrimpy.mantis.mantis_engine.MDAEngine.event_iterator", return_value=iter(events)):
+        with patch(
+            "shrimpy.mantis.mantis_engine.MDAEngine.event_iterator", return_value=iter(events)
+        ):
             for event in engine.event_iterator(events):
                 engine._on_frame_ready(frame, event)
 
@@ -748,7 +835,7 @@ class TestPositionUpdateIntegration:
         engine = MantisEngine(demo_core)
 
         class ShiftUpdater(PositionUpdater):
-            def update(self, t_idx, p_idx, position, data=None):
+            def update(self, t_idx, p_idx, position, data=None, **kwargs):
                 return PositionCoordinates(
                     x=position.x + 1.0,
                     y=position.y + 1.0,

@@ -134,7 +134,12 @@ class PositionUpdater:
         position_index : int
             The position that was just acquired.
         position : PositionCoordinates
-            Current coordinates for this position.
+            Stage coordinates the stack was acquired at (the coordinates the
+            manager commanded onto the acquisition event). Subclasses compute
+            corrections relative to this value, so late-arriving updates don't
+            accumulate against a store value that has since moved on. Falls
+            back to the live store snapshot only when no acquisition baseline
+            was recorded.
         data : list[np.ndarray] | None
             Frames acquired for this position (one 2D array per z-slice),
             or None if frame collection is not available.
@@ -169,6 +174,11 @@ class PositionUpdateManager:
         self._executor: ThreadPoolExecutor | None = None
         self._pending_future: Future | None = None
         self._worker = None  # DynaTrackWorker for subprocess mode
+        # Stage coords commanded onto each (timepoint, position) acquisition
+        # event, captured in ``apply_position_update``. Used as the baseline
+        # for shift compensation so late-arriving updates don't accumulate
+        # against a store value that has since moved on.
+        self._acquired_at: dict[tuple[int, int], PositionCoordinates] = {}
 
     def apply_position_update(self, event: MDAEvent) -> MDAEvent:
         """Replace event's x/y/z with current values from the position store.
@@ -180,9 +190,10 @@ class PositionUpdateManager:
         from pymmcore_plus.core._sequencing import SequencedEvent
 
         if isinstance(event, SequencedEvent):
-            p_idx = event.events[0].index.get("p")
+            index = event.events[0].index
         else:
-            p_idx = event.index.get("p")
+            index = event.index
+        p_idx = index.get("p")
 
         if p_idx is None:
             return event
@@ -190,6 +201,13 @@ class PositionUpdateManager:
         coords = self.position_store.get_position(p_idx)
         if coords is None:
             return event
+
+        # Record the coords commanded for this stack as the acquisition
+        # baseline. The first applied event of a (t, p) stack wins; all slice
+        # events of one stack carry the same x/y/focus. Frozen here, this value
+        # is immune to the runner's event pre-fetch race.
+        t_idx = index.get("t", 0)
+        self._acquired_at.setdefault((t_idx, p_idx), coords)
 
         update: dict = {}
         if coords.x is not None:
@@ -268,6 +286,9 @@ class PositionUpdateManager:
             self._executor.shutdown(wait=True)
             self._executor = None
 
+        # Drop any baselines for stacks that never completed (e.g. skipped events)
+        self._acquired_at = {}
+
     def on_position_complete(
         self,
         timepoint_index: int,
@@ -281,15 +302,31 @@ class PositionUpdateManager:
         if not self.config.enabled or self._executor is None:
             return
 
-        position = self.position_store.get_position(position_index)
+        # Baseline for the correction is the coords this stack was acquired at
+        # (recorded in apply_position_update).
+        position = self._acquired_at.pop((timepoint_index, position_index), None)
         if position is None:
+            # No acquisition baseline was recorded for this stack. If the store
+            # doesn't track this position at all, there's nothing to update.
+            if self.position_store.get_position(position_index) is None:
+                return
+            # Otherwise the live store value is ahead of where the stack was
+            # actually acquired (the pre-fetch race this anchoring fixes), so
+            # using it as the baseline would overshoot. Skip this correction;
+            # because shifts anchor to the fixed reference, the next timepoint
+            # re-centers fully, so a skipped correction is self-healing.
+            logger.error(
+                f"PosUpdateMgr: no acquisition baseline for p={position_index} "
+                f"t={timepoint_index}; skipping this correction (next timepoint recovers)"
+            )
             return
 
         data_gb = sum(a.nbytes for a in data) / 1024**3 if data else 0.0
         queue_depth = self._executor._work_queue.qsize()
         logger.debug(
             f"PosUpdateMgr[mem]: before submit p={position_index} t={timepoint_index} "
-            f"rss={_rss_gb():.2f} GB data={data_gb:.2f} GB queue_depth={queue_depth}"
+            f"rss={_rss_gb():.2f} GB data={data_gb:.2f} GB queue_depth={queue_depth} "
+            f"baseline=({position.x}, {position.y}, {position.z})"
         )
 
         if self._worker is not None:
@@ -304,7 +341,11 @@ class PositionUpdateManager:
             )
         else:
             self._pending_future = self._executor.submit(
-                self._run_updater, timepoint_index, position_index, position, data
+                self._run_updater,
+                timepoint_index,
+                position_index,
+                position,
+                data,
             )
 
         logger.debug(
