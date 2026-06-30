@@ -151,6 +151,19 @@ class PositionUpdater:
         """
         return position
 
+    def wants_reference_refresh(self, timepoint_index: int) -> bool:
+        """Whether this updater will (re)anchor its reference at this timepoint.
+
+        The manager consults this only when no acquisition baseline was
+        recorded for a completed stack. A refresh timepoint applies no
+        correction -- the updater just adopts the current stack as the new
+        reference -- so a race-prone live-store value is harmless there and the
+        refresh should still run. A normal correction timepoint is skipped
+        instead, to avoid anchoring a shift to a store value a later update has
+        already moved on from.
+        """
+        return False
+
 
 class PositionUpdateManager:
     """Manages async position updates after each position is acquired.
@@ -303,18 +316,32 @@ class PositionUpdateManager:
             return
 
         # Baseline for the correction is the coords this stack was acquired at
-        # (recorded in apply_position_update). Fall back to the live store
-        # snapshot only when no baseline was recorded -- e.g. an event that
-        # never passed through apply_position_update.
+        # (recorded in apply_position_update).
         position = self._acquired_at.pop((timepoint_index, position_index), None)
         if position is None:
+            # No acquisition baseline was recorded for this stack.
+            if self.position_store.get_position(position_index) is None:
+                # Store doesn't track this position at all -> nothing to update.
+                return
+            if not self._updater.wants_reference_refresh(timepoint_index):
+                # A correction here would anchor the shift to a live-store value
+                # that the pre-fetch race may have advanced past where the stack
+                # was acquired -> overshoot. Skip; because shifts anchor to the
+                # current reference, the next timepoint re-centers fully.
+                logger.error(
+                    f"PosUpdateMgr: no acquisition baseline for p={position_index} "
+                    f"t={timepoint_index}; skipping this correction (next timepoint recovers)"
+                )
+                return
+            # Re-anchor timepoint: the updater applies no correction here -- it
+            # just adopts the current stack as the new reference and returns the
+            # position unchanged -- so the live-store value is harmless. Proceed
+            # so the scheduled reference refresh still happens without a baseline.
             logger.warning(
                 f"PosUpdateMgr: no acquisition baseline for p={position_index} "
-                f"t={timepoint_index}, falling back to live store (race-prone)"
+                f"t={timepoint_index}; proceeding for scheduled reference refresh"
             )
             position = self.position_store.get_position(position_index)
-        if position is None:
-            return
 
         data_gb = sum(a.nbytes for a in data) / 1024**3 if data else 0.0
         queue_depth = self._executor._work_queue.qsize()

@@ -392,6 +392,19 @@ class DynaTrackUpdater(PositionUpdater):
     def config(self) -> DynaTrackConfig:
         return self._config
 
+    def wants_reference_refresh(self, timepoint_index: int) -> bool:
+        """True on a scheduled re-anchor timepoint (see ``update``).
+
+        Mirrors the interval test in ``update``: when
+        ``reference_update_interval`` is set, every Nth timepoint adopts the
+        current stack as the new reference and applies no correction. The
+        manager uses this so a missing baseline suppresses only a correction,
+        never a due reference refresh. (First-encounter capture is not included
+        here -- it always has a baseline, so it never reaches this check.)
+        """
+        interval = self._config.reference_update_interval
+        return bool(interval) and timepoint_index % interval == 0
+
     def update(
         self,
         timepoint_index: int,
