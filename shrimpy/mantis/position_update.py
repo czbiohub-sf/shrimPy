@@ -303,17 +303,22 @@ class PositionUpdateManager:
             return
 
         # Baseline for the correction is the coords this stack was acquired at
-        # (recorded in apply_position_update). Fall back to the live store
-        # snapshot only when no baseline was recorded -- e.g. an event that
-        # never passed through apply_position_update.
+        # (recorded in apply_position_update).
         position = self._acquired_at.pop((timepoint_index, position_index), None)
         if position is None:
-            logger.warning(
+            # No acquisition baseline was recorded for this stack. If the store
+            # doesn't track this position at all, there's nothing to update.
+            if self.position_store.get_position(position_index) is None:
+                return
+            # Otherwise the live store value is ahead of where the stack was
+            # actually acquired (the pre-fetch race this anchoring fixes), so
+            # using it as the baseline would overshoot. Skip this correction;
+            # because shifts anchor to the fixed reference, the next timepoint
+            # re-centers fully, so a skipped correction is self-healing.
+            logger.error(
                 f"PosUpdateMgr: no acquisition baseline for p={position_index} "
-                f"t={timepoint_index}, falling back to live store (race-prone)"
+                f"t={timepoint_index}; skipping this correction (next timepoint recovers)"
             )
-            position = self.position_store.get_position(position_index)
-        if position is None:
             return
 
         data_gb = sum(a.nbytes for a in data) / 1024**3 if data else 0.0
