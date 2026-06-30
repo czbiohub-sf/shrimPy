@@ -50,6 +50,7 @@ dev = [
 ]
 dynatrack = [
   "biahub",
+  "matplotlib",
   "torch",
   "viscy",
   "waveorder==3.0.2",

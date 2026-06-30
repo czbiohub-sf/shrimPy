@@ -9,11 +9,21 @@ import torch
 from shrimpy.mantis.dynatrack import (
     DynaTrackConfig,
     DynaTrackUpdater,
+    _binary_mask,
     _center_crop,
+    _center_of_mass,
+    _centered_gaussian_blob,
+    _gaussian_blur_3d,
+    _intensity_center_of_mass,
+    _intensity_center_of_mass_to_roi_center,
     _limit_shifts_zyx,
     _match_shape,
+    _multiotsu_center_of_mass,
+    _multiotsu_pcc,
     _pad_to_shape,
+    _percentile,
     _phase_cross_corr,
+    _roi_center_pcc,
 )
 from shrimpy.mantis.position_update import PositionCoordinates
 
@@ -513,3 +523,441 @@ class TestShiftLogging:
         updater.update(0, 0, pos, frames)
         updater.update(1, 0, pos, mov)
         # No exception, no file created — just verifying no crash
+
+
+# ---------------------------------------------------------------------------
+# Multi-Otsu tracking method tests (ported from 230_dynatrack_center_of_mass)
+# ---------------------------------------------------------------------------
+
+
+class TestGaussianBlur3D:
+    def test_output_shape_unchanged(self):
+        """Blur should preserve the input shape."""
+        vol = torch.rand(8, 32, 32)
+        result = _gaussian_blur_3d(vol, sigma=2.0)
+        assert result.shape == vol.shape
+
+    def test_smooths_values(self):
+        """Blurred volume should have a smaller range than the original."""
+        vol = torch.rand(8, 32, 32)
+        result = _gaussian_blur_3d(vol, sigma=3.0)
+        assert (result.max() - result.min()) <= (vol.max() - vol.min())
+
+    def test_zero_sigma_noop(self):
+        """Sigma=0 should return the input unchanged."""
+        vol = torch.rand(8, 32, 32)
+        result = _gaussian_blur_3d(vol, sigma=0.0)
+        assert torch.equal(result, vol)
+
+
+class TestBinaryMask:
+    def test_returns_bool_tensor(self):
+        """Binary mask should return a boolean tensor on the same device."""
+        rng = np.random.default_rng(42)
+        vol = rng.random((8, 32, 32)).astype(np.float64) * 0.2
+        vol[3:6, 12:20, 12:20] = 0.9
+        vol_t = torch.as_tensor(vol, dtype=torch.float32)
+        mask = _binary_mask(vol_t, sigma=1.0, otsu_component=0)
+        assert mask.dtype == torch.bool
+        assert mask.sum() > 0  # at least some True voxels
+
+    def test_otsu_component_selects_threshold(self):
+        """Higher otsu_component should produce a stricter (smaller) mask."""
+        rng = np.random.default_rng(42)
+        vol = rng.random((8, 32, 32)).astype(np.float64) * 0.3
+        vol[2:6, 8:24, 8:24] = 0.6
+        vol[3:5, 12:20, 12:20] = 0.95
+        vol_t = torch.as_tensor(vol, dtype=torch.float32)
+        mask_0 = _binary_mask(vol_t, sigma=1.0, otsu_component=0)
+        mask_1 = _binary_mask(vol_t, sigma=1.0, otsu_component=1)
+        assert mask_0.sum() >= mask_1.sum()
+
+
+class TestCenterOfMass:
+    def test_single_blob(self):
+        """Center of mass of a centred blob should be near the middle."""
+        mask = torch.zeros(10, 10, 10, dtype=torch.bool)
+        mask[3:7, 3:7, 3:7] = True
+        center = _center_of_mass(mask)
+        expected = torch.tensor([4.5, 4.5, 4.5])
+        assert torch.allclose(center, expected, atol=0.5)
+
+    def test_empty_returns_zeros(self):
+        """Empty mask should return zero center."""
+        mask = torch.zeros(10, 10, 10, dtype=torch.bool)
+        center = _center_of_mass(mask)
+        assert torch.equal(center, torch.zeros(3))
+
+
+class TestIntensityCenterOfMass:
+    def test_uniform_blob_matches_geometric_center(self):
+        """A uniform-intensity region centres at its geometric middle."""
+        img = torch.zeros(10, 10, 10)
+        img[3:7, 3:7, 3:7] = 1.0
+        center = _intensity_center_of_mass(img)
+        expected = torch.tensor([4.5, 4.5, 4.5])
+        assert torch.allclose(center, expected, atol=0.1)
+
+    def test_brighter_voxels_pull_center(self):
+        """Intensity weighting pulls the centroid toward the brightest voxels."""
+        img = torch.zeros(10, 10, 10)
+        img[3:7, 3:7, 3:7] = 1.0
+        img[3:7, 3:7, 6] = 100.0  # one X slice much brighter
+        center = _intensity_center_of_mass(img)
+        assert center[2] > 4.5  # X pulled toward the bright slice
+
+    def test_zero_weight_returns_geometric_center(self):
+        """All-zero weights have an undefined centroid; fall back to the
+        geometric centre (not the origin) so a ROI-centre shift is zero rather
+        than a spurious half-volume jump toward the corner."""
+        img = torch.zeros(10, 10, 10)
+        center = _intensity_center_of_mass(img)
+        assert torch.allclose(center, torch.tensor([4.5, 4.5, 4.5]))
+
+    def test_negative_values_clamped(self):
+        """Negative values are clamped so they don't pull the centroid."""
+        img = torch.zeros(10, 10, 10)
+        img[3:7, 3:7, 3:7] = 1.0
+        img[0, 0, 0] = -1000.0  # would dominate if not clamped
+        center = _intensity_center_of_mass(img)
+        expected = torch.tensor([4.5, 4.5, 4.5])
+        assert torch.allclose(center, expected, atol=0.1)
+
+    def test_background_subtraction_sharpens_centroid(self):
+        """Subtracting a background floor removes a uniform pedestal's pull."""
+        # Bright blob off-centre on top of a uniform background pedestal.
+        img = torch.full((8, 64, 64), 0.2)
+        img[2:6, 44:52, 28:36] += 5.0  # off-centre structure
+        # Without background subtraction the pedestal pulls the centroid back
+        # toward the geometric centre (31.5 in Y).
+        c_raw = _intensity_center_of_mass(img)
+        # Subtracting the pedestal lets the structure dominate -> centroid moves
+        # further toward the structure (higher Y).
+        c_sub = _intensity_center_of_mass(img, background=0.2)
+        assert c_sub[1] > c_raw[1]
+
+
+class TestPercentile:
+    def test_matches_known_distribution(self):
+        """Histogram percentile is close to the true value for a ramp."""
+        img = torch.arange(1000, dtype=torch.float32).reshape(10, 10, 10)
+        p50 = _percentile(img, 50.0)
+        # Median of 0..999 is ~499.5; histogram estimate within one bin width.
+        assert abs(p50 - 499.5) < 1000 / 256 + 1
+
+    def test_constant_image_returns_value(self):
+        """A flat image returns its single value for any percentile."""
+        img = torch.full((4, 8, 8), 3.0)
+        assert _percentile(img, 90.0) == pytest.approx(3.0)
+
+
+class TestIntensityCenterOfMassToRoiCenter:
+    def test_centered_structure_zero_shift(self):
+        """A structure at the ROI centre yields ~zero shift."""
+        img = torch.zeros(8, 64, 64)
+        img[2:6, 30:34, 30:34] = 1.0  # centred near (3.5, 31.5, 31.5)
+        shift = _intensity_center_of_mass_to_roi_center(img)
+        # ROI centre is ((8-1)/2, (64-1)/2, (64-1)/2) = (3.5, 31.5, 31.5)
+        assert all(abs(s) < 1.0 for s in shift)
+
+    def test_offset_structure_positive_shift(self):
+        """A structure past the centre in +Y yields a positive Y shift."""
+        img = torch.zeros(8, 64, 64)
+        img[2:6, 40:50, 28:36] = 1.0  # shifted toward higher Y
+        shift = _intensity_center_of_mass_to_roi_center(img)
+        assert shift[1] > 0  # Y offset from centre is positive
+
+    def test_blank_volume_zero_shift(self):
+        """A blank volume (no signal) yields zero shift, not a half-volume jump.
+
+        With the degenerate centroid reported as the origin, the shift would be
+        ``-roi_center`` (~half the volume on every axis), commanding a large
+        spurious stage move. It must be ~zero instead.
+        """
+        img = torch.zeros(8, 64, 64)
+        shift = _intensity_center_of_mass_to_roi_center(img)
+        assert all(abs(s) < 1e-3 for s in shift)
+
+    def test_over_subtracted_volume_zero_shift(self):
+        """A uniform pedestal fully removed by background subtraction also has
+        no positive mass, so it must yield zero shift rather than a jump."""
+        img = torch.full((8, 64, 64), 3.0)
+        shift = _intensity_center_of_mass_to_roi_center(img, background_percentile=99.0)
+        assert all(abs(s) < 1e-3 for s in shift)
+        assert abs(shift[2]) < 2.0  # X stays near centre
+
+
+class TestCenteredGaussianBlob:
+    def test_peak_at_center(self):
+        """The blob's maximum sits at the geometric centre of the volume."""
+        blob = _centered_gaussian_blob((8, 32, 32), sigma=4.0, device=torch.device("cpu"))
+        peak = np.unravel_index(int(torch.argmax(blob)), tuple(blob.shape))
+        # Centre for odd/even sizes rounds to floor((n-1)/2) at the peak voxel
+        assert peak[0] in (3, 4)
+        assert peak[1] in (15, 16)
+        assert peak[2] in (15, 16)
+
+
+class TestRoiCenterPcc:
+    def test_centered_structure_zero_shift(self):
+        """A blob-like structure at the centre correlates with ~zero shift."""
+        img = torch.zeros(8, 64, 64)
+        img[2:6, 28:36, 28:36] = 1.0  # near the ROI centre
+        shift = _roi_center_pcc(img, blob_sigma=4.0)
+        assert abs(shift[1]) <= 2
+        assert abs(shift[2]) <= 2
+
+    def test_offset_structure_detected(self):
+        """An off-centre bright blob yields a non-zero detected offset in Y."""
+        img = torch.zeros(8, 64, 64)
+        img[2:6, 44:52, 28:36] = 1.0  # shifted +~16 in Y from centre
+        shift = _roi_center_pcc(img, blob_sigma=4.0)
+        assert shift[1] > 4  # detected positive Y offset from centre
+
+
+class TestMultiotsuCenterOfMass:
+    def test_detects_shift(self):
+        """Center of mass should detect a spatial shift between two volumes."""
+        rng = np.random.default_rng(42)
+        ref = rng.random((8, 64, 64)).astype(np.float64) * 0.1
+        ref[2:6, 20:40, 20:40] = 0.9  # bright blob
+
+        # Shift the blob by +5 in Y
+        mov = rng.random((8, 64, 64)).astype(np.float64) * 0.1
+        mov[2:6, 25:45, 20:40] = 0.9
+
+        ref_t = torch.as_tensor(ref, dtype=torch.float32)
+        mov_t = torch.as_tensor(mov, dtype=torch.float32)
+        shift = _multiotsu_center_of_mass(ref_t, mov_t, sigma=1.0, otsu_component=0)
+
+        # Y shift should be approximately +5
+        assert abs(shift[1] - 5.0) < 2.0
+        # X and Z should be near zero
+        assert abs(shift[2]) < 2.0
+        assert abs(shift[0]) < 2.0
+
+
+class TestMultiotsuPcc:
+    def test_detects_shift(self):
+        """Multiotsu PCC should detect a known shift via binary mask PCC."""
+        rng = np.random.default_rng(42)
+        ref = rng.random((8, 64, 64)).astype(np.float64) * 0.1
+        ref[2:6, 15:50, 15:50] = 0.9
+
+        mov = rng.random((8, 64, 64)).astype(np.float64) * 0.1
+        mov[2:6, 18:53, 15:50] = 0.9  # shifted +3 in Y
+
+        ref_t = torch.as_tensor(ref, dtype=torch.float32)
+        mov_t = torch.as_tensor(mov, dtype=torch.float32)
+        shift = _multiotsu_pcc(ref_t, mov_t, sigma=1.0, otsu_component=0)
+
+        assert abs(shift[1] - 3) <= 1  # Y shift ~3
+        assert abs(shift[2]) <= 1  # X near zero
+
+
+class TestDynaTrackUpdaterMultiotsu:
+    def _make_blob_frames(self, rng, y_start, n_z=8, ny=64, nx=64):
+        """Create frames with a bright blob at a given Y position."""
+        frames = []
+        for z in range(n_z):
+            frame = rng.random((ny, nx)).astype(np.float64) * 0.1
+            if 2 <= z < 6:
+                frame[y_start : y_start + 20, 20:40] = 0.9
+            frames.append(frame)
+        return frames
+
+    def test_multiotsu_center_of_mass_detects_shift(self):
+        """update() with multiotsu_center_of_mass detects a blob shift."""
+        rng = np.random.default_rng(42)
+        config = DynaTrackConfig(
+            scale_yx=1.0,
+            scale_z=1.0,
+            tracking_method="multiotsu_center_of_mass",
+            otsu_sigma=1.0,
+            preprocessing=[],
+        )
+        updater = DynaTrackUpdater(config=config)
+        pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
+
+        ref_frames = self._make_blob_frames(rng, y_start=15)
+        mov_frames = self._make_blob_frames(rng, y_start=20)  # shifted +5 in Y
+
+        updater.update(0, 0, pos, ref_frames)
+        result = updater.update(1, 0, pos, mov_frames)
+
+        # Y position should have changed
+        assert result.y != 200.0
+
+    def test_multiotsu_pcc_detects_shift(self):
+        """update() with multiotsu_pcc detects a blob shift."""
+        rng = np.random.default_rng(42)
+        config = DynaTrackConfig(
+            scale_yx=1.0,
+            scale_z=1.0,
+            tracking_method="multiotsu_pcc",
+            otsu_sigma=1.0,
+            preprocessing=[],
+        )
+        updater = DynaTrackUpdater(config=config)
+        pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
+
+        ref_frames = self._make_blob_frames(rng, y_start=15)
+        mov_frames = self._make_blob_frames(rng, y_start=20)
+
+        updater.update(0, 0, pos, ref_frames)
+        result = updater.update(1, 0, pos, mov_frames)
+
+        assert result.y != 200.0
+
+    def test_invalid_method_raises(self):
+        """Unknown tracking_method should raise ValueError."""
+        rng = np.random.default_rng(42)
+        config = DynaTrackConfig(
+            scale_yx=1.0, scale_z=1.0, tracking_method="unknown_method", preprocessing=[]
+        )
+        updater = DynaTrackUpdater(config=config)
+        pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
+
+        frames = [rng.random((64, 64)) for _ in range(8)]
+        updater.update(0, 0, pos, frames)  # store ref
+        with pytest.raises(ValueError, match="Unknown tracking_method"):
+            updater.update(1, 0, pos, frames)
+
+
+# ---------------------------------------------------------------------------
+# Referenceless ROI-centre tracking flow (intensity_center_of_mass, roi_center_pcc)
+# ---------------------------------------------------------------------------
+
+
+class TestRoiCenterMethodsFlow:
+    def _make_offset_blob_frames(self, rng, y_start, n_z=8, ny=64, nx=64):
+        """Frames with a bright blob whose Y position is offset from centre."""
+        frames = []
+        for z in range(n_z):
+            frame = rng.random((ny, nx)).astype(np.float64) * 0.1
+            if 2 <= z < 6:
+                frame[y_start : y_start + 8, 28:36] = 0.9
+            frames.append(frame)
+        return frames
+
+    def test_intensity_center_of_mass_corrects_from_t0(self):
+        """Referenceless: the first timepoint already applies a correction
+        (no reference stored, no unchanged-return)."""
+        rng = np.random.default_rng(42)
+        config = DynaTrackConfig(
+            scale_yx=1.0,
+            scale_z=1.0,
+            tracking_method="intensity_center_of_mass",
+            preprocessing=[],
+        )
+        updater = DynaTrackUpdater(config=config)
+        pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
+
+        # Blob offset toward higher Y -> positive Y image shift -> stage moves -Y.
+        frames = self._make_offset_blob_frames(rng, y_start=44)
+        result = updater.update(0, 0, pos, frames)
+
+        assert result.y != 200.0  # corrected on the very first timepoint
+        assert 0 not in updater._reference_stacks_zyx  # no reference stored
+
+    def test_roi_center_pcc_corrects_from_t0(self):
+        """Referenceless PCC-vs-ROI-centre also corrects from t=0."""
+        rng = np.random.default_rng(42)
+        config = DynaTrackConfig(
+            scale_yx=1.0,
+            scale_z=1.0,
+            tracking_method="roi_center_pcc",
+            roi_blob_sigma=4.0,
+            preprocessing=[],
+        )
+        updater = DynaTrackUpdater(config=config)
+        pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
+
+        frames = self._make_offset_blob_frames(rng, y_start=44)
+        result = updater.update(0, 0, pos, frames)
+
+        assert result.y != 200.0
+        assert 0 not in updater._reference_stacks_zyx
+
+
+# ---------------------------------------------------------------------------
+# wants_reference_refresh: gates the manager's missing-baseline behaviour
+# ---------------------------------------------------------------------------
+
+
+class TestWantsReferenceRefresh:
+    def test_reference_based_refreshes_on_interval(self):
+        """Reference-based methods re-anchor every Nth timepoint."""
+        updater = DynaTrackUpdater(
+            config=DynaTrackConfig(
+                scale_yx=1.0, scale_z=1.0, tracking_method="pcc", reference_update_interval=4
+            )
+        )
+        assert [updater.wants_reference_refresh(t) for t in (0, 1, 4, 8)] == [
+            True,
+            False,
+            True,
+            True,
+        ]
+
+    def test_no_interval_never_refreshes(self):
+        updater = DynaTrackUpdater(
+            config=DynaTrackConfig(
+                scale_yx=1.0, scale_z=1.0, tracking_method="pcc", reference_update_interval=0
+            )
+        )
+        assert not any(updater.wants_reference_refresh(t) for t in range(5))
+
+    def test_referenceless_never_refreshes(self):
+        """Referenceless methods correct every timepoint and keep no reference,
+        so they must never report a refresh -- even with an interval set --
+        otherwise a missing baseline would let a real correction run against an
+        unanchored (race-prone) store value."""
+        for method in ("intensity_center_of_mass", "roi_center_pcc"):
+            updater = DynaTrackUpdater(
+                config=DynaTrackConfig(
+                    scale_yx=1.0,
+                    scale_z=1.0,
+                    tracking_method=method,
+                    reference_update_interval=4,
+                )
+            )
+            assert not any(updater.wants_reference_refresh(t) for t in range(9))
+
+
+class TestReferenceUpdateIntervalWarning:
+    def test_warns_for_referenceless_with_interval(self, caplog):
+        with caplog.at_level("WARNING", logger="shrimpy.mantis.dynatrack"):
+            DynaTrackUpdater(
+                config=DynaTrackConfig(
+                    scale_yx=1.0,
+                    scale_z=1.0,
+                    tracking_method="intensity_center_of_mass",
+                    reference_update_interval=4,
+                )
+            )
+        assert any("ignored for referenceless" in r.message for r in caplog.records)
+
+    def test_no_warning_for_reference_based(self, caplog):
+        with caplog.at_level("WARNING", logger="shrimpy.mantis.dynatrack"):
+            DynaTrackUpdater(
+                config=DynaTrackConfig(
+                    scale_yx=1.0,
+                    scale_z=1.0,
+                    tracking_method="pcc",
+                    reference_update_interval=4,
+                )
+            )
+        assert not any("ignored for referenceless" in r.message for r in caplog.records)
+
+    def test_no_warning_for_referenceless_without_interval(self, caplog):
+        with caplog.at_level("WARNING", logger="shrimpy.mantis.dynatrack"):
+            DynaTrackUpdater(
+                config=DynaTrackConfig(
+                    scale_yx=1.0,
+                    scale_z=1.0,
+                    tracking_method="intensity_center_of_mass",
+                    reference_update_interval=0,
+                )
+            )
+        assert not any("ignored for referenceless" in r.message for r in caplog.records)
