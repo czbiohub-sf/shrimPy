@@ -606,11 +606,13 @@ class TestIntensityCenterOfMass:
         center = _intensity_center_of_mass(img)
         assert center[2] > 4.5  # X pulled toward the bright slice
 
-    def test_zero_weight_returns_zeros(self):
-        """All-zero weights return a zero centre rather than dividing by zero."""
+    def test_zero_weight_returns_geometric_center(self):
+        """All-zero weights have an undefined centroid; fall back to the
+        geometric centre (not the origin) so a ROI-centre shift is zero rather
+        than a spurious half-volume jump toward the corner."""
         img = torch.zeros(10, 10, 10)
         center = _intensity_center_of_mass(img)
-        assert torch.equal(center, torch.zeros(3))
+        assert torch.allclose(center, torch.tensor([4.5, 4.5, 4.5]))
 
     def test_negative_values_clamped(self):
         """Negative values are clamped so they don't pull the centroid."""
@@ -664,6 +666,24 @@ class TestIntensityCenterOfMassToRoiCenter:
         img[2:6, 40:50, 28:36] = 1.0  # shifted toward higher Y
         shift = _intensity_center_of_mass_to_roi_center(img)
         assert shift[1] > 0  # Y offset from centre is positive
+
+    def test_blank_volume_zero_shift(self):
+        """A blank volume (no signal) yields zero shift, not a half-volume jump.
+
+        With the degenerate centroid reported as the origin, the shift would be
+        ``-roi_center`` (~half the volume on every axis), commanding a large
+        spurious stage move. It must be ~zero instead.
+        """
+        img = torch.zeros(8, 64, 64)
+        shift = _intensity_center_of_mass_to_roi_center(img)
+        assert all(abs(s) < 1e-3 for s in shift)
+
+    def test_over_subtracted_volume_zero_shift(self):
+        """A uniform pedestal fully removed by background subtraction also has
+        no positive mass, so it must yield zero shift rather than a jump."""
+        img = torch.full((8, 64, 64), 3.0)
+        shift = _intensity_center_of_mass_to_roi_center(img, background_percentile=99.0)
+        assert all(abs(s) < 1e-3 for s in shift)
         assert abs(shift[2]) < 2.0  # X stays near centre
 
 
@@ -858,3 +878,86 @@ class TestRoiCenterMethodsFlow:
 
         assert result.y != 200.0
         assert 0 not in updater._reference_stacks_zyx
+
+
+# ---------------------------------------------------------------------------
+# wants_reference_refresh: gates the manager's missing-baseline behaviour
+# ---------------------------------------------------------------------------
+
+
+class TestWantsReferenceRefresh:
+    def test_reference_based_refreshes_on_interval(self):
+        """Reference-based methods re-anchor every Nth timepoint."""
+        updater = DynaTrackUpdater(
+            config=DynaTrackConfig(
+                scale_yx=1.0, scale_z=1.0, tracking_method="pcc", reference_update_interval=4
+            )
+        )
+        assert [updater.wants_reference_refresh(t) for t in (0, 1, 4, 8)] == [
+            True,
+            False,
+            True,
+            True,
+        ]
+
+    def test_no_interval_never_refreshes(self):
+        updater = DynaTrackUpdater(
+            config=DynaTrackConfig(
+                scale_yx=1.0, scale_z=1.0, tracking_method="pcc", reference_update_interval=0
+            )
+        )
+        assert not any(updater.wants_reference_refresh(t) for t in range(5))
+
+    def test_referenceless_never_refreshes(self):
+        """Referenceless methods correct every timepoint and keep no reference,
+        so they must never report a refresh -- even with an interval set --
+        otherwise a missing baseline would let a real correction run against an
+        unanchored (race-prone) store value."""
+        for method in ("intensity_center_of_mass", "roi_center_pcc"):
+            updater = DynaTrackUpdater(
+                config=DynaTrackConfig(
+                    scale_yx=1.0,
+                    scale_z=1.0,
+                    tracking_method=method,
+                    reference_update_interval=4,
+                )
+            )
+            assert not any(updater.wants_reference_refresh(t) for t in range(9))
+
+
+class TestReferenceUpdateIntervalWarning:
+    def test_warns_for_referenceless_with_interval(self, caplog):
+        with caplog.at_level("WARNING", logger="shrimpy.mantis.dynatrack"):
+            DynaTrackUpdater(
+                config=DynaTrackConfig(
+                    scale_yx=1.0,
+                    scale_z=1.0,
+                    tracking_method="intensity_center_of_mass",
+                    reference_update_interval=4,
+                )
+            )
+        assert any("ignored for referenceless" in r.message for r in caplog.records)
+
+    def test_no_warning_for_reference_based(self, caplog):
+        with caplog.at_level("WARNING", logger="shrimpy.mantis.dynatrack"):
+            DynaTrackUpdater(
+                config=DynaTrackConfig(
+                    scale_yx=1.0,
+                    scale_z=1.0,
+                    tracking_method="pcc",
+                    reference_update_interval=4,
+                )
+            )
+        assert not any("ignored for referenceless" in r.message for r in caplog.records)
+
+    def test_no_warning_for_referenceless_without_interval(self, caplog):
+        with caplog.at_level("WARNING", logger="shrimpy.mantis.dynatrack"):
+            DynaTrackUpdater(
+                config=DynaTrackConfig(
+                    scale_yx=1.0,
+                    scale_z=1.0,
+                    tracking_method="intensity_center_of_mass",
+                    reference_update_interval=0,
+                )
+            )
+        assert not any("ignored for referenceless" in r.message for r in caplog.records)

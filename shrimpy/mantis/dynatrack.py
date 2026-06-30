@@ -540,8 +540,16 @@ def _intensity_center_of_mass(img: torch.Tensor, background: float = 0.0) -> tor
     weights = (img.to(dtype=torch.float32) - background).clamp_min(0)
     total = weights.sum()
     if total <= 0:
+        # No positive mass (blank or fully sub-background volume): the centroid
+        # is undefined. Fall back to the geometric centre so a ROI-centre shift
+        # is zero, rather than reporting the origin -- which would command a
+        # spurious half-volume jump toward the corner.
         del weights
-        return torch.zeros(img.ndim, device=img.device)
+        return torch.tensor(
+            [(s - 1) / 2.0 for s in img.shape],
+            device=img.device,
+            dtype=torch.float32,
+        )
 
     centers = []
     for axis in range(weights.ndim):
@@ -849,6 +857,14 @@ class DynaTrackUpdater(PositionUpdater):
         preprocessor: Callable[[np.ndarray], dict[str, torch.Tensor]] | None = None,
     ) -> None:
         self._config = config
+        if config.reference_update_interval and config.tracking_method in _ROI_CENTER_METHODS:
+            logger.warning(
+                "DynaTrack: reference_update_interval=%d is ignored for referenceless "
+                "tracking_method=%r (no reference stack to re-anchor); the ROI centre "
+                "is the fixed target on every timepoint.",
+                config.reference_update_interval,
+                config.tracking_method,
+            )
         self._preprocessor = preprocessor
         self._reference_stacks_zyx: dict[int, torch.Tensor] = {}
         self._shift_log_path: Path | None = (
@@ -862,6 +878,26 @@ class DynaTrackUpdater(PositionUpdater):
     @property
     def config(self) -> DynaTrackConfig:
         return self._config
+
+    def wants_reference_refresh(self, timepoint_index: int) -> bool:
+        """True on a scheduled re-anchor timepoint (see ``update``).
+
+        The manager consults this when no acquisition baseline was recorded:
+        a re-anchor timepoint applies NO correction (it just adopts the current
+        stack as the new reference), so a race-prone live-store value is
+        harmless and the refresh should still run; a normal correction timepoint
+        is skipped instead. Mirrors the interval test in ``update``.
+
+        Referenceless methods (``_ROI_CENTER_METHODS``) keep no reference and
+        apply a correction on *every* timepoint, so they never want a refresh --
+        return False regardless of ``reference_update_interval``, otherwise the
+        manager would let a real ROI-centre correction run against an unanchored
+        (race-prone) baseline.
+        """
+        if self._config.tracking_method in _ROI_CENTER_METHODS:
+            return False
+        interval = self._config.reference_update_interval
+        return bool(interval) and timepoint_index % interval == 0
 
     def update(
         self,
