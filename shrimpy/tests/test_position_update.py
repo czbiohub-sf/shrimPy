@@ -761,7 +761,11 @@ class TestBackpressure:
         t0_last_completion = max(ts for t, p, ts in update_completions if t == 0)
         t1_first_yield = min(ts for t, p, ts in event_yields if t == 1)
 
-        assert t0_last_completion < t1_first_yield, (
+        # drain_pending() at the boundary makes the t0 completion happen-before
+        # the t1 yield, so <= holds exactly. Use <= (not <) because a coarse
+        # monotonic clock (Windows ~15 ms) can stamp both in the same tick; the
+        # no-drain regression yields t1 ~1.5 s early and still trips this.
+        assert t0_last_completion <= t1_first_yield, (
             f"Timepoint 0 last update completed at {t0_last_completion:.3f}, "
             f"but timepoint 1 first event yielded at {t1_first_yield:.3f} — "
             "event_iterator is not draining pending updates at timepoint boundary"
