@@ -4,7 +4,6 @@ import csv
 
 import numpy as np
 import pytest
-import torch
 
 from shrimpy.mantis.dynatrack import (
     DynaTrackConfig,
@@ -26,6 +25,10 @@ from shrimpy.mantis.dynatrack import (
     _roi_center_pcc,
 )
 from shrimpy.mantis.position_update import PositionCoordinates
+
+# torch ships only in the optional `dynatrack` dependency group; skip the whole
+# module when it is unavailable (neither imported module above requires it).
+torch = pytest.importorskip("torch")
 
 # ---------------------------------------------------------------------------
 # Helper function tests

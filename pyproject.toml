@@ -52,6 +52,10 @@ dynatrack = [
   "matplotlib",
   "torch",
 ]
+# CI-only: the CPU torch build is all the DynaTrack *unit* tests need (they
+# exercise pure torch/numpy math, not biahub/cytoland). Avoids the ~2.5 GB
+# CUDA wheel the `dynatrack` group pulls on Windows.
+test-cpu = ["torch"]
 
 [project.scripts]
 shrimpy = "shrimpy.cli.main:cli"
@@ -70,9 +74,13 @@ packages = ["shrimpy"]
 pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "dev" }
 ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "add-plate-row-col" }
 useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "add-plate-row-col" }
-# Windows: CUDA build via cu132 index (requires CUDA Toolkit 13.2 on the machine);
-# elsewhere (macOS/Linux) fall back to PyPI (CPU/MPS).
-torch = [{ index = "pytorch-cu132", marker = "sys_platform == 'win32'" }]
+# Windows: CUDA build via cu132 index (requires CUDA Toolkit 13.2 on the machine)
+# for the production `dynatrack` group; the CI-only `test-cpu` group takes the
+# CPU wheel instead. Elsewhere (macOS/Linux) both fall back to PyPI (CPU/MPS).
+torch = [
+  { index = "pytorch-cu132", group = "dynatrack", marker = "sys_platform == 'win32'" },
+  { index = "pytorch-cpu", group = "test-cpu", marker = "sys_platform == 'win32'" },
+]
 
 # no pipy release
 pymmcore-gui = { git = "https://github.com/pymmcore-plus/pymmcore-gui", branch = "main" }
@@ -83,11 +91,20 @@ biahub = { git = "https://github.com/czbiohub-sf/biahub", rev = "b011bca57d5bf15
 # no pipy release yet; uv sources don't propagate, so mirror biahub's cytoland pin
 cytoland = { git = "https://github.com/mehta-lab/VisCy", subdirectory = "applications/cytoland", rev = "4b62365c0df25929bffc7f01b3bb2d1c11d69cce" }
 
+# torch's CUDA and CPU builds can't coexist; pick exactly one group.
+[tool.uv]
+conflicts = [[{ group = "dynatrack" }, { group = "test-cpu" }]]
+
 [[tool.uv.index]]
 # TODO: upda CUDA toolkit on mantis microscope
 # https://developer.nvidia.com/cuda-13-2-1-download-archive?target_os=Windows&target_arch=x86_64&target_version=11&target_type=exe_network
 name = "pytorch-cu132"
 url = "https://download.pytorch.org/whl/cu132"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.ruff]
