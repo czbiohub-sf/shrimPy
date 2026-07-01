@@ -120,9 +120,6 @@ class _ViewerState:
         self._raw_arrays: list[object] = []
         self._deskew_arrays: list[object] = []
         self._controls: object | None = None  # shared DeskewControls (built in the widget)
-        # (c, p, t) stacks whose final scan slice has arrived -- a deskewed plane needs
-        # the whole scan stack, so follow only advances once every channel's stack is in.
-        self._stack_done: set[tuple[int, int, int]] = set()
         self._started = False
 
     def handle(self, msg: dict) -> None:
@@ -193,6 +190,11 @@ class _ViewerState:
         # Label the leading sliders; y/x are the displayed image dims.
         self._viewer.dims.axis_labels = _AXIS_LABELS
         self._connect_follow_controls()
+        # napari centers every slider by default; start following from p=0, t=0 instead.
+        # Guarded (via _set_step) so it doesn't trip the auto-advance pause, and z is left
+        # under the user's control.
+        self._set_step((0, 0))
+        self._last_step = tuple(self._viewer.dims.current_step)
         if self._deskew_available:
             self._add_deskew_widget(scan_step_um, (n_z, *frame_shape))
         logger.info("Viewer initialized: %d channel(s), sizes=%s", self._n_channels, sizes)
@@ -203,6 +205,11 @@ class _ViewerState:
 
         def gather(leading: tuple[int, ...], tilt_row: int) -> np.ndarray:
             position, t = leading
+            # Only complete volumes may be previewed: a deskewed plane mixes every z
+            # slice, so a partial stack (still filling, or partly evicted) would render
+            # as a corrupt half-deskewed image. Blank it until the whole stack is present.
+            if not self._volume_complete(channel, position, t):
+                return np.zeros((n_zscan, self._frame_shape[1]), dtype=self._ring.dtype)
             slots = [self._index_map.get((channel, position, t, zs)) for zs in range(n_zscan)]
             return self._ring.read_rows(slots, tilt_row)
 
@@ -325,13 +332,21 @@ class _ViewerState:
         """True once every channel has a frame at (position, t, z) (raw mode)."""
         return all((c, position, t, z) in self._index_map for c in range(self._n_channels))
 
-    def _stack_complete(self, position: int, t: int) -> bool:
-        """True once every channel's full scan stack at (position, t) has arrived.
+    def _volume_complete(self, channel: int, position: int, t: int) -> bool:
+        """True once every z slice of one channel's scan stack at (position, t) is present.
 
-        A deskewed plane needs the whole scan stack, so this gates deskew-mode follow.
-        Keyed on the final scan slice having been seen (robust to dropped middle frames).
+        Requires *all* z indices (not merely the last) so that neither a still-filling
+        stack nor a partially-evicted one is ever treated as complete.
         """
-        return all((c, position, t) in self._stack_done for c in range(self._n_channels))
+        return all((channel, position, t, z) in self._index_map for z in range(self._n_zscan))
+
+    def _stack_complete(self, position: int, t: int) -> bool:
+        """True once every channel's full scan stack at (position, t) is present.
+
+        A deskewed plane needs the whole scan stack, so this gates deskew-mode follow
+        and preview.
+        """
+        return all(self._volume_complete(c, position, t) for c in range(self._n_channels))
 
     def _set_step(self, target: tuple[int, ...]) -> None:
         """Advance the followed sliders (position, t) to ``target``, preserving z.
@@ -348,24 +363,37 @@ class _ViewerState:
         finally:
             self._programmatic = False
 
+    def _evict_volume(self, channel: int, position: int, t: int) -> None:
+        """Drop every slot of one channel's scan stack at (position, t) from the index.
+
+        Called when the ring begins overwriting a volume: rather than let the buffer hold
+        a half-evicted stack, we retire the whole volume at once. The not-yet-overwritten
+        slots are simply released back to the index and reused as acquisition continues.
+        """
+        for z in range(self._n_zscan):
+            k = (channel, position, t, z)
+            s = self._index_map.pop(k, None)
+            if s is not None and self._slot_owner[s] == k:
+                self._slot_owner[s] = None
+
     def _on_frame(self, msg: dict) -> None:
         if not self._started or self._ring is None:
             return
         slot = int(msg["slot"])
         key = (int(msg["c"]), int(msg["position"]), int(msg["t"]), int(msg["z"]))
 
-        # Evict whatever previously lived in this slot (the ring just overwrote it).
+        # The ring just overwrote this slot. Evict the ENTIRE volume the old frame
+        # belonged to -- not just that one frame -- so the buffer never holds a
+        # half-overwritten stack (some z present, some gone). Whole volumes enter and
+        # leave the buffer together.
         old = self._slot_owner[slot]
         if old is not None and self._index_map.get(old) == slot:
-            del self._index_map[old]
+            self._evict_volume(old[0], old[1], old[2])
         self._index_map[key] = slot
         self._slot_owner[slot] = key
 
         channel, position, t, z = key
         self._autoset_contrast(channel, slot)
-        # Track stack completion regardless of mode, so toggling deskew on later works.
-        if z == self._n_zscan - 1:
-            self._stack_done.add((channel, position, t))
 
         # Auto-advance only to (position, t) where ALL channels have the data needed for
         # the displayed plane -- otherwise a lagging channel renders black. Channels are
