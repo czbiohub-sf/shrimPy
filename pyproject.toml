@@ -44,7 +44,7 @@ dev = [
   "pre-commit~=4.5",
   "pytest~=9.0",
   "ruff~=0.15",
-  "iohub>=0.3.8",  # >=0.3.8 required by biahub
+  "iohub",
   "ipykernel",
 ]
 dynatrack = [

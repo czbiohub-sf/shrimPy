@@ -4386,7 +4386,7 @@ provides-extras = ["build"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "iohub", specifier = ">=0.3.8" },
+    { name = "iohub" },
     { name = "ipykernel" },
     { name = "pre-commit", specifier = "~=4.5" },
     { name = "pytest", specifier = "~=9.0" },
