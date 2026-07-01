@@ -6,6 +6,16 @@ unit and integration test modules.
 
 from __future__ import annotations
 
+import os
+
+# Pin OpenMP to a single thread BEFORE torch or pymmcore load their native
+# runtimes. torch and pymmcore each bring an OpenMP runtime; when both are
+# active in one process (e.g. test_dynatrack imports torch, then an integration
+# test runs a hardware-sequenced demo acquisition), the duplicate thread pools
+# segfault in the camera-sequence C++ code. One thread avoids the conflict.
+# Must run at import time (conftest loads before test modules import torch).
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+
 from unittest.mock import MagicMock
 
 import pytest

@@ -192,10 +192,11 @@ class MantisEngine(MDAEngine):
                 position_store=position_store,
                 updater=updater,
             )
-            # start() is deferred to after super().setup_sequence() if
-            # preprocessing is configured, so the worker process can use
-            # the actual ROI shape. Otherwise start immediately.
-            if not (dynatrack_meta and DynaTrackConfig(**dynatrack_meta).preprocessing):
+            # DynaTrack always runs in a worker subprocess (see below), so its
+            # start() is deferred to after super().setup_sequence() where the
+            # worker is created with the actual ROI shape. Non-DynaTrack updaters
+            # run in-process, so start immediately.
+            if not dynatrack_meta:
                 self._position_update_manager.start()
             self._position_update_frames = {}
             self._position_update_expected_slices = max(sequence.sizes.get("z", 1), 1)
@@ -212,8 +213,12 @@ class MantisEngine(MDAEngine):
         # hardware state and the setup event applies the ROI.
         result = super().setup_sequence(sequence)
 
-        # Build the preprocessor after the setup event has applied the ROI,
-        # so getImageHeight/Width reflects the actual acquired frame size.
+        # DynaTrack always runs in a worker subprocess for GPU/torch isolation:
+        # torch's OpenMP runtime segfaults when it coexists with the sequenced
+        # camera readout in the acquisition process. The worker is created after
+        # the setup event has applied the ROI, so getImageHeight/Width reflects
+        # the actual acquired frame size (also used to build the preprocessor,
+        # when configured, inside the worker).
         if self._position_update_manager is not None and isinstance(
             self._position_update_manager._updater, DynaTrackUpdater
         ):
@@ -224,26 +229,24 @@ class MantisEngine(MDAEngine):
                 self.mmcore.getImageWidth(),
             )
 
-            if updater.config.preprocessing:
-                # Offload to a worker process for GPU isolation
-                from shrimpy.mantis.dynatrack_worker import DynaTrackWorker
+            from shrimpy.mantis.dynatrack_worker import DynaTrackWorker
 
-                logger.info(f"DynaTrack: starting worker process for shape {zyx_shape}")
-                log_file_path = _find_shrimpy_log_file()
-                if log_file_path is None:
-                    logger.warning(
-                        "DynaTrack: no FileHandler found on shrimpy logger; "
-                        "worker subprocess logs will go to stderr only"
-                    )
-                worker = DynaTrackWorker(
-                    config=updater.config,
-                    zyx_shape=zyx_shape,
-                    debug_zarr_path=updater._debug_zarr_path,
-                    debug_position_names=updater._debug_position_names,
-                    log_file_path=log_file_path,
+            logger.info(f"DynaTrack: starting worker process for shape {zyx_shape}")
+            log_file_path = _find_shrimpy_log_file()
+            if log_file_path is None:
+                logger.warning(
+                    "DynaTrack: no FileHandler found on shrimpy logger; "
+                    "worker subprocess logs will go to stderr only"
                 )
-                self._position_update_manager._worker = worker
-                self._position_update_manager.start()
+            worker = DynaTrackWorker(
+                config=updater.config,
+                zyx_shape=zyx_shape,
+                debug_zarr_path=updater._debug_zarr_path,
+                debug_position_names=updater._debug_position_names,
+                log_file_path=log_file_path,
+            )
+            self._position_update_manager._worker = worker
+            self._position_update_manager.start()
 
         return result
 
@@ -263,9 +266,7 @@ class MantisEngine(MDAEngine):
         for event in super().event_iterator(events):
             if self._position_update_manager is not None:
                 idx = (
-                    event.events[0].index
-                    if isinstance(event, SequencedEvent)
-                    else event.index
+                    event.events[0].index if isinstance(event, SequencedEvent) else event.index
                 )
                 t_idx = idx.get("t", 0)
                 if last_t is not None and t_idx != last_t:

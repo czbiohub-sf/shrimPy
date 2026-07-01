@@ -873,6 +873,9 @@ class TestPositionUpdateIntegration:
                     z=(position.z or 0) + 0.5,
                 )
 
+        # Disable autofocus: demo-PFS fails ~50% of the time, which would
+        # randomly drop frames and make the per-(t, p) assertions below flaky.
+        mantis_metadata["autofocus"]["enabled"] = False
         mantis_metadata["position_update"] = {"enabled": True}
         seq = MDASequence(
             stage_positions=[
@@ -883,8 +886,16 @@ class TestPositionUpdateIntegration:
             metadata={"mantis": mantis_metadata},
         )
 
-        engine.setup_sequence(seq)
-        engine._position_update_manager._updater = ShiftUpdater()
+        # The runner calls engine.setup_sequence() at run start, which rebuilds
+        # the PositionUpdateManager with the default (no-op) updater. Inject the
+        # custom updater via sequenceStarted — it fires after that setup but
+        # before any frames, so the updater survives into the run. (Calling
+        # setup_sequence() manually here would both discard this updater and
+        # double-connect the frameReady callback, causing every baseline to be
+        # popped twice and all corrections to be skipped.)
+        @demo_core.mda.events.sequenceStarted.connect
+        def _inject_updater(*_args) -> None:
+            engine._position_update_manager._updater = ShiftUpdater()
 
         xy_positions: list[tuple[int, int, float, float]] = []
 

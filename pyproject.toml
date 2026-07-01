@@ -125,3 +125,5 @@ docstring-code-format = true
 
 [tool.pytest.ini_options]
 testpaths = ["shrimpy/tests"]
+# Never collect tests from archived/legacy code or scripts (any depth)
+norecursedirs = ["archive", "scripts"]
