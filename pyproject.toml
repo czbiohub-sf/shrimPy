@@ -7,7 +7,7 @@ name = "shrimpy"
 description = "Custom acquisition engines for optical microscopes based on pymmcore-plus"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.11, <4.0"
+requires-python = ">=3.12, <4.0"
 
 # the dynamically determined project metadata attributes
 dynamic = ["version"]
@@ -16,7 +16,7 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
 ]
 
 # list package dependencies here
@@ -33,7 +33,6 @@ dependencies = [
   "PyYAML",
   "qtpy",
   "useq-schema",
-  "acquire-zarr==0.6.0",  # v0.7.0 causes acq to crash
 ]
 
 
@@ -45,15 +44,13 @@ dev = [
   "pre-commit~=4.5",
   "pytest~=9.0",
   "ruff~=0.15",
-  "iohub==0.3.0a7",
+  "iohub>=0.3.8",  # >=0.3.8 required by biahub
   "ipykernel",
 ]
 dynatrack = [
-  "biahub",
+  "biahub[stain]",  # [stain] pulls in cytoland, required for dynatrack
   "matplotlib",
   "torch",
-  "viscy",
-  "waveorder==3.0.2",
 ]
 
 [project.scripts]
@@ -70,24 +67,33 @@ local_scheme = "no-local-version"
 packages = ["shrimpy"]
 
 [tool.uv.sources]
-ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "add-plate-row-col" }
 pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "dev" }
-biahub = { git = "https://github.com/czbiohub-sf/biahub", branch = "fast_deskew" }
-pymmcore-gui = { git = "https://github.com/pymmcore-plus/pymmcore-gui", branch = "main" }
+ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "add-plate-row-col" }
 useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "add-plate-row-col" }
-# viscy issues with waveorder and iohub dependencies
-viscy = { git = "https://github.com/mehta-lab/VisCy", rev = "6ba3446db8b02383e25e1bc5424a20268249ee7d" }
-torch = { index = "pytorch" }
+# Windows: CUDA build via cu132 index (requires CUDA Toolkit 13.2 on the machine);
+# elsewhere (macOS/Linux) fall back to PyPI (CPU/MPS).
+torch = [{ index = "pytorch-cu132", marker = "sys_platform == 'win32'" }]
+
+# no pipy release
+pymmcore-gui = { git = "https://github.com/pymmcore-plus/pymmcore-gui", branch = "main" }
+
+# needed for phase reconstruction, deskew, and virtual staining
+biahub = { git = "https://github.com/czbiohub-sf/biahub", rev = "b011bca57d5bf15c777839e4250e594f7471af3e"}
+
+# no pipy release yet; uv sources don't propagate, so mirror biahub's cytoland pin
+cytoland = { git = "https://github.com/mehta-lab/VisCy", subdirectory = "applications/cytoland", rev = "4b62365c0df25929bffc7f01b3bb2d1c11d69cce" }
 
 [[tool.uv.index]]
-name = "pytorch"
-url = "https://download.pytorch.org/whl/cu118"
+# TODO: upda CUDA toolkit on mantis microscope
+# https://developer.nvidia.com/cuda-13-2-1-download-archive?target_os=Windows&target_arch=x86_64&target_version=11&target_type=exe_network
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
 explicit = true
 
 [tool.ruff]
 # Ruff replaces black, isort, flake8, and pylint
 line-length = 95
-target-version = "py311"
+target-version = "py312"
 
 # Exclude non-package code
 exclude = ["archive", "examples", "scripts"]
