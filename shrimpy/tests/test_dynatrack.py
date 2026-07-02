@@ -156,7 +156,7 @@ class TestDynaTrackConfig:
         assert cfg.dampening is None
         assert cfg.shift_limits is None
         assert cfg.tracking_interval == 1
-        assert cfg.shift_estimation_channel == "deskewed"
+        assert cfg.tracking_channel == "deskewed"
         assert cfg.preprocessing is None
         assert cfg.shift_log_path is None
 
@@ -167,13 +167,13 @@ class TestDynaTrackConfig:
             dampening=(0.5, 0.8, 0.8),
             shift_limits={"z": (0.5, 2.0), "y": (2.0, 10.0), "x": (2.0, 10.0)},
             tracking_interval=2,
-            shift_estimation_channel="phase",
+            tracking_channel="phase",
             preprocessing=["phase"],
             phase_config={"wavelength": 0.450},
         )
         assert cfg.dampening == (0.5, 0.8, 0.8)
         assert cfg.tracking_interval == 2
-        assert cfg.shift_estimation_channel == "phase"
+        assert cfg.tracking_channel == "phase"
 
     def test_config_from_dict(self):
         """Config can be constructed from a metadata dict via **kwargs."""

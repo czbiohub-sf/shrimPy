@@ -79,6 +79,9 @@ class DynaTrack:
         self._store.initialize_from_sequence(sequence, z_device=config.z_device)
         self._expected_slices = max(sequence.sizes.get("z", 1), 1)
         self._frames: dict[tuple[int, int], list[np.ndarray]] = {}
+        # Resolve the input channel name to its index in the sequence (used to
+        # filter frames in on_frame_ready). None = buffer all channels.
+        self._input_channel_index = self._resolve_input_channel(config.input_channel, sequence)
 
         self._debug_zarr_path: Path | None = None
         self._debug_position_names: dict[int, str] = {}
@@ -100,6 +103,23 @@ class DynaTrack:
         self._manager = PositionUpdateManager(
             self._store, updater=updater, z_device=config.z_device
         )
+
+    @staticmethod
+    def _resolve_input_channel(name: str | None, sequence: MDASequence) -> int | None:
+        """Resolve an input channel name to its index in the sequence.
+
+        Returns ``None`` when ``name`` is ``None`` (buffer all channels).
+        Raises ``ValueError`` if the name is not one of the sequence's channels.
+        """
+        if name is None:
+            return None
+        channel_names = [ch.config for ch in sequence.channels]
+        if name not in channel_names:
+            raise ValueError(
+                f"DynaTrack input_channel {name!r} is not one of the acquisition "
+                f"channels {channel_names}."
+            )
+        return channel_names.index(name)
 
     @classmethod
     def from_metadata(
@@ -195,10 +215,10 @@ class DynaTrack:
         Connect to the core's ``frameReady`` signal. Counts z-slices per
         (timepoint, position) and submits the stack for tracking as soon as
         all expected slices have been collected. Only frames from
-        ``config.update_channel`` are buffered (``None`` = all channels).
+        ``config.input_channel`` are buffered (``None`` = all channels).
         """
-        update_channel = self.config.update_channel
-        if update_channel is not None and event.index.get("c") != update_channel:
+        channel_index = self._input_channel_index
+        if channel_index is not None and event.index.get("c") != channel_index:
             return
 
         t_idx = event.index.get("t", 0)

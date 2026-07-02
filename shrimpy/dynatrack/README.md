@@ -17,12 +17,13 @@ The acquisition proceeds as a normal multi-dimensional acquisition (timepoints
 × positions × channels × z). DynaTrack layers a feedback loop on top:
 
 1. **Buffer.** As frames stream in, DynaTrack collects the z-slices for the
-   configured `update_channel` of each `(timepoint, position)`. When a stack is
-   complete it is handed off for analysis.
+   configured `input_channel` (an acquisition channel name, e.g. `BF`) of each
+   `(timepoint, position)`. When a stack is complete it is handed off for
+   analysis.
 2. **Preprocess (optional).** The raw stack can be transformed before shift
    estimation — deskewed (light-sheet), phase-reconstructed, and/or
    virtually stained — so tracking runs on the most informative representation.
-   The channel used for estimation is set by `shift_estimation_channel`.
+   The representation used for estimation is set by `tracking_channel`.
 3. **Estimate shift.** The chosen [tracking method](#tracking-methods) computes
    a translational offset (Z, Y, X, in pixels) between the current stack and a
    target — either a stored reference stack or the ROI centre.
@@ -93,7 +94,7 @@ timepoint.
 
 DynaTrack is configured under the microscope's metadata section — e.g.
 `metadata.mantis.dynatrack` — mapping directly onto
-[`DynaTrackConfig`](tracking.py) fields. `enabled`, `update_channel`, and
+[`DynaTrackConfig`](tracking.py) fields. `enabled`, `input_channel`, and
 `z_device` sit alongside the tracking parameters:
 
 ```yaml
@@ -101,7 +102,7 @@ metadata:
   mantis:
     dynatrack:
       enabled: true
-      update_channel: 0        # channel index fed to the tracker (None = all)
+      input_channel: BF        # acquisition channel name fed to the tracker (None = all)
       z_device: ObjectiveZ     # Z written to this device's Position property
       scale_yx: 0.1494
       scale_z: 0.174

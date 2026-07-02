@@ -62,9 +62,11 @@ class DynaTrackConfig(BaseModel):
     enabled : bool
         Master switch read from acquisition metadata; engines only build a
         :class:`~shrimpy.dynatrack.manager.DynaTrack` coordinator when True.
-    update_channel : int | None
-        Channel index whose frames are fed to the tracker (``None`` = all
-        channels).
+    input_channel : str | None
+        Name of the acquisition channel (e.g. ``"BF"``) whose frames are fed to
+        the tracker. Must match one of the channel configs in the acquisition
+        ``MDASequence`` (validated in :class:`~shrimpy.dynatrack.manager.DynaTrack`).
+        ``None`` = buffer all channels.
     z_device : str | None
         Device name for Z corrections (e.g. ``"ObjectiveZ"``). When set, Z
         is written to that device's ``Position`` property instead of the
@@ -118,7 +120,7 @@ class DynaTrackConfig(BaseModel):
         which avoids a jump. Useful for long timelapses where the sample
         changes enough that phase-correlation against a stale reference
         becomes unreliable.
-    shift_estimation_channel : str
+    tracking_channel : str
         Which representation to use for shift estimation:
         ``'deskewed'`` (default; the deskewed input volume, e.g. deskew-only
         tracking), ``'phase'`` (phase reconstruction), ``'vs_nuclei'`` or
@@ -153,7 +155,7 @@ class DynaTrackConfig(BaseModel):
     scale_yx: float
     scale_z: float
     enabled: bool = True
-    update_channel: int | None = 0
+    input_channel: str | None = None
     z_device: str | None = None
     maximum_shift: float = 1.0
     dampening: tuple[float, float, float] | None = None
@@ -166,7 +168,7 @@ class DynaTrackConfig(BaseModel):
     roi_background_percentile: float | None = None
     roi_blur_sigma: float = 0.0
     reference_update_interval: int = 0
-    shift_estimation_channel: str = "deskewed"
+    tracking_channel: str = "deskewed"
     preprocessing: list[str] | None = None
     deskew_config: dict[str, Any] | None = None
     phase_config: dict[str, Any] | None = None
@@ -877,7 +879,7 @@ class DynaTrackUpdater(PositionUpdater):
         Optional callable that transforms a z-stack and returns a dict of
         channel name to ZYX tensor on the target device (e.g.
         ``{'phase': ..., 'vs_nuclei': ...}``). The channel specified by
-        ``config.shift_estimation_channel`` is used for phase
+        ``config.tracking_channel`` is used for phase
         cross-correlation. When ``None``, the raw z-stack is used.
     """
 
@@ -1004,7 +1006,7 @@ class DynaTrackUpdater(PositionUpdater):
             )
             # Select the configured channel for shift estimation. Stays as a
             # torch tensor on device; PCC consumes tensors directly.
-            channel_name = self._config.shift_estimation_channel
+            channel_name = self._config.tracking_channel
             if channel_name in channels_zyx:
                 selected = channels_zyx[channel_name]
             else:

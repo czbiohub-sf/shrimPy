@@ -35,8 +35,8 @@ channels:
   z_offset: 0.0
   acquire_every: 1
   camera: null
-# For deskewed-GFP (fluorescence) tracking, add a fluorescence channel as
-# index 1 and point `update_channel: 1` at it (see dynatrack below):
+# For deskewed-GFP (fluorescence) tracking, add a fluorescence channel and
+# point `input_channel: GFP` at it (see dynatrack below):
 # - config: GFP
 #   group: Channel
 #   exposure: 10.0
@@ -68,9 +68,9 @@ metadata:
       stage: ObjectiveZ
     dynatrack:
       enabled: true
-      # Channel index fed to the tracker (0 = first channel, BF here).
-      # For deskewed-GFP tracking set this to the GFP channel index (e.g. 1).
-      update_channel: 0
+      # Name of the acquisition channel fed to the tracker; must match one of
+      # the channels defined above. For deskewed-GFP tracking set this to 'GFP'.
+      input_channel: BF
       z_device: ObjectiveZ
       scale_yx: 0.1494
       scale_z: 0.174
@@ -130,9 +130,9 @@ metadata:
       # Which representation to use for shift estimation:
       # 'deskewed' (deskew-only output, e.g. deskewed GFP), 'phase',
       # 'vs_nuclei', 'vs_membrane'
-      shift_estimation_channel: 'vs_nuclei'
-      # shift_estimation_channel: 'deskewed'   # deskewed-GFP (fluorescence) tracking
-      # shift_estimation_channel: 'phase'
+      tracking_channel: 'vs_nuclei'
+      # tracking_channel: 'deskewed'   # deskewed-GFP (fluorescence) tracking
+      # tracking_channel: 'phase'
 
       # Waveorder phase reconstruction parameters, validated as a
       # waveorder.api.phase.Settings (PhaseSettings). DynaTrack always does
@@ -158,7 +158,7 @@ metadata:
       vs_config:
         # Output channels and sliding-window step are derived from the config
         # (as in biahub): one predicted channel per name in `target_channels`,
-        # emitted under `vs_<name>` (e.g. shift_estimation_channel: 'vs_nuclei').
+        # emitted under `vs_<name>` (e.g. tracking_channel: 'vs_nuclei').
         target_channels: ['nuclei', 'membrane']
         sliding_window_step: 1
         model:

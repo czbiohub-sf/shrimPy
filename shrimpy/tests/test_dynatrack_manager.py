@@ -36,23 +36,26 @@ def engine(mock_core: MagicMock) -> MantisEngine:
     return eng
 
 
-def _sequence(n_positions: int = 1) -> MDASequence:
+def _sequence(
+    n_positions: int = 1, channels: tuple[str, ...] = ("ch0", "ch1", "ch2")
+) -> MDASequence:
     return MDASequence(
+        channels=[{"config": c, "group": "Channel"} for c in channels],
         stage_positions=[
             {"x": float(i * 100), "y": float(i * 100 + 100), "z": float(i + 5)}
             for i in range(n_positions)
-        ]
+        ],
     )
 
 
 def _make_dynatrack(
     sequence: MDASequence,
     updater: PositionUpdater,
-    update_channel: int | None = 0,
+    input_channel: str | None = "ch0",
     expected_slices: int = 1,
 ) -> DynaTrack:
     """Build an in-process DynaTrack (no worker subprocess) and start it."""
-    config = DynaTrackConfig(scale_yx=0.1, scale_z=0.1, update_channel=update_channel)
+    config = DynaTrackConfig(scale_yx=0.1, scale_z=0.1, input_channel=input_channel)
     dt = DynaTrack(config, sequence, updater=updater)
     dt._expected_slices = expected_slices
     dt.start()
@@ -80,7 +83,7 @@ class TestFromMetadata:
     def test_builds_config_from_metadata(self):
         meta = {
             "enabled": True,
-            "update_channel": 1,
+            "input_channel": "ch1",
             "z_device": "ObjectiveZ",
             "scale_yx": 0.075,
             "scale_z": 0.174,
@@ -90,7 +93,8 @@ class TestFromMetadata:
         dt = DynaTrack.from_metadata(meta, _sequence(2))
         assert dt is not None
         assert dt.num_positions == 2
-        assert dt.config.update_channel == 1
+        assert dt.config.input_channel == "ch1"
+        assert dt._input_channel_index == 1
         assert dt.config.z_device == "ObjectiveZ"
         assert dt.config.scale_yx == 0.075
         assert dt.config.tracking_interval == 2
@@ -110,6 +114,19 @@ class TestFromMetadata:
         }
         dt = DynaTrack.from_metadata(meta, _sequence(), data_path=tmp_path)
         assert dt.config.shift_log_path == "/custom/log.csv"
+
+    def test_unknown_input_channel_raises(self):
+        """input_channel must match a channel in the sequence."""
+        meta = {"enabled": True, "scale_yx": 0.1, "scale_z": 0.1, "input_channel": "NOPE"}
+        with pytest.raises(ValueError, match="input_channel 'NOPE'"):
+            DynaTrack.from_metadata(meta, _sequence())
+
+    def test_input_channel_none_buffers_all(self):
+        """input_channel=None (default) resolves to no channel filter."""
+        meta = {"enabled": True, "scale_yx": 0.1, "scale_z": 0.1}
+        dt = DynaTrack.from_metadata(meta, _sequence())
+        assert dt.config.input_channel is None
+        assert dt._input_channel_index is None
 
 
 # ---------------------------------------------------------------------------
@@ -174,9 +191,9 @@ class TestFrameBuffering:
         assert buffered[0] is not frame  # copy, not the same object
         dt.shutdown()
 
-    def test_default_caches_channel_0_only(self):
+    def test_default_caches_first_channel_only(self):
         dt = _make_dynatrack(
-            _sequence(), PositionUpdater(), update_channel=0, expected_slices=5
+            _sequence(), PositionUpdater(), input_channel="ch0", expected_slices=5
         )
         frame = np.ones((4, 4), dtype=np.uint16)
 
@@ -187,8 +204,9 @@ class TestFrameBuffering:
         dt.shutdown()
 
     def test_filters_by_configured_channel(self):
+        # "ch1" resolves to channel index 1 in the sequence.
         dt = _make_dynatrack(
-            _sequence(), PositionUpdater(), update_channel=1, expected_slices=5
+            _sequence(), PositionUpdater(), input_channel="ch1", expected_slices=5
         )
         frame = np.ones((4, 4), dtype=np.uint16)
 
@@ -202,7 +220,7 @@ class TestFrameBuffering:
 
     def test_all_channels_when_none(self):
         dt = _make_dynatrack(
-            _sequence(), PositionUpdater(), update_channel=None, expected_slices=5
+            _sequence(), PositionUpdater(), input_channel=None, expected_slices=5
         )
         frame = np.ones((4, 4), dtype=np.uint16)
         dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0}))
@@ -432,8 +450,9 @@ class TestDynaTrackIntegration:
         # randomly drop frames and make the per-(t, p) assertions below flaky.
         mantis_metadata["autofocus"]["enabled"] = False
         # Include a channel so events carry a c-axis: on_frame_ready buffers the
-        # configured update_channel (0), which never matches on a channel-less
-        # sequence. Mirrors a real acquisition, which always has channels.
+        # configured input_channel ("DAPI"), which never matches on a
+        # channel-less sequence. Mirrors a real acquisition, which always has
+        # channels.
         seq = MDASequence(
             channels=[{"config": "DAPI", "group": "Channel", "exposure": 1.0}],
             stage_positions=[{"x": 100, "y": 200, "z": 50}, {"x": 300, "y": 400, "z": 60}],
@@ -442,7 +461,7 @@ class TestDynaTrackIntegration:
         )
 
         def _fake_from_metadata(meta, sequence, data_path=None):
-            config = DynaTrackConfig(scale_yx=0.1, scale_z=0.1, update_channel=0)
+            config = DynaTrackConfig(scale_yx=0.1, scale_z=0.1, input_channel="DAPI")
             return DynaTrack(config, sequence, updater=ShiftUpdater())
 
         xy_positions: list[tuple[int, int, float, float]] = []

@@ -64,7 +64,7 @@ def build_preprocessor(
     ----------
     config : DynaTrackConfig
         Must have ``preprocessing`` (e.g. ``['phase']`` or ``['phase', 'vs']``)
-        and ``shift_estimation_channel`` (e.g. ``'phase'``, ``'vs_nuclei'``).
+        and ``tracking_channel`` (e.g. ``'phase'``, ``'vs_nuclei'``).
     zyx_shape : tuple[int, int, int]
         Shape of the z-stack ``(Z, Y, X)`` — needed for transfer function
         calculation.
@@ -76,11 +76,11 @@ def build_preprocessor(
         stack, or ``None`` if no preprocessing is configured.
     """
     pipeline = config.preprocessing
-    channel = config.shift_estimation_channel
+    channel = config.tracking_channel
 
     # No pipeline -> no preprocessor (track on the raw, un-deskewed stack).
     # Deskew-only tracking is expressed as preprocessing=['deskew'] +
-    # shift_estimation_channel='deskewed' (the deskewed volume is emitted
+    # tracking_channel='deskewed' (the deskewed volume is emitted
     # under the "deskewed" key by the preprocessor).
     if not pipeline:
         return None

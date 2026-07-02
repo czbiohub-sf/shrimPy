@@ -151,7 +151,7 @@ class MantisEngine(MDAEngine):
                 f"DynaTrack enabled with {self._dynatrack.num_positions} positions: "
                 f"scale_yx={cfg.scale_yx}, scale_z={cfg.scale_z}, "
                 f"interval={cfg.tracking_interval}, "
-                f"channel={cfg.shift_estimation_channel}"
+                f"channel={cfg.tracking_channel}"
             )
 
         logger.info("Mantis hardware setup completed successfully")
