@@ -90,16 +90,11 @@ metadata:
       #   []                       raw frames of the input channel
       preprocessing: ['deskew', 'phase', 'vs']
 
-      # Channel the shift is estimated on. Rules:
-      #   - no 'vs' in preprocessing -> an input channel name (tracks that
-      #     channel's raw / deskewed / deskew+phase volume). Typically equals
-      #     input_channel, e.g. 'BF' (deskew+phase) or 'GFP' (deskew-only).
-      #   - 'vs' in preprocessing   -> a virtual_staining.target_channels name,
-      #     e.g. 'nuclei' or 'membrane' (input_channel is usually 'BF').
-      # The reserved names 'phase', 'deskewed', and any 'vs_*' are rejected.
+      # Channel the shift is estimated on. Should either match input_channel
+      # or be one of the virtual_staining.target_channels.
       tracking_channel: 'nuclei'
-      # tracking_channel: GFP    # with preprocessing: ['deskew']
-      # tracking_channel: BF     # with preprocessing: ['deskew','phase']
+      # tracking_channel: GFP    # preprocessing ['deskew']: deskewed GFP channel
+      # tracking_channel: BF     # preprocessing ['deskew','phase']: deskewed + phase-reconstructed BF channel
 
       # Shift-estimation algorithm: 'pcc' (phase cross-correlation),
       # 'intensity_center_of_mass' (intensity-weighted centroid vs ROI centre
@@ -119,6 +114,7 @@ metadata:
       # tracking_method: 'multiotsu_pcc'
 
       tracking_interval: 1   # estimate a correction every N timepoints (1 = every)
+
       # Re-anchor the reference every N timepoints (0 = never; keep the fixed
       # t=0 reference). On a re-anchor timepoint the current stack becomes the
       # new reference and no correction is applied. Use for long timelapses
