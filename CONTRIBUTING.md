@@ -42,3 +42,10 @@ make check # check formatting and linting
 make format # apply formatting and linting changes
 make test # run test
 ```
+
+## Testing
+
+See [docs/testing.md](docs/testing.md) for how to run the suite. Most tests need
+no hardware; the demo-device integration tests require the Micro-Manager
+adapters, which on Linux must be built from source (steps and HPC-specific notes
+are in that doc).
