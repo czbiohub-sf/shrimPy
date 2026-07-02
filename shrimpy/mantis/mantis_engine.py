@@ -152,11 +152,14 @@ class MantisEngine(MDAEngine):
         if self._dynatrack is not None:
             self.mmcore.mda.events.frameReady.connect(self._dynatrack.on_frame_ready)
             cfg = self._dynatrack.config
+            preprocessing = cfg.preprocessing or ["none"]
             logger.info(
-                f"DynaTrack enabled with {self._dynatrack.num_positions} positions: "
-                f"input_channel={cfg.input_channel}, "
-                f"tracking_channel={cfg.tracking_channel}, "
-                f"interval={cfg.tracking_interval}"
+                "DynaTrack enabled: "
+                f"input_channel={cfg.input_channel} -> tracking_channel={cfg.tracking_channel}, "
+                f"preprocessing=[{', '.join(preprocessing)}], "
+                f"tracking_method={cfg.tracking_method}, "
+                f"tracking_interval={cfg.tracking_interval}, "
+                f"reference_update_interval={cfg.reference_update_interval}"
             )
 
         logger.info("Mantis hardware setup completed successfully")
