@@ -82,6 +82,7 @@ class DynaTrack:
         # Resolve the input channel name to its index in the sequence (used to
         # filter frames in on_frame_ready). None = buffer all channels.
         self._input_channel_index = self._resolve_input_channel(config.input_channel, sequence)
+        self._validate_tracking_channel(config, sequence)
 
         self._debug_zarr_path: Path | None = None
         self._debug_position_names: dict[int, str] = {}
@@ -103,6 +104,45 @@ class DynaTrack:
         self._manager = PositionUpdateManager(
             self._store, updater=updater, z_device=config.z_device
         )
+
+    @staticmethod
+    def _validate_tracking_channel(config: DynaTrackConfig, sequence: MDASequence) -> None:
+        """Validate ``tracking_channel`` against the preprocessing pipeline.
+
+        Without VS, it must name one of the acquisition input channels (tracking
+        runs on that channel's raw/deskewed/phase volume). With VS, it must be
+        one of ``vs_config.target_channels``. The reserved names ``"phase"``,
+        ``"deskewed"``, and any ``"vs_*"`` name are rejected as ambiguous /
+        bug-prone.
+        """
+        tc = config.tracking_channel
+        preprocessing = config.preprocessing or []
+        uses_vs = "vs" in preprocessing
+
+        if tc == "phase" or tc == "deskewed" or tc.startswith("vs_"):
+            raise ValueError(
+                f"tracking_channel={tc!r} is not allowed. Use an input channel "
+                "name (raw/deskew/phase pipelines) or a vs_config.target_channels "
+                "name (VS pipeline); 'phase', 'deskewed', and 'vs_*' are reserved."
+            )
+
+        if uses_vs:
+            targets = (config.vs_config or {}).get("target_channels") or [
+                "nuclei",
+                "membrane",
+            ]
+            if tc not in targets:
+                raise ValueError(
+                    f"tracking_channel={tc!r} must be one of vs_config.target_channels "
+                    f"{targets} when preprocessing includes 'vs'."
+                )
+        else:
+            input_channels = [ch.config for ch in sequence.channels]
+            if tc not in input_channels:
+                raise ValueError(
+                    f"tracking_channel={tc!r} must be one of the acquisition channels "
+                    f"{input_channels} when not using VS preprocessing."
+                )
 
     @staticmethod
     def _resolve_input_channel(name: str | None, sequence: MDASequence) -> int | None:

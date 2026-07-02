@@ -23,7 +23,10 @@ The acquisition proceeds as a normal multi-dimensional acquisition (timepoints
 2. **Preprocess (optional).** The raw stack can be transformed before shift
    estimation — deskewed (light-sheet), phase-reconstructed, and/or
    virtually stained — so tracking runs on the most informative representation.
-   The representation used for estimation is set by `tracking_channel`.
+   The channel tracked is set by `tracking_channel`: without VS it names an
+   input channel (its raw / deskewed / deskew+phase volume, per
+   `preprocessing`); with VS it names one of `vs_config.target_channels`
+   (e.g. `nuclei`, `membrane`).
 3. **Estimate shift.** The chosen [tracking method](#tracking-methods) computes
    a translational offset (Z, Y, X, in pixels) between the current stack and a
    target — either a stored reference stack or the ROI centre.

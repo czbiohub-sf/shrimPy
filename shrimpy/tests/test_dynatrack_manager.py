@@ -55,7 +55,10 @@ def _make_dynatrack(
     expected_slices: int = 1,
 ) -> DynaTrack:
     """Build an in-process DynaTrack (no worker subprocess) and start it."""
-    config = DynaTrackConfig(scale_yx=0.1, scale_z=0.1, input_channel=input_channel)
+    # Raw (non-VS) tracking: tracking_channel must be a valid input channel.
+    config = DynaTrackConfig(
+        scale_yx=0.1, scale_z=0.1, input_channel=input_channel, tracking_channel="ch0"
+    )
     dt = DynaTrack(config, sequence, updater=updater)
     dt._expected_slices = expected_slices
     dt.start()
@@ -84,6 +87,7 @@ class TestFromMetadata:
         meta = {
             "enabled": True,
             "input_channel": "ch1",
+            "tracking_channel": "ch1",
             "z_device": "ObjectiveZ",
             "scale_yx": 0.075,
             "scale_z": 0.174,
@@ -101,7 +105,7 @@ class TestFromMetadata:
         assert dt.config.dampening == (0.5, 0.8, 0.8)
 
     def test_sets_shift_log_path_from_data_path(self, tmp_path):
-        meta = {"enabled": True, "scale_yx": 0.1, "scale_z": 0.1}
+        meta = {"enabled": True, "scale_yx": 0.1, "scale_z": 0.1, "tracking_channel": "ch0"}
         dt = DynaTrack.from_metadata(meta, _sequence(), data_path=tmp_path)
         assert dt.config.shift_log_path == str(tmp_path / "dynatrack_log.csv")
 
@@ -110,6 +114,7 @@ class TestFromMetadata:
             "enabled": True,
             "scale_yx": 0.1,
             "scale_z": 0.1,
+            "tracking_channel": "ch0",
             "shift_log_path": "/custom/log.csv",
         }
         dt = DynaTrack.from_metadata(meta, _sequence(), data_path=tmp_path)
@@ -117,16 +122,65 @@ class TestFromMetadata:
 
     def test_unknown_input_channel_raises(self):
         """input_channel must match a channel in the sequence."""
-        meta = {"enabled": True, "scale_yx": 0.1, "scale_z": 0.1, "input_channel": "NOPE"}
+        meta = {
+            "enabled": True,
+            "scale_yx": 0.1,
+            "scale_z": 0.1,
+            "tracking_channel": "ch0",
+            "input_channel": "NOPE",
+        }
         with pytest.raises(ValueError, match="input_channel 'NOPE'"):
             DynaTrack.from_metadata(meta, _sequence())
 
     def test_input_channel_none_buffers_all(self):
         """input_channel=None (default) resolves to no channel filter."""
-        meta = {"enabled": True, "scale_yx": 0.1, "scale_z": 0.1}
+        meta = {"enabled": True, "scale_yx": 0.1, "scale_z": 0.1, "tracking_channel": "ch0"}
         dt = DynaTrack.from_metadata(meta, _sequence())
         assert dt.config.input_channel is None
         assert dt._input_channel_index is None
+
+
+# ---------------------------------------------------------------------------
+# tracking_channel validation
+# ---------------------------------------------------------------------------
+
+
+class TestTrackingChannelValidation:
+    def _build(self, **cfg_kwargs):
+        config = DynaTrackConfig(scale_yx=0.1, scale_z=0.1, **cfg_kwargs)
+        return DynaTrack(config, _sequence(channels=("BF", "GFP")), updater=PositionUpdater())
+
+    @pytest.mark.parametrize("bad", ["phase", "deskewed", "vs_nuclei", "vs_membrane"])
+    def test_reserved_names_rejected(self, bad):
+        with pytest.raises(ValueError, match="not allowed"):
+            self._build(tracking_channel=bad)
+
+    def test_non_vs_must_be_input_channel(self):
+        # A valid input channel is accepted (raw pipeline, no preprocessing).
+        dt = self._build(tracking_channel="BF")
+        assert dt.config.tracking_channel == "BF"
+        # A name that is not an acquisition channel is rejected.
+        with pytest.raises(ValueError, match="acquisition channels"):
+            self._build(tracking_channel="nuclei")
+
+    def test_vs_must_be_target_channel(self):
+        common = {
+            "preprocessing": ["deskew", "phase", "vs"],
+            "vs_config": {"target_channels": ["nuclei", "membrane"]},
+            "input_channel": "BF",
+        }
+        dt = self._build(tracking_channel="nuclei", **common)
+        assert dt.config.tracking_channel == "nuclei"
+        # An input channel name is not a valid VS target.
+        with pytest.raises(ValueError, match="target_channels"):
+            self._build(tracking_channel="BF", **common)
+
+    def test_tracking_channel_is_required(self):
+        """tracking_channel has no default; omitting it is a pydantic error."""
+        import pydantic
+
+        with pytest.raises(pydantic.ValidationError):
+            DynaTrackConfig(scale_yx=0.1, scale_z=0.1)
 
 
 # ---------------------------------------------------------------------------
@@ -254,9 +308,17 @@ class TestFrameBuffering:
 class TestMantisEngineWiring:
     def test_setup_sequence_initializes_dynatrack(self, engine, mock_core):
         seq = MDASequence(
+            channels=[{"config": "BF", "group": "Channel"}],
             stage_positions=[{"x": 10, "y": 20, "z": 5}, {"x": 30, "y": 40, "z": 15}],
             metadata={
-                "mantis": {"dynatrack": {"enabled": True, "scale_yx": 0.1, "scale_z": 0.1}}
+                "mantis": {
+                    "dynatrack": {
+                        "enabled": True,
+                        "scale_yx": 0.1,
+                        "scale_z": 0.1,
+                        "tracking_channel": "BF",
+                    }
+                }
             },
         )
         with (
@@ -461,7 +523,9 @@ class TestDynaTrackIntegration:
         )
 
         def _fake_from_metadata(meta, sequence, data_path=None):
-            config = DynaTrackConfig(scale_yx=0.1, scale_z=0.1, input_channel="DAPI")
+            config = DynaTrackConfig(
+                scale_yx=0.1, scale_z=0.1, input_channel="DAPI", tracking_channel="DAPI"
+            )
             return DynaTrack(config, sequence, updater=ShiftUpdater())
 
         xy_positions: list[tuple[int, int, float, float]] = []

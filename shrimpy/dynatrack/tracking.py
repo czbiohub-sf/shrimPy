@@ -121,10 +121,17 @@ class DynaTrackConfig(BaseModel):
         changes enough that phase-correlation against a stale reference
         becomes unreliable.
     tracking_channel : str
-        Which representation to use for shift estimation:
-        ``'deskewed'`` (default; the deskewed input volume, e.g. deskew-only
-        tracking), ``'phase'`` (phase reconstruction), ``'vs_nuclei'`` or
-        ``'vs_membrane'`` (virtual staining).
+        Required. Which channel to run shift estimation on, validated against
+        the pipeline in :class:`~shrimpy.dynatrack.manager.DynaTrack`:
+
+        - No VS in ``preprocessing``: must name one of the acquisition input
+          channels (e.g. ``"BF"``). Tracking runs on that channel's raw,
+          deskewed, or deskew+phase volume depending on ``preprocessing``.
+        - VS in ``preprocessing``: must be one of ``vs_config.target_channels``
+          (e.g. ``"nuclei"``, ``"membrane"``).
+
+        The reserved names ``"phase"`` (duplicates the preprocessing step),
+        ``"deskewed"`` (ambiguous), and any ``"vs_*"`` name are rejected.
     preprocessing : list[str] | None
         Pipeline steps, e.g. ``['phase']`` or ``['phase', 'vs']``.
         Used by external factory functions to build the preprocessor callable.
@@ -168,7 +175,7 @@ class DynaTrackConfig(BaseModel):
     roi_background_percentile: float | None = None
     roi_blur_sigma: float = 0.0
     reference_update_interval: int = 0
-    tracking_channel: str = "deskewed"
+    tracking_channel: str
     preprocessing: list[str] | None = None
     deskew_config: dict[str, Any] | None = None
     phase_config: dict[str, Any] | None = None
@@ -878,7 +885,7 @@ class DynaTrackUpdater(PositionUpdater):
     preprocessor : Callable[[np.ndarray], dict[str, torch.Tensor]] | None
         Optional callable that transforms a z-stack and returns a dict of
         channel name to ZYX tensor on the target device (e.g.
-        ``{'phase': ..., 'vs_nuclei': ...}``). The channel specified by
+        ``{'nuclei': ..., 'membrane': ...}``). The channel specified by
         ``config.tracking_channel`` is used for phase
         cross-correlation. When ``None``, the raw z-stack is used.
     """

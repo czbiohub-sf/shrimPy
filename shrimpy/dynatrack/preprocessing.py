@@ -64,7 +64,9 @@ def build_preprocessor(
     ----------
     config : DynaTrackConfig
         Must have ``preprocessing`` (e.g. ``['phase']`` or ``['phase', 'vs']``)
-        and ``tracking_channel`` (e.g. ``'phase'``, ``'vs_nuclei'``).
+        and ``tracking_channel`` (an input channel name like ``'BF'`` for
+        non-VS pipelines, or a ``vs_config.target_channels`` name like
+        ``'nuclei'`` for VS pipelines).
     zyx_shape : tuple[int, int, int]
         Shape of the z-stack ``(Z, Y, X)`` — needed for transfer function
         calculation.
@@ -79,9 +81,9 @@ def build_preprocessor(
     channel = config.tracking_channel
 
     # No pipeline -> no preprocessor (track on the raw, un-deskewed stack).
-    # Deskew-only tracking is expressed as preprocessing=['deskew'] +
-    # tracking_channel='deskewed' (the deskewed volume is emitted
-    # under the "deskewed" key by the preprocessor).
+    # Deskew-only tracking is expressed as preprocessing=['deskew'] with
+    # tracking_channel set to the input channel name; the deskewed volume is
+    # emitted under that name by the preprocessor.
     if not pipeline:
         return None
 
@@ -232,9 +234,11 @@ class _LabelfreePreprocessor:
         -------
         dict[str, torch.Tensor]
             Mapping of channel name to ZYX tensor on the target device.
-            Always includes ``'phase'`` when phase recon is enabled; may
-            also include ``'vs_nuclei'`` and ``'vs_membrane'`` when VS is
-            enabled.
+            For a VS pipeline the keys are the ``vs_config.target_channels``
+            (e.g. ``'nuclei'``, ``'membrane'``), plus ``'phase'`` as a debug
+            intermediate. For a non-VS pipeline (raw/deskew/deskew+phase) there
+            is a single entry keyed by ``tracking_channel`` (the input channel
+            name). ``tracking_channel`` selects which entry the updater tracks.
         """
         import torch
 
@@ -250,18 +254,22 @@ class _LabelfreePreprocessor:
         # 2. Phase reconstruction
         if self._phase_settings is not None:
             volume_phase = self._reconstruct_phase(volume)
-            channels["phase"] = volume_phase
         else:
             volume_phase = volume
 
         # 3. Virtual staining
         if self._vs_config is not None:
-            vs_result = self._predict_vs(volume_phase)
-            channels.update(vs_result)
-
-        # No phase/VS channel -> emit the (deskewed) input volume itself.
-        if not channels:
-            channels["deskewed"] = volume
+            # VS emits one channel per vs target (e.g. 'nuclei', 'membrane');
+            # tracking_channel picks among them. Keep 'phase' as a debug-only
+            # intermediate.
+            if self._phase_settings is not None:
+                channels["phase"] = volume_phase
+            channels.update(self._predict_vs(volume_phase))
+        else:
+            # Non-VS: a single processed representation of the input channel
+            # (raw/deskewed/phase). Key it by tracking_channel (the input
+            # channel name) so the updater selects it directly.
+            channels[self._output_channel] = volume_phase
 
         self._log_gpu_memory()
         return channels
@@ -311,16 +319,16 @@ class _LabelfreePreprocessor:
     def _predict_vs(self, volume_phase: torch.Tensor) -> dict[str, torch.Tensor]:
         """Apply virtual staining via cytoland.
 
-        One output channel is produced per configured target channel (named
-        ``vs_<target_channel>``); the target channels and the sliding-window
-        step are read from the config in :meth:`_load_vs_model` (as biahub
-        does).
+        One output channel is produced per configured target channel, keyed by
+        its bare target-channel name (e.g. ``'nuclei'``, ``'membrane'``); the
+        target channels and the sliding-window step are read from the config in
+        :meth:`_load_vs_model` (as biahub does). ``tracking_channel`` selects
+        which one to track.
 
         Returns
         -------
         dict[str, torch.Tensor]
-            e.g. ``{'vs_nuclei': ..., 'vs_membrane': ...}`` ZYX tensors on
-            device.
+            e.g. ``{'nuclei': ..., 'membrane': ...}`` ZYX tensors on device.
         """
         import torch
 
@@ -339,10 +347,10 @@ class _LabelfreePreprocessor:
                 t_input, out_channel=len(self._vs_target_channels), step=self._vs_step
             )
 
-        # Output shape: (B, C_out, Z, Y, X), one channel per target channel.
+        # Output shape: (B, C_out, Z, Y, X), one channel per target channel,
+        # keyed by its bare target-channel name.
         result = {
-            f"vs_{name}": t_output[0, i].detach()
-            for i, name in enumerate(self._vs_target_channels)
+            name: t_output[0, i].detach() for i, name in enumerate(self._vs_target_channels)
         }
 
         logger.info("DynaTrack: VS prediction took %.1fs", _time.monotonic() - t0)

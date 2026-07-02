@@ -127,12 +127,13 @@ metadata:
         scan_step_um: 0.15
         keep_overhang: false
         average_n_slices: 3
-      # Which representation to use for shift estimation:
-      # 'deskewed' (deskew-only output, e.g. deskewed GFP), 'phase',
-      # 'vs_nuclei', 'vs_membrane'
-      tracking_channel: 'vs_nuclei'
-      # tracking_channel: 'deskewed'   # deskewed-GFP (fluorescence) tracking
-      # tracking_channel: 'phase'
+      # Channel to run shift estimation on. Without VS: an input channel name
+      # (tracks that channel's raw / deskewed / deskew+phase volume). With VS:
+      # a vs_config.target_channels name. 'phase', 'deskewed', and 'vs_*' are
+      # not allowed. The phase/VS cases are generally used with input_channel=BF.
+      tracking_channel: 'nuclei'
+      # tracking_channel: GFP    # deskew-only (fluorescence): the input channel
+      # tracking_channel: BF     # deskew+phase: the input channel
 
       # Waveorder phase reconstruction parameters, validated as a
       # waveorder.api.phase.Settings (PhaseSettings). DynaTrack always does
@@ -158,7 +159,7 @@ metadata:
       vs_config:
         # Output channels and sliding-window step are derived from the config
         # (as in biahub): one predicted channel per name in `target_channels`,
-        # emitted under `vs_<name>` (e.g. tracking_channel: 'vs_nuclei').
+        # emitted under that bare name (e.g. tracking_channel: 'nuclei').
         target_channels: ['nuclei', 'membrane']
         sliding_window_step: 1
         model:
