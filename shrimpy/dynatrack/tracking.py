@@ -11,18 +11,18 @@ import csv
 import logging
 import os
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import psutil
+
+from pydantic import BaseModel, ConfigDict
 
 from shrimpy.dynatrack.position_update import PositionCoordinates, PositionUpdater
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from typing import Any
 
     import torch
 
@@ -42,9 +42,16 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class DynaTrackConfig:
+class DynaTrackConfig(BaseModel):
     """Configuration for DynaTrack position tracking.
+
+    A validated pydantic model. Unknown keys are rejected (``extra="forbid"``)
+    so a mistyped setting fails fast. The nested ``deskew_config``,
+    ``phase_config``, and ``vs_config`` are kept as plain dicts here and
+    validated against their upstream schemas where they are consumed (see
+    :func:`shrimpy.dynatrack.preprocessing.build_preprocessor`), so this model
+    stays importable without the optional deskew/phase/VS dependencies.
+
 
     Parameters
     ----------
@@ -120,19 +127,28 @@ class DynaTrackConfig:
         Pipeline steps, e.g. ``['phase']`` or ``['phase', 'vs']``.
         Used by external factory functions to build the preprocessor callable.
     phase_config : dict[str, Any] | None
-        Optical parameters for phase reconstruction (waveorder).
+        Phase reconstruction parameters (``transfer_function`` and
+        ``apply_inverse``), validated at preprocessor-build time against
+        ``waveorder.api.phase.Settings`` (``PhaseSettings``). DynaTrack always
+        does 3-D phase on an in-memory array, so no ``input_channel_names`` or
+        ``reconstruction_dimension`` is needed.
     deskew_config : dict[str, Any] | None
-        Deskew parameters for light-sheet data (biahub). Keys:
-        ``ls_angle_deg``, ``px_to_scan_ratio``, ``keep_overhang``,
-        ``average_n_slices``.
+        Deskew parameters for light-sheet data, validated at preprocessor-build
+        time against ``biahub.settings.DeskewSettings`` (e.g. ``ls_angle_deg``,
+        ``pixel_size_um`` + ``scan_step_um`` or ``px_to_scan_ratio``,
+        ``keep_overhang``, ``average_n_slices``).
     vs_config : dict[str, Any] | None
-        Model and checkpoint config for virtual staining (cytoland).
+        Model and checkpoint config for virtual staining, validated against
+        cytoland's ``VSUNet`` (see
+        :meth:`shrimpy.dynatrack.preprocessing._LabelfreePreprocessor._load_vs_model`).
     shift_log_path : str | Path | None
         Path to a CSV file for incremental shift logging. Each computed
         shift is appended immediately after calculation. Typically set
         automatically by ``DynaTrack.from_metadata`` to
         ``<zarr_store>/dynatrack_log.csv``.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     scale_yx: float
     scale_z: float

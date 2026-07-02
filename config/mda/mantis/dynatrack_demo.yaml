@@ -134,7 +134,10 @@ metadata:
       # shift_estimation_channel: 'deskewed'   # deskewed-GFP (fluorescence) tracking
       # shift_estimation_channel: 'phase'
 
-      # Waveorder phase reconstruction parameters
+      # Waveorder phase reconstruction parameters, validated as a
+      # waveorder.api.phase.Settings (PhaseSettings). DynaTrack always does
+      # 3-D phase on an in-memory array, so no input_channel_names or
+      # reconstruction_dimension is needed.
       phase_config:
         transfer_function:
           wavelength_illumination: 0.450

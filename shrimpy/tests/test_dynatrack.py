@@ -185,6 +185,25 @@ class TestDynaTrackConfig:
         cfg = DynaTrackConfig(**meta)
         assert cfg.scale_yx == 0.075
 
+    def test_rejects_unknown_key(self):
+        """As a pydantic model, unknown keys (e.g. typos) are rejected."""
+        import pydantic
+
+        with pytest.raises(pydantic.ValidationError):
+            DynaTrackConfig(scale_yx=0.5, scale_z=2.0, scale_xy=0.1)
+
+    def test_requires_scale_fields(self):
+        """scale_yx / scale_z are required."""
+        import pydantic
+
+        with pytest.raises(pydantic.ValidationError):
+            DynaTrackConfig(scale_yx=0.5)
+
+    def test_coerces_shift_limits_lists_to_tuples(self):
+        """YAML lists for shift_limits are coerced to tuples by pydantic."""
+        cfg = DynaTrackConfig(scale_yx=1.0, scale_z=1.0, shift_limits={"z": [0.5, 2.0]})
+        assert cfg.shift_limits["z"] == (0.5, 2.0)
+
 
 # ---------------------------------------------------------------------------
 # DynaTrackUpdater._compute_shift tests

@@ -30,18 +30,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _resolve_deskew_params(config: dict[str, Any]) -> dict[str, Any]:
-    """Convert user-facing deskew config to biahub API parameters.
+def _settings_kwargs(func: Callable, settings: Any) -> dict[str, Any]:
+    """Return the fields of a pydantic *settings* model that *func* accepts.
 
-    Accepts ``pixel_size_um`` and ``scan_step_um`` and computes
-    ``px_to_scan_ratio = pixel_size_um / scan_step_um``.
+    The upstream settings models (biahub ``DeskewSettings``, waveorder transfer
+    function / apply-inverse settings) carry more fields than the low-level
+    ``biahub``/``waveorder`` functions take. Dumping the model and filtering to
+    the callable's signature keeps us from passing unexpected keyword arguments
+    when a settings schema gains a field the function does not consume.
     """
-    params = dict(config)
-    pixel_size_um = params.pop("pixel_size_um", None)
-    scan_step_um = params.pop("scan_step_um", None)
-    if pixel_size_um is not None and scan_step_um is not None:
-        params["px_to_scan_ratio"] = pixel_size_um / scan_step_um
-    return params
+    import inspect
+
+    accepted = set(inspect.signature(func).parameters)
+    return {k: v for k, v in settings.model_dump().items() if k in accepted}
 
 
 def _resolve_device() -> torch.device:
@@ -91,14 +92,26 @@ def build_preprocessor(
         )
         return None
 
+    # Validate the deskew/phase sub-configs against their upstream schemas.
+    deskew_settings = None
+    if "deskew" in pipeline and config.deskew_config:
+        from biahub.settings import DeskewSettings
+
+        deskew_settings = DeskewSettings(**config.deskew_config)
+
+    phase_settings = None
+    if "phase" in pipeline and config.phase_config:
+        from waveorder.api.phase import Settings as PhaseSettings
+
+        # DynaTrack always does 3-D phase on an in-memory array, so only the
+        # transfer_function / apply_inverse settings are needed (no
+        # input_channel_names or reconstruction_dimension).
+        phase_settings = PhaseSettings(**config.phase_config)
+
     preprocessor = _LabelfreePreprocessor(
         zyx_shape=zyx_shape,
-        deskew_config=(
-            _resolve_deskew_params(config.deskew_config)
-            if "deskew" in pipeline and config.deskew_config
-            else None
-        ),
-        phase_config=config.phase_config if "phase" in pipeline else None,
+        deskew_settings=deskew_settings,
+        phase_settings=phase_settings,
         vs_config=config.vs_config if "vs" in pipeline else None,
         output_channel=channel,
     )
@@ -118,14 +131,16 @@ class _LabelfreePreprocessor:
     def __init__(
         self,
         zyx_shape: tuple[int, int, int],
-        deskew_config: dict[str, Any] | None,
-        phase_config: dict[str, Any] | None,
+        deskew_settings: Any | None,
+        phase_settings: Any | None,
         vs_config: dict[str, Any] | None,
         output_channel: str,
     ) -> None:
         self._zyx_shape = zyx_shape
-        self._deskew_config = deskew_config
-        self._phase_config = phase_config
+        # Validated upstream settings models: biahub DeskewSettings and the
+        # waveorder phase settings (ReconstructionSettings.phase).
+        self._deskew_settings = deskew_settings
+        self._phase_settings = phase_settings
         self._vs_config = vs_config
         self._output_channel = output_channel
         self._device = None
@@ -146,12 +161,12 @@ class _LabelfreePreprocessor:
         self._device = _resolve_device()
 
         # If deskewing, downstream shape is deskewed + rotated (np.rot90 in _deskew).
-        if self._deskew_config is not None:
+        if self._deskew_settings is not None:
             from biahub.deskew import get_deskewed_data_shape
 
             deskewed_shape, _ = get_deskewed_data_shape(
                 raw_data_shape=self._zyx_shape,
-                **self._deskew_config,
+                **_settings_kwargs(get_deskewed_data_shape, self._deskew_settings),
             )
             logger.info(
                 "DynaTrack: deskew will reshape %s -> %s",
@@ -160,7 +175,7 @@ class _LabelfreePreprocessor:
             )
             self._zyx_shape = deskewed_shape
 
-        if self._phase_config is not None:
+        if self._phase_settings is not None:
             self._compute_transfer_function()
 
         if self._vs_config is not None:
@@ -179,8 +194,9 @@ class _LabelfreePreprocessor:
         logger.info("DynaTrack: computing transfer function...")
         t0 = _time.monotonic()
 
-        tf_params = dict(self._phase_config.get("transfer_function", {}))
-        tf_params.pop("zyx_shape", None)
+        tf_params = _settings_kwargs(
+            calculate_transfer_function, self._phase_settings.transfer_function
+        )
         tf_params["zyx_shape"] = self._zyx_shape
 
         # calculate_transfer_function runs on CPU internally
@@ -228,11 +244,11 @@ class _LabelfreePreprocessor:
         volume = torch.as_tensor(volume_bf, device=self._device, dtype=torch.float32)
 
         # 1. Deskew
-        if self._deskew_config is not None:
+        if self._deskew_settings is not None:
             volume = self._deskew(volume)
 
         # 2. Phase reconstruction
-        if self._phase_config is not None:
+        if self._phase_settings is not None:
             volume_phase = self._reconstruct_phase(volume)
             channels["phase"] = volume_phase
         else:
@@ -257,7 +273,9 @@ class _LabelfreePreprocessor:
         logger.info("DynaTrack: deskewing volume %s...", tuple(volume.shape))
         t0 = _time.monotonic()
 
-        result = fast_deskew_zyx(raw_data=volume, **self._deskew_config)
+        result = fast_deskew_zyx(
+            raw_data=volume, **_settings_kwargs(fast_deskew_zyx, self._deskew_settings)
+        )
 
         logger.info(
             "DynaTrack: deskew took %.1fs (%s -> %s)",
@@ -278,8 +296,10 @@ class _LabelfreePreprocessor:
         logger.info("DynaTrack: reconstructing phase on %s...", self._device)
         t0 = _time.monotonic()
 
-        inverse_config = dict(self._phase_config.get("apply_inverse", {}))
-        z_padding = self._phase_config.get("transfer_function", {}).get("z_padding", 0)
+        inverse_config = _settings_kwargs(
+            apply_inverse_transfer_function, self._phase_settings.apply_inverse
+        )
+        z_padding = self._phase_settings.transfer_function.z_padding
 
         t_phase = apply_inverse_transfer_function(
             volume_bf, *self._transfer_function, z_padding=z_padding, **inverse_config
