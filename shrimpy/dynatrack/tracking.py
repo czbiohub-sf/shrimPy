@@ -123,12 +123,15 @@ class DynaTrackConfig(BaseModel):
     stays importable without the optional deskew/phase/VS dependencies.
 
 
+    The XY pixel size and Z step used to convert pixel shifts to microns are
+    not config fields: they are derived at acquisition start from
+    ``core.getPixelSizeUm()`` and the sequence's ``z_plan.step`` and injected
+    where needed (see :meth:`shrimpy.dynatrack.manager.DynaTrack.from_metadata`),
+    which also feeds ``deskew``/``phase`` their pixel/step parameters. This
+    keeps a single source of truth and avoids config drift.
+
     Parameters
     ----------
-    scale_yx : float
-        Pixel size in microns per pixel for Y and X axes.
-    scale_z : float
-        Step size in microns for the Z axis.
     enabled : bool
         Master switch read from acquisition metadata; engines only build a
         :class:`~shrimpy.dynatrack.manager.DynaTrack` coordinator when True.
@@ -212,8 +215,6 @@ class DynaTrackConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    scale_yx: float
-    scale_z: float
     enabled: bool = True
     input_channel: str
     z_device: str | None = None
@@ -942,8 +943,16 @@ class DynaTrackUpdater(PositionUpdater):
         self,
         config: DynaTrackConfig,
         preprocessor: Callable[[np.ndarray], dict[str, torch.Tensor]] | None = None,
+        scale_yx: float = 1.0,
+        scale_z: float = 1.0,
     ) -> None:
         self._config = config
+        # XY pixel size and Z step (microns) used to convert pixel shifts to
+        # microns in _compute_shift. In production these are derived from the
+        # core pixel size / z_plan step and supplied by DynaTrack; the 1.0
+        # defaults are a convenience for direct construction (e.g. tests).
+        self._scale_yx = scale_yx
+        self._scale_z = scale_z
         if config.reference_update_interval and config.tracking_method in _ROI_CENTER_METHODS:
             logger.warning(
                 "DynaTrack: reference_update_interval=%d is ignored for referenceless "
@@ -1274,9 +1283,9 @@ class DynaTrackUpdater(PositionUpdater):
         # 2. Convert pixels to microns
         shifts_zyx_um = np.array(
             [
-                shifts_zyx_px[0] * cfg.scale_z,
-                shifts_zyx_px[1] * cfg.scale_yx,
-                shifts_zyx_px[2] * cfg.scale_yx,
+                shifts_zyx_px[0] * self._scale_z,
+                shifts_zyx_px[1] * self._scale_yx,
+                shifts_zyx_px[2] * self._scale_yx,
             ],
             dtype=float,
         )

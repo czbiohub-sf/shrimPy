@@ -73,12 +73,18 @@ class DynaTrack:
         sequence: MDASequence,
         data_path: Path | None = None,
         updater: PositionUpdater | None = None,
+        pixel_size_um: float | None = None,
+        z_step_um: float | None = None,
     ) -> None:
         self.config = config
         self._store = PositionStore()
         self._store.initialize_from_sequence(sequence, z_device=config.z_device)
         self._expected_slices = max(sequence.sizes.get("z", 1), 1)
         self._frames: dict[tuple[int, int], list[np.ndarray]] = {}
+        # XY pixel size and Z step (microns) used to convert pixel shifts to
+        # microns; derived from the core / z_plan by from_metadata.
+        self._pixel_size_um = pixel_size_um
+        self._z_step_um = z_step_um
         # Resolve the input channel name to its index in the sequence (used to
         # filter frames in on_frame_ready).
         self._input_channel_index = self._resolve_input_channel(config.input_channel, sequence)
@@ -94,9 +100,10 @@ class DynaTrack:
 
         self._use_worker = updater is None
         if updater is None:
-            # Also used in worker mode: the manager consults the updater's
-            # wants_reference_refresh (pure config logic) even though the
-            # actual tracking runs in the worker subprocess.
+            # Consultation-only in worker mode: the manager reads this updater's
+            # wants_reference_refresh (pure config logic); the actual tracking
+            # (with the real scales) runs in the worker subprocess, so scale is
+            # not needed here.
             updater = DynaTrackUpdater(config=config)
         if isinstance(updater, DynaTrackUpdater):
             updater._debug_zarr_path = self._debug_zarr_path
@@ -166,8 +173,17 @@ class DynaTrack:
         meta: dict | None,
         sequence: MDASequence,
         data_path: Path | None = None,
+        pixel_size_um: float | None = None,
     ) -> DynaTrack | None:
         """Build a DynaTrack coordinator from acquisition metadata.
+
+        The XY pixel size and Z step are the single source of truth for all
+        scale parameters: ``pixel_size_um`` (from ``core.getPixelSizeUm()``)
+        and the sequence's ``z_plan.step``. They are injected into the
+        ``deskew`` (``pixel_size_um`` / ``scan_step_um``) and ``phase``
+        (``transfer_function.yx_pixel_size`` / ``z_pixel_size``) sub-configs
+        and used to convert pixel shifts to microns, so those values are never
+        specified in the config (avoiding drift).
 
         Parameters
         ----------
@@ -176,27 +192,74 @@ class DynaTrack:
             ``sequence.metadata['mantis']['dynatrack']``), mapping directly
             onto :class:`DynaTrackConfig` fields.
         sequence : MDASequence
-            The acquisition sequence.
+            The acquisition sequence; ``z_plan.step`` provides the Z step.
         data_path : Path | None
             Acquisition output directory; when set, the shift log is written
             to ``<data_path>/dynatrack_log.csv`` (unless ``shift_log_path``
             is configured explicitly).
+        pixel_size_um : float | None
+            XY pixel size in microns, from ``core.getPixelSizeUm()``.
 
         Returns
         -------
         DynaTrack | None
             ``None`` when tracking is disabled or the sequence has no stage
             positions.
+
+        Raises
+        ------
+        ValueError
+            If ``pixel_size_um`` is unset/zero (pixel size not calibrated) or
+            the sequence's z_plan has no step.
         """
         if not meta or not meta.get("enabled", False):
             return None
         if not sequence.stage_positions:
             return None
-        meta = dict(meta)
+        if not pixel_size_um:
+            raise ValueError(
+                "DynaTrack: pixel size is not set (core.getPixelSizeUm() returned "
+                "0 or None); calibrate the pixel size in Micro-Manager."
+            )
+        z_step_um = getattr(sequence.z_plan, "step", None) if sequence.z_plan else None
+        if not z_step_um:
+            raise ValueError(
+                "DynaTrack: the sequence z_plan has no step; a stepped z_plan is "
+                "required to derive the Z scale."
+            )
+        meta = cls._inject_scales(meta, pixel_size_um, z_step_um)
         if data_path is not None:
             meta.setdefault("shift_log_path", str(Path(data_path) / "dynatrack_log.csv"))
         config = DynaTrackConfig(**meta)
-        return cls(config=config, sequence=sequence, data_path=data_path)
+        return cls(
+            config=config,
+            sequence=sequence,
+            data_path=data_path,
+            pixel_size_um=pixel_size_um,
+            z_step_um=z_step_um,
+        )
+
+    @staticmethod
+    def _inject_scales(meta: dict, pixel_size_um: float, z_step_um: float) -> dict:
+        """Return a copy of ``meta`` with the pixel size / z step injected.
+
+        Feeds the ``deskew`` and ``phase`` sub-configs their pixel/step
+        parameters from the single source of truth, so they are not specified
+        (and cannot drift) in the config.
+        """
+        import copy
+
+        meta = copy.deepcopy(meta)
+        deskew = meta.get("deskew")
+        if deskew is not None:
+            deskew["pixel_size_um"] = pixel_size_um
+            deskew["scan_step_um"] = z_step_um
+        phase = meta.get("phase")
+        if phase is not None:
+            tf = phase.setdefault("transfer_function", {})
+            tf["yx_pixel_size"] = pixel_size_um
+            tf["z_pixel_size"] = z_step_um
+        return meta
 
     @property
     def position_store(self) -> PositionStore:
@@ -242,6 +305,8 @@ class DynaTrack:
             worker = DynaTrackWorker(
                 config=self.config,
                 zyx_shape=zyx_shape,
+                scale_yx=self._pixel_size_um,
+                scale_z=self._z_step_um,
                 debug_zarr_path=self._debug_zarr_path,
                 debug_position_names=self._debug_position_names,
                 log_file_path=log_file_path,

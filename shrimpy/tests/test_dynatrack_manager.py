@@ -41,6 +41,8 @@ def _sequence(
 ) -> MDASequence:
     return MDASequence(
         channels=[{"config": c, "group": "Channel"} for c in channels],
+        # z_plan.step is the single source of truth for the Z scale (from_metadata).
+        z_plan={"top": 1.0, "bottom": -1.0, "step": 0.5},
         stage_positions=[
             {"x": float(i * 100), "y": float(i * 100 + 100), "z": float(i + 5)}
             for i in range(n_positions)
@@ -56,9 +58,7 @@ def _make_dynatrack(
 ) -> DynaTrack:
     """Build an in-process DynaTrack (no worker subprocess) and start it."""
     # Raw (non-VS) tracking: tracking_channel must be a valid input channel.
-    config = DynaTrackConfig(
-        scale_yx=0.1, scale_z=0.1, input_channel=input_channel, tracking_channel="ch0"
-    )
+    config = DynaTrackConfig(input_channel=input_channel, tracking_channel="ch0")
     dt = DynaTrack(config, sequence, updater=updater)
     dt._expected_slices = expected_slices
     dt.start()
@@ -72,16 +72,16 @@ def _make_dynatrack(
 
 class TestFromMetadata:
     def test_none_when_meta_absent(self):
-        assert DynaTrack.from_metadata(None, _sequence()) is None
-        assert DynaTrack.from_metadata({}, _sequence()) is None
+        assert DynaTrack.from_metadata(None, _sequence(), pixel_size_um=0.1) is None
+        assert DynaTrack.from_metadata({}, _sequence(), pixel_size_um=0.1) is None
 
     def test_none_when_disabled(self):
-        meta = {"enabled": False, "scale_yx": 0.1, "scale_z": 0.1}
-        assert DynaTrack.from_metadata(meta, _sequence()) is None
+        meta = {"enabled": False}
+        assert DynaTrack.from_metadata(meta, _sequence(), pixel_size_um=0.1) is None
 
     def test_none_without_stage_positions(self):
-        meta = {"enabled": True, "scale_yx": 0.1, "scale_z": 0.1}
-        assert DynaTrack.from_metadata(meta, MDASequence()) is None
+        meta = {"enabled": True}
+        assert DynaTrack.from_metadata(meta, MDASequence(), pixel_size_um=0.1) is None
 
     def test_builds_config_from_metadata(self):
         meta = {
@@ -89,63 +89,79 @@ class TestFromMetadata:
             "input_channel": "ch1",
             "tracking_channel": "ch1",
             "z_device": "ObjectiveZ",
-            "scale_yx": 0.075,
-            "scale_z": 0.174,
             "tracking_interval": 2,
             "shift": {"dampening": (0.5, 0.8, 0.8)},
         }
-        dt = DynaTrack.from_metadata(meta, _sequence(2))
+        dt = DynaTrack.from_metadata(meta, _sequence(2), pixel_size_um=0.075)
         assert dt is not None
         assert dt.num_positions == 2
         assert dt.config.input_channel == "ch1"
         assert dt._input_channel_index == 1
         assert dt.config.z_device == "ObjectiveZ"
-        assert dt.config.scale_yx == 0.075
+        # scales are derived, not config fields
+        assert dt._pixel_size_um == 0.075
+        assert dt._z_step_um == 0.5  # _sequence z_plan step
         assert dt.config.tracking_interval == 2
         assert dt.config.shift.dampening == (0.5, 0.8, 0.8)
 
-    def test_sets_shift_log_path_from_data_path(self, tmp_path):
+    def test_derived_scales_injected_into_deskew_and_phase(self):
         meta = {
             "enabled": True,
-            "scale_yx": 0.1,
-            "scale_z": 0.1,
             "input_channel": "ch0",
             "tracking_channel": "ch0",
+            "preprocessing": ["deskew", "phase"],
+            "deskew": {"ls_angle_deg": 30.0, "keep_overhang": False},
+            "phase": {"transfer_function": {"wavelength_illumination": 0.45}},
         }
-        dt = DynaTrack.from_metadata(meta, _sequence(), data_path=tmp_path)
+        dt = DynaTrack.from_metadata(meta, _sequence(), pixel_size_um=0.11)
+        assert dt.config.deskew["pixel_size_um"] == 0.11
+        assert dt.config.deskew["scan_step_um"] == 0.5  # z_plan step
+        tf = dt.config.phase["transfer_function"]
+        assert tf["yx_pixel_size"] == 0.11
+        assert tf["z_pixel_size"] == 0.5
+
+    def test_raises_when_pixel_size_unset(self):
+        meta = {"enabled": True, "input_channel": "ch0", "tracking_channel": "ch0"}
+        with pytest.raises(ValueError, match="pixel size is not set"):
+            DynaTrack.from_metadata(meta, _sequence(), pixel_size_um=0)
+
+    def test_raises_when_z_plan_has_no_step(self):
+        meta = {"enabled": True, "input_channel": "ch0", "tracking_channel": "ch0"}
+        seq = MDASequence(
+            channels=[{"config": "ch0", "group": "Channel"}],
+            stage_positions=[{"x": 0, "y": 0, "z": 0}],
+        )  # no z_plan
+        with pytest.raises(ValueError, match="z_plan has no step"):
+            DynaTrack.from_metadata(meta, seq, pixel_size_um=0.1)
+
+    def test_sets_shift_log_path_from_data_path(self, tmp_path):
+        meta = {"enabled": True, "input_channel": "ch0", "tracking_channel": "ch0"}
+        dt = DynaTrack.from_metadata(meta, _sequence(), data_path=tmp_path, pixel_size_um=0.1)
         assert dt.config.shift_log_path == str(tmp_path / "dynatrack_log.csv")
 
     def test_explicit_shift_log_path_wins(self, tmp_path):
         meta = {
             "enabled": True,
-            "scale_yx": 0.1,
-            "scale_z": 0.1,
             "input_channel": "ch0",
             "tracking_channel": "ch0",
             "shift_log_path": "/custom/log.csv",
         }
-        dt = DynaTrack.from_metadata(meta, _sequence(), data_path=tmp_path)
+        dt = DynaTrack.from_metadata(meta, _sequence(), data_path=tmp_path, pixel_size_um=0.1)
         assert dt.config.shift_log_path == "/custom/log.csv"
 
     def test_unknown_input_channel_raises(self):
         """input_channel must match a channel in the sequence."""
-        meta = {
-            "enabled": True,
-            "scale_yx": 0.1,
-            "scale_z": 0.1,
-            "tracking_channel": "ch0",
-            "input_channel": "NOPE",
-        }
+        meta = {"enabled": True, "tracking_channel": "ch0", "input_channel": "NOPE"}
         with pytest.raises(ValueError, match="input_channel 'NOPE'"):
-            DynaTrack.from_metadata(meta, _sequence())
+            DynaTrack.from_metadata(meta, _sequence(), pixel_size_um=0.1)
 
     def test_input_channel_is_required(self):
         """input_channel has no default; omitting it is a pydantic error."""
         import pydantic
 
-        meta = {"enabled": True, "scale_yx": 0.1, "scale_z": 0.1, "tracking_channel": "ch0"}
+        meta = {"enabled": True, "tracking_channel": "ch0"}
         with pytest.raises(pydantic.ValidationError):
-            DynaTrack.from_metadata(meta, _sequence())
+            DynaTrack.from_metadata(meta, _sequence(), pixel_size_um=0.1)
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +172,7 @@ class TestFromMetadata:
 class TestTrackingChannelValidation:
     def _build(self, **cfg_kwargs):
         cfg_kwargs.setdefault("input_channel", "BF")
-        config = DynaTrackConfig(scale_yx=0.1, scale_z=0.1, **cfg_kwargs)
+        config = DynaTrackConfig(**cfg_kwargs)
         return DynaTrack(config, _sequence(channels=("BF", "GFP")), updater=PositionUpdater())
 
     @pytest.mark.parametrize("bad", ["phase", "deskewed", "vs_nuclei", "vs_membrane"])
@@ -189,7 +205,7 @@ class TestTrackingChannelValidation:
         import pydantic
 
         with pytest.raises(pydantic.ValidationError):
-            DynaTrackConfig(scale_yx=0.1, scale_z=0.1)
+            DynaTrackConfig(input_channel="BF")
 
 
 # ---------------------------------------------------------------------------
@@ -308,13 +324,12 @@ class TestMantisEngineWiring:
     def test_setup_sequence_initializes_dynatrack(self, engine, mock_core):
         seq = MDASequence(
             channels=[{"config": "BF", "group": "Channel"}],
+            z_plan={"top": 1.0, "bottom": -1.0, "step": 0.5},
             stage_positions=[{"x": 10, "y": 20, "z": 5}, {"x": 30, "y": 40, "z": 15}],
             metadata={
                 "mantis": {
                     "dynatrack": {
                         "enabled": True,
-                        "scale_yx": 0.1,
-                        "scale_z": 0.1,
                         "input_channel": "BF",
                         "tracking_channel": "BF",
                     }
@@ -522,10 +537,8 @@ class TestDynaTrackIntegration:
             metadata={"mantis": mantis_metadata},
         )
 
-        def _fake_from_metadata(meta, sequence, data_path=None):
-            config = DynaTrackConfig(
-                scale_yx=0.1, scale_z=0.1, input_channel="DAPI", tracking_channel="DAPI"
-            )
+        def _fake_from_metadata(meta, sequence, data_path=None, pixel_size_um=None):
+            config = DynaTrackConfig(input_channel="DAPI", tracking_channel="DAPI")
             return DynaTrack(config, sequence, updater=ShiftUpdater())
 
         xy_positions: list[tuple[int, int, float, float]] = []

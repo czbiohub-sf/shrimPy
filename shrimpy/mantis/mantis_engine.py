@@ -140,18 +140,23 @@ class MantisEngine(MDAEngine):
         self._xy_stage_device = core.getXYStageDevice()
         logger.debug(f"XY stage device: {self._xy_stage_device}")
 
-        # Setup DynaTrack position tracking
+        # Setup DynaTrack position tracking. The XY pixel size (from the core)
+        # and the sequence z_plan step are the single source of truth for all
+        # scale parameters; DynaTrack derives and injects them.
         self._dynatrack = DynaTrack.from_metadata(
-            microscope_meta.get("dynatrack"), sequence, data_path=self._data_path
+            microscope_meta.get("dynatrack"),
+            sequence,
+            data_path=self._data_path,
+            pixel_size_um=core.getPixelSizeUm(),
         )
         if self._dynatrack is not None:
             self.mmcore.mda.events.frameReady.connect(self._dynatrack.on_frame_ready)
             cfg = self._dynatrack.config
             logger.info(
                 f"DynaTrack enabled with {self._dynatrack.num_positions} positions: "
-                f"scale_yx={cfg.scale_yx}, scale_z={cfg.scale_z}, "
-                f"interval={cfg.tracking_interval}, "
-                f"channel={cfg.tracking_channel}"
+                f"input_channel={cfg.input_channel}, "
+                f"tracking_channel={cfg.tracking_channel}, "
+                f"interval={cfg.tracking_interval}"
             )
 
         logger.info("Mantis hardware setup completed successfully")

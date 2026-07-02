@@ -36,12 +36,16 @@ class DynaTrackWorker:
         self,
         config: DynaTrackConfig,
         zyx_shape: tuple[int, int, int],
+        scale_yx: float,
+        scale_z: float,
         debug_zarr_path: Path | None = None,
         debug_position_names: dict[int, str] | None = None,
         log_file_path: Path | None = None,
     ) -> None:
         self._config = config
         self._zyx_shape = zyx_shape
+        self._scale_yx = scale_yx
+        self._scale_z = scale_z
         self._debug_zarr_path = debug_zarr_path
         self._debug_position_names = debug_position_names or {}
         self._log_file_path = log_file_path
@@ -60,6 +64,8 @@ class DynaTrackWorker:
             args=(
                 self._config,
                 self._zyx_shape,
+                self._scale_yx,
+                self._scale_z,
                 self._input_queue,
                 self._output_queue,
                 self._debug_zarr_path,
@@ -140,6 +146,8 @@ class DynaTrackWorker:
 def _worker_loop(
     config: DynaTrackConfig,
     zyx_shape: tuple[int, int, int],
+    scale_yx: float,
+    scale_z: float,
     input_queue: mp.Queue,
     output_queue: mp.Queue,
     debug_zarr_path: Path | None = None,
@@ -178,7 +186,9 @@ def _worker_loop(
         if config.preprocessing:
             preprocessor = build_preprocessor(config, zyx_shape)
 
-        updater = DynaTrackUpdater(config=config, preprocessor=preprocessor)
+        updater = DynaTrackUpdater(
+            config=config, preprocessor=preprocessor, scale_yx=scale_yx, scale_z=scale_z
+        )
         if debug_zarr_path:
             updater._debug_zarr_path = debug_zarr_path
             updater._debug_position_names = debug_position_names or {}

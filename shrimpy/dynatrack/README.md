@@ -30,10 +30,12 @@ The acquisition proceeds as a normal multi-dimensional acquisition (timepoints
 3. **Estimate shift.** The chosen [tracking method](#tracking-methods) computes
    a translational offset (Z, Y, X, in pixels) between the current stack and a
    target — either a stored reference stack or the ROI centre.
-4. **Convert to stage microns.** Pixel shifts are scaled to microns
-   (`scale_yx`, `scale_z`), then mapped from image axes to stage axes via
-   `image_to_stage_matrix_xyz` (a per-microscope rotation/flip). Optional
-   `shift.limits` (deadband + clip) and `shift.dampening` tame noise and overshoot.
+4. **Convert to stage microns.** Pixel shifts are scaled to microns using the
+   XY pixel size (`core.getPixelSizeUm()`) and Z step (the sequence's
+   `z_plan.step`) — a single source of truth, not config fields — then mapped
+   from image axes to stage axes via `image_to_stage_matrix_xyz` (a
+   per-microscope rotation/flip). Optional `shift.limits` (deadband + clip) and
+   `shift.dampening` tame noise and overshoot.
 5. **Correct the position.** The stage coordinates the stack was acquired at are
    the baseline; the measured drift is *subtracted* from them (the stage moves
    opposite to the drift to re-centre) and written back to the position store.
@@ -101,15 +103,18 @@ DynaTrack is configured under the microscope's metadata section — e.g.
 [`DynaTrackConfig`](tracking.py) fields. `enabled`, `input_channel`, and
 `z_device` sit alongside the tracking parameters:
 
+The XY pixel size and Z step are **not** config fields — they are derived at
+runtime from `core.getPixelSizeUm()` and `z_plan.step` (single source of truth)
+and injected into `deskew` / `phase` and the px→µm conversion.
+
 ```yaml
 metadata:
   mantis:
     dynatrack:
       enabled: true
-      input_channel: BF        # acquisition channel name fed to the tracker (None = all)
+      input_channel: BF        # required; acquisition channel name fed to the tracker
       z_device: ObjectiveZ     # Z written to this device's Position property
-      scale_yx: 0.1494
-      scale_z: 0.174
+      tracking_channel: BF     # required; channel the shift is estimated on
       tracking_method: pcc
       tracking_interval: 1
       # ... preprocessing, deskew, phase, virtual_staining, etc.

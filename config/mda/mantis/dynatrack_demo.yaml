@@ -155,28 +155,25 @@ metadata:
       # `Position` property instead of the event's z_pos (which usually drives
       # the fast scan piezo). Set null to correct via z_pos.
       z_device: ObjectiveZ
-      # Voxel size of the *tracked* volume, used to convert pixel shifts to
-      # microns. Match these to the representation tracking runs on (e.g. the
-      # deskewed voxel size when preprocessing includes 'deskew').
-      scale_yx: 0.1494   # XY pixel size, um/px
-      scale_z: 0.174     # Z step, um
 
+      # NOTE: the XY pixel size and Z step are NOT set here. They are derived at
+      # runtime from core.getPixelSizeUm() and z_plan.step (single source of
+      # truth) and injected into deskew (pixel_size_um / scan_step_um) and phase
+      # (transfer_function.yx_pixel_size / z_pixel_size), and used to convert
+      # pixel shifts to microns. Setting them here would be config drift.
       deskew:
         ls_angle_deg: 30.0
-        pixel_size_um: 0.1133
-        scan_step_um: 0.15
         keep_overhang: false
         average_n_slices: 3
 
       # Waveorder phase reconstruction parameters, validated as a
       # waveorder.api.phase.Settings (PhaseSettings). DynaTrack always does
       # 3-D phase on an in-memory array, so no input_channel_names or
-      # reconstruction_dimension is needed.
+      # reconstruction_dimension is needed. yx_pixel_size / z_pixel_size are
+      # injected from the core pixel size and z_plan.step (see the note above).
       phase:
         transfer_function:
           wavelength_illumination: 0.450
-          yx_pixel_size: 0.1494
-          z_pixel_size: 0.174
           z_padding: 5
           index_of_refraction_media: 1.4
           numerical_aperture_detection: 1.35
