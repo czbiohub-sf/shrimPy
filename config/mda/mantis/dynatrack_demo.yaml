@@ -124,7 +124,7 @@ metadata:
       image_to_stage_matrix_xyz:
         - [0.0, 1.0, 0.0]
         - [-1.0, 0.0, 0.0]
-        - [0.0, 0.0, 1.0]
+        - [0.0, 0.0, -1.0]
       z_device: ObjectiveZ
       scale_yx: 0.1494
       scale_z: 0.174
