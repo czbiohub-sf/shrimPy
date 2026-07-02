@@ -431,7 +431,11 @@ class TestDynaTrackIntegration:
         # Disable autofocus: demo-PFS fails ~50% of the time, which would
         # randomly drop frames and make the per-(t, p) assertions below flaky.
         mantis_metadata["autofocus"]["enabled"] = False
+        # Include a channel so events carry a c-axis: on_frame_ready buffers the
+        # configured update_channel (0), which never matches on a channel-less
+        # sequence. Mirrors a real acquisition, which always has channels.
         seq = MDASequence(
+            channels=[{"config": "DAPI", "group": "Channel", "exposure": 1.0}],
             stage_positions=[{"x": 100, "y": 200, "z": 50}, {"x": 300, "y": 400, "z": 60}],
             time_plan={"interval": 0, "loops": 3},
             metadata={"mantis": mantis_metadata},
