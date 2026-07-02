@@ -18,7 +18,8 @@ import numpy as np
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from shrimpy.mantis.dynatrack import DynaTrackConfig, PositionCoordinates
+    from shrimpy.dynatrack.position_update import PositionCoordinates
+    from shrimpy.dynatrack.tracking import DynaTrackConfig
 
 logger = logging.getLogger(__name__)
 
@@ -165,11 +166,11 @@ def _worker_loop(
     stream_handler.setFormatter(fmt)
     shrimpy_logger.addHandler(stream_handler)
 
-    log = logging.getLogger("shrimpy.mantis.dynatrack_worker")
+    log = logging.getLogger("shrimpy.dynatrack.worker")
 
     try:
-        from shrimpy.mantis.dynatrack import DynaTrackUpdater
-        from shrimpy.mantis.dynatrack_preprocessing import build_preprocessor
+        from shrimpy.dynatrack.preprocessing import build_preprocessor
+        from shrimpy.dynatrack.tracking import DynaTrackUpdater
 
         log.info("DynaTrack worker: initializing preprocessor for shape %s...", zyx_shape)
 
@@ -205,7 +206,7 @@ def _worker_loop(
             p_idx = msg["position_index"]
             px, py, pz = msg["position"]
 
-            from shrimpy.mantis.position_update import PositionCoordinates
+            from shrimpy.dynatrack.position_update import PositionCoordinates
 
             position = PositionCoordinates(x=px, y=py, z=pz)
             data = msg["data"]

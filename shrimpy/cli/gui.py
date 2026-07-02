@@ -48,7 +48,7 @@ def gui(mm_config: Path | None, unicore: bool):
 
     # Connect ReplayCamera to the Z stage if present
     if unicore and mm_config:
-        from shrimpy.mantis.replay_camera import ReplayCamera
+        from shrimpy.replay_camera import ReplayCamera
 
         core = win.mmcore
         cam_label = core.getCameraDevice()

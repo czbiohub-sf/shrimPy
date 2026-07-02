@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import psutil
 
-from shrimpy.mantis.position_update import PositionCoordinates, PositionUpdater
+from shrimpy.dynatrack.position_update import PositionCoordinates, PositionUpdater
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -52,6 +52,16 @@ class DynaTrackConfig:
         Pixel size in microns per pixel for Y and X axes.
     scale_z : float
         Step size in microns for the Z axis.
+    enabled : bool
+        Master switch read from acquisition metadata; engines only build a
+        :class:`~shrimpy.dynatrack.manager.DynaTrack` coordinator when True.
+    update_channel : int | None
+        Channel index whose frames are fed to the tracker (``None`` = all
+        channels).
+    z_device : str | None
+        Device name for Z corrections (e.g. ``"ObjectiveZ"``). When set, Z
+        is written to that device's ``Position`` property instead of the
+        event's ``z_pos`` (which typically drives the fast scanning stage).
     maximum_shift : float
         Maximum translation normalised by axis size for FFT padding.
     dampening : tuple[float, float, float] | None
@@ -116,15 +126,19 @@ class DynaTrackConfig:
         ``ls_angle_deg``, ``px_to_scan_ratio``, ``keep_overhang``,
         ``average_n_slices``.
     vs_config : dict[str, Any] | None
-        Model and checkpoint config for virtual staining (viscy).
+        Model and checkpoint config for virtual staining (cytoland).
     shift_log_path : str | Path | None
         Path to a CSV file for incremental shift logging. Each computed
         shift is appended immediately after calculation. Typically set
-        automatically by MantisEngine to ``<zarr_store>/dynatrack_log.csv``.
+        automatically by ``DynaTrack.from_metadata`` to
+        ``<zarr_store>/dynatrack_log.csv``.
     """
 
     scale_yx: float
     scale_z: float
+    enabled: bool = True
+    update_channel: int | None = 0
+    z_device: str | None = None
     maximum_shift: float = 1.0
     dampening: tuple[float, float, float] | None = None
     shift_limits: dict[str, tuple[float, float]] | None = None
@@ -870,10 +884,10 @@ class DynaTrackUpdater(PositionUpdater):
         self._shift_log_path: Path | None = (
             Path(config.shift_log_path) if config.shift_log_path else None
         )
-        # Debug HCS zarr store for preprocessed stacks (set by MantisEngine)
+        # Debug HCS zarr store for preprocessed stacks (set by DynaTrack)
         self._debug_zarr_path: Path | None = None
         self._debug_store = None
-        self._debug_position_names: dict[int, str] = {}  # set by MantisEngine
+        self._debug_position_names: dict[int, str] = {}  # set by DynaTrack
 
     @property
     def config(self) -> DynaTrackConfig:

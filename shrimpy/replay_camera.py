@@ -18,7 +18,7 @@ Usage (config file)
 -------------------
 ::
 
-    # py pyDevice,Camera,shrimpy.mantis.replay_camera,ReplayCamera
+    # py pyDevice,Camera,shrimpy.replay_camera,ReplayCamera
     # py Property,Camera,DataPath,/path/to/dataset.zarr/0/2/003
     Property, Core, Initialize, 1
     Property, Core, Camera, Camera
@@ -28,7 +28,7 @@ Usage (programmatic)
 ::
 
     from pymmcore_plus.experimental.unicore.core._unicore import UniMMCore
-    from shrimpy.mantis.replay_camera import ReplayCamera
+    from shrimpy.replay_camera import ReplayCamera
 
     core = UniMMCore()
     camera = ReplayCamera()

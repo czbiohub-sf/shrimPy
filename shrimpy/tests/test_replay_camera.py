@@ -15,7 +15,7 @@ from iohub.ngff import open_ome_zarr
 from pymmcore_plus.experimental.unicore.core._unicore import UniMMCore
 from useq import MDAEvent
 
-from shrimpy.mantis.replay_camera import ReplayCamera
+from shrimpy.replay_camera import ReplayCamera
 
 # ---------------------------------------------------------------------------
 # Dataset constants

@@ -1,3 +1,11 @@
+"""Position-update infrastructure backing DynaTrack.
+
+Internal to the :mod:`shrimpy.dynatrack` package: engines interact with the
+:class:`~shrimpy.dynatrack.manager.DynaTrack` coordinator instead. The
+:class:`PositionUpdater` base class is the extension point for custom
+tracking algorithms.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -101,15 +109,6 @@ class PositionStore:
             return len(self._positions)
 
 
-@dataclass
-class PositionUpdateConfig:
-    """Configuration for position updating, read from sequence metadata."""
-
-    enabled: bool = False
-    update_channel: int | None = 0  # channel index to cache; None = all channels
-    z_device: str | None = None  # device name for Z updates (e.g. "ObjectiveZ")
-
-
 class PositionUpdater:
     """Base class for position updaters.
 
@@ -177,13 +176,13 @@ class PositionUpdateManager:
 
     def __init__(
         self,
-        config: PositionUpdateConfig,
         position_store: PositionStore,
         updater: PositionUpdater | None = None,
+        z_device: str | None = None,
     ) -> None:
-        self.config = config
         self.position_store = position_store
         self._updater = updater or PositionUpdater()
+        self._z_device = z_device
         self._executor: ThreadPoolExecutor | None = None
         self._pending_future: Future | None = None
         self._worker = None  # DynaTrackWorker for subprocess mode
@@ -228,7 +227,7 @@ class PositionUpdateManager:
         if coords.y is not None:
             update["y_pos"] = coords.y
 
-        z_device = self.config.z_device
+        z_device = self._z_device
         if coords.z is not None:
             if z_device:
                 # Write Z to device property instead of z_pos
@@ -256,17 +255,22 @@ class PositionUpdateManager:
         )
         return event.model_copy(update=update)
 
-    def start(self) -> None:
-        """Initialize the executor. Called during setup_sequence."""
-        if self.config.enabled:
-            if self._worker is not None:
-                # Worker process mode — start the subprocess
-                self._worker.start()
-                # Drain any pending results in a background thread
-                self._executor = ThreadPoolExecutor(max_workers=1)
-            else:
-                self._executor = ThreadPoolExecutor(max_workers=1)
-            self._pending_future = None
+    def start(self, worker=None) -> None:
+        """Initialize the executor and optionally a worker subprocess.
+
+        Parameters
+        ----------
+        worker : DynaTrackWorker | None
+            When provided, updates are computed in the worker subprocess;
+            the executor thread only shuttles data to it and drains results.
+            When None, the updater runs in-process on the executor thread.
+        """
+        if worker is not None:
+            self._worker = worker
+        if self._worker is not None:
+            self._worker.start()
+        self._executor = ThreadPoolExecutor(max_workers=1)
+        self._pending_future = None
 
     def drain_pending(self, timeout: float = 120) -> None:
         """Block until the in-flight position update completes.
@@ -312,7 +316,7 @@ class PositionUpdateManager:
 
         Submits the update computation to the thread/process pool.
         """
-        if not self.config.enabled or self._executor is None:
+        if self._executor is None:
             return
 
         # Baseline for the correction is the coords this stack was acquired at

@@ -22,12 +22,7 @@ from pymmcore_plus.metadata import SummaryMetaV1
 from pymmcore_plus.metadata.serialize import to_builtins
 from useq import MDAEvent, MDASequence
 
-from shrimpy.mantis.dynatrack import DynaTrackConfig, DynaTrackUpdater
-from shrimpy.mantis.position_update import (
-    PositionStore,
-    PositionUpdateConfig,
-    PositionUpdateManager,
-)
+from shrimpy.dynatrack import DynaTrack
 
 # Get the logger instance (will be configured by the CLI entry point)
 logger = logging.getLogger(__name__)
@@ -90,9 +85,7 @@ class MantisEngine(MDAEngine):
         self._autofocus_fail_at_index = None
         self._xy_stage_device = None
         self._xy_stage_speed = None
-        self._position_update_manager: PositionUpdateManager | None = None
-        self._position_update_frames: dict[tuple[int, int], list[np.ndarray]] = {}
-        self._position_update_expected_slices: int = 1
+        self._dynatrack: DynaTrack | None = None
         self._data_path: Path | None = None
 
         # Register event callbacks for logging
@@ -147,65 +140,19 @@ class MantisEngine(MDAEngine):
         self._xy_stage_device = core.getXYStageDevice()
         logger.debug(f"XY stage device: {self._xy_stage_device}")
 
-        # Setup position updating
-        position_update_meta = microscope_meta.get("position_update", {})
-        position_update_config = PositionUpdateConfig(
-            enabled=position_update_meta.get("enabled", False),
-            update_channel=position_update_meta.get("update_channel"),
-            z_device=position_update_meta.get("z_device"),
+        # Setup DynaTrack position tracking
+        self._dynatrack = DynaTrack.from_metadata(
+            microscope_meta.get("dynatrack"), sequence, data_path=self._data_path
         )
-        if position_update_config.enabled and sequence.stage_positions:
-            position_store = PositionStore()
-            position_store.initialize_from_sequence(
-                sequence, z_device=position_update_config.z_device
-            )
-
-            # Create DynaTrack updater if config is provided
-            dynatrack_meta = position_update_meta.get("dynatrack")
-            if dynatrack_meta:
-                # Save shift log alongside the zarr store
-                if self._data_path:
-                    dynatrack_meta = dict(dynatrack_meta)
-                    dynatrack_meta["shift_log_path"] = str(
-                        self._data_path / "dynatrack_log.csv"
-                    )
-                dynatrack_config = DynaTrackConfig(**dynatrack_meta)
-                updater = DynaTrackUpdater(config=dynatrack_config)
-                # Debug zarr path and position names (activated after preprocessor is built)
-                if dynatrack_config.save_debug and self._data_path:
-                    updater._debug_zarr_path = self._data_path / "dynatrack_debug.zarr"
-                    updater._debug_position_names = {
-                        idx: pos.name or f"p{idx}"
-                        for idx, pos in enumerate(sequence.stage_positions)
-                    }
-                logger.info(
-                    f"DynaTrack enabled: scale_yx={dynatrack_config.scale_yx}, "
-                    f"scale_z={dynatrack_config.scale_z}, "
-                    f"interval={dynatrack_config.tracking_interval}, "
-                    f"channel={dynatrack_config.shift_estimation_channel}"
-                )
-            else:
-                updater = None
-
-            self._position_update_manager = PositionUpdateManager(
-                config=position_update_config,
-                position_store=position_store,
-                updater=updater,
-            )
-            # DynaTrack always runs in a worker subprocess (see below), so its
-            # start() is deferred to after super().setup_sequence() where the
-            # worker is created with the actual ROI shape. Non-DynaTrack updaters
-            # run in-process, so start immediately.
-            if not dynatrack_meta:
-                self._position_update_manager.start()
-            self._position_update_frames = {}
-            self._position_update_expected_slices = max(sequence.sizes.get("z", 1), 1)
-            self.mmcore.mda.events.frameReady.connect(self._on_frame_ready)
+        if self._dynatrack is not None:
+            self.mmcore.mda.events.frameReady.connect(self._dynatrack.on_frame_ready)
+            cfg = self._dynatrack.config
             logger.info(
-                f"Position updating enabled with {position_store.num_positions} positions"
+                f"DynaTrack enabled with {self._dynatrack.num_positions} positions: "
+                f"scale_yx={cfg.scale_yx}, scale_z={cfg.scale_z}, "
+                f"interval={cfg.tracking_interval}, "
+                f"channel={cfg.shift_estimation_channel}"
             )
-        else:
-            self._position_update_manager = None
 
         logger.info("Mantis hardware setup completed successfully")
 
@@ -213,40 +160,19 @@ class MantisEngine(MDAEngine):
         # hardware state and the setup event applies the ROI.
         result = super().setup_sequence(sequence)
 
-        # DynaTrack always runs in a worker subprocess for GPU/torch isolation:
+        # DynaTrack runs in a worker subprocess for GPU/torch isolation:
         # torch's OpenMP runtime segfaults when it coexists with the sequenced
-        # camera readout in the acquisition process. The worker is created after
+        # camera readout in the acquisition process. The worker is started after
         # the setup event has applied the ROI, so getImageHeight/Width reflects
         # the actual acquired frame size (also used to build the preprocessor,
         # when configured, inside the worker).
-        if self._position_update_manager is not None and isinstance(
-            self._position_update_manager._updater, DynaTrackUpdater
-        ):
-            updater = self._position_update_manager._updater
+        if self._dynatrack is not None:
             zyx_shape = (
                 max(sequence.sizes.get("z", 1), 1),
                 self.mmcore.getImageHeight(),
                 self.mmcore.getImageWidth(),
             )
-
-            from shrimpy.mantis.dynatrack_worker import DynaTrackWorker
-
-            logger.info(f"DynaTrack: starting worker process for shape {zyx_shape}")
-            log_file_path = _find_shrimpy_log_file()
-            if log_file_path is None:
-                logger.warning(
-                    "DynaTrack: no FileHandler found on shrimpy logger; "
-                    "worker subprocess logs will go to stderr only"
-                )
-            worker = DynaTrackWorker(
-                config=updater.config,
-                zyx_shape=zyx_shape,
-                debug_zarr_path=updater._debug_zarr_path,
-                debug_position_names=updater._debug_position_names,
-                log_file_path=log_file_path,
-            )
-            self._position_update_manager._worker = worker
-            self._position_update_manager.start()
+            self._dynatrack.start(zyx_shape=zyx_shape, log_file_path=_find_shrimpy_log_file())
 
         return result
 
@@ -264,15 +190,15 @@ class MantisEngine(MDAEngine):
         """
         last_t: int | None = None
         for event in super().event_iterator(events):
-            if self._position_update_manager is not None:
+            if self._dynatrack is not None:
                 idx = (
                     event.events[0].index if isinstance(event, SequencedEvent) else event.index
                 )
                 t_idx = idx.get("t", 0)
                 if last_t is not None and t_idx != last_t:
-                    self._position_update_manager.drain_pending()
+                    self._dynatrack.drain_pending()
                 last_t = t_idx
-                event = self._position_update_manager.apply_position_update(event)
+                event = self._dynatrack.apply_position_update(event)
             yield event
 
     def setup_event(self, event: MDAEvent) -> None:
@@ -307,50 +233,12 @@ class MantisEngine(MDAEngine):
         # Call parent setup_event
         super().setup_event(event)
 
-    def _on_frame_ready(self, img: np.ndarray, event: MDAEvent) -> None:
-        """Buffer frames for position updating via frameReady callback.
-
-        Counts z-slices per (timepoint, position) and triggers the updater
-        as soon as all expected slices have been collected.
-        """
-        if self._position_update_manager is None:
-            return
-
-        # Only cache frames from the configured channel (None = all channels)
-        update_channel = self._position_update_manager.config.update_channel
-        if update_channel is not None and event.index.get("c") != update_channel:
-            return
-
-        t_idx = event.index.get("t", 0)
-        p_idx = event.index.get("p", 0)
-        tp = (t_idx, p_idx)
-
-        if tp not in self._position_update_frames:
-            self._position_update_frames[tp] = []
-        self._position_update_frames[tp].append(img.copy())
-
-        # Flush when all z-slices for this position have arrived
-        if len(self._position_update_frames[tp]) >= self._position_update_expected_slices:
-            frames = self._position_update_frames.pop(tp)
-            n_pending_tps = len(self._position_update_frames)
-            pending_bytes = sum(
-                sum(a.nbytes for a in frames_list)
-                for frames_list in self._position_update_frames.values()
-            )
-            logger.debug(
-                f"MantisEngine[mem]: stack complete p={p_idx} t={t_idx} "
-                f"rss={_rss_gb():.2f} GB frames_buf_pending={n_pending_tps} "
-                f"({pending_bytes / 1024**3:.2f} GB)"
-            )
-            self._position_update_manager.on_position_complete(t_idx, p_idx, frames)
-
     def teardown_sequence(self, sequence):
-        # Position update: disconnect callback and shutdown
-        if self._position_update_manager is not None:
-            self.mmcore.mda.events.frameReady.disconnect(self._on_frame_ready)
-            self._position_update_frames = {}
-            self._position_update_manager.shutdown()
-            self._position_update_manager = None
+        # DynaTrack: disconnect callback and shutdown
+        if self._dynatrack is not None:
+            self.mmcore.mda.events.frameReady.disconnect(self._dynatrack.on_frame_ready)
+            self._dynatrack.shutdown()
+            self._dynatrack = None
 
         super().teardown_sequence(sequence)
 

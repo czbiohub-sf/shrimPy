@@ -4,7 +4,7 @@ Builds a preprocessing callable from ``DynaTrackConfig`` that transforms
 raw brightfield z-stacks before phase cross-correlation. The callable is
 passed as the ``preprocessor`` argument to ``DynaTrackUpdater``.
 
-Requires optional dependencies: ``waveorder`` (phase) and ``viscy`` (VS).
+Requires optional dependencies: ``waveorder`` (phase) and ``cytoland`` (VS).
 Install via::
 
     uv sync --group dynatrack
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
     import torch
 
-    from shrimpy.mantis.dynatrack import DynaTrackConfig
+    from shrimpy.dynatrack.tracking import DynaTrackConfig
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +133,9 @@ class _LabelfreePreprocessor:
         # Cached state (computed by warm_up or lazily on first call)
         self._transfer_function: tuple[torch.Tensor, ...] | None = None
         self._vs_model = None
+        # Derived from vs_config when the VS model is loaded (see _load_vs_model)
+        self._vs_target_channels: list[str] = ["nuclei", "membrane"]
+        self._vs_step: int = 1
 
     def warm_up(self) -> None:
         """Pre-compute the transfer function and load the VS model.
@@ -286,12 +289,18 @@ class _LabelfreePreprocessor:
         return t_phase
 
     def _predict_vs(self, volume_phase: torch.Tensor) -> dict[str, torch.Tensor]:
-        """Apply virtual staining via viscy.
+        """Apply virtual staining via cytoland.
+
+        One output channel is produced per configured target channel (named
+        ``vs_<target_channel>``); the target channels and the sliding-window
+        step are read from the config in :meth:`_load_vs_model` (as biahub
+        does).
 
         Returns
         -------
         dict[str, torch.Tensor]
-            ``{'vs_nuclei': ..., 'vs_membrane': ...}`` ZYX tensors on device.
+            e.g. ``{'vs_nuclei': ..., 'vs_membrane': ...}`` ZYX tensors on
+            device.
         """
         import torch
 
@@ -302,59 +311,81 @@ class _LabelfreePreprocessor:
         logger.info("DynaTrack: predicting virtual staining...")
         t0 = _time.monotonic()
 
-        # viscy expects (B, C, Z, Y, X) input
+        # cytoland expects (B, C, Z, Y, X) input
         t_input = volume_phase.to(dtype=torch.float32)[None, None]
 
         with torch.no_grad():
-            t_output = self._vs_model.predict_sliding_windows(t_input)
+            t_output = self._vs_model.predict_sliding_windows(
+                t_input, out_channel=len(self._vs_target_channels), step=self._vs_step
+            )
 
-        # Output shape: (B, C_out, Z, Y, X) where C_out = [nuclei, membrane]
+        # Output shape: (B, C_out, Z, Y, X), one channel per target channel.
         result = {
-            "vs_nuclei": t_output[0, 0].detach(),
-            "vs_membrane": t_output[0, 1].detach(),
+            f"vs_{name}": t_output[0, i].detach()
+            for i, name in enumerate(self._vs_target_channels)
         }
 
         logger.info("DynaTrack: VS prediction took %.1fs", _time.monotonic() - t0)
         return result
 
     def _load_vs_model(self):
-        """Load and wrap the VS model for inference."""
-        import gc
-        import importlib
+        """Validate the VS config and load the model for inference.
 
-        from viscy.translation.engine import AugmentedPredictionVSUNet
+        Mirrors biahub's ``virtual_stain``: the ``model`` block is validated
+        and instantiated against cytoland's own ``VSUNet`` class via
+        jsonargparse (the same machinery ``viscy predict`` uses), so the config
+        stays in sync with cytoland and a bad key errors early. ``out_channel``
+        and the sliding-window ``step`` are derived from the config rather than
+        hard-coded.
+
+        DynaTrack tracks on the raw reconstructed volume, so input
+        normalization and test-time augmentation are intentionally not applied;
+        if the config requests either, a warning is logged rather than silently
+        ignoring it.
+        """
+        import jsonargparse
+
+        from cytoland.engine import AugmentedPredictionVSUNet, VSUNet
 
         cfg = self._vs_config
-        model_cfg = cfg["model"].copy()
-        init_args = model_cfg["init_args"]
-        class_path = model_cfg["class_path"]
 
-        if "ckpt_path" in cfg:
-            init_args["ckpt_path"] = cfg["ckpt_path"]
+        # Warn (don't silently ignore) about features DynaTrack does not apply.
+        model_init_args = cfg.get("model", {}).get("init_args", {})
+        if model_init_args.get("test_time_augmentations"):
+            logger.warning(
+                "DynaTrack VS: 'test_time_augmentations' is set in vs_config, but "
+                "DynaTrack does not apply test-time augmentation; ignoring it."
+            )
+        if "data" in cfg or "normalizations" in cfg:
+            logger.warning(
+                "DynaTrack VS: input normalization configured in vs_config is not "
+                "applied; DynaTrack tracks on the raw reconstructed volume."
+            )
 
-        module_path, class_name = class_path.rsplit(".", 1)
-        model_class = getattr(importlib.import_module(module_path), class_name)
+        # Validate/instantiate the model against cytoland's VSUNet signature.
+        parser = jsonargparse.ArgumentParser()
+        parser.add_subclass_arguments(VSUNet, "model")
+        parser.add_argument("--ckpt_path", type=str, required=True)
+        parser.add_argument("--sliding_window_step", type=int, default=1)
+        parser.add_argument(
+            "--target_channels", type=list[str], default=["nuclei", "membrane"]
+        )
+        parsed = parser.parse_object(cfg)
+
+        # Route ckpt_path into the model init args so VSUNet loads the
+        # checkpoint's state_dict itself (as `viscy predict` does), keeping
+        # shrimpy free of any assumption about the checkpoint layout.
+        parsed.model.init_args.ckpt_path = str(parsed.ckpt_path)
+        instances = parser.instantiate_classes(parsed)
+        vsunet = instances.model
+
+        self._vs_target_channels = list(parsed.target_channels)
+        self._vs_step = int(parsed.sliding_window_step)
 
         device = self._device
-        model = model_class(**init_args).to(device).eval()
-
-        # Extract the bare nn.Module and discard the Lightning wrapper
-        bare_model = model.model
-        del model
-        gc.collect()
-
-        wrapper = (
-            AugmentedPredictionVSUNet(
-                model=bare_model,
-                forward_transforms=[lambda t: t],
-                inverse_transforms=[lambda t: t],
-            )
-            .to(device)
-            .eval()
-        )
-
-        wrapper.on_predict_start()
-        return wrapper
+        vsunet.eval().to(device)
+        # Wrap the bare nn.Module without TTA transforms (identity defaults).
+        return AugmentedPredictionVSUNet(model=vsunet.model).to(device).eval()
 
     @staticmethod
     def _log_gpu_memory() -> None:

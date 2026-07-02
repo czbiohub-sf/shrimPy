@@ -102,7 +102,7 @@ def mantis(
     core.loadSystemConfiguration(mm_config)
 
     if unicore:
-        from shrimpy.mantis.replay_camera import ReplayCamera
+        from shrimpy.replay_camera import ReplayCamera
 
         cam_label = core.getCameraDevice()
         if cam_label and core.isPyDevice(cam_label):

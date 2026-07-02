@@ -5,7 +5,8 @@ import csv
 import numpy as np
 import pytest
 
-from shrimpy.mantis.dynatrack import (
+from shrimpy.dynatrack.position_update import PositionCoordinates
+from shrimpy.dynatrack.tracking import (
     DynaTrackConfig,
     DynaTrackUpdater,
     _binary_mask,
@@ -24,7 +25,6 @@ from shrimpy.mantis.dynatrack import (
     _phase_cross_corr,
     _roi_center_pcc,
 )
-from shrimpy.mantis.position_update import PositionCoordinates
 
 # torch ships only in the optional `dynatrack` dependency group; skip the whole
 # module when it is unavailable (neither imported module above requires it).
@@ -930,7 +930,7 @@ class TestWantsReferenceRefresh:
 
 class TestReferenceUpdateIntervalWarning:
     def test_warns_for_referenceless_with_interval(self, caplog):
-        with caplog.at_level("WARNING", logger="shrimpy.mantis.dynatrack"):
+        with caplog.at_level("WARNING", logger="shrimpy.dynatrack.tracking"):
             DynaTrackUpdater(
                 config=DynaTrackConfig(
                     scale_yx=1.0,
@@ -942,7 +942,7 @@ class TestReferenceUpdateIntervalWarning:
         assert any("ignored for referenceless" in r.message for r in caplog.records)
 
     def test_no_warning_for_reference_based(self, caplog):
-        with caplog.at_level("WARNING", logger="shrimpy.mantis.dynatrack"):
+        with caplog.at_level("WARNING", logger="shrimpy.dynatrack.tracking"):
             DynaTrackUpdater(
                 config=DynaTrackConfig(
                     scale_yx=1.0,
@@ -954,7 +954,7 @@ class TestReferenceUpdateIntervalWarning:
         assert not any("ignored for referenceless" in r.message for r in caplog.records)
 
     def test_no_warning_for_referenceless_without_interval(self, caplog):
-        with caplog.at_level("WARNING", logger="shrimpy.mantis.dynatrack"):
+        with caplog.at_level("WARNING", logger="shrimpy.dynatrack.tracking"):
             DynaTrackUpdater(
                 config=DynaTrackConfig(
                     scale_yx=1.0,

@@ -36,7 +36,7 @@ channels:
   acquire_every: 1
   camera: null
 # For deskewed-GFP (fluorescence) tracking, add a fluorescence channel as
-# index 1 and point `update_channel: 1` at it (see position_update below):
+# index 1 and point `update_channel: 1` at it (see dynatrack below):
 # - config: GFP
 #   group: Channel
 #   exposure: 10.0
@@ -66,109 +66,119 @@ metadata:
       enabled: false
       method: demo-PFS
       stage: ObjectiveZ
-    position_update:
+    dynatrack:
       enabled: true
       # Channel index fed to the tracker (0 = first channel, BF here).
       # For deskewed-GFP tracking set this to the GFP channel index (e.g. 1).
       update_channel: 0
       z_device: ObjectiveZ
-      dynatrack:
-        scale_yx: 0.1494
-        scale_z: 0.174
-        tracking_interval: 1
-        # Shift-estimation algorithm: 'pcc' (phase cross-correlation),
-        # 'intensity_center_of_mass' (intensity-weighted centroid vs ROI centre
-        #   in deskew space; no threshold, no reference stack),
-        # 'roi_center_pcc' (cross-correlate against a Gaussian blob centred on
-        #   the ROI centre in deskew space; no reference stack),
-        # 'multiotsu_center_of_mass' (multi-Otsu threshold -> centroid), or
-        # 'multiotsu_pcc' (multi-Otsu threshold -> PCC on the binary masks).
-        # Note: center-of-mass uses the reference only as a fixed target
-        # centroid, so it does NOT need re-anchoring (set reference_update_interval: 0).
-        # The ROI-centre methods ('intensity_center_of_mass', 'roi_center_pcc')
-        # are referenceless and correct from the first timepoint.
-        tracking_method: 'pcc'
-        # tracking_method: 'intensity_center_of_mass'
-        # tracking_method: 'roi_center_pcc'
-        # tracking_method: 'multiotsu_center_of_mass'
-        # tracking_method: 'multiotsu_pcc'
-        otsu_sigma: 5.0       # Gaussian blur sigma before thresholding (multi-Otsu methods)
-        otsu_component: 1     # which multi-Otsu threshold: 0 = lower, 1 = upper (brightest); use 0 for gfp and 1 for bf
-        roi_blob_sigma: 10.0  # Gaussian blob sigma (px) for the 'roi_center_pcc' template; ~structure radius
-        # roi_background_percentile: 80   # 'intensity_center_of_mass': subtract this intensity percentile (0-100) as a background floor before weighting; null = raw
-        # Re-anchor the reference every N timepoints (0 = never; keep the fixed
-        # t=0 reference). On a re-anchor timepoint the current stack becomes the
-        # new reference and no correction is applied. Use for long timelapses
-        # where the sample changes enough that matching a stale reference fails.
-        reference_update_interval: 0
-        save_debug: true
-        # shift_limits:
-        #   z: [0.5, 2.0]
-        #   y: [2.0, 10.0]
-        #   x: [2.0, 10.0]
+      scale_yx: 0.1494
+      scale_z: 0.174
+      tracking_interval: 1
+      # Shift-estimation algorithm: 'pcc' (phase cross-correlation),
+      # 'intensity_center_of_mass' (intensity-weighted centroid vs ROI centre
+      #   in deskew space; no threshold, no reference stack),
+      # 'roi_center_pcc' (cross-correlate against a Gaussian blob centred on
+      #   the ROI centre in deskew space; no reference stack),
+      # 'multiotsu_center_of_mass' (multi-Otsu threshold -> centroid), or
+      # 'multiotsu_pcc' (multi-Otsu threshold -> PCC on the binary masks).
+      # Note: center-of-mass uses the reference only as a fixed target
+      # centroid, so it does NOT need re-anchoring (set reference_update_interval: 0).
+      # The ROI-centre methods ('intensity_center_of_mass', 'roi_center_pcc')
+      # are referenceless and correct from the first timepoint.
+      tracking_method: 'pcc'
+      # tracking_method: 'intensity_center_of_mass'
+      # tracking_method: 'roi_center_pcc'
+      # tracking_method: 'multiotsu_center_of_mass'
+      # tracking_method: 'multiotsu_pcc'
+      otsu_sigma: 5.0       # Gaussian blur sigma before thresholding (multi-Otsu methods)
+      otsu_component: 1     # which multi-Otsu threshold: 0 = lower, 1 = upper (brightest); use 0 for gfp and 1 for bf
+      roi_blob_sigma: 10.0  # Gaussian blob sigma (px) for the 'roi_center_pcc' template; ~structure radius
+      # roi_background_percentile: 80   # 'intensity_center_of_mass': subtract this intensity percentile (0-100) as a background floor before weighting; null = raw
+      # Re-anchor the reference every N timepoints (0 = never; keep the fixed
+      # t=0 reference). On a re-anchor timepoint the current stack becomes the
+      # new reference and no correction is applied. Use for long timelapses
+      # where the sample changes enough that matching a stale reference fails.
+      reference_update_interval: 0
+      save_debug: true
+      # shift_limits:
+      #   z: [0.5, 2.0]
+      #   y: [2.0, 10.0]
+      #   x: [2.0, 10.0]
 
-        # Preprocessing pipeline: deskew -> phase recon -> virtual staining
-        # Options: ['deskew','phase','vs'], ['deskew','phase'], ['phase','vs'], ['phase'], ['deskew']
-        preprocessing: ['deskew', 'phase', 'vs']
-        # preprocessing: ['deskew']   # deskewed-GFP (fluorescence) tracking: deskew only
-        # preprocessing: ['phase']
+      # Preprocessing pipeline: deskew -> phase recon -> virtual staining
+      # Options: ['deskew','phase','vs'], ['deskew','phase'], ['phase','vs'], ['phase'], ['deskew']
+      preprocessing: ['deskew', 'phase', 'vs']
+      # preprocessing: ['deskew']   # deskewed-GFP (fluorescence) tracking: deskew only
+      # preprocessing: ['phase']
 
-        # Biahub deskew parameters for light-sheet data
-        # Proper 90-deg rotation (det +1) mapping deskewed-image axes to stage
-        # axes; image-X is inverted relative to stage-Y. Validated on-microscope:
-        # both in-plane axes converge to the deadband (a pure swap, det -1, drove
-        # one axis to diverge). Setup-specific -- recalibrate per scope orientation.
-        image_to_stage_matrix_xyz:
-          - [0.0, 1.0, 0.0]
-          - [-1.0, 0.0, 0.0]
-          - [0.0, 0.0, 1.0]
-        deskew_config:
-          ls_angle_deg: 30.0
-          pixel_size_um: 0.1133
-          scan_step_um: 0.15
-          keep_overhang: false
-          average_n_slices: 3
-        # Which representation to use for shift estimation:
-        # 'deskewed' (deskew-only output, e.g. deskewed GFP), 'phase',
-        # 'vs_nuclei', 'vs_membrane'
-        shift_estimation_channel: 'vs_nuclei'
-        # shift_estimation_channel: 'deskewed'   # deskewed-GFP (fluorescence) tracking
-        # shift_estimation_channel: 'phase'
+      # Biahub deskew parameters for light-sheet data
+      # Proper 90-deg rotation (det +1) mapping deskewed-image axes to stage
+      # axes; image-X is inverted relative to stage-Y. Validated on-microscope:
+      # both in-plane axes converge to the deadband (a pure swap, det -1, drove
+      # one axis to diverge). Setup-specific -- recalibrate per scope orientation.
+      image_to_stage_matrix_xyz:
+        - [0.0, 1.0, 0.0]
+        - [-1.0, 0.0, 0.0]
+        - [0.0, 0.0, 1.0]
+      deskew_config:
+        ls_angle_deg: 30.0
+        pixel_size_um: 0.1133
+        scan_step_um: 0.15
+        keep_overhang: false
+        average_n_slices: 3
+      # Which representation to use for shift estimation:
+      # 'deskewed' (deskew-only output, e.g. deskewed GFP), 'phase',
+      # 'vs_nuclei', 'vs_membrane'
+      shift_estimation_channel: 'vs_nuclei'
+      # shift_estimation_channel: 'deskewed'   # deskewed-GFP (fluorescence) tracking
+      # shift_estimation_channel: 'phase'
 
-        # Waveorder phase reconstruction parameters
-        phase_config:
-          transfer_function:
-            wavelength_illumination: 0.450
-            yx_pixel_size: 0.1494
-            z_pixel_size: 0.174
-            z_padding: 5
-            index_of_refraction_media: 1.4
-            numerical_aperture_detection: 1.35
-            numerical_aperture_illumination: 0.52
-            invert_phase_contrast: false
-          apply_inverse:
-            reconstruction_algorithm: Tikhonov
-            regularization_strength: 0.01
+      # Waveorder phase reconstruction parameters
+      phase_config:
+        transfer_function:
+          wavelength_illumination: 0.450
+          yx_pixel_size: 0.1494
+          z_pixel_size: 0.174
+          z_padding: 5
+          index_of_refraction_media: 1.4
+          numerical_aperture_detection: 1.35
+          numerical_aperture_illumination: 0.52
+          invert_phase_contrast: false
+        apply_inverse:
+          reconstruction_algorithm: Tikhonov
+          regularization_strength: 0.01
 
-        # VisCy virtual staining model parameters
-        vs_config:
-          model:
-            class_path: viscy.translation.engine.VSUNet
-            init_args:
-              architecture: fcmae
-              model_config:
-                in_channels: 1
-                out_channels: 2
-                in_stack_depth: 21
-                encoder_blocks: [3, 3, 9, 3]
-                dims: [96, 192, 384, 768]
-                encoder_drop_path_rate: 0.0
-                stem_kernel_size: [7, 4, 4]
-                decoder_conv_blocks: 2
-                pretraining: false
-                head_conv: true
-                head_conv_expansion_ratio: 4
-                head_conv_pool: false
-              test_time_augmentations: true
-              tta_type: median
-          ckpt_path: C:\\Users\\labelfree\\Documents\\epoch=64-step=24960.ckpt
+      # Cytoland (VisCy) virtual staining model parameters. The `model` block is
+      # validated against cytoland.engine.VSUNet's signature (same machinery as
+      # `viscy predict`), so unknown keys error early.
+      vs_config:
+        # Output channels and sliding-window step are derived from the config
+        # (as in biahub): one predicted channel per name in `target_channels`,
+        # emitted under `vs_<name>` (e.g. shift_estimation_channel: 'vs_nuclei').
+        target_channels: ['nuclei', 'membrane']
+        sliding_window_step: 1
+        model:
+          class_path: cytoland.engine.VSUNet
+          init_args:
+            architecture: fcmae
+            model_config:
+              in_channels: 1
+              out_channels: 2
+              in_stack_depth: 21
+              encoder_blocks: [3, 3, 9, 3]
+              dims: [96, 192, 384, 768]
+              encoder_drop_path_rate: 0.0
+              stem_kernel_size: [7, 4, 4]
+              decoder_conv_blocks: 2
+              pretraining: false
+              head_conv: true
+              head_conv_expansion_ratio: 4
+              head_conv_pool: false
+            # DynaTrack tracks on the raw reconstructed volume: input
+            # normalization and test-time augmentation are NOT applied. Enabling
+            # test_time_augmentations here only logs a warning (kept false to
+            # reflect the actual behavior).
+            test_time_augmentations: false
+            tta_type: median
+        ckpt_path: C:\\Users\\labelfree\\Documents\\epoch=64-step=24960.ckpt

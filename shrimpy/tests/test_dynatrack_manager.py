@@ -1,0 +1,468 @@
+"""Tests for the engine-facing DynaTrack coordinator and its MantisEngine wiring.
+
+The coordinator's tracking work normally runs in a worker subprocess; these
+tests inject a lightweight in-process updater so no subprocess (or torch) is
+needed. The real worker-spawn path is exercised indirectly by the DynaTrack
+unit tests.
+"""
+
+from __future__ import annotations
+
+import time
+import weakref
+
+from unittest.mock import MagicMock, patch
+
+import numpy as np
+import pytest
+
+from useq import MDAEvent, MDASequence
+
+from shrimpy.dynatrack import DynaTrack, DynaTrackConfig
+from shrimpy.dynatrack.position_update import PositionCoordinates, PositionUpdater
+from shrimpy.mantis.mantis_engine import MantisEngine
+
+# ---------------------------------------------------------------------------
+# Fixtures / helpers
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def engine(mock_core: MagicMock) -> MantisEngine:
+    """Create a MantisEngine wired to the mock CMMCorePlus."""
+    with patch("shrimpy.mantis.mantis_engine.MDAEngine.__init__", return_value=None):
+        eng = MantisEngine(mock_core)
+    eng._mmcore_ref = weakref.ref(mock_core)
+    return eng
+
+
+def _sequence(n_positions: int = 1) -> MDASequence:
+    return MDASequence(
+        stage_positions=[
+            {"x": float(i * 100), "y": float(i * 100 + 100), "z": float(i + 5)}
+            for i in range(n_positions)
+        ]
+    )
+
+
+def _make_dynatrack(
+    sequence: MDASequence,
+    updater: PositionUpdater,
+    update_channel: int | None = 0,
+    expected_slices: int = 1,
+) -> DynaTrack:
+    """Build an in-process DynaTrack (no worker subprocess) and start it."""
+    config = DynaTrackConfig(scale_yx=0.1, scale_z=0.1, update_channel=update_channel)
+    dt = DynaTrack(config, sequence, updater=updater)
+    dt._expected_slices = expected_slices
+    dt.start()
+    return dt
+
+
+# ---------------------------------------------------------------------------
+# DynaTrack.from_metadata
+# ---------------------------------------------------------------------------
+
+
+class TestFromMetadata:
+    def test_none_when_meta_absent(self):
+        assert DynaTrack.from_metadata(None, _sequence()) is None
+        assert DynaTrack.from_metadata({}, _sequence()) is None
+
+    def test_none_when_disabled(self):
+        meta = {"enabled": False, "scale_yx": 0.1, "scale_z": 0.1}
+        assert DynaTrack.from_metadata(meta, _sequence()) is None
+
+    def test_none_without_stage_positions(self):
+        meta = {"enabled": True, "scale_yx": 0.1, "scale_z": 0.1}
+        assert DynaTrack.from_metadata(meta, MDASequence()) is None
+
+    def test_builds_config_from_metadata(self):
+        meta = {
+            "enabled": True,
+            "update_channel": 1,
+            "z_device": "ObjectiveZ",
+            "scale_yx": 0.075,
+            "scale_z": 0.174,
+            "tracking_interval": 2,
+            "dampening": (0.5, 0.8, 0.8),
+        }
+        dt = DynaTrack.from_metadata(meta, _sequence(2))
+        assert dt is not None
+        assert dt.num_positions == 2
+        assert dt.config.update_channel == 1
+        assert dt.config.z_device == "ObjectiveZ"
+        assert dt.config.scale_yx == 0.075
+        assert dt.config.tracking_interval == 2
+        assert dt.config.dampening == (0.5, 0.8, 0.8)
+
+    def test_sets_shift_log_path_from_data_path(self, tmp_path):
+        meta = {"enabled": True, "scale_yx": 0.1, "scale_z": 0.1}
+        dt = DynaTrack.from_metadata(meta, _sequence(), data_path=tmp_path)
+        assert dt.config.shift_log_path == str(tmp_path / "dynatrack_log.csv")
+
+    def test_explicit_shift_log_path_wins(self, tmp_path):
+        meta = {
+            "enabled": True,
+            "scale_yx": 0.1,
+            "scale_z": 0.1,
+            "shift_log_path": "/custom/log.csv",
+        }
+        dt = DynaTrack.from_metadata(meta, _sequence(), data_path=tmp_path)
+        assert dt.config.shift_log_path == "/custom/log.csv"
+
+
+# ---------------------------------------------------------------------------
+# Frame buffering / on_frame_ready
+# ---------------------------------------------------------------------------
+
+
+class TestFrameBuffering:
+    def test_z_slice_count_triggers_update(self):
+        """on_position_complete fires when all z-slices for a position arrive."""
+        seen = {}
+
+        class SpyUpdater(PositionUpdater):
+            def update(self, t_idx, p_idx, position, data=None, **kwargs):
+                seen["data"] = data
+                return position
+
+        dt = _make_dynatrack(_sequence(), SpyUpdater(), expected_slices=3)
+        dt.apply_position_update(MDAEvent(index={"t": 0, "p": 0}))
+        frame = np.zeros((4, 4), dtype=np.uint16)
+
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 0}))
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 1}))
+        assert dt._manager._pending_future is None
+
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 2}))
+        assert dt._manager._pending_future is not None
+        dt._manager._pending_future.result(timeout=5)
+        assert (0, 0) not in dt._frames
+        assert len(seen["data"]) == 3
+        dt.shutdown()
+
+    def test_passes_all_buffered_frames(self):
+        received = {}
+
+        class SpyUpdater(PositionUpdater):
+            def update(self, t_idx, p_idx, position, data=None, **kwargs):
+                received["frames"] = data
+                return position
+
+        dt = _make_dynatrack(_sequence(), SpyUpdater(), expected_slices=2)
+        dt.apply_position_update(MDAEvent(index={"t": 0, "p": 0}))
+        frame1 = np.ones((4, 4), dtype=np.uint16)
+        frame2 = np.ones((4, 4), dtype=np.uint16) * 2
+        dt.on_frame_ready(frame1, MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 0}))
+        dt.on_frame_ready(frame2, MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 1}))
+        dt._manager._pending_future.result(timeout=5)
+
+        assert len(received["frames"]) == 2
+        assert np.array_equal(received["frames"][0], frame1)
+        assert np.array_equal(received["frames"][1], frame2)
+        dt.shutdown()
+
+    def test_buffers_frame_copies(self):
+        dt = _make_dynatrack(_sequence(), PositionUpdater(), expected_slices=5)
+        frame = np.ones((4, 4), dtype=np.uint16) * 42
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0}))
+
+        buffered = dt._frames[(0, 0)]
+        assert len(buffered) == 1
+        assert np.array_equal(buffered[0], frame)
+        assert buffered[0] is not frame  # copy, not the same object
+        dt.shutdown()
+
+    def test_default_caches_channel_0_only(self):
+        dt = _make_dynatrack(
+            _sequence(), PositionUpdater(), update_channel=0, expected_slices=5
+        )
+        frame = np.ones((4, 4), dtype=np.uint16)
+
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0}))
+        assert len(dt._frames.get((0, 0), [])) == 1
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 1}))
+        assert len(dt._frames.get((0, 0), [])) == 1  # channel 1 skipped
+        dt.shutdown()
+
+    def test_filters_by_configured_channel(self):
+        dt = _make_dynatrack(
+            _sequence(), PositionUpdater(), update_channel=1, expected_slices=5
+        )
+        frame = np.ones((4, 4), dtype=np.uint16)
+
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0}))
+        assert (0, 0) not in dt._frames
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 1}))
+        assert len(dt._frames[(0, 0)]) == 1
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 2}))
+        assert len(dt._frames[(0, 0)]) == 1
+        dt.shutdown()
+
+    def test_all_channels_when_none(self):
+        dt = _make_dynatrack(
+            _sequence(), PositionUpdater(), update_channel=None, expected_slices=5
+        )
+        frame = np.ones((4, 4), dtype=np.uint16)
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0}))
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 1}))
+        assert len(dt._frames[(0, 0)]) == 2
+        dt.shutdown()
+
+    def test_positions_buffer_independently(self):
+        dt = _make_dynatrack(_sequence(2), PositionUpdater(), expected_slices=2)
+        dt.apply_position_update(MDAEvent(index={"t": 0, "p": 0}))
+        dt.apply_position_update(MDAEvent(index={"t": 0, "p": 1}))
+        frame = np.zeros((4, 4), dtype=np.uint16)
+
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 0}))
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 1, "c": 0, "z": 0}))
+        assert dt._manager._pending_future is None
+
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 1}))
+        assert dt._manager._pending_future is not None
+        dt._manager._pending_future.result(timeout=5)
+        assert (0, 0) not in dt._frames
+        assert (0, 1) in dt._frames  # still buffering
+        dt.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# MantisEngine wiring
+# ---------------------------------------------------------------------------
+
+
+class TestMantisEngineWiring:
+    def test_setup_sequence_initializes_dynatrack(self, engine, mock_core):
+        seq = MDASequence(
+            stage_positions=[{"x": 10, "y": 20, "z": 5}, {"x": 30, "y": 40, "z": 15}],
+            metadata={
+                "mantis": {"dynatrack": {"enabled": True, "scale_yx": 0.1, "scale_z": 0.1}}
+            },
+        )
+        with (
+            patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"),
+            patch.object(DynaTrack, "start"),
+        ):
+            engine.setup_sequence(seq)
+
+        assert engine._dynatrack is not None
+        assert engine._dynatrack.num_positions == 2
+        mock_core.mda.events.frameReady.connect.assert_called_once_with(
+            engine._dynatrack.on_frame_ready
+        )
+
+    def test_setup_sequence_without_dynatrack(self, engine):
+        seq = MDASequence(stage_positions=[{"x": 10, "y": 20}], metadata={"mantis": {}})
+        with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"):
+            engine.setup_sequence(seq)
+        assert engine._dynatrack is None
+
+    def test_setup_sequence_dynatrack_disabled(self, engine):
+        seq = MDASequence(
+            stage_positions=[{"x": 10, "y": 20}],
+            metadata={"mantis": {"dynatrack": {"enabled": False}}},
+        )
+        with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"):
+            engine.setup_sequence(seq)
+        assert engine._dynatrack is None
+
+    def test_teardown_shuts_down_dynatrack(self, engine, mock_core):
+        dt = _make_dynatrack(_sequence(), PositionUpdater())
+        engine._dynatrack = dt
+
+        with patch("shrimpy.mantis.mantis_engine.MDAEngine.teardown_sequence"):
+            engine.teardown_sequence(MDASequence(metadata={"mantis": {}}))
+
+        assert engine._dynatrack is None
+        mock_core.mda.events.frameReady.disconnect.assert_called_once_with(dt.on_frame_ready)
+        assert dt._manager._executor is None
+
+    def test_event_iterator_applies_position_updates(self, demo_core):
+        """event_iterator should apply position updates before events are logged."""
+        engine = MantisEngine(demo_core)
+        dt = _make_dynatrack(_sequence(), PositionUpdater())
+        dt.position_store.update_position(0, x=777.0, y=666.0, z=555.0)
+        engine._dynatrack = dt
+
+        event = MDAEvent(x_pos=100.0, y_pos=200.0, z_pos=300.0, index={"t": 0, "p": 0})
+        results = list(engine.event_iterator([event]))
+        assert len(results) == 1
+        assert results[0].x_pos == 777.0
+        assert results[0].y_pos == 666.0
+        assert results[0].z_pos == 555.0
+        dt.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# Backpressure — drains pending work at timepoint boundaries
+# ---------------------------------------------------------------------------
+
+
+class TestBackpressure:
+    """Without backpressure a slow updater lets frame data accumulate
+    unboundedly in the executor queue. event_iterator must drain pending work
+    at timepoint boundaries.
+    """
+
+    def test_slow_updater_queue_bounded_across_timepoints(self, engine):
+        update_completions: list[tuple[int, int, float]] = []
+        event_yields: list[tuple[int, int, float]] = []
+
+        class SlowUpdater(PositionUpdater):
+            def update(self, t_idx, p_idx, position, data=None):
+                time.sleep(0.5)
+                update_completions.append((t_idx, p_idx, time.monotonic()))
+                return position
+
+        dt = _make_dynatrack(_sequence(3), SlowUpdater(), expected_slices=2)
+        engine._dynatrack = dt
+
+        events = [
+            MDAEvent(
+                index={"t": t, "p": p, "c": 0, "z": z},
+                x_pos=float(p * 100),
+                y_pos=float(p * 100),
+            )
+            for t in range(3)
+            for p in range(3)
+            for z in range(2)
+        ]
+        frame = np.zeros((64, 64), dtype=np.uint16)
+
+        with patch(
+            "shrimpy.mantis.mantis_engine.MDAEngine.event_iterator", return_value=iter(events)
+        ):
+            for event in engine.event_iterator(events):
+                t_idx = event.index.get("t", 0)
+                p_idx = event.index.get("p", 0)
+                event_yields.append((t_idx, p_idx, time.monotonic()))
+                dt.on_frame_ready(frame, event)
+
+        dt.shutdown()
+
+        assert len(update_completions) == 9  # 3 timepoints x 3 positions
+
+        # When event_iterator yields the first event of timepoint 1, all
+        # timepoint 0 updates must already be done.
+        t0_last_completion = max(ts for t, p, ts in update_completions if t == 0)
+        t1_first_yield = min(ts for t, p, ts in event_yields if t == 1)
+        assert t0_last_completion <= t1_first_yield, (
+            f"Timepoint 0 last update completed at {t0_last_completion:.3f}, "
+            f"but timepoint 1 first event yielded at {t1_first_yield:.3f} — "
+            "event_iterator is not draining pending updates at timepoint boundary"
+        )
+
+    def test_executor_queue_depth_bounded(self, engine):
+        pending_at_submit: list[int] = []
+
+        class SlowUpdater(PositionUpdater):
+            def update(self, t_idx, p_idx, position, data=None):
+                time.sleep(0.3)
+                return position
+
+        dt = _make_dynatrack(_sequence(3), SlowUpdater(), expected_slices=1)
+        engine._dynatrack = dt
+
+        manager = dt._manager
+        orig_on_position_complete = manager.on_position_complete
+
+        def tracking_on_position_complete(t_idx, p_idx, data=None):
+            fut = manager._pending_future
+            pending_at_submit.append(1 if fut is not None and not fut.done() else 0)
+            return orig_on_position_complete(t_idx, p_idx, data)
+
+        manager.on_position_complete = tracking_on_position_complete
+
+        events = [
+            MDAEvent(
+                index={"t": t, "p": p, "c": 0, "z": 0},
+                x_pos=float(p * 100),
+                y_pos=float(p * 100),
+            )
+            for t in range(4)
+            for p in range(3)
+        ]
+        frame = np.zeros((64, 64), dtype=np.uint16)
+
+        with patch(
+            "shrimpy.mantis.mantis_engine.MDAEngine.event_iterator", return_value=iter(events)
+        ):
+            for event in engine.event_iterator(events):
+                dt.on_frame_ready(frame, event)
+
+        dt.shutdown()
+
+        # Within a timepoint, up to (positions - 1) submissions overlap; the
+        # drain prevents cross-timepoint accumulation.
+        max_expected_overlaps = (3 - 1) * 4
+        overlaps = sum(pending_at_submit)
+        assert overlaps <= max_expected_overlaps, (
+            f"{overlaps}/{len(pending_at_submit)} submissions found a pending future "
+            f"(expected at most {max_expected_overlaps}) — "
+            "executor queue is accumulating across timepoints"
+        )
+
+
+# ---------------------------------------------------------------------------
+# End-to-end integration with a demo acquisition
+# ---------------------------------------------------------------------------
+
+
+class TestDynaTrackIntegration:
+    def test_positions_shift_across_acquisitions(self, demo_core, mantis_metadata):
+        """End-to-end: a mock updater shifts position by (+1, +1, +0.5) per call.
+
+        The engine builds the DynaTrack coordinator from metadata; here we
+        patch from_metadata to return an in-process coordinator with a
+        shifting updater so no worker subprocess is spawned.
+        """
+        MantisEngine(demo_core)  # registers the engine with demo_core.mda
+
+        class ShiftUpdater(PositionUpdater):
+            def update(self, t_idx, p_idx, position, data=None, **kwargs):
+                return PositionCoordinates(
+                    x=position.x + 1.0,
+                    y=position.y + 1.0,
+                    z=(position.z or 0) + 0.5,
+                )
+
+        # Disable autofocus: demo-PFS fails ~50% of the time, which would
+        # randomly drop frames and make the per-(t, p) assertions below flaky.
+        mantis_metadata["autofocus"]["enabled"] = False
+        seq = MDASequence(
+            stage_positions=[{"x": 100, "y": 200, "z": 50}, {"x": 300, "y": 400, "z": 60}],
+            time_plan={"interval": 0, "loops": 3},
+            metadata={"mantis": mantis_metadata},
+        )
+
+        def _fake_from_metadata(meta, sequence, data_path=None):
+            config = DynaTrackConfig(scale_yx=0.1, scale_z=0.1, update_channel=0)
+            return DynaTrack(config, sequence, updater=ShiftUpdater())
+
+        xy_positions: list[tuple[int, int, float, float]] = []
+
+        @demo_core.mda.events.frameReady.connect
+        def _on_frame(img, event, meta):
+            t = event.index.get("t", 0)
+            p = event.index.get("p", 0)
+            x, y = demo_core.getXYPosition()
+            xy_positions.append((t, p, x, y))
+
+        with patch.object(DynaTrack, "from_metadata", staticmethod(_fake_from_metadata)):
+            demo_core.mda.run(seq)
+
+        # Group by (t, p) and take the first frame's position for each
+        seen = {}
+        for t, p, x, y in xy_positions:
+            seen.setdefault((t, p), (x, y))
+
+        # At t=0, positions should be the originals
+        assert seen[(0, 0)] == pytest.approx((100.0, 200.0), abs=0.1)
+        assert seen[(0, 1)] == pytest.approx((300.0, 400.0), abs=0.1)
+
+        # By t=2, the updater should have shifted each position at least once.
+        x_t2_p0, y_t2_p0 = seen[(2, 0)]
+        assert x_t2_p0 > 100.0, f"Expected x > 100 at t=2, got {x_t2_p0}"
+        assert y_t2_p0 > 200.0, f"Expected y > 200 at t=2, got {y_t2_p0}"
