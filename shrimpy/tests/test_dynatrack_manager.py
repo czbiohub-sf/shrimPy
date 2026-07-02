@@ -92,7 +92,7 @@ class TestFromMetadata:
             "scale_yx": 0.075,
             "scale_z": 0.174,
             "tracking_interval": 2,
-            "dampening": (0.5, 0.8, 0.8),
+            "shift": {"dampening": (0.5, 0.8, 0.8)},
         }
         dt = DynaTrack.from_metadata(meta, _sequence(2))
         assert dt is not None
@@ -102,7 +102,7 @@ class TestFromMetadata:
         assert dt.config.z_device == "ObjectiveZ"
         assert dt.config.scale_yx == 0.075
         assert dt.config.tracking_interval == 2
-        assert dt.config.dampening == (0.5, 0.8, 0.8)
+        assert dt.config.shift.dampening == (0.5, 0.8, 0.8)
 
     def test_sets_shift_log_path_from_data_path(self, tmp_path):
         meta = {"enabled": True, "scale_yx": 0.1, "scale_z": 0.1, "tracking_channel": "ch0"}
@@ -166,7 +166,7 @@ class TestTrackingChannelValidation:
     def test_vs_must_be_target_channel(self):
         common = {
             "preprocessing": ["deskew", "phase", "vs"],
-            "vs_config": {"target_channels": ["nuclei", "membrane"]},
+            "virtual_staining": {"target_channels": ["nuclei", "membrane"]},
             "input_channel": "BF",
         }
         dt = self._build(tracking_channel="nuclei", **common)

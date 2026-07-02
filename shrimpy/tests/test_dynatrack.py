@@ -152,9 +152,9 @@ class TestDynaTrackConfig:
         cfg = DynaTrackConfig(scale_yx=0.5, scale_z=2.0, tracking_channel="BF")
         assert cfg.scale_yx == 0.5
         assert cfg.scale_z == 2.0
-        assert cfg.maximum_shift == 1.0
-        assert cfg.dampening is None
-        assert cfg.shift_limits is None
+        assert cfg.shift.maximum == 1.0
+        assert cfg.shift.dampening is None
+        assert cfg.shift.limits is None
         assert cfg.tracking_interval == 1
         assert cfg.tracking_channel == "BF"
         assert cfg.preprocessing is None
@@ -164,14 +164,16 @@ class TestDynaTrackConfig:
         cfg = DynaTrackConfig(
             scale_yx=0.075,
             scale_z=0.174,
-            dampening=(0.5, 0.8, 0.8),
-            shift_limits={"z": (0.5, 2.0), "y": (2.0, 10.0), "x": (2.0, 10.0)},
+            shift={
+                "dampening": (0.5, 0.8, 0.8),
+                "limits": {"z": (0.5, 2.0), "y": (2.0, 10.0), "x": (2.0, 10.0)},
+            },
             tracking_interval=2,
             tracking_channel="nuclei",
             preprocessing=["phase"],
-            phase_config={"wavelength": 0.450},
+            phase={"wavelength": 0.450},
         )
-        assert cfg.dampening == (0.5, 0.8, 0.8)
+        assert cfg.shift.dampening == (0.5, 0.8, 0.8)
         assert cfg.tracking_interval == 2
         assert cfg.tracking_channel == "nuclei"
 
@@ -180,11 +182,12 @@ class TestDynaTrackConfig:
         meta = {
             "scale_yx": 0.075,
             "scale_z": 0.174,
-            "dampening": (0.5, 0.8, 0.8),
+            "shift": {"dampening": (0.5, 0.8, 0.8)},
             "tracking_channel": "BF",
         }
         cfg = DynaTrackConfig(**meta)
         assert cfg.scale_yx == 0.075
+        assert cfg.shift.dampening == (0.5, 0.8, 0.8)
 
     def test_rejects_unknown_key(self):
         """As a pydantic model, unknown keys (e.g. typos) are rejected."""
@@ -203,11 +206,14 @@ class TestDynaTrackConfig:
             DynaTrackConfig(scale_yx=0.5, scale_z=2.0)  # missing tracking_channel
 
     def test_coerces_shift_limits_lists_to_tuples(self):
-        """YAML lists for shift_limits are coerced to tuples by pydantic."""
+        """YAML lists for shift.limits are coerced to tuples by pydantic."""
         cfg = DynaTrackConfig(
-            scale_yx=1.0, scale_z=1.0, tracking_channel="BF", shift_limits={"z": [0.5, 2.0]}
+            scale_yx=1.0,
+            scale_z=1.0,
+            tracking_channel="BF",
+            shift={"limits": {"z": [0.5, 2.0]}},
         )
-        assert cfg.shift_limits["z"] == (0.5, 2.0)
+        assert cfg.shift.limits["z"] == (0.5, 2.0)
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +255,9 @@ class TestComputeShift:
         scale_yx = 0.5
         scale_z = 2.0
         dampening = (0.5, 0.25, 0.1)  # z, y, x
-        updater = self._make_updater(scale_yx=scale_yx, scale_z=scale_z, dampening=dampening)
+        updater = self._make_updater(
+            scale_yx=scale_yx, scale_z=scale_z, shift={"dampening": dampening}
+        )
 
         x_um, y_um, z_um = updater._compute_shift(ref, mov)
 
@@ -273,7 +281,7 @@ class TestComputeShift:
         scale_z = 2.0
         shift_limits = {"z": (0.1, 50.0), "y": (0.1, 50.0), "x": (0.1, 5.0)}
         updater = self._make_updater(
-            scale_yx=scale_yx, scale_z=scale_z, shift_limits=shift_limits
+            scale_yx=scale_yx, scale_z=scale_z, shift={"limits": shift_limits}
         )
 
         x_um, y_um, z_um = updater._compute_shift(ref, mov)
@@ -809,7 +817,7 @@ class TestDynaTrackUpdaterMultiotsu:
             scale_z=1.0,
             tracking_channel="BF",
             tracking_method="multiotsu_center_of_mass",
-            otsu_sigma=1.0,
+            segmentation={"otsu_sigma": 1.0},
             preprocessing=[],
         )
         updater = DynaTrackUpdater(config=config)
@@ -832,7 +840,7 @@ class TestDynaTrackUpdaterMultiotsu:
             scale_z=1.0,
             tracking_channel="BF",
             tracking_method="multiotsu_pcc",
-            otsu_sigma=1.0,
+            segmentation={"otsu_sigma": 1.0},
             preprocessing=[],
         )
         updater = DynaTrackUpdater(config=config)
@@ -910,7 +918,7 @@ class TestRoiCenterMethodsFlow:
             scale_z=1.0,
             tracking_channel="BF",
             tracking_method="roi_center_pcc",
-            roi_blob_sigma=4.0,
+            roi_center={"blob_sigma": 4.0},
             preprocessing=[],
         )
         updater = DynaTrackUpdater(config=config)

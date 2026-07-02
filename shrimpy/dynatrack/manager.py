@@ -111,9 +111,9 @@ class DynaTrack:
 
         Without VS, it must name one of the acquisition input channels (tracking
         runs on that channel's raw/deskewed/phase volume). With VS, it must be
-        one of ``vs_config.target_channels``. The reserved names ``"phase"``,
-        ``"deskewed"``, and any ``"vs_*"`` name are rejected as ambiguous /
-        bug-prone.
+        one of ``virtual_staining.target_channels``. The reserved names
+        ``"phase"``, ``"deskewed"``, and any ``"vs_*"`` name are rejected as
+        ambiguous / bug-prone.
         """
         tc = config.tracking_channel
         preprocessing = config.preprocessing or []
@@ -122,19 +122,21 @@ class DynaTrack:
         if tc == "phase" or tc == "deskewed" or tc.startswith("vs_"):
             raise ValueError(
                 f"tracking_channel={tc!r} is not allowed. Use an input channel "
-                "name (raw/deskew/phase pipelines) or a vs_config.target_channels "
-                "name (VS pipeline); 'phase', 'deskewed', and 'vs_*' are reserved."
+                "name (raw/deskew/phase pipelines) or a "
+                "virtual_staining.target_channels name (VS pipeline); 'phase', "
+                "'deskewed', and 'vs_*' are reserved."
             )
 
         if uses_vs:
-            targets = (config.vs_config or {}).get("target_channels") or [
+            targets = (config.virtual_staining or {}).get("target_channels") or [
                 "nuclei",
                 "membrane",
             ]
             if tc not in targets:
                 raise ValueError(
-                    f"tracking_channel={tc!r} must be one of vs_config.target_channels "
-                    f"{targets} when preprocessing includes 'vs'."
+                    f"tracking_channel={tc!r} must be one of "
+                    f"virtual_staining.target_channels {targets} when preprocessing "
+                    "includes 'vs'."
                 )
         else:
             input_channels = [ch.config for ch in sequence.channels]

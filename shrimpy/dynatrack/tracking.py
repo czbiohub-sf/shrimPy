@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import psutil
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from shrimpy.dynatrack.position_update import PositionCoordinates, PositionUpdater
 
@@ -42,12 +42,82 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+class ShiftSettings(BaseModel):
+    """How the raw shift estimate is searched, bounded, and scaled.
+
+    Parameters
+    ----------
+    maximum : float
+        Maximum translation normalised by axis size, controlling FFT padding
+        for the phase-cross-correlation methods.
+    limits : dict[str, tuple[float, float]] | None
+        Optional per-axis (min, max) limits in microns (keys ``"z"``, ``"y"``,
+        ``"x"``). Shifts below min are zeroed (deadband); shifts above max are
+        clipped in magnitude.
+    dampening : tuple[float, float, float] | None
+        Optional (z, y, x) factors applied multiplicatively to the computed
+        shift.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    maximum: float = 1.0
+    limits: dict[str, tuple[float, float]] | None = None
+    dampening: tuple[float, float, float] | None = None
+
+
+class SegmentationSettings(BaseModel):
+    """Segmentation parameters for the ``multiotsu_*`` tracking methods.
+
+    Parameters
+    ----------
+    otsu_sigma : float
+        Gaussian blur sigma applied before multi-Otsu thresholding.
+    otsu_component : int
+        Which multi-Otsu threshold to use: 0 = lower, 1 = upper (brightest).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    otsu_sigma: float = 5.0
+    otsu_component: int = 0
+
+
+class RoiCenterSettings(BaseModel):
+    """Parameters for the referenceless ROI-centre tracking methods
+    (``intensity_center_of_mass`` and ``roi_center_pcc``).
+
+    Parameters
+    ----------
+    blob_sigma : float
+        Gaussian sigma (in pixels) of the synthetic centred blob used as the
+        cross-correlation template for ``roi_center_pcc``. Set roughly to the
+        radius of the structure being tracked.
+    background_percentile : float | None
+        For ``intensity_center_of_mass``: if set (0-100), subtract this
+        intensity percentile of the volume as a background floor before
+        weighting, so a uniform background pedestal no longer pulls the
+        centroid toward the geometric centre. ``None`` uses raw values.
+    blur_sigma : float
+        For ``intensity_center_of_mass``: if > 0, Gaussian-blur the volume
+        before computing the background floor and centroid, suppressing
+        per-pixel noise / camera striping so the centroid follows the smooth
+        bright core. 0 disables blurring.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    blob_sigma: float = 10.0
+    background_percentile: float | None = None
+    blur_sigma: float = 0.0
+
+
 class DynaTrackConfig(BaseModel):
     """Configuration for DynaTrack position tracking.
 
     A validated pydantic model. Unknown keys are rejected (``extra="forbid"``)
-    so a mistyped setting fails fast. The nested ``deskew_config``,
-    ``phase_config``, and ``vs_config`` are kept as plain dicts here and
+    so a mistyped setting fails fast. The nested ``deskew``, ``phase``, and
+    ``virtual_staining`` sub-configs are kept as plain dicts here and
     validated against their upstream schemas where they are consumed (see
     :func:`shrimpy.dynatrack.preprocessing.build_preprocessor`), so this model
     stays importable without the optional deskew/phase/VS dependencies.
@@ -71,14 +141,9 @@ class DynaTrackConfig(BaseModel):
         Device name for Z corrections (e.g. ``"ObjectiveZ"``). When set, Z
         is written to that device's ``Position`` property instead of the
         event's ``z_pos`` (which typically drives the fast scanning stage).
-    maximum_shift : float
-        Maximum translation normalised by axis size for FFT padding.
-    dampening : tuple[float, float, float] | None
-        Optional (z, y, x) dampening factors applied multiplicatively
-        to the computed shift.
-    shift_limits : dict[str, tuple[float, float]] | None
-        Optional per-axis (min, max) limits in microns. Keys are "z",
-        "y", "x". Shifts below min are zeroed; shifts above max are clipped.
+    shift : ShiftSettings
+        Shift search range, per-axis limits, and dampening. See
+        :class:`ShiftSettings`.
     tracking_interval : int
         Track every N timepoints (1 = every timepoint).
     tracking_method : str
@@ -93,25 +158,12 @@ class DynaTrackConfig(BaseModel):
         binary masks). The ``'intensity_center_of_mass'`` and
         ``'roi_center_pcc'`` methods are referenceless: they target the ROI
         centre and correct from the first timepoint (no reference is stored).
-    otsu_sigma : float
-        Gaussian blur sigma for the multi-Otsu methods (default 5.0).
-    otsu_component : int
-        Which multi-Otsu threshold to use: 0 = lower, 1 = upper (default 0).
-    roi_blob_sigma : float
-        Gaussian sigma (in pixels) of the synthetic centred blob used as the
-        cross-correlation template for ``'roi_center_pcc'`` (default 10.0).
-        Set roughly to the radius of the structure being tracked.
-    roi_background_percentile : float | None
-        For ``'intensity_center_of_mass'``: if set (0-100), subtract this
-        intensity percentile of the volume as a background floor before
-        weighting, so a uniform background pedestal no longer pulls the
-        centroid toward the geometric centre. ``None`` (default) uses raw
-        values. Typical values: 50 (median) to 90 for a strong background.
-    roi_blur_sigma : float
-        For ``'intensity_center_of_mass'``: if > 0, Gaussian-blur the volume
-        before computing the background floor and centroid, suppressing
-        per-pixel noise / camera striping so the centroid follows the smooth
-        bright core. 0 (default) disables blurring.
+    segmentation : SegmentationSettings
+        Thresholding parameters for the ``multiotsu_*`` methods. See
+        :class:`SegmentationSettings`.
+    roi_center : RoiCenterSettings
+        Parameters for the referenceless ROI-centre methods. See
+        :class:`RoiCenterSettings`.
     reference_update_interval : int
         Re-anchor the per-position reference every N timepoints (0 = never,
         i.e. keep the fixed t=0 reference). On a re-anchor timepoint the
@@ -127,26 +179,27 @@ class DynaTrackConfig(BaseModel):
         - No VS in ``preprocessing``: must name one of the acquisition input
           channels (e.g. ``"BF"``). Tracking runs on that channel's raw,
           deskewed, or deskew+phase volume depending on ``preprocessing``.
-        - VS in ``preprocessing``: must be one of ``vs_config.target_channels``
-          (e.g. ``"nuclei"``, ``"membrane"``).
+        - VS in ``preprocessing``: must be one of
+          ``virtual_staining.target_channels`` (e.g. ``"nuclei"``,
+          ``"membrane"``).
 
         The reserved names ``"phase"`` (duplicates the preprocessing step),
         ``"deskewed"`` (ambiguous), and any ``"vs_*"`` name are rejected.
     preprocessing : list[str] | None
         Pipeline steps, e.g. ``['phase']`` or ``['phase', 'vs']``.
         Used by external factory functions to build the preprocessor callable.
-    phase_config : dict[str, Any] | None
+    phase : dict[str, Any] | None
         Phase reconstruction parameters (``transfer_function`` and
         ``apply_inverse``), validated at preprocessor-build time against
         ``waveorder.api.phase.Settings`` (``PhaseSettings``). DynaTrack always
         does 3-D phase on an in-memory array, so no ``input_channel_names`` or
         ``reconstruction_dimension`` is needed.
-    deskew_config : dict[str, Any] | None
+    deskew : dict[str, Any] | None
         Deskew parameters for light-sheet data, validated at preprocessor-build
         time against ``biahub.settings.DeskewSettings`` (e.g. ``ls_angle_deg``,
         ``pixel_size_um`` + ``scan_step_um`` or ``px_to_scan_ratio``,
         ``keep_overhang``, ``average_n_slices``).
-    vs_config : dict[str, Any] | None
+    virtual_staining : dict[str, Any] | None
         Model and checkpoint config for virtual staining, validated against
         cytoland's ``VSUNet`` (see
         :meth:`shrimpy.dynatrack.preprocessing._LabelfreePreprocessor._load_vs_model`).
@@ -164,22 +217,17 @@ class DynaTrackConfig(BaseModel):
     enabled: bool = True
     input_channel: str | None = None
     z_device: str | None = None
-    maximum_shift: float = 1.0
-    dampening: tuple[float, float, float] | None = None
-    shift_limits: dict[str, tuple[float, float]] | None = None
+    shift: ShiftSettings = Field(default_factory=ShiftSettings)
     tracking_interval: int = 1
     tracking_method: str = "pcc"
-    otsu_sigma: float = 5.0
-    otsu_component: int = 0
-    roi_blob_sigma: float = 10.0
-    roi_background_percentile: float | None = None
-    roi_blur_sigma: float = 0.0
+    segmentation: SegmentationSettings = Field(default_factory=SegmentationSettings)
+    roi_center: RoiCenterSettings = Field(default_factory=RoiCenterSettings)
     reference_update_interval: int = 0
     tracking_channel: str
     preprocessing: list[str] | None = None
-    deskew_config: dict[str, Any] | None = None
-    phase_config: dict[str, Any] | None = None
-    vs_config: dict[str, Any] | None = None
+    deskew: dict[str, Any] | None = None
+    phase: dict[str, Any] | None = None
+    virtual_staining: dict[str, Any] | None = None
     image_to_stage_matrix_xyz: list[list[float]] | None = None
     shift_log_path: str | Path | None = None
     debug: bool = False
@@ -1188,33 +1236,33 @@ class DynaTrackUpdater(PositionUpdater):
         # 1. Compute pixel shifts using the configured method (returns ZYX order)
         method = cfg.tracking_method
         if method == "pcc":
-            shifts_zyx_px = _phase_cross_corr(reference_zyx, current_zyx, cfg.maximum_shift)
+            shifts_zyx_px = _phase_cross_corr(reference_zyx, current_zyx, cfg.shift.maximum)
         elif method == "intensity_center_of_mass":
             shifts_zyx_px = _intensity_center_of_mass_to_roi_center(
                 current_zyx,
-                background_percentile=cfg.roi_background_percentile,
-                blur_sigma=cfg.roi_blur_sigma,
+                background_percentile=cfg.roi_center.background_percentile,
+                blur_sigma=cfg.roi_center.blur_sigma,
             )
         elif method == "roi_center_pcc":
             shifts_zyx_px = _roi_center_pcc(
                 current_zyx,
-                blob_sigma=cfg.roi_blob_sigma,
-                maximum_shift=cfg.maximum_shift,
+                blob_sigma=cfg.roi_center.blob_sigma,
+                maximum_shift=cfg.shift.maximum,
             )
         elif method == "multiotsu_center_of_mass":
             shifts_zyx_px = _multiotsu_center_of_mass(
                 reference_zyx,
                 current_zyx,
-                sigma=cfg.otsu_sigma,
-                otsu_component=cfg.otsu_component,
+                sigma=cfg.segmentation.otsu_sigma,
+                otsu_component=cfg.segmentation.otsu_component,
             )
         elif method == "multiotsu_pcc":
             shifts_zyx_px = _multiotsu_pcc(
                 reference_zyx,
                 current_zyx,
-                sigma=cfg.otsu_sigma,
-                otsu_component=cfg.otsu_component,
-                maximum_shift=cfg.maximum_shift,
+                sigma=cfg.segmentation.otsu_sigma,
+                otsu_component=cfg.segmentation.otsu_component,
+                maximum_shift=cfg.shift.maximum,
             )
         else:
             raise ValueError(
@@ -1234,12 +1282,12 @@ class DynaTrackUpdater(PositionUpdater):
         )
 
         # 3. Apply shift limits (zero below min, clip above max)
-        if cfg.shift_limits is not None:
-            shifts_zyx_um = _limit_shifts_zyx(shifts_zyx_um, cfg.shift_limits)
+        if cfg.shift.limits is not None:
+            shifts_zyx_um = _limit_shifts_zyx(shifts_zyx_um, cfg.shift.limits)
 
         # 4. Apply dampening
-        if cfg.dampening is not None:
-            shifts_zyx_um = shifts_zyx_um * np.array(cfg.dampening, dtype=float)
+        if cfg.shift.dampening is not None:
+            shifts_zyx_um = shifts_zyx_um * np.array(cfg.shift.dampening, dtype=float)
 
         # Store for shift logging (ZYX order, microns)
         self._last_shift_zyx_um = (
@@ -1337,8 +1385,8 @@ class DynaTrackUpdater(PositionUpdater):
 
         mask = _binary_mask(
             volume,
-            sigma=self._config.otsu_sigma,
-            otsu_component=self._config.otsu_component,
+            sigma=self._config.segmentation.otsu_sigma,
+            otsu_component=self._config.segmentation.otsu_component,
         )
         cz, cy, cx = (float(c) for c in _center_of_mass(mask).tolist())
         mip = mask.any(dim=0).detach().cpu().numpy()  # (Y, X) projection over Z
@@ -1384,10 +1432,10 @@ class DynaTrackUpdater(PositionUpdater):
         # Reproduce the filtering the centroid uses: optional blur, then
         # subtract the background floor (if configured) and clamp negatives.
         img = volume.to(dtype=torch.float32)
-        blur_sigma = self._config.roi_blur_sigma
+        blur_sigma = self._config.roi_center.blur_sigma
         if blur_sigma and blur_sigma > 0:
             img = _gaussian_blur_3d(img, blur_sigma)
-        pct = self._config.roi_background_percentile
+        pct = self._config.roi_center.background_percentile
         background = _percentile(img, pct) if pct is not None else 0.0
         filtered = (img - background).clamp_min(0)
 

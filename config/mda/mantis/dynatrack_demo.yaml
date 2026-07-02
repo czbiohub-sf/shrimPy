@@ -82,7 +82,7 @@ metadata:
 
       # Channel to run shift estimation on. Without VS: an input channel name
       # (tracks that channel's raw / deskewed / deskew+phase volume). With VS:
-      # a vs_config.target_channels name. 'phase', 'deskewed', and 'vs_*' are
+      # a virtual_staining.target_channels name. 'phase', 'deskewed', and 'vs_*' are
       # not allowed. The phase/VS cases are generally used with input_channel=BF.
       tracking_channel: 'nuclei'
       # tracking_channel: GFP    # deskew-only (fluorescence): the input channel
@@ -111,12 +111,29 @@ metadata:
       # new reference and no correction is applied. Use for long timelapses
       # where the sample changes enough that matching a stale reference fails.
       reference_update_interval: 0
-      shift_limits:
-        z: [0.5, 2.0]
-        y: [2.0, 10.0]
-        x: [2.0, 10.0]
 
-      # Biahub deskew parameters for light-sheet data
+      # Shift search range, per-axis bounds, and scaling applied to the estimate.
+      shift:
+        maximum: 1.0          # max translation (normalised by axis size) for PCC FFT padding
+        # Per-axis (min, max) in microns: shifts below min are zeroed (deadband),
+        # shifts above max are clipped.
+        limits:
+          z: [0.5, 2.0]
+          y: [2.0, 10.0]
+          x: [2.0, 10.0]
+        # dampening: [1.0, 1.0, 1.0]   # (z, y, x) multiplicative factors on the shift
+
+      # Segmentation params for the multiotsu_* methods.
+      segmentation:
+        otsu_sigma: 5.0       # Gaussian blur sigma before thresholding
+        otsu_component: 1     # which multi-Otsu threshold: 0 = lower, 1 = upper (brightest); use 0 for gfp and 1 for bf
+
+      # Params for the referenceless ROI-centre methods (intensity_center_of_mass, roi_center_pcc).
+      roi_center:
+        blob_sigma: 10.0      # Gaussian blob sigma (px) for the 'roi_center_pcc' template; ~structure radius
+        # background_percentile: 80   # 'intensity_center_of_mass': subtract this intensity percentile (0-100) as a background floor; null = raw
+        # blur_sigma: 0.0             # 'intensity_center_of_mass': blur before centroid; 0 = off
+
       # Proper 90-deg rotation (det +1) mapping deskewed-image axes to stage
       # axes; image-X is inverted relative to stage-Y. Validated on-microscope:
       # both in-plane axes converge to the deadband (a pure swap, det -1, drove
@@ -129,12 +146,7 @@ metadata:
       scale_yx: 0.1494
       scale_z: 0.174
 
-      otsu_sigma: 5.0       # Gaussian blur sigma before thresholding (multi-Otsu methods)
-      otsu_component: 1     # which multi-Otsu threshold: 0 = lower, 1 = upper (brightest); use 0 for gfp and 1 for bf
-      roi_blob_sigma: 10.0  # Gaussian blob sigma (px) for the 'roi_center_pcc' template; ~structure radius
-      # roi_background_percentile: 80   # 'intensity_center_of_mass': subtract this intensity percentile (0-100) as a background floor before weighting; null = raw
-
-      deskew_config:
+      deskew:
         ls_angle_deg: 30.0
         pixel_size_um: 0.1133
         scan_step_um: 0.15
@@ -145,7 +157,7 @@ metadata:
       # waveorder.api.phase.Settings (PhaseSettings). DynaTrack always does
       # 3-D phase on an in-memory array, so no input_channel_names or
       # reconstruction_dimension is needed.
-      phase_config:
+      phase:
         transfer_function:
           wavelength_illumination: 0.450
           yx_pixel_size: 0.1494
@@ -162,7 +174,7 @@ metadata:
       # Cytoland (VisCy) virtual staining model parameters. The `model` block is
       # validated against cytoland.engine.VSUNet's signature (same machinery as
       # `viscy predict`), so unknown keys error early.
-      vs_config:
+      virtual_staining:
         # Output channels and sliding-window step are derived from the config
         # (as in biahub): one predicted channel per name in `target_channels`,
         # emitted under that bare name (e.g. tracking_channel: 'nuclei').

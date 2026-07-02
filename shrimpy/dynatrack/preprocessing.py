@@ -65,7 +65,7 @@ def build_preprocessor(
     config : DynaTrackConfig
         Must have ``preprocessing`` (e.g. ``['phase']`` or ``['phase', 'vs']``)
         and ``tracking_channel`` (an input channel name like ``'BF'`` for
-        non-VS pipelines, or a ``vs_config.target_channels`` name like
+        non-VS pipelines, or a ``virtual_staining.target_channels`` name like
         ``'nuclei'`` for VS pipelines).
     zyx_shape : tuple[int, int, int]
         Shape of the z-stack ``(Z, Y, X)`` — needed for transfer function
@@ -96,25 +96,25 @@ def build_preprocessor(
 
     # Validate the deskew/phase sub-configs against their upstream schemas.
     deskew_settings = None
-    if "deskew" in pipeline and config.deskew_config:
+    if "deskew" in pipeline and config.deskew:
         from biahub.settings import DeskewSettings
 
-        deskew_settings = DeskewSettings(**config.deskew_config)
+        deskew_settings = DeskewSettings(**config.deskew)
 
     phase_settings = None
-    if "phase" in pipeline and config.phase_config:
+    if "phase" in pipeline and config.phase:
         from waveorder.api.phase import Settings as PhaseSettings
 
         # DynaTrack always does 3-D phase on an in-memory array, so only the
         # transfer_function / apply_inverse settings are needed (no
         # input_channel_names or reconstruction_dimension).
-        phase_settings = PhaseSettings(**config.phase_config)
+        phase_settings = PhaseSettings(**config.phase)
 
     preprocessor = _LabelfreePreprocessor(
         zyx_shape=zyx_shape,
         deskew_settings=deskew_settings,
         phase_settings=phase_settings,
-        vs_config=config.vs_config if "vs" in pipeline else None,
+        vs_config=config.virtual_staining if "vs" in pipeline else None,
         output_channel=channel,
     )
     preprocessor.warm_up()
@@ -234,7 +234,7 @@ class _LabelfreePreprocessor:
         -------
         dict[str, torch.Tensor]
             Mapping of channel name to ZYX tensor on the target device.
-            For a VS pipeline the keys are the ``vs_config.target_channels``
+            For a VS pipeline the keys are the ``virtual_staining.target_channels``
             (e.g. ``'nuclei'``, ``'membrane'``), plus ``'phase'`` as a debug
             intermediate. For a non-VS pipeline (raw/deskew/deskew+phase) there
             is a single entry keyed by ``tracking_channel`` (the input channel
@@ -381,13 +381,13 @@ class _LabelfreePreprocessor:
         model_init_args = cfg.get("model", {}).get("init_args", {})
         if model_init_args.get("test_time_augmentations"):
             logger.warning(
-                "DynaTrack VS: 'test_time_augmentations' is set in vs_config, but "
-                "DynaTrack does not apply test-time augmentation; ignoring it."
+                "DynaTrack VS: 'test_time_augmentations' is set in virtual_staining, "
+                "but DynaTrack does not apply test-time augmentation; ignoring it."
             )
         if "data" in cfg or "normalizations" in cfg:
             logger.warning(
-                "DynaTrack VS: input normalization configured in vs_config is not "
-                "applied; DynaTrack tracks on the raw reconstructed volume."
+                "DynaTrack VS: input normalization configured in virtual_staining is "
+                "not applied; DynaTrack tracks on the raw reconstructed volume."
             )
 
         # Validate/instantiate the model against cytoland's VSUNet signature.

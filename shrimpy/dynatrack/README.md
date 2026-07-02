@@ -25,7 +25,7 @@ The acquisition proceeds as a normal multi-dimensional acquisition (timepoints
    virtually stained — so tracking runs on the most informative representation.
    The channel tracked is set by `tracking_channel`: without VS it names an
    input channel (its raw / deskewed / deskew+phase volume, per
-   `preprocessing`); with VS it names one of `vs_config.target_channels`
+   `preprocessing`); with VS it names one of `virtual_staining.target_channels`
    (e.g. `nuclei`, `membrane`).
 3. **Estimate shift.** The chosen [tracking method](#tracking-methods) computes
    a translational offset (Z, Y, X, in pixels) between the current stack and a
@@ -33,7 +33,7 @@ The acquisition proceeds as a normal multi-dimensional acquisition (timepoints
 4. **Convert to stage microns.** Pixel shifts are scaled to microns
    (`scale_yx`, `scale_z`), then mapped from image axes to stage axes via
    `image_to_stage_matrix_xyz` (a per-microscope rotation/flip). Optional
-   `shift_limits` (deadband + clip) and `dampening` tame noise and overshoot.
+   `shift.limits` (deadband + clip) and `shift.dampening` tame noise and overshoot.
 5. **Correct the position.** The stage coordinates the stack was acquired at are
    the baseline; the measured drift is *subtracted* from them (the stage moves
    opposite to the drift to re-centre) and written back to the position store.
@@ -84,11 +84,12 @@ timepoint.
 
 ### Method-specific parameters
 
-- `otsu_sigma`, `otsu_component` — Gaussian blur sigma and which multi-Otsu
-  threshold (0 = lower, 1 = upper/brightest) for the `multiotsu_*` methods.
-- `roi_blob_sigma` — Gaussian blob radius (px) for the `roi_center_pcc`
+- `segmentation.otsu_sigma`, `segmentation.otsu_component` — Gaussian blur sigma
+  and which multi-Otsu threshold (0 = lower, 1 = upper/brightest) for the
+  `multiotsu_*` methods.
+- `roi_center.blob_sigma` — Gaussian blob radius (px) for the `roi_center_pcc`
   template; set roughly to the structure radius.
-- `roi_background_percentile`, `roi_blur_sigma` — for
+- `roi_center.background_percentile`, `roi_center.blur_sigma` — for
   `intensity_center_of_mass`: subtract a background floor and/or blur before
   weighting so a uniform pedestal or speckle doesn't pull the centroid toward
   the geometric centre.
@@ -111,7 +112,7 @@ metadata:
       scale_z: 0.174
       tracking_method: pcc
       tracking_interval: 1
-      # ... preprocessing, deskew_config, phase_config, vs_config, etc.
+      # ... preprocessing, deskew, phase, virtual_staining, etc.
 ```
 
 See [`config/mda/mantis/dynatrack_demo.yaml`](../../config/mda/mantis/dynatrack_demo.yaml)
