@@ -182,7 +182,7 @@ class DynaTrackConfig(BaseModel):
     vs_config: dict[str, Any] | None = None
     image_to_stage_matrix_xyz: list[list[float]] | None = None
     shift_log_path: str | Path | None = None
-    save_debug: bool = False
+    debug: bool = False
 
 
 # Tracking methods whose target is the ROI centre in deskew space rather than

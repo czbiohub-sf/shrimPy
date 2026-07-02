@@ -59,7 +59,7 @@ class DynaTrack:
         The acquisition sequence; provides the initial stage positions and
         the number of z-slices per stack.
     data_path : Path | None
-        Acquisition output directory; when set (and ``config.save_debug``),
+        Acquisition output directory; when set (and ``config.debug``),
         debug output is written alongside the data.
     updater : PositionUpdater | None
         Override the tracking updater. When provided, updates run in-process
@@ -86,7 +86,7 @@ class DynaTrack:
 
         self._debug_zarr_path: Path | None = None
         self._debug_position_names: dict[int, str] = {}
-        if config.save_debug and data_path:
+        if config.debug and data_path:
             self._debug_zarr_path = Path(data_path) / "dynatrack_debug.zarr"
             self._debug_position_names = {
                 idx: pos.name or f"p{idx}" for idx, pos in enumerate(sequence.stage_positions)

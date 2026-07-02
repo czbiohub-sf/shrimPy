@@ -68,13 +68,26 @@ metadata:
       stage: ObjectiveZ
     dynatrack:
       enabled: true
+      debug: true
+
       # Name of the acquisition channel fed to the tracker; must match one of
       # the channels defined above. For deskewed-GFP tracking set this to 'GFP'.
       input_channel: BF
-      z_device: ObjectiveZ
-      scale_yx: 0.1494
-      scale_z: 0.174
-      tracking_interval: 1
+
+      # Preprocessing pipeline: deskew -> phase recon -> virtual staining
+      # Options: ['deskew','phase','vs'], ['deskew','phase'], ['phase','vs'], ['phase'], ['deskew']
+      preprocessing: ['deskew', 'phase', 'vs']
+      # preprocessing: ['deskew']   # deskewed-GFP (fluorescence) tracking: deskew only
+      # preprocessing: ['phase']
+
+      # Channel to run shift estimation on. Without VS: an input channel name
+      # (tracks that channel's raw / deskewed / deskew+phase volume). With VS:
+      # a vs_config.target_channels name. 'phase', 'deskewed', and 'vs_*' are
+      # not allowed. The phase/VS cases are generally used with input_channel=BF.
+      tracking_channel: 'nuclei'
+      # tracking_channel: GFP    # deskew-only (fluorescence): the input channel
+      # tracking_channel: BF     # deskew+phase: the input channel
+
       # Shift-estimation algorithm: 'pcc' (phase cross-correlation),
       # 'intensity_center_of_mass' (intensity-weighted centroid vs ROI centre
       #   in deskew space; no threshold, no reference stack),
@@ -91,26 +104,17 @@ metadata:
       # tracking_method: 'roi_center_pcc'
       # tracking_method: 'multiotsu_center_of_mass'
       # tracking_method: 'multiotsu_pcc'
-      otsu_sigma: 5.0       # Gaussian blur sigma before thresholding (multi-Otsu methods)
-      otsu_component: 1     # which multi-Otsu threshold: 0 = lower, 1 = upper (brightest); use 0 for gfp and 1 for bf
-      roi_blob_sigma: 10.0  # Gaussian blob sigma (px) for the 'roi_center_pcc' template; ~structure radius
-      # roi_background_percentile: 80   # 'intensity_center_of_mass': subtract this intensity percentile (0-100) as a background floor before weighting; null = raw
+
+      tracking_interval: 1
       # Re-anchor the reference every N timepoints (0 = never; keep the fixed
       # t=0 reference). On a re-anchor timepoint the current stack becomes the
       # new reference and no correction is applied. Use for long timelapses
       # where the sample changes enough that matching a stale reference fails.
       reference_update_interval: 0
-      save_debug: true
-      # shift_limits:
-      #   z: [0.5, 2.0]
-      #   y: [2.0, 10.0]
-      #   x: [2.0, 10.0]
-
-      # Preprocessing pipeline: deskew -> phase recon -> virtual staining
-      # Options: ['deskew','phase','vs'], ['deskew','phase'], ['phase','vs'], ['phase'], ['deskew']
-      preprocessing: ['deskew', 'phase', 'vs']
-      # preprocessing: ['deskew']   # deskewed-GFP (fluorescence) tracking: deskew only
-      # preprocessing: ['phase']
+      shift_limits:
+        z: [0.5, 2.0]
+        y: [2.0, 10.0]
+        x: [2.0, 10.0]
 
       # Biahub deskew parameters for light-sheet data
       # Proper 90-deg rotation (det +1) mapping deskewed-image axes to stage
@@ -121,19 +125,21 @@ metadata:
         - [0.0, 1.0, 0.0]
         - [-1.0, 0.0, 0.0]
         - [0.0, 0.0, 1.0]
+      z_device: ObjectiveZ
+      scale_yx: 0.1494
+      scale_z: 0.174
+
+      otsu_sigma: 5.0       # Gaussian blur sigma before thresholding (multi-Otsu methods)
+      otsu_component: 1     # which multi-Otsu threshold: 0 = lower, 1 = upper (brightest); use 0 for gfp and 1 for bf
+      roi_blob_sigma: 10.0  # Gaussian blob sigma (px) for the 'roi_center_pcc' template; ~structure radius
+      # roi_background_percentile: 80   # 'intensity_center_of_mass': subtract this intensity percentile (0-100) as a background floor before weighting; null = raw
+
       deskew_config:
         ls_angle_deg: 30.0
         pixel_size_um: 0.1133
         scan_step_um: 0.15
         keep_overhang: false
         average_n_slices: 3
-      # Channel to run shift estimation on. Without VS: an input channel name
-      # (tracks that channel's raw / deskewed / deskew+phase volume). With VS:
-      # a vs_config.target_channels name. 'phase', 'deskewed', and 'vs_*' are
-      # not allowed. The phase/VS cases are generally used with input_channel=BF.
-      tracking_channel: 'nuclei'
-      # tracking_channel: GFP    # deskew-only (fluorescence): the input channel
-      # tracking_channel: BF     # deskew+phase: the input channel
 
       # Waveorder phase reconstruction parameters, validated as a
       # waveorder.api.phase.Settings (PhaseSettings). DynaTrack always does
@@ -160,6 +166,7 @@ metadata:
         # Output channels and sliding-window step are derived from the config
         # (as in biahub): one predicted channel per name in `target_channels`,
         # emitted under that bare name (e.g. tracking_channel: 'nuclei').
+        ckpt_path: C:\\Users\\labelfree\\Documents\\epoch=64-step=24960.ckpt
         target_channels: ['nuclei', 'membrane']
         sliding_window_step: 1
         model:
@@ -185,4 +192,3 @@ metadata:
             # reflect the actual behavior).
             test_time_augmentations: false
             tta_type: median
-        ckpt_path: C:\\Users\\labelfree\\Documents\\epoch=64-step=24960.ckpt
