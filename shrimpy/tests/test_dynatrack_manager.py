@@ -51,7 +51,7 @@ def _sequence(
 def _make_dynatrack(
     sequence: MDASequence,
     updater: PositionUpdater,
-    input_channel: str | None = "ch0",
+    input_channel: str = "ch0",
     expected_slices: int = 1,
 ) -> DynaTrack:
     """Build an in-process DynaTrack (no worker subprocess) and start it."""
@@ -105,7 +105,13 @@ class TestFromMetadata:
         assert dt.config.shift.dampening == (0.5, 0.8, 0.8)
 
     def test_sets_shift_log_path_from_data_path(self, tmp_path):
-        meta = {"enabled": True, "scale_yx": 0.1, "scale_z": 0.1, "tracking_channel": "ch0"}
+        meta = {
+            "enabled": True,
+            "scale_yx": 0.1,
+            "scale_z": 0.1,
+            "input_channel": "ch0",
+            "tracking_channel": "ch0",
+        }
         dt = DynaTrack.from_metadata(meta, _sequence(), data_path=tmp_path)
         assert dt.config.shift_log_path == str(tmp_path / "dynatrack_log.csv")
 
@@ -114,6 +120,7 @@ class TestFromMetadata:
             "enabled": True,
             "scale_yx": 0.1,
             "scale_z": 0.1,
+            "input_channel": "ch0",
             "tracking_channel": "ch0",
             "shift_log_path": "/custom/log.csv",
         }
@@ -132,12 +139,13 @@ class TestFromMetadata:
         with pytest.raises(ValueError, match="input_channel 'NOPE'"):
             DynaTrack.from_metadata(meta, _sequence())
 
-    def test_input_channel_none_buffers_all(self):
-        """input_channel=None (default) resolves to no channel filter."""
+    def test_input_channel_is_required(self):
+        """input_channel has no default; omitting it is a pydantic error."""
+        import pydantic
+
         meta = {"enabled": True, "scale_yx": 0.1, "scale_z": 0.1, "tracking_channel": "ch0"}
-        dt = DynaTrack.from_metadata(meta, _sequence())
-        assert dt.config.input_channel is None
-        assert dt._input_channel_index is None
+        with pytest.raises(pydantic.ValidationError):
+            DynaTrack.from_metadata(meta, _sequence())
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +155,7 @@ class TestFromMetadata:
 
 class TestTrackingChannelValidation:
     def _build(self, **cfg_kwargs):
+        cfg_kwargs.setdefault("input_channel", "BF")
         config = DynaTrackConfig(scale_yx=0.1, scale_z=0.1, **cfg_kwargs)
         return DynaTrack(config, _sequence(channels=("BF", "GFP")), updater=PositionUpdater())
 
@@ -272,16 +281,6 @@ class TestFrameBuffering:
         assert len(dt._frames[(0, 0)]) == 1
         dt.shutdown()
 
-    def test_all_channels_when_none(self):
-        dt = _make_dynatrack(
-            _sequence(), PositionUpdater(), input_channel=None, expected_slices=5
-        )
-        frame = np.ones((4, 4), dtype=np.uint16)
-        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0}))
-        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 1}))
-        assert len(dt._frames[(0, 0)]) == 2
-        dt.shutdown()
-
     def test_positions_buffer_independently(self):
         dt = _make_dynatrack(_sequence(2), PositionUpdater(), expected_slices=2)
         dt.apply_position_update(MDAEvent(index={"t": 0, "p": 0}))
@@ -316,6 +315,7 @@ class TestMantisEngineWiring:
                         "enabled": True,
                         "scale_yx": 0.1,
                         "scale_z": 0.1,
+                        "input_channel": "BF",
                         "tracking_channel": "BF",
                     }
                 }

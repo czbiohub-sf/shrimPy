@@ -149,7 +149,9 @@ class TestLimitShiftsZyx:
 
 class TestDynaTrackConfig:
     def test_minimal_config(self):
-        cfg = DynaTrackConfig(scale_yx=0.5, scale_z=2.0, tracking_channel="BF")
+        cfg = DynaTrackConfig(
+            scale_yx=0.5, scale_z=2.0, input_channel="BF", tracking_channel="BF"
+        )
         assert cfg.scale_yx == 0.5
         assert cfg.scale_z == 2.0
         assert cfg.shift.maximum == 1.0
@@ -169,6 +171,7 @@ class TestDynaTrackConfig:
                 "limits": {"z": (0.5, 2.0), "y": (2.0, 10.0), "x": (2.0, 10.0)},
             },
             tracking_interval=2,
+            input_channel="BF",
             tracking_channel="nuclei",
             preprocessing=["phase"],
             phase={"wavelength": 0.450},
@@ -183,6 +186,7 @@ class TestDynaTrackConfig:
             "scale_yx": 0.075,
             "scale_z": 0.174,
             "shift": {"dampening": (0.5, 0.8, 0.8)},
+            "input_channel": "BF",
             "tracking_channel": "BF",
         }
         cfg = DynaTrackConfig(**meta)
@@ -203,13 +207,15 @@ class TestDynaTrackConfig:
         with pytest.raises(pydantic.ValidationError):
             DynaTrackConfig(scale_yx=0.5)  # missing scale_z + tracking_channel
         with pytest.raises(pydantic.ValidationError):
-            DynaTrackConfig(scale_yx=0.5, scale_z=2.0)  # missing tracking_channel
+            # missing tracking_channel + input_channel
+            DynaTrackConfig(scale_yx=0.5, scale_z=2.0)
 
     def test_coerces_shift_limits_lists_to_tuples(self):
         """YAML lists for shift.limits are coerced to tuples by pydantic."""
         cfg = DynaTrackConfig(
             scale_yx=1.0,
             scale_z=1.0,
+            input_channel="BF",
             tracking_channel="BF",
             shift={"limits": {"z": [0.5, 2.0]}},
         )
@@ -223,7 +229,12 @@ class TestDynaTrackConfig:
 
 class TestComputeShift:
     def _make_updater(self, **kwargs):
-        defaults = {"scale_yx": 0.5, "scale_z": 2.0, "tracking_channel": "BF"}
+        defaults = {
+            "scale_yx": 0.5,
+            "scale_z": 2.0,
+            "input_channel": "BF",
+            "tracking_channel": "BF",
+        }
         defaults.update(kwargs)
         return DynaTrackUpdater(config=DynaTrackConfig(**defaults))
 
@@ -299,7 +310,12 @@ class TestComputeShift:
 
 class TestDynaTrackUpdaterFlow:
     def _make_updater(self, **kwargs):
-        defaults = {"scale_yx": 0.5, "scale_z": 2.0, "tracking_channel": "BF"}
+        defaults = {
+            "scale_yx": 0.5,
+            "scale_z": 2.0,
+            "input_channel": "BF",
+            "tracking_channel": "BF",
+        }
         defaults.update(kwargs)
         return DynaTrackUpdater(config=DynaTrackConfig(**defaults))
 
@@ -396,7 +412,11 @@ class TestTrackingInterval:
         """Updates are skipped when timepoint is not on the tracking interval."""
         rng = np.random.default_rng(42)
         config = DynaTrackConfig(
-            scale_yx=0.5, scale_z=2.0, tracking_channel="BF", tracking_interval=3
+            scale_yx=0.5,
+            scale_z=2.0,
+            input_channel="BF",
+            tracking_channel="BF",
+            tracking_interval=3,
         )
         updater = DynaTrackUpdater(config=config)
         pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
@@ -425,7 +445,9 @@ class TestTrackingInterval:
         """Default interval=1 tracks every timepoint."""
         rng = np.random.default_rng(42)
         updater = DynaTrackUpdater(
-            config=DynaTrackConfig(scale_yx=0.5, scale_z=2.0, tracking_channel="BF")
+            config=DynaTrackConfig(
+                scale_yx=0.5, scale_z=2.0, input_channel="BF", tracking_channel="BF"
+            )
         )
         pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
 
@@ -447,7 +469,9 @@ class TestPreprocessor:
     def test_preprocessor_is_applied(self):
         """Preprocessor transforms data before shift estimation."""
         rng = np.random.default_rng(42)
-        config = DynaTrackConfig(scale_yx=0.5, scale_z=2.0, tracking_channel="BF")
+        config = DynaTrackConfig(
+            scale_yx=0.5, scale_z=2.0, input_channel="BF", tracking_channel="BF"
+        )
 
         call_count = [0]
 
@@ -470,7 +494,9 @@ class TestPreprocessor:
     def test_preprocessor_affects_shift(self):
         """A preprocessor that introduces a shift should be detected."""
         rng = np.random.default_rng(42)
-        config = DynaTrackConfig(scale_yx=1.0, scale_z=1.0, tracking_channel="BF")
+        config = DynaTrackConfig(
+            scale_yx=1.0, scale_z=1.0, input_channel="BF", tracking_channel="BF"
+        )
 
         # Preprocessor that rolls the stack by 2 pixels in Y
         first_call = [True]
@@ -503,7 +529,11 @@ class TestShiftLogging:
         """CSV file is created with header on first shift computation."""
         log_path = tmp_path / "shifts.csv"
         config = DynaTrackConfig(
-            scale_yx=0.5, scale_z=2.0, tracking_channel="BF", shift_log_path=str(log_path)
+            scale_yx=0.5,
+            scale_z=2.0,
+            input_channel="BF",
+            tracking_channel="BF",
+            shift_log_path=str(log_path),
         )
         updater = DynaTrackUpdater(config=config)
         pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
@@ -534,7 +564,11 @@ class TestShiftLogging:
         """Each shift is appended as a new row."""
         log_path = tmp_path / "shifts.csv"
         config = DynaTrackConfig(
-            scale_yx=0.5, scale_z=2.0, tracking_channel="BF", shift_log_path=str(log_path)
+            scale_yx=0.5,
+            scale_z=2.0,
+            input_channel="BF",
+            tracking_channel="BF",
+            shift_log_path=str(log_path),
         )
         updater = DynaTrackUpdater(config=config)
         pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
@@ -555,7 +589,9 @@ class TestShiftLogging:
 
     def test_no_log_when_path_is_none(self):
         """No CSV is created when shift_log_path is None."""
-        config = DynaTrackConfig(scale_yx=0.5, scale_z=2.0, tracking_channel="BF")
+        config = DynaTrackConfig(
+            scale_yx=0.5, scale_z=2.0, input_channel="BF", tracking_channel="BF"
+        )
         updater = DynaTrackUpdater(config=config)
         pos = PositionCoordinates(x=100.0, y=200.0, z=50.0)
 
@@ -815,6 +851,7 @@ class TestDynaTrackUpdaterMultiotsu:
         config = DynaTrackConfig(
             scale_yx=1.0,
             scale_z=1.0,
+            input_channel="BF",
             tracking_channel="BF",
             tracking_method="multiotsu_center_of_mass",
             segmentation={"otsu_sigma": 1.0},
@@ -838,6 +875,7 @@ class TestDynaTrackUpdaterMultiotsu:
         config = DynaTrackConfig(
             scale_yx=1.0,
             scale_z=1.0,
+            input_channel="BF",
             tracking_channel="BF",
             tracking_method="multiotsu_pcc",
             segmentation={"otsu_sigma": 1.0},
@@ -860,6 +898,7 @@ class TestDynaTrackUpdaterMultiotsu:
         config = DynaTrackConfig(
             scale_yx=1.0,
             scale_z=1.0,
+            input_channel="BF",
             tracking_channel="BF",
             tracking_method="unknown_method",
             preprocessing=[],
@@ -896,6 +935,7 @@ class TestRoiCenterMethodsFlow:
         config = DynaTrackConfig(
             scale_yx=1.0,
             scale_z=1.0,
+            input_channel="BF",
             tracking_channel="BF",
             tracking_method="intensity_center_of_mass",
             preprocessing=[],
@@ -916,6 +956,7 @@ class TestRoiCenterMethodsFlow:
         config = DynaTrackConfig(
             scale_yx=1.0,
             scale_z=1.0,
+            input_channel="BF",
             tracking_channel="BF",
             tracking_method="roi_center_pcc",
             roi_center={"blob_sigma": 4.0},
@@ -943,6 +984,7 @@ class TestWantsReferenceRefresh:
             config=DynaTrackConfig(
                 scale_yx=1.0,
                 scale_z=1.0,
+                input_channel="BF",
                 tracking_channel="BF",
                 tracking_method="pcc",
                 reference_update_interval=4,
@@ -960,6 +1002,7 @@ class TestWantsReferenceRefresh:
             config=DynaTrackConfig(
                 scale_yx=1.0,
                 scale_z=1.0,
+                input_channel="BF",
                 tracking_channel="BF",
                 tracking_method="pcc",
                 reference_update_interval=0,
@@ -977,6 +1020,7 @@ class TestWantsReferenceRefresh:
                 config=DynaTrackConfig(
                     scale_yx=1.0,
                     scale_z=1.0,
+                    input_channel="BF",
                     tracking_channel="BF",
                     tracking_method=method,
                     reference_update_interval=4,
@@ -992,6 +1036,7 @@ class TestReferenceUpdateIntervalWarning:
                 config=DynaTrackConfig(
                     scale_yx=1.0,
                     scale_z=1.0,
+                    input_channel="BF",
                     tracking_channel="BF",
                     tracking_method="intensity_center_of_mass",
                     reference_update_interval=4,
@@ -1005,6 +1050,7 @@ class TestReferenceUpdateIntervalWarning:
                 config=DynaTrackConfig(
                     scale_yx=1.0,
                     scale_z=1.0,
+                    input_channel="BF",
                     tracking_channel="BF",
                     tracking_method="pcc",
                     reference_update_interval=4,
@@ -1018,6 +1064,7 @@ class TestReferenceUpdateIntervalWarning:
                 config=DynaTrackConfig(
                     scale_yx=1.0,
                     scale_z=1.0,
+                    input_channel="BF",
                     tracking_channel="BF",
                     tracking_method="intensity_center_of_mass",
                     reference_update_interval=0,

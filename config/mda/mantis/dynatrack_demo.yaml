@@ -35,8 +35,6 @@ channels:
   z_offset: 0.0
   acquire_every: 1
   camera: null
-# For deskewed-GFP (fluorescence) tracking, add a fluorescence channel and
-# point `input_channel: GFP` at it (see dynatrack below):
 # - config: GFP
 #   group: Channel
 #   exposure: 10.0
@@ -67,26 +65,41 @@ metadata:
       method: demo-PFS
       stage: ObjectiveZ
     dynatrack:
-      enabled: true
-      debug: true
+      # DynaTrack keeps a moving structure centred across timepoints: each stack
+      # of the `input_channel` is buffered, optionally transformed by the
+      # `preprocessing` pipeline, and a drift is estimated on `tracking_channel`
+      # with `tracking_method`. The drift is bounded (`shift`) and subtracted
+      # from the stage position so the next visit re-centres the structure.
+      enabled: true    # master switch; the engine builds DynaTrack only when true
+      debug: true      # write preprocessed stacks (dynatrack_debug.zarr), a shift
+                       # log (dynatrack_log.csv) and centre PNGs next to the data
 
-      # Name of the acquisition channel fed to the tracker; must match one of
-      # the channels defined above. For deskewed-GFP tracking set this to 'GFP'.
+      # Acquisition channel whose frames are fed to the tracker; must match a
+      # `config:` name in `channels:` above. This is the channel that is
+      # buffered and preprocessed.
       input_channel: BF
 
-      # Preprocessing pipeline: deskew -> phase recon -> virtual staining
-      # Options: ['deskew','phase','vs'], ['deskew','phase'], ['phase','vs'], ['phase'], ['deskew']
+      # Transforms applied to each buffered stack before shift estimation, in
+      # order. Steps: 'deskew' (light-sheet -> real space), 'phase' (label-free
+      # phase reconstruction), 'vs' (virtual staining; requires 'phase' first).
+      # Omit / use [] to track on the raw frames. `tracking_channel` must name
+      # the representation this pipeline produces (see below).
+      #   ['deskew','phase','vs']  label-free -> virtual-stained nuclei/membrane
+      #   ['deskew','phase']       label-free phase of the input channel
+      #   ['deskew']               deskewed fluorescence (e.g. GFP)
+      #   []                       raw frames of the input channel
       preprocessing: ['deskew', 'phase', 'vs']
-      # preprocessing: ['deskew']   # deskewed-GFP (fluorescence) tracking: deskew only
-      # preprocessing: ['phase']
 
-      # Channel to run shift estimation on. Without VS: an input channel name
-      # (tracks that channel's raw / deskewed / deskew+phase volume). With VS:
-      # a virtual_staining.target_channels name. 'phase', 'deskewed', and 'vs_*' are
-      # not allowed. The phase/VS cases are generally used with input_channel=BF.
+      # Channel the shift is estimated on. Rules:
+      #   - no 'vs' in preprocessing -> an input channel name (tracks that
+      #     channel's raw / deskewed / deskew+phase volume). Typically equals
+      #     input_channel, e.g. 'BF' (deskew+phase) or 'GFP' (deskew-only).
+      #   - 'vs' in preprocessing   -> a virtual_staining.target_channels name,
+      #     e.g. 'nuclei' or 'membrane' (input_channel is usually 'BF').
+      # The reserved names 'phase', 'deskewed', and any 'vs_*' are rejected.
       tracking_channel: 'nuclei'
-      # tracking_channel: GFP    # deskew-only (fluorescence): the input channel
-      # tracking_channel: BF     # deskew+phase: the input channel
+      # tracking_channel: GFP    # with preprocessing: ['deskew']
+      # tracking_channel: BF     # with preprocessing: ['deskew','phase']
 
       # Shift-estimation algorithm: 'pcc' (phase cross-correlation),
       # 'intensity_center_of_mass' (intensity-weighted centroid vs ROI centre
@@ -105,7 +118,7 @@ metadata:
       # tracking_method: 'multiotsu_center_of_mass'
       # tracking_method: 'multiotsu_pcc'
 
-      tracking_interval: 1
+      tracking_interval: 1   # estimate a correction every N timepoints (1 = every)
       # Re-anchor the reference every N timepoints (0 = never; keep the fixed
       # t=0 reference). On a re-anchor timepoint the current stack becomes the
       # new reference and no correction is applied. Use for long timelapses
@@ -142,9 +155,15 @@ metadata:
         - [0.0, 1.0, 0.0]
         - [-1.0, 0.0, 0.0]
         - [0.0, 0.0, -1.0]
+      # Stage that receives Z corrections: Z is written to this device's
+      # `Position` property instead of the event's z_pos (which usually drives
+      # the fast scan piezo). Set null to correct via z_pos.
       z_device: ObjectiveZ
-      scale_yx: 0.1494
-      scale_z: 0.174
+      # Voxel size of the *tracked* volume, used to convert pixel shifts to
+      # microns. Match these to the representation tracking runs on (e.g. the
+      # deskewed voxel size when preprocessing includes 'deskew').
+      scale_yx: 0.1494   # XY pixel size, um/px
+      scale_z: 0.174     # Z step, um
 
       deskew:
         ls_angle_deg: 30.0

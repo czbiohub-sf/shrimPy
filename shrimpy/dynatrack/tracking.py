@@ -132,11 +132,11 @@ class DynaTrackConfig(BaseModel):
     enabled : bool
         Master switch read from acquisition metadata; engines only build a
         :class:`~shrimpy.dynatrack.manager.DynaTrack` coordinator when True.
-    input_channel : str | None
-        Name of the acquisition channel (e.g. ``"BF"``) whose frames are fed to
-        the tracker. Must match one of the channel configs in the acquisition
-        ``MDASequence`` (validated in :class:`~shrimpy.dynatrack.manager.DynaTrack`).
-        ``None`` = buffer all channels.
+    input_channel : str
+        Required. Name of the acquisition channel (e.g. ``"BF"``) whose frames
+        are fed to the tracker. Must match one of the channel configs in the
+        acquisition ``MDASequence`` (validated in
+        :class:`~shrimpy.dynatrack.manager.DynaTrack`).
     z_device : str | None
         Device name for Z corrections (e.g. ``"ObjectiveZ"``). When set, Z
         is written to that device's ``Position`` property instead of the
@@ -215,7 +215,7 @@ class DynaTrackConfig(BaseModel):
     scale_yx: float
     scale_z: float
     enabled: bool = True
-    input_channel: str | None = None
+    input_channel: str
     z_device: str | None = None
     shift: ShiftSettings = Field(default_factory=ShiftSettings)
     tracking_interval: int = 1

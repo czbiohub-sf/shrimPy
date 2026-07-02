@@ -80,7 +80,7 @@ class DynaTrack:
         self._expected_slices = max(sequence.sizes.get("z", 1), 1)
         self._frames: dict[tuple[int, int], list[np.ndarray]] = {}
         # Resolve the input channel name to its index in the sequence (used to
-        # filter frames in on_frame_ready). None = buffer all channels.
+        # filter frames in on_frame_ready).
         self._input_channel_index = self._resolve_input_channel(config.input_channel, sequence)
         self._validate_tracking_channel(config, sequence)
 
@@ -147,14 +147,11 @@ class DynaTrack:
                 )
 
     @staticmethod
-    def _resolve_input_channel(name: str | None, sequence: MDASequence) -> int | None:
-        """Resolve an input channel name to its index in the sequence.
+    def _resolve_input_channel(name: str, sequence: MDASequence) -> int:
+        """Resolve the input channel name to its index in the sequence.
 
-        Returns ``None`` when ``name`` is ``None`` (buffer all channels).
         Raises ``ValueError`` if the name is not one of the sequence's channels.
         """
-        if name is None:
-            return None
         channel_names = [ch.config for ch in sequence.channels]
         if name not in channel_names:
             raise ValueError(
@@ -257,10 +254,9 @@ class DynaTrack:
         Connect to the core's ``frameReady`` signal. Counts z-slices per
         (timepoint, position) and submits the stack for tracking as soon as
         all expected slices have been collected. Only frames from
-        ``config.input_channel`` are buffered (``None`` = all channels).
+        ``config.input_channel`` are buffered.
         """
-        channel_index = self._input_channel_index
-        if channel_index is not None and event.index.get("c") != channel_index:
+        if event.index.get("c") != self._input_channel_index:
             return
 
         t_idx = event.index.get("t", 0)
