@@ -1,0 +1,93 @@
+# Setup
+setup:
+  roi: [225, 880, 1600, 256]
+  properties:
+    - ['Core', 'Focus', 'Z']
+    - ['Camera', 'OnCameraCCDXSize', '2048']
+    - ['Camera', 'OnCameraCCDYSize', '2048']
+    - ['Camera', 'PixelType', '16bit']
+    - ['XY', 'Velocity', '10000']
+    - ['Z', 'UseSequences', 'Yes']
+
+# Positions will be populated by FOV selection algorithm
+stage_positions:
+
+# Define time plan
+time_plan:
+  interval: 5.0
+  loops: 3
+
+# Define z plan
+z_plan:
+  top: 89
+  bottom: -89
+  step: 15 # coarser sampling for demo
+  go_up: true
+
+# Define channels
+channels:
+- config: DAPI
+  group: Channel
+  exposure: 5.0
+  do_stack: true
+  z_offset: 0.0
+  acquire_every: 1
+  camera: null
+- config: FITC
+  group: Channel
+  exposure: 3.0
+  do_stack: true
+  z_offset: 0.0
+  acquire_every: 1
+  camera: null
+
+autofocus_plan: null
+keep_shutter_open_across: []
+
+# Define metadata per microscope
+metadata:
+  pymmcore_widgets:
+    version: 0.10.2.dev23+g22b8c0aff.d20260106
+  mantis:
+    reset_hardware_sequencing_settings:
+      - ['Z', 'UseSequences', 'No']
+    autofocus:
+      enabled: false
+      method: demo-PFS
+      stage: Z
+    # Pseudocode
+    fov_selection:
+      enabled: true
+      model: tree_1
+      target_fov_count: 9
+      # Pre-scan for FOV selection
+      search_mda:
+        stage_positions:
+          a1_center_xy: [0, 0]
+          plate:
+            columns: 6
+            name: 24-well
+            rows: 4
+            well_size:
+            - 15.6
+            - 15.6
+            well_spacing:
+            - 19.0
+            - 19.0
+          selected_wells:
+          - [0] # rows
+          - [0, 1] # columns
+          well_points_plan:
+            rows: 10
+            columns: 10
+            fov_height: 180.0
+            fov_width: 180.0
+            overlap:
+            - -10.0
+            - -10.0
+        z_plan: null
+        time_plan: null
+        channels:
+          - config: BF
+            group: Channel
+            exposure: 5.0

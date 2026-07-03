@@ -162,6 +162,21 @@ class MantisEngine(MDAEngine):
                 f"reference_update_interval={cfg.reference_update_interval}"
             )
 
+        if fov_selection := microscope_meta.get("fov_selection"):
+            if fov_selection.get("enabled"):
+                # Carry out fov selection
+                search_mda = fov_selection.get("search_mda")
+                # Connect on_frame_ready to carry out data recon and FOV selection
+                self.mmcore.mda.events.frameReady.connect(self._fov_selection.on_frame_ready)
+                self.mmcore.mda.run(search_mda)
+                self.mmcore.mda.events.frameReady.disconnect(
+                    self._fov_selection.on_frame_ready
+                )
+                # Collect FOV selection results
+                selected_fovs = pd.read_csv(file.csv)
+                # Set stage position in MDASequence, will not work because of Frozen
+                sequence.stage_positions = selected_fovs
+
         logger.info("Mantis hardware setup completed successfully")
 
         # Call parent setup so SummaryMetaV1 captures the fully configured
