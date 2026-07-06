@@ -56,6 +56,25 @@ dynatrack = [
 # exercise pure torch/numpy math, not biahub/cytoland). Avoids the ~2.5 GB
 # CUDA wheel the `dynatrack` group pulls on Windows.
 test-cpu = ["torch"]
+# Smart FOV-selection stack (shrimpy/fov_selection/*). Opt-in: install with
+# `uv sync --group fov` (not in default-groups, so a plain `uv sync` stays lean).
+fov = [
+  "cellpose",        # CellposeDINO "cpdino" + Cellpose-SAM "cpsam" segmentation
+  "dinov3",          # DINOv3 ViT backbone required by cellpose's "cpdino" model (GitHub-only)
+  "stardist",        # StarDist nuclei segmentation baseline (uses TensorFlow)
+  "tensorflow-cpu",  # StarDist backend; CPU build avoids GPU contention with torch
+  "instanseg-torch", # InstanSeg nuclei/cell segmentation (torch-native)
+  "imageio",         # 8-bit PNG export
+  "napari[pyqt5]",   # interactive viewing (PyQt5: glibc-2.28 compatible)
+  "napari-iohub",    # OME-Zarr / HCS reader plugin for napari
+  # analysis stack used by the pipeline / feature viewer / goodness prediction
+  "scikit-learn",    # decision-tree model + PCA/t-SNE in the feature viewer
+  "scikit-image",    # regionprops object features in extract_fov_features
+  "scipy",           # nearest-neighbor / spatial stats in feature extraction
+  "pandas",          # feature-matrix tables throughout
+  "matplotlib",      # figures (predict_fov_goodness, viewer)
+  "joblib",          # save/load the trained tree model
+]
 
 [project.scripts]
 shrimpy = "shrimpy.cli.main:cli"
@@ -90,6 +109,10 @@ biahub = { git = "https://github.com/czbiohub-sf/biahub", rev = "b011bca57d5bf15
 
 # no pipy release yet; uv sources don't propagate, so mirror biahub's cytoland pin
 cytoland = { git = "https://github.com/mehta-lab/VisCy", subdirectory = "applications/cytoland", rev = "4b62365c0df25929bffc7f01b3bb2d1c11d69cce" }
+
+# GitHub-only deps for the `fov` group (not on PyPI).
+napari-iohub = { git = "https://github.com/czbiohub-sf/napari-iohub.git" }
+dinov3 = { git = "https://github.com/facebookresearch/dinov3" }  # cellpose "cpdino" backbone
 
 # torch's CUDA and CPU builds can't coexist; pick exactly one group.
 [tool.uv]
