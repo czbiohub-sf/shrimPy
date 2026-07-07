@@ -30,18 +30,25 @@ CHANNEL_NAMES = ["BF", "GFP"]
 # ---------------------------------------------------------------------------
 
 
-def _fill_dataset(pos_node) -> None:
+def _fill_dataset(pos_node, p: int = 0) -> None:
     """Fill a FOV with a deterministic pattern.
 
     Each pixel value encodes its coordinates so tests can verify
-    exact readback: ``value = t*10000 + c*1000 + z``.
+    exact readback: ``value = p*30000 + t*10000 + c*1000 + z``.
+    The position offset ``p`` lets multi-position (HCS) tests confirm
+    which FOV is being served. Offsets stay within uint16 range given the
+    small dataset dimensions.
     """
     data = np.zeros((N_T, N_C, N_Z, N_Y, N_X), dtype=np.uint16)
     for t in range(N_T):
         for c in range(N_C):
             for z in range(N_Z):
-                data[t, c, z, :, :] = t * 10000 + c * 1000 + z
+                data[t, c, z, :, :] = p * 30000 + t * 10000 + c * 1000 + z
     pos_node["0"][:] = data
+
+
+# HCS plate: two positions with distinct offsets
+HCS_POSITION_KEYS = ["0/0/000", "0/1/000"]
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +79,44 @@ def replay_camera(zarr_path) -> ReplayCamera:
     camera._data_path = str(zarr_path)
     camera.initialize()
     return camera
+
+
+@pytest.fixture
+def hcs_zarr_path(tmp_path):
+    """Create a small synthetic OME-Zarr HCS plate with two positions."""
+    path = tmp_path / "test_plate.zarr"
+    plate = open_ome_zarr(
+        str(path),
+        layout="hcs",
+        mode="w",
+        channel_names=CHANNEL_NAMES,
+    )
+    for p, key in enumerate(HCS_POSITION_KEYS):
+        row, col, fov = key.split("/")
+        position = plate.create_position(row, col, fov)
+        position.create_zeros("0", shape=(N_T, N_C, N_Z, N_Y, N_X), dtype=np.uint16)
+        _fill_dataset(position, p=p)
+    plate.close()
+    return path
+
+
+@pytest.fixture
+def hcs_camera(hcs_zarr_path) -> ReplayCamera:
+    """Return an initialized ReplayCamera backed by the synthetic plate."""
+    camera = ReplayCamera()
+    camera._data_path = str(hcs_zarr_path)
+    camera.initialize()
+    return camera
+
+
+@pytest.fixture
+def hcs_core_with_camera(hcs_camera) -> UniMMCore:
+    """Return a UniMMCore with the plate-backed ReplayCamera loaded."""
+    core = UniMMCore()
+    core.loadPyDevice("Camera", hcs_camera)
+    core.initializeDevice("Camera")
+    core.setCameraDevice("Camera")
+    return core
 
 
 @pytest.fixture
@@ -327,3 +372,83 @@ class TestSequenceAcquisition:
         assert len(frames) == n_frames
         for frame in frames:
             assert frame.shape == (N_Y, N_X)
+
+
+# ---------------------------------------------------------------------------
+# HCS multi-position tests
+# ---------------------------------------------------------------------------
+
+
+class TestHCSPlate:
+    def test_positions_discovered(self, hcs_camera):
+        assert hcs_camera.position_keys == HCS_POSITION_KEYS
+        assert hcs_camera.num_positions == len(HCS_POSITION_KEYS)
+
+    def test_defaults_to_first_position(self, hcs_camera):
+        assert hcs_camera.current_position == HCS_POSITION_KEYS[0]
+
+        buf = np.empty((N_Y, N_X), dtype=np.uint16)
+        hcs_camera.snap(buf)
+        # p=0, t=0, c=0 (BF), z=center
+        expected = 0 * 30000 + 0 * 10000 + 0 * 1000 + (N_Z // 2)
+        assert buf[0, 0] == expected
+
+    def test_shape_and_channels_shared(self, hcs_camera):
+        assert hcs_camera.data_shape == (N_T, N_C, N_Z, N_Y, N_X)
+        assert hcs_camera.channel_names == CHANNEL_NAMES
+
+    def test_set_position_switches_data(self, hcs_camera):
+        hcs_camera.set_position("0/1/000")
+        assert hcs_camera.current_position == "0/1/000"
+
+        buf = np.empty((N_Y, N_X), dtype=np.uint16)
+        hcs_camera.snap(buf)
+        # p=1, t=0, c=0, z=center
+        expected = 1 * 30000 + 0 * 10000 + 0 * 1000 + (N_Z // 2)
+        assert buf[0, 0] == expected
+
+    def test_set_unknown_position_keeps_current(self, hcs_camera):
+        hcs_camera.set_position("9/9/999")
+        assert hcs_camera.current_position == HCS_POSITION_KEYS[0]
+
+    def test_get_frame_from_named_position(self, hcs_camera):
+        # Active position unchanged; read directly from the second position
+        frame = hcs_camera.get_frame(t=1, c=0, z=2, position="0/1/000")
+        expected = 1 * 30000 + 1 * 10000 + 0 * 1000 + 2
+        assert frame[0, 0] == expected
+        assert hcs_camera.current_position == HCS_POSITION_KEYS[0]
+
+    def test_position_property_via_core(self, hcs_core_with_camera, hcs_camera):
+        hcs_core_with_camera.setProperty("Camera", "Position", "0/1/000")
+        assert hcs_camera.current_position == "0/1/000"
+
+        hcs_core_with_camera.snapImage()
+        img = hcs_core_with_camera.getImage()
+        expected = 1 * 30000 + 0 * 10000 + 0 * 1000 + (N_Z // 2)
+        assert img[0, 0] == expected
+
+
+class TestHCSMDATracking:
+    def test_mda_matches_position_by_name(self, hcs_core_with_camera, hcs_camera):
+        hcs_camera.connect_to_mda(hcs_core_with_camera)
+        try:
+            event = MDAEvent(index={"p": 1, "t": 0}, pos_name="0/1/000")
+            hcs_core_with_camera.mda.events.eventStarted.emit(event)
+            assert hcs_camera.current_position == "0/1/000"
+
+            hcs_core_with_camera.snapImage()
+            img = hcs_core_with_camera.getImage()
+            expected = 1 * 30000 + 0 * 10000 + 0 * 1000 + (N_Z // 2)
+            assert img[0, 0] == expected
+        finally:
+            hcs_camera.disconnect_from_mda()
+
+    def test_mda_falls_back_to_position_index(self, hcs_core_with_camera, hcs_camera):
+        hcs_camera.connect_to_mda(hcs_core_with_camera)
+        try:
+            # No matching pos_name -> fall back to index p=1
+            event = MDAEvent(index={"p": 1, "t": 0}, pos_name="unmatched")
+            hcs_core_with_camera.mda.events.eventStarted.emit(event)
+            assert hcs_camera.current_position == HCS_POSITION_KEYS[1]
+        finally:
+            hcs_camera.disconnect_from_mda()

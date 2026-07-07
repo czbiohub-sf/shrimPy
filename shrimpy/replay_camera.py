@@ -1,25 +1,35 @@
 """Replay camera that serves frames from a pre-acquired OME-Zarr dataset.
 
 Implements a UniMMCore ``SimpleCameraDevice`` that reads frames from an
-existing OME-Zarr FOV (single position, 5D TCZYX). This enables offline
-testing of DynaTrack and other analysis pipelines without hardware.
+existing OME-Zarr dataset (5D TCZYX). Both single-FOV datasets and
+multi-position HCS plates are supported. This enables offline testing of
+DynaTrack and other analysis pipelines without hardware.
 
 Features
 --------
+- **Multi-position (HCS)**: Point ``DataPath`` at a plate root to expose every
+  position under its HCS key (e.g. ``"0/2/000"``). The camera defaults to the
+  first position. In MDA mode, the position is matched to each event's
+  ``pos_name`` (falling back to the position index).
 - **Channel switching**: Set the ``Channel`` property to match dataset channel
   names. Unknown channels return zeros with a warning.
 - **Timepoint auto-increment**: Each snap returns the next timepoint, looping
   over the total number of timepoints.
 - **Z-stage tracking**: By default returns the middle z-slice. When connected
   to a Z stage (via ``connect_z_stage``), the z-index shifts with stage position.
-- **MDA integration**: ``connect_to_mda`` overrides timepoint/z from MDA events.
+- **MDA integration**: ``connect_to_mda`` overrides timepoint/z/position from
+  MDA events.
 
 Usage (config file)
 -------------------
 ::
 
+    # Single FOV — point at a position within the store
     # py pyDevice,Camera,shrimpy.replay_camera,ReplayCamera
     # py Property,Camera,DataPath,/path/to/dataset.zarr/0/2/003
+
+    # HCS plate — point at the plate root (defaults to the first position)
+    # py Property,Camera,DataPath,/path/to/plate.zarr
     Property, Core, Initialize, 1
     Property, Core, Camera, Camera
 
@@ -32,15 +42,18 @@ Usage (programmatic)
 
     core = UniMMCore()
     camera = ReplayCamera()
-    camera._data_path = "/path/to/dataset.zarr/0/2/003"
+    camera._data_path = "/path/to/plate.zarr"  # or a single-FOV path
     core.loadPyDevice("Camera", camera)
     core.initializeDevice("Camera")
     core.setCameraDevice("Camera")
 
+    # Switch position manually (GUI mode)
+    camera.set_position("0/2/000")
+
     # For Z-stage tracking in GUI mode
     camera.connect_z_stage(core, "Z")
 
-    # For MDA mode
+    # For MDA mode (position tracked from event pos_name)
     camera.connect_to_mda(core)
 """
 
@@ -66,6 +79,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Key used for the single position of a non-HCS (FOV) dataset.
+DEFAULT_POSITION_KEY = "0"
+
 
 class ReplayCamera(SimpleCameraDevice):
     """UniMMCore camera that replays frames from an OME-Zarr FOV dataset.
@@ -84,7 +100,13 @@ class ReplayCamera(SimpleCameraDevice):
 
         # Dataset state (populated in initialize)
         self._dataset = None
-        self._data_array = None
+        # Position key (e.g. "0/2/000") -> lazy dask array for that FOV. A
+        # single-FOV dataset yields one entry keyed by DEFAULT_POSITION_KEY.
+        self._data_arrays: dict[str, object] = {}
+        self._positions: dict = {}  # position key -> iohub Position node
+        self._position_keys: list[str] = []
+        self._current_position_key: str = ""
+        self._data_array = None  # dask array for the active position
         self._nt: int = 0
         self._nc: int = 0
         self._nz: int = 0
@@ -126,7 +148,13 @@ class ReplayCamera(SimpleCameraDevice):
     # ------------------------------------------------------------------
 
     def initialize(self) -> None:
-        """Open the dataset and register channel/position properties."""
+        """Open the dataset and register channel/position properties.
+
+        Supports both single-FOV datasets (``layout='fov'``) and HCS plates
+        (``layout='hcs'``) with multiple positions. For a plate, every
+        position is exposed under its HCS key (e.g. ``"0/2/000"``) and the
+        camera defaults to the first position.
+        """
         if not self._data_path:
             raise RuntimeError(
                 "ReplayCamera: DataPath property must be set before initialization"
@@ -137,31 +165,40 @@ class ReplayCamera(SimpleCameraDevice):
             raise FileNotFoundError(f"ReplayCamera: dataset not found at {path}")
 
         logger.info("ReplayCamera: opening dataset (lazy, backed by dask)...")
-        self._dataset = open_ome_zarr(str(path), layout="fov", mode="r")
-        # Lazy dask array — frames are read from disk on demand rather than
-        # holding the entire dataset in memory.
-        self._data_array = self._dataset.data.dask_array()
+        self._dataset = open_ome_zarr(str(path), layout="auto", mode="r")
 
-        shape = self._data_array.shape
-        if len(shape) != 5:
-            raise ValueError(f"ReplayCamera: expected 5D TCZYX data, got shape {shape}")
-        self._nt, self._nc, self._nz, self._ny, self._nx = shape
-        self._dtype_val = self._data_array.dtype
+        # Collect all positions and their lazy dask arrays. Frames are read
+        # from disk on demand rather than holding data in memory.
+        self._positions = self._collect_positions(self._dataset)
+        if not self._positions:
+            raise ValueError(f"ReplayCamera: no positions found in dataset at {path}")
 
-        self._channel_names = list(self._dataset.channel_names)
+        for key, position in self._positions.items():
+            data_array = position.data.dask_array()
+            shape = data_array.shape
+            if len(shape) != 5:
+                raise ValueError(
+                    f"ReplayCamera: expected 5D TCZYX data at position '{key}', "
+                    f"got shape {shape}"
+                )
+            self._data_arrays[key] = data_array
+        self._position_keys = list(self._data_arrays)
+
+        # All positions share the same TCZYX dimensions, dtype, channels, and
+        # z-scale; derive them once from the first position.
+        first_key = self._position_keys[0]
+        first_position = self._positions[first_key]
+        first_array = self._data_arrays[first_key]
+        self._nt, self._nc, self._nz, self._ny, self._nx = first_array.shape
+        self._dtype_val = first_array.dtype
         self._z_center = self._nz // 2
+        self._channel_names = list(first_position.channel_names)
+        self._z_scale = self._read_z_scale(first_position)
 
-        # Read z-scale from OME-NGFF metadata
-        multiscales = self._dataset.zattrs.get("multiscales", [{}])
-        datasets = multiscales[0].get("datasets", [{}]) if multiscales else [{}]
-        transforms = datasets[0].get("coordinateTransformations", [])
-        for t in transforms:
-            if t.get("type") == "scale":
-                # Scale order matches axes: T, C, Z, Y, X
-                self._z_scale = t["scale"][2]
-                break
+        # Default to the first position (swaps in its dask array)
+        self._set_position(first_key)
 
-        # Set default channel
+        # Set default channel from the active position
         if self._channel_names:
             self._channel_name = self._channel_names[0]
             self._channel_index = 0
@@ -175,13 +212,52 @@ class ReplayCamera(SimpleCameraDevice):
             setter=lambda d, v: d._set_channel(v),
         )
 
+        # Register the Position property (HCS key), restricted to known
+        # positions. Lets GUI users switch FOVs; MDA events override it.
+        self.register_property(
+            name="Position",
+            property_type=str,
+            default_value=self._current_position_key,
+            allowed_values=self._position_keys,
+            getter=lambda d: d._current_position_key,
+            setter=lambda d, v: d._set_position(v),
+        )
+
         logger.info(
-            "ReplayCamera initialized: %s | shape=%s (TCZYX) | channels=%s | z_scale=%.4f um",
+            "ReplayCamera initialized: %s | positions=%s | shape=%s (TCZYX) | "
+            "channels=%s | z_scale=%.4f um",
             self._data_path,
-            shape,
+            self._position_keys,
+            self.data_shape,
             self._channel_names,
             self._z_scale,
         )
+
+    @staticmethod
+    def _collect_positions(dataset) -> dict:
+        """Map position key -> Position node for FOV or HCS-plate datasets.
+
+        For a single FOV the returned mapping has one entry keyed by
+        ``DEFAULT_POSITION_KEY``. For an HCS plate the keys are the position
+        paths within the plate (e.g. ``"0/2/000"``).
+        """
+        # Plate exposes a positions() generator yielding (path, Position)
+        if hasattr(dataset, "positions"):
+            return {key: position for key, position in dataset.positions()}
+        # Single FOV (Position node) exposes `.data` directly
+        return {DEFAULT_POSITION_KEY: dataset}
+
+    @staticmethod
+    def _read_z_scale(position) -> float:
+        """Read the z-step size (um) from a position's OME-NGFF metadata."""
+        multiscales = position.zattrs.get("multiscales", [{}])
+        datasets = multiscales[0].get("datasets", [{}]) if multiscales else [{}]
+        transforms = datasets[0].get("coordinateTransformations", [])
+        for t in transforms:
+            if t.get("type") == "scale":
+                # Scale order matches axes: T, C, Z, Y, X
+                return t["scale"][2]
+        return 1.0
 
     def shutdown(self) -> None:
         if self._dataset is not None:
@@ -233,7 +309,36 @@ class ReplayCamera(SimpleCameraDevice):
         if not self._mda_connected:
             self._t_index += 1
 
-        return {"TimeIndex": str(t), "ZIndex": str(z), "Channel": self._channel_name}
+        return {
+            "TimeIndex": str(t),
+            "ZIndex": str(z),
+            "Channel": self._channel_name,
+            "Position": self._current_position_key,
+        }
+
+    # ------------------------------------------------------------------
+    # Position management
+    # ------------------------------------------------------------------
+
+    def _set_position(self, key: str) -> None:
+        """Switch the active position (FOV) to the given HCS key.
+
+        Only the active dask array is swapped; all positions are assumed to
+        share the same TCZYX shape, dtype, channels, and z-scale (derived
+        once at initialization).
+        """
+        if key not in self._data_arrays:
+            logger.warning(
+                "ReplayCamera: position '%s' not in dataset (available: %s). "
+                "Keeping current position '%s'.",
+                key,
+                self._position_keys,
+                self._current_position_key,
+            )
+            return
+
+        self._current_position_key = key
+        self._data_array = self._data_arrays[key]
 
     # ------------------------------------------------------------------
     # Channel management
@@ -340,6 +445,9 @@ class ReplayCamera(SimpleCameraDevice):
         For ``SequencedEvent`` (hardware-triggered bursts), the z-indices
         of all sub-events are queued so that each ``snap()`` returns the
         correct z-slice.
+
+        The position is matched by ``pos_name`` against the HCS keys (e.g.
+        ``"0/2/000"``), falling back to the position index ``p``.
         """
         from pymmcore_plus.core._sequencing import SequencedEvent
 
@@ -348,6 +456,9 @@ class ReplayCamera(SimpleCameraDevice):
             first = sub_events[0]
             idx = first.index
             self._t_index = idx.get("t", 0)
+
+            # Position from first sub-event (matched by name, then index)
+            self._set_position_from_event(first)
 
             # Channel from first sub-event
             if first.channel and first.channel.config:
@@ -366,6 +477,9 @@ class ReplayCamera(SimpleCameraDevice):
             self._t_index = idx.get("t", 0)
             self._z_queue.clear()
 
+            # Position from event (matched by name, then index)
+            self._set_position_from_event(event)
+
             # Channel from event
             if event.channel and event.channel.config:
                 self._set_channel(event.channel.config)
@@ -378,17 +492,46 @@ class ReplayCamera(SimpleCameraDevice):
             if event.z_pos is not None:
                 self._z_position = event.z_pos
 
+    def _set_position_from_event(self, event: MDAEvent) -> None:
+        """Switch position from an MDA (sub-)event.
+
+        Prefers matching ``event.pos_name`` against the HCS position keys,
+        then falls back to the position index ``p`` in the event index.
+        Single-position datasets are left untouched.
+        """
+        if len(self._position_keys) <= 1:
+            return
+
+        pos_name = getattr(event, "pos_name", None)
+        if pos_name and pos_name in self._data_arrays:
+            self._set_position(pos_name)
+            return
+
+        p = event.index.get("p")
+        if p is not None and 0 <= p < len(self._position_keys):
+            self._set_position(self._position_keys[p])
+
     # ------------------------------------------------------------------
     # Public helpers
     # ------------------------------------------------------------------
 
     @property
     def num_positions(self) -> int:
-        return 1  # single FOV
+        return len(self._position_keys)
+
+    @property
+    def position_keys(self) -> list[str]:
+        """HCS keys of all available positions (e.g. ``["0/2/000", ...]``)."""
+        return list(self._position_keys)
+
+    @property
+    def current_position(self) -> str:
+        """HCS key of the active position."""
+        return self._current_position_key
 
     @property
     def data_shape(self) -> tuple[int, ...]:
-        """Per-position data shape: ``(T, C, Z, Y, X)``."""
+        """Active-position data shape: ``(T, C, Z, Y, X)``."""
         return (self._nt, self._nc, self._nz, self._ny, self._nx)
 
     @property
@@ -399,11 +542,20 @@ class ReplayCamera(SimpleCameraDevice):
     def z_scale(self) -> float:
         return self._z_scale
 
-    def get_frame(self, t: int, c: int, z: int) -> np.ndarray:
-        """Read a single 2-D frame on demand from the lazy dataset."""
-        if self._data_array is None:
-            raise RuntimeError("ReplayCamera not initialized")
-        t = t % self._nt
-        c = c % self._nc
-        z = z % self._nz
-        return self._data_array[t, c, z].compute()
+    def set_position(self, key: str) -> None:
+        """Switch the active position by HCS key (e.g. ``"0/2/000"``)."""
+        self._set_position(key)
+
+    def get_frame(self, t: int, c: int, z: int, position: str | None = None) -> np.ndarray:
+        """Read a single 2-D frame on demand from the lazy dataset.
+
+        If *position* is given, reads from that position instead of the
+        active one, without changing the active position.
+        """
+        key = self._current_position_key if position is None else position
+        data_array = self._data_arrays.get(key)
+        if data_array is None:
+            raise RuntimeError(
+                f"ReplayCamera not initialized or unknown position '{position}'"
+            )
+        return data_array[t % self._nt, c % self._nc, z % self._nz].compute()
