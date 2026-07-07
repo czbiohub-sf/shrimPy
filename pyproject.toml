@@ -24,8 +24,6 @@ dependencies = [
   "click",
   "numpy",
   "ome-writers[acquire-zarr]",
-  # TODO: test v0.7.0, even simple acquisitions would fail
-  "acquire-zarr==0.6.0",
   "pymmcore>=11.14.0.75.0",
   "pymmcore-plus",
   "pymmcore-widgets",
@@ -61,13 +59,10 @@ local_scheme = "no-local-version"
 packages = ["shrimpy"]
 
 [tool.uv.sources]
-# Pinned to the revs from the committed lock: ome-writers `main` has since moved to
-# require acquire-zarr>=0.7.0, which conflicts with the acquire-zarr==0.6.0 pin above.
-ome-writers = { git = "https://github.com/ieivanov/ome-writers", rev = "71dc49126c933a5fa3b1fc01c5a6b07ebc98eb9e" }
-pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", rev = "8f18f74955e35173958563682b9efc789f30aef6" }
-napari-deskew-preview = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview", rev = "730de5cb5ddb2821128389f13884a6c4e0243a33" }
-# ome-writers = { path = "../ome-writers", editable = true }
-# pymmcore-plus = { path = "../pymmcore-plus", editable = true }
+pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "dev"}
+ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
+useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "main" }
+napari-deskew-preview = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview", branch = "main" }
 
 [tool.ruff]
 # Ruff replaces black, isort, flake8, and pylint
