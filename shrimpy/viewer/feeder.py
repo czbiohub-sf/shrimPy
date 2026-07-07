@@ -32,8 +32,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Max coordinate messages buffered for the viewer before we start dropping frames.
-# Small on purpose: a slow/stalled viewer must never accumulate unbounded backlog.
-_QUEUE_MAXSIZE = 256
+# Sized to comfortably cover the viewer's startup latency (napari import + window
+# creation), during which the acquisition is already streaming frames but nothing is
+# draining the queue yet. If this is too small the opening frames -- the first channel's
+# first z-stack -- are dropped, so that volume never completes and never previews (and,
+# because the display waits on it, neither does the rest of that position). Still bounded,
+# so a genuinely stalled viewer cannot accumulate unbounded backlog; and in steady state
+# the drain rate far exceeds acquisition, so the queue stays near-empty regardless.
+_QUEUE_MAXSIZE = 16384
 
 
 class ViewerFeeder:

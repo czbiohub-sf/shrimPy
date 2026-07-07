@@ -340,14 +340,6 @@ class _ViewerState:
         """
         return all((channel, position, t, z) in self._index_map for z in range(self._n_zscan))
 
-    def _stack_complete(self, position: int, t: int) -> bool:
-        """True once every channel's full scan stack at (position, t) is present.
-
-        A deskewed plane needs the whole scan stack, so this gates deskew-mode follow
-        and preview.
-        """
-        return all(self._volume_complete(c, position, t) for c in range(self._n_channels))
-
     def _set_step(self, target: tuple[int, ...]) -> None:
         """Advance the followed sliders (position, t) to ``target``, preserving z.
 
@@ -395,18 +387,20 @@ class _ViewerState:
         channel, position, t, z = key
         self._autoset_contrast(channel, slot)
 
-        # Auto-advance only to (position, t) where ALL channels have the data needed for
-        # the displayed plane -- otherwise a lagging channel renders black. Channels are
-        # acquired as interleaved z-stacks (all of ch0's z, then all of ch1's z). z stays
-        # under the user's control. In deskew mode each refresh recomputes a plane, so we
-        # only refresh on advance (stack completion), not on every frame.
+        # Auto-advance follows the latest coordinate whose displayed plane is ready; z
+        # stays under the user's control.
         try:
             if self._deskew:
-                if self._following and self._stack_complete(position, t):
-                    self._follow_target = (position, t)
-                    self._set_step((position, t))
-                    for layer in self._layers:
-                        layer.refresh()
+                # Reveal each channel the moment its OWN scan stack is complete -- a slow
+                # channel must not hold up the ones already acquired (channels arrive as
+                # sequential z-stacks: all of ch0's z, then all of ch1's z). Refreshing
+                # just the completed layer repaints it even when the position slider does
+                # not move -- e.g. the very first stack, while we are parked at p=0, t=0.
+                if self._volume_complete(channel, position, t):
+                    if self._following:
+                        self._follow_target = (position, t)
+                        self._set_step((position, t))
+                    self._layers[channel].refresh()
             else:
                 if self._following:
                     disp_z = int(self._viewer.dims.current_step[_INDEX_AXES.index("z")])
