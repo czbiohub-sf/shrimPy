@@ -136,9 +136,11 @@ class ReplayCamera(SimpleCameraDevice):
         if not path.exists():
             raise FileNotFoundError(f"ReplayCamera: dataset not found at {path}")
 
-        logger.info("ReplayCamera: loading dataset into memory...")
+        logger.info("ReplayCamera: opening dataset (lazy, backed by dask)...")
         self._dataset = open_ome_zarr(str(path), layout="fov", mode="r")
-        self._data_array = self._dataset.data.numpy()
+        # Lazy dask array — frames are read from disk on demand rather than
+        # holding the entire dataset in memory.
+        self._data_array = self._dataset.data.dask_array()
 
         shape = self._data_array.shape
         if len(shape) != 5:
@@ -146,7 +148,6 @@ class ReplayCamera(SimpleCameraDevice):
         self._nt, self._nc, self._nz, self._ny, self._nx = shape
         self._dtype_val = self._data_array.dtype
 
-        # Load entire dataset into memory for fast per-frame access
         self._channel_names = list(self._dataset.channel_names)
         self._z_center = self._nz // 2
 
@@ -225,7 +226,8 @@ class ReplayCamera(SimpleCameraDevice):
             # Channel not in dataset — return zeros
             buffer[:] = 0
         else:
-            buffer[:] = self._data_array[t, self._channel_index, z]
+            # Compute only the requested 2-D frame from the lazy dask array
+            buffer[:] = self._data_array[t, self._channel_index, z].compute()
 
         # Auto-increment timepoint (MDA mode overrides via event tracking)
         if not self._mda_connected:
@@ -398,10 +400,10 @@ class ReplayCamera(SimpleCameraDevice):
         return self._z_scale
 
     def get_frame(self, t: int, c: int, z: int) -> np.ndarray:
-        """Read a single 2-D frame directly from the in-memory dataset."""
+        """Read a single 2-D frame on demand from the lazy dataset."""
         if self._data_array is None:
             raise RuntimeError("ReplayCamera not initialized")
         t = t % self._nt
         c = c % self._nc
         z = z % self._nz
-        return self._data_array[t, c, z]
+        return self._data_array[t, c, z].compute()
