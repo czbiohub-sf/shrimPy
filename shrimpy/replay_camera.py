@@ -84,12 +84,16 @@ DEFAULT_POSITION_KEY = "0"
 
 
 class ReplayCamera(SimpleCameraDevice):
-    """UniMMCore camera that replays frames from an OME-Zarr FOV dataset.
+    """UniMMCore camera that replays frames from an OME-Zarr dataset.
 
-    The dataset must be a single FOV opened with ``open_ome_zarr(path,
-    layout='fov')``, containing 5D data in TCZYX order.
+    The dataset may be a single FOV (``layout='fov'``) or an HCS plate
+    (``layout='hcs'``), containing 5D data in TCZYX order.
 
     Set the ``DataPath`` property (pre-init) before calling ``initialize()``.
+
+    Since data is typically chunked in ZYX, reading one Z slice loads the whole
+    volume off disk; the most recently read ZYX volume is cached so that
+    sibling Z slices (same position/timepoint/channel) are served from memory.
     """
 
     def __init__(self) -> None:
@@ -97,6 +101,10 @@ class ReplayCamera(SimpleCameraDevice):
 
         # Pre-init state
         self._data_path: str = ""
+
+        # Cache of the most recently decoded ZYX volume and its (position, t, c)
+        self._cached_volume: np.ndarray | None = None
+        self._cached_key: tuple[str, int, int] | None = None
 
         # Dataset state (populated in initialize)
         self._dataset = None
@@ -260,6 +268,8 @@ class ReplayCamera(SimpleCameraDevice):
         return 1.0
 
     def shutdown(self) -> None:
+        self._cached_volume = None
+        self._cached_key = None
         if self._dataset is not None:
             self._dataset.close()
             self._dataset = None
@@ -279,6 +289,23 @@ class ReplayCamera(SimpleCameraDevice):
 
     def set_exposure(self, exposure: float) -> None:
         self._exposure = exposure
+
+    def _get_volume(self, position_key: str, t: int, c: int) -> np.ndarray:
+        """Return the ZYX volume for ``(position_key, t, c)``, caching it.
+
+        Because the data is chunked in ZYX, computing any single slice reads
+        and decompresses the whole volume anyway. We compute the full ZYX
+        volume once and keep only the most recent one in memory so subsequent
+        z-slices from the same position/timepoint/channel are served instantly.
+        """
+        cache_key = (position_key, t, c)
+        if self._cached_key == cache_key and self._cached_volume is not None:
+            return self._cached_volume
+
+        volume = np.asarray(self._data_arrays[position_key][t, c].compute())
+        self._cached_volume = volume
+        self._cached_key = cache_key
+        return volume
 
     def snap(self, buffer: np.ndarray) -> Mapping:
         """Return the frame for the current channel, timepoint, and z-index.
@@ -302,8 +329,9 @@ class ReplayCamera(SimpleCameraDevice):
             # Channel not in dataset — return zeros
             buffer[:] = 0
         else:
-            # Compute only the requested 2-D frame from the lazy dask array
-            buffer[:] = self._data_array[t, self._channel_index, z].compute()
+            # Pull the (cached) ZYX volume and copy out the requested z-slice
+            volume = self._get_volume(self._current_position_key, t, self._channel_index)
+            buffer[:] = volume[z]
 
         # Auto-increment timepoint (MDA mode overrides via event tracking)
         if not self._mda_connected:
@@ -553,9 +581,10 @@ class ReplayCamera(SimpleCameraDevice):
         active one, without changing the active position.
         """
         key = self._current_position_key if position is None else position
-        data_array = self._data_arrays.get(key)
-        if data_array is None:
+        if key not in self._data_arrays:
             raise RuntimeError(
                 f"ReplayCamera not initialized or unknown position '{position}'"
             )
-        return data_array[t % self._nt, c % self._nc, z % self._nz].compute()
+        volume = self._get_volume(key, t % self._nt, c % self._nc)
+        # Copy so callers can't mutate the cached volume through the view
+        return volume[z % self._nz].copy()

@@ -452,3 +452,46 @@ class TestHCSMDATracking:
             assert hcs_camera.current_position == HCS_POSITION_KEYS[1]
         finally:
             hcs_camera.disconnect_from_mda()
+
+
+# ---------------------------------------------------------------------------
+# ZYX volume caching tests
+# ---------------------------------------------------------------------------
+
+
+class TestVolumeCache:
+    def test_reuses_volume_for_sibling_z(self, replay_camera):
+        # First read populates the cache for (position, t=0, c=0)
+        replay_camera.get_frame(t=0, c=0, z=0)
+        cached = replay_camera._cached_volume
+        assert cached is not None
+        assert replay_camera._cached_key == (replay_camera.current_position, 0, 0)
+
+        # A sibling z-slice from the same (t, c) reuses the same object
+        replay_camera.get_frame(t=0, c=0, z=5)
+        assert replay_camera._cached_volume is cached
+
+    def test_recomputes_on_channel_change(self, replay_camera):
+        replay_camera.get_frame(t=0, c=0, z=0)
+        first = replay_camera._cached_volume
+        replay_camera.get_frame(t=0, c=1, z=0)
+        assert replay_camera._cached_volume is not first
+        assert replay_camera._cached_key == (replay_camera.current_position, 0, 1)
+
+    def test_only_one_volume_retained(self, replay_camera):
+        replay_camera.get_frame(t=0, c=0, z=0)
+        replay_camera.get_frame(t=1, c=0, z=0)
+        # Only the most recent (t=1) volume is kept
+        assert replay_camera._cached_key == (replay_camera.current_position, 1, 0)
+
+    def test_get_frame_returns_copy_not_cache_view(self, replay_camera):
+        frame = replay_camera.get_frame(t=0, c=0, z=0)
+        frame[0, 0] = 54321
+        # Mutating the returned frame must not corrupt the cached volume
+        assert replay_camera._cached_volume[0, 0, 0] != 54321
+
+    def test_cache_keyed_by_position(self, hcs_camera):
+        hcs_camera.get_frame(t=0, c=0, z=0, position="0/0/000")
+        assert hcs_camera._cached_key == ("0/0/000", 0, 0)
+        hcs_camera.get_frame(t=0, c=0, z=0, position="0/1/000")
+        assert hcs_camera._cached_key == ("0/1/000", 0, 0)
