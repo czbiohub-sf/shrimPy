@@ -257,8 +257,23 @@ class ReplayCamera(SimpleCameraDevice):
 
     @staticmethod
     def _read_z_scale(position) -> float:
-        """Read the z-step size (um) from a position's OME-NGFF metadata."""
-        multiscales = position.zattrs.get("multiscales", [{}])
+        """Read the z-step size (um) from a position's OME-NGFF metadata.
+
+        Uses iohub's parsed ``scale`` (axis order T, C, Z, Y, X), which is
+        robust across OME-NGFF 0.4 (zarr v2, ``multiscales`` at top level) and
+        0.5 (zarr v3, nested under an ``"ome"`` key). Falls back to parsing
+        ``coordinateTransformations`` directly, then to 1.0.
+        """
+        scale = getattr(position, "scale", None)
+        if scale is not None and len(scale) >= 3 and scale[2]:
+            return float(scale[2])
+
+        # Fallback: parse coordinateTransformations, checking both the 0.4
+        # top-level layout and the 0.5 "ome" namespace.
+        zattrs = position.zattrs
+        multiscales = zattrs.get("multiscales") or zattrs.get("ome", {}).get(
+            "multiscales", [{}]
+        )
         datasets = multiscales[0].get("datasets", [{}]) if multiscales else [{}]
         transforms = datasets[0].get("coordinateTransformations", [])
         for t in transforms:

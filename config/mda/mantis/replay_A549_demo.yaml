@@ -1,0 +1,51 @@
+# ReplayCamera acquisition config for the A549 H2BC21 FOV-selection dataset.
+#
+# For every image the ReplayCamera returns:
+#     data[position_name][t_idx, channel_name, z_idx]
+# so the names/counts below MUST line up with the zarr store:
+#   channels : ['BF - Oblique', 'GFP EX488 EM525-45']
+#   shape    : (T=1, C=2, Z=1068, Y=256, X=1664)
+#   positions: 147 total (wells B/3, B/4, B/5; each a 7x7 grid B/../000000..006006)
+
+# Define stage positions
+# Position names MUST match those in the zarr store. Exact XY locations don't matter.
+# First quick test uses 3 positions; add more (up to all 147) once this runs.
+stage_positions:
+  - name: "B/3/000000"
+    x: 0
+    y: 0
+  - name: "B/3/003003"
+    x: 0
+    y: 1
+  - name: "B/4/000000"
+    x: 1
+    y: 0
+
+# Define time plan
+# Loops must be <= number of timepoints in the zarr store (T = 1 here).
+time_plan:
+  prioritize_duration: true
+  interval: 1
+  loops: 1
+
+# Define z plan
+# Must produce the same number of slices as the zarr store (Z = 1068).
+# Uses the dataset's true z step (0.15 um), centered on 0 so the stage
+# positions (+/-80.1 um) stay within the demo stage's +/-300 um limit AND map
+# to slice indices 0..1067 (ReplayCamera maps stage origin 0 -> center slice).
+# (top - bottom) / step + 1 = (79.95 - (-80.1)) / 0.15 + 1 = 1068
+z_plan:
+  bottom: -80.1
+  top: 79.95
+  step: 0.15
+  go_up: true
+
+# Define channels
+# Config names MUST match the channel names in the zarr store. Exposure doesn't matter.
+channels:
+  - config: BF - Oblique
+    group: Channel
+    exposure: 1.0
+  - config: GFP EX488 EM525-45
+    group: Channel
+    exposure: 1.0
