@@ -6,26 +6,35 @@ resolution-markers = [
     "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version >= '3.14' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "(python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')",
+    "python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "(python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')",
+    "python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "(python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')",
+    "python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version >= '3.14' and sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version >= '3.14' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version >= '3.14' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version >= '3.14' and platform_machine == 'arm64' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version >= '3.14' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version >= '3.14' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version == '3.13.*' and platform_machine == 'arm64' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version < '3.13' and platform_machine == 'arm64' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
 ]
 conflicts = [[
     { package = "shrimpy", group = "dynatrack" },
@@ -404,7 +413,7 @@ name = "build"
 version = "1.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "(os_name == 'nt' and platform_machine == 'arm64') or (os_name == 'nt' and sys_platform != 'darwin') or (os_name != 'nt' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (platform_machine != 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "colorama", marker = "(os_name == 'nt' and sys_platform != 'darwin') or (os_name != 'nt' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "packaging" },
     { name = "pyproject-hooks" },
 ]
@@ -733,7 +742,7 @@ name = "cryptography"
 version = "46.0.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cffi", marker = "(platform_machine == 'arm64' and platform_python_implementation != 'PyPy' and sys_platform == 'darwin') or (platform_machine == 'arm64' and platform_python_implementation == 'PyPy' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (platform_machine != 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (platform_python_implementation != 'PyPy' and sys_platform != 'darwin' and sys_platform != 'win32') or (platform_python_implementation == 'PyPy' and sys_platform != 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (platform_python_implementation != 'PyPy' and sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "cffi", marker = "(platform_python_implementation != 'PyPy' and sys_platform != 'darwin' and sys_platform != 'win32') or (platform_python_implementation != 'PyPy' and sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (platform_python_implementation == 'PyPy' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a4/ba/04b1bd4218cbc58dc90ce967106d51582371b898690f3ae0402876cc4f34/cryptography-46.0.6.tar.gz", hash = "sha256:27550628a518c5c6c903d84f637fbecf287f6cb9ced3804838a1295dc1fd0759", size = 750542, upload-time = "2026-03-25T23:34:53.396Z" }
 wheels = [
@@ -804,7 +813,7 @@ name = "cuda-bindings"
 version = "13.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cuda-pathfinder", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
+    { name = "cuda-pathfinder", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ce/67/5e7dba1ba576dd73da5dee894ca076ca5e959450dfff66d6d510a255d1f7/cuda_bindings-13.3.1-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:c7855c4868aabc0cfae28abbe83d56734bdfbd08f08fc234ac1912a12858bf49", size = 6025351, upload-time = "2026-05-29T23:11:49.685Z" },
@@ -2247,21 +2256,30 @@ resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "(python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')",
-    "(python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')",
-    "(python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')",
+    "python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version >= '3.14' and sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version >= '3.14' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
-    "(python_full_version >= '3.14' and platform_machine == 'arm64' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version >= '3.14' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
-    "(python_full_version == '3.13.*' and platform_machine == 'arm64' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
-    "(python_full_version < '3.13' and platform_machine == 'arm64' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version >= '3.14' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/74/cd/08ae687ba099c7e3d21fe2ea536500563ef1943c5105bf6ab4ee3829f68e/llvmlite-0.46.0.tar.gz", hash = "sha256:227c9fd6d09dce2783c18b754b7cd9d9b3b3515210c46acc2d3c5badd9870ceb", size = 193456, upload-time = "2025-12-08T18:15:36.295Z" }
 wheels = [
@@ -2731,9 +2749,9 @@ wheels = [
 ]
 
 [package.optional-dependencies]
-pyqt5 = [
-    { name = "pyqt5" },
-    { name = "pyqt5-qt5", version = "5.15.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'Windows' or (extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+pyqt6 = [
+    { name = "pyqt6" },
+    { name = "pyqt6-qt6" },
 ]
 
 [[package]]
@@ -2984,21 +3002,30 @@ resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "(python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')",
-    "(python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')",
-    "(python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')",
+    "python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version >= '3.14' and sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version >= '3.14' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
-    "(python_full_version >= '3.14' and platform_machine == 'arm64' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version >= '3.14' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
-    "(python_full_version == '3.13.*' and platform_machine == 'arm64' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
-    "(python_full_version < '3.13' and platform_machine == 'arm64' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version >= '3.14' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
 ]
 dependencies = [
     { name = "llvmlite", version = "0.46.0", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'arm64' or (platform_machine != 'arm64' and extra == 'group-7-shrimpy-dynatrack') or sys_platform != 'darwin'" },
@@ -3164,7 +3191,7 @@ name = "nvidia-cublas"
 version = "13.1.1.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
+    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/a1/0bd24ee8c8d03adac032fd2909426a00c88f8c57961b1277ded97f91119f/nvidia_cublas-13.1.1.3-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:b7a210458267ac818974c53038fbec2e969d5c99f305ab15c72522fa9f001dd5", size = 542848918, upload-time = "2026-04-08T18:46:22.985Z" },
@@ -3207,7 +3234,7 @@ name = "nvidia-cudnn-cu13"
 version = "9.20.0.48"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
+    { name = "nvidia-cublas", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/56/c5/83384d846b2fd17c44bd499b36c75a45ed4f095fbbb2252294e89cea5c5c/nvidia_cudnn_cu13-9.20.0.48-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:e31454ae00094b0c55319d9d15b6fa2fc50a9e1c0f5c8c80fb75258234e731e1", size = 444574296, upload-time = "2026-03-09T19:28:27.751Z" },
@@ -3220,7 +3247,7 @@ name = "nvidia-cufft"
 version = "12.0.0.61"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8b/ae/f417a75c0259e85c1d2f83ca4e960289a5f814ed0cea74d18c353d3e989d/nvidia_cufft-12.0.0.61-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:2708c852ef8cd89d1d2068bdbece0aa188813a0c934db3779b9b1faa8442e5f5", size = 214053554, upload-time = "2025-09-04T08:31:38.196Z" },
@@ -3252,9 +3279,9 @@ name = "nvidia-cusolver"
 version = "12.0.4.66"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
-    { name = "nvidia-cusparse", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
+    { name = "nvidia-cublas", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
+    { name = "nvidia-cusparse", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/c3/b30c9e935fc01e3da443ec0116ed1b2a009bb867f5324d3f2d7e533e776b/nvidia_cusolver-12.0.4.66-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:02c2457eaa9e39de20f880f4bd8820e6a1cfb9f9a34f820eb12a155aa5bc92d2", size = 223467760, upload-time = "2025-09-04T08:33:04.222Z" },
@@ -3267,7 +3294,7 @@ name = "nvidia-cusparse"
 version = "12.6.3.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f8/94/5c26f33738ae35276672f12615a64bd008ed5be6d1ebcb23579285d960a9/nvidia_cusparse-12.6.3.3-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:80bcc4662f23f1054ee334a15c72b8940402975e0eab63178fc7e670aa59472c", size = 162155568, upload-time = "2025-09-04T08:33:42.864Z" },
@@ -4250,93 +4277,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pyqt5"
-version = "5.15.11"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pyqt5-qt5", version = "5.15.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32' or (extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
-    { name = "pyqt5-qt5", version = "5.15.19", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "pyqt5-sip" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/0e/07/c9ed0bd428df6f87183fca565a79fee19fa7c88c7f00a7f011ab4379e77a/PyQt5-5.15.11.tar.gz", hash = "sha256:fda45743ebb4a27b4b1a51c6d8ef455c4c1b5d610c90d2934c7802b5c1557c52", size = 3216775, upload-time = "2024-07-19T08:39:57.756Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/11/64/42ec1b0bd72d87f87bde6ceb6869f444d91a2d601f2e67cd05febc0346a1/PyQt5-5.15.11-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:c8b03dd9380bb13c804f0bdb0f4956067f281785b5e12303d529f0462f9afdc2", size = 6579776, upload-time = "2024-07-19T08:39:19.775Z" },
-    { url = "https://files.pythonhosted.org/packages/49/f5/3fb696f4683ea45d68b7e77302eff173493ac81e43d63adb60fa760b9f91/PyQt5-5.15.11-cp38-abi3-macosx_11_0_x86_64.whl", hash = "sha256:6cd75628f6e732b1ffcfe709ab833a0716c0445d7aec8046a48d5843352becb6", size = 7016415, upload-time = "2024-07-19T08:39:32.977Z" },
-    { url = "https://files.pythonhosted.org/packages/b4/8c/4065950f9d013c4b2e588fe33cf04e564c2322842d84dbcbce5ba1dc28b0/PyQt5-5.15.11-cp38-abi3-manylinux_2_17_x86_64.whl", hash = "sha256:cd672a6738d1ae33ef7d9efa8e6cb0a1525ecf53ec86da80a9e1b6ec38c8d0f1", size = 8188103, upload-time = "2024-07-19T08:39:40.561Z" },
-    { url = "https://files.pythonhosted.org/packages/f3/f0/ae5a5b4f9b826b29ea4be841b2f2d951bcf5ae1d802f3732b145b57c5355/PyQt5-5.15.11-cp38-abi3-win32.whl", hash = "sha256:76be0322ceda5deecd1708a8d628e698089a1cea80d1a49d242a6d579a40babd", size = 5433308, upload-time = "2024-07-19T08:39:46.932Z" },
-    { url = "https://files.pythonhosted.org/packages/56/d5/68eb9f3d19ce65df01b6c7b7a577ad3bbc9ab3a5dd3491a4756e71838ec9/PyQt5-5.15.11-cp38-abi3-win_amd64.whl", hash = "sha256:bdde598a3bb95022131a5c9ea62e0a96bd6fb28932cc1619fd7ba211531b7517", size = 6865864, upload-time = "2024-07-19T08:39:53.572Z" },
-]
-
-[[package]]
-name = "pyqt5-qt5"
-version = "5.15.2"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.14' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "(python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')",
-    "python_full_version == '3.13.*' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "(python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')",
-    "python_full_version < '3.13' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "(python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')",
-    "python_full_version >= '3.14' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
-    "python_full_version == '3.13.*' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
-    "python_full_version < '3.13' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
-    "python_full_version >= '3.14' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version >= '3.14' and platform_machine == 'arm64' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version >= '3.14' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
-    "python_full_version == '3.13.*' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version == '3.13.*' and platform_machine == 'arm64' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
-    "python_full_version < '3.13' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version < '3.13' and platform_machine == 'arm64' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/62/09/99a222b0360616250fb2e6003a54e43a2a06b0774f0f8d5daafb86a2c375/PyQt5_Qt5-5.15.2-py3-none-macosx_10_13_intel.whl", hash = "sha256:76980cd3d7ae87e3c7a33bfebfaee84448fd650bad6840471d6cae199b56e154", size = 40546019, upload-time = "2021-03-10T13:52:47.763Z" },
-    { url = "https://files.pythonhosted.org/packages/83/d4/241a6a518d0bcf0a9fcdcbad5edfed18d43e884317eab8d5230a2b27e206/PyQt5_Qt5-5.15.2-py3-none-manylinux2014_x86_64.whl", hash = "sha256:1988f364ec8caf87a6ee5d5a3a5210d57539988bf8e84714c7d60972692e2f4a", size = 59921716, upload-time = "2021-03-10T13:57:39.485Z" },
-    { url = "https://files.pythonhosted.org/packages/1c/7e/ce7c66a541a105fa98b41d6405fe84940564695e29fc7dccf6d9e8c5f898/PyQt5_Qt5-5.15.2-py3-none-win32.whl", hash = "sha256:9cc7a768b1921f4b982ebc00a318ccb38578e44e45316c7a4a850e953e1dd327", size = 43447358, upload-time = "2021-03-10T14:01:17.827Z" },
-    { url = "https://files.pythonhosted.org/packages/37/97/5d3b222b924fa2ed4c2488925155cd0b03fd5d09ee1cfcf7c553c11c9f66/PyQt5_Qt5-5.15.2-py3-none-win_amd64.whl", hash = "sha256:750b78e4dba6bdf1607febedc08738e318ea09e9b10aea9ff0d73073f11f6962", size = 50075158, upload-time = "2021-03-10T14:05:20.868Z" },
-]
-
-[[package]]
-name = "pyqt5-qt5"
-version = "5.15.19"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.14' and sys_platform == 'win32'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version < '3.13' and sys_platform == 'win32'",
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/06/af/c0e00d353cad261ee9ccd5f6039b7ef4e09a1cb9a22c6a4b233854f6fa30/pyqt5_qt5-5.15.19-py3-none-macosx_10_13_x86_64.whl", hash = "sha256:cac6b78e4805848c25979a0622660251070781b6b4f810688a960cb44d1ae5a2", size = 39777655, upload-time = "2026-05-21T09:12:43.94Z" },
-    { url = "https://files.pythonhosted.org/packages/1c/d0/fd4876b90bbadaa92444ff452ab78d9ba839014a6d303e77d29c0c591631/pyqt5_qt5-5.15.19-py3-none-macosx_11_0_arm64.whl", hash = "sha256:66fa299dcdea1f430edbd6f6ca3dcb20430f19c508d13e3aa851d19034b7be7e", size = 36838788, upload-time = "2026-05-21T09:12:59.334Z" },
-    { url = "https://files.pythonhosted.org/packages/de/a0/dd9889ed9bf100d6d8b9d608b2689dc2a7f871f9489a0c563a8cf78c329f/pyqt5_qt5-5.15.19-py3-none-manylinux2014_x86_64.whl", hash = "sha256:31421d9c31fb29a8faee4b8b3c32658fb51a9e8c4c708075121162fa44faf80e", size = 60933242, upload-time = "2026-05-21T09:13:16.308Z" },
-]
-
-[[package]]
-name = "pyqt5-sip"
-version = "12.18.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/f3/31/5ef342de9faee0f3801088946ae103db9b9eaeba3d6a64fefd5ce74df244/pyqt5_sip-12.18.0.tar.gz", hash = "sha256:71c37db75a0664325de149f43e2a712ec5fa1f90429a21dafbca005cb6767f94", size = 104143, upload-time = "2026-01-13T15:53:19.576Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2a/61/6d78d702016ac23d2b97634a3b6a831c3f7735f0552a1c8b058db96005d1/pyqt5_sip-12.18.0-cp312-cp312-macosx_10_9_universal2.whl", hash = "sha256:b29e4cda24748e59e5bd1bdad4812091a86b4b5b08c38b7f781eb55a5166f2b7", size = 124614, upload-time = "2026-01-13T15:52:57.59Z" },
-    { url = "https://files.pythonhosted.org/packages/19/bf/8f3efa10ddd3e76c1253865340ab7c2960ef96681d732b1f666c77430612/pyqt5_sip-12.18.0-cp312-cp312-manylinux1_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:163c2bba5e637c2222ec17d82a2c5aa158184a191923eb7d137cf4cfa0399529", size = 339412, upload-time = "2026-01-13T15:53:00.563Z" },
-    { url = "https://files.pythonhosted.org/packages/72/48/f1bcf6729d01bae6729cd790b22fd579dbe34014e8be031e6f10c5b9b2aa/pyqt5_sip-12.18.0-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:ead5e0a64ad852ac60797989d8444a6a5bd834768536b04a07b40b2937d922f6", size = 282376, upload-time = "2026-01-13T15:52:59.172Z" },
-    { url = "https://files.pythonhosted.org/packages/dd/b7/d84c764ac9f1366be561255ec9bd88ee224fefdbdb349aee250f3003f0ca/pyqt5_sip-12.18.0-cp312-cp312-win32.whl", hash = "sha256:993fe3ed9a62a92e770f32d5344e3df56c2cacf1471f01b7feaf04818a2df1c4", size = 49523, upload-time = "2026-01-13T15:53:03.068Z" },
-    { url = "https://files.pythonhosted.org/packages/ab/e7/ef87178d5afa5f63be38556dc0df8af89f9bf74f2555f4dab6824c0fd150/pyqt5_sip-12.18.0-cp312-cp312-win_amd64.whl", hash = "sha256:9b689e02e400abd1ce0a30cd6eae8eceabcf1bbba0395cb5c86e64ba74351d68", size = 58001, upload-time = "2026-01-13T15:53:02.15Z" },
-    { url = "https://files.pythonhosted.org/packages/79/67/8d43d0fea10ff48ddecc8534aead8b855dc80df80653b8b1bf9e1f993063/pyqt5_sip-12.18.0-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:9254e5dd7676b76503ba20edcc919e7ac4a97b6c70a6fb2f9dba9e13b4c60509", size = 124605, upload-time = "2026-01-13T15:53:04.991Z" },
-    { url = "https://files.pythonhosted.org/packages/48/2a/b08bc8efeb49c50c6cdac11417dc2c8eaefcac2f0a6382eae7b26dc0f232/pyqt5_sip-12.18.0-cp313-cp313-manylinux1_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:c969631ada7293a81e1012b2264a62d69a91995b517586489dfe24421b87b9af", size = 339918, upload-time = "2026-01-13T15:53:08.502Z" },
-    { url = "https://files.pythonhosted.org/packages/b6/99/24f82437b2f073cf39296b7c731b6a8bc0f5207911fdd93841a0ea9abe42/pyqt5_sip-12.18.0-cp313-cp313-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:d84ac384a63285132e67762c87681191c25e28a1df7560287ec3889d9eb223b5", size = 282088, upload-time = "2026-01-13T15:53:06.632Z" },
-    { url = "https://files.pythonhosted.org/packages/3e/27/20d3924943df34361fae9c6a0489ae89d0b07571693245c61678d185e4a4/pyqt5_sip-12.18.0-cp313-cp313-win32.whl", hash = "sha256:95bba4670ecf5cba73958b85aa2087c17838a402ed251c38e68060c7665c998b", size = 49501, upload-time = "2026-01-13T15:53:11.159Z" },
-    { url = "https://files.pythonhosted.org/packages/3f/36/e251623c12968730730512a9e5150430e36246afbe64894610190b896f61/pyqt5_sip-12.18.0-cp313-cp313-win_amd64.whl", hash = "sha256:aac4adc37df2f2ac1dc259409be1900f07332d140a12c9db7c84112cef64ff59", size = 58076, upload-time = "2026-01-13T15:53:09.928Z" },
-    { url = "https://files.pythonhosted.org/packages/37/3a/b46a0116b1aacbb6156b2957eb5cb928c94b49f4626eb2540ca8d16ee757/pyqt5_sip-12.18.0-cp314-cp314-macosx_10_15_universal2.whl", hash = "sha256:8372ec8704bfd5e09942d0d055a1657eb4f702f4b30847a5e59df0496f99d67f", size = 124594, upload-time = "2026-01-13T15:53:13.159Z" },
-    { url = "https://files.pythonhosted.org/packages/58/63/df3037f11391c25c5b0ab233d22e58b8f056cb1ce16d7ecadb844421ce75/pyqt5_sip-12.18.0-cp314-cp314-manylinux1_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:fdb45c7cd2af7eccd7370b994d432bfc7965079f845392760724f26771bb59dc", size = 339056, upload-time = "2026-01-13T15:53:16.558Z" },
-    { url = "https://files.pythonhosted.org/packages/f5/e7/4f96b84520b8f8b7502682fd43f68f63ca6572b5858f56e5f61c76a54fe2/pyqt5_sip-12.18.0-cp314-cp314-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:92abe984becbde768954d6d0951f56d80a9868d2fd9e738e61fc944f0ff83dd6", size = 282439, upload-time = "2026-01-13T15:53:14.856Z" },
-    { url = "https://files.pythonhosted.org/packages/79/8e/ccdf20d373ceba83e1d1b7f818505c375208ffde4a96376dc7dbe592406c/pyqt5_sip-12.18.0-cp314-cp314-win32.whl", hash = "sha256:bd9e3c6f81346f1b08d6db02305cdee20c009b43aa083d44ee2de47a7da0e123", size = 50713, upload-time = "2026-01-13T15:53:18.634Z" },
-    { url = "https://files.pythonhosted.org/packages/7f/21/8486ed45977be615ec5371b24b47298b1cb0e1a455b419eddd0215078dba/pyqt5_sip-12.18.0-cp314-cp314-win_amd64.whl", hash = "sha256:6d948f1be619c645cd3bda54952bfdc1aef7c79242dccea6a6858748e61114b9", size = 59622, upload-time = "2026-01-13T15:53:17.714Z" },
-]
-
-[[package]]
 name = "pyqt6"
 version = "6.9.1"
 source = { registry = "https://pypi.org/simple" }
@@ -5221,8 +5161,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
-    { name = "jeepney", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
+    { name = "cryptography", marker = "(sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
+    { name = "jeepney", marker = "(sys_platform != 'darwin' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [
@@ -5364,7 +5304,7 @@ fov = [
     { name = "instanseg-torch" },
     { name = "joblib" },
     { name = "matplotlib" },
-    { name = "napari", extra = ["pyqt5"] },
+    { name = "napari", extra = ["pyqt6"] },
     { name = "napari-iohub" },
     { name = "pandas" },
     { name = "scikit-image" },
@@ -5418,7 +5358,7 @@ fov = [
     { name = "instanseg-torch" },
     { name = "joblib" },
     { name = "matplotlib" },
-    { name = "napari", extras = ["pyqt5"] },
+    { name = "napari", extras = ["pyqt6"] },
     { name = "napari-iohub", git = "https://github.com/czbiohub-sf/napari-iohub.git" },
     { name = "pandas" },
     { name = "scikit-image" },
@@ -5505,23 +5445,32 @@ resolution-markers = [
     "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version >= '3.14' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "(python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')",
+    "python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "(python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')",
+    "python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "(python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')",
+    "python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version >= '3.14' and sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
-    "(python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
-    "(python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version >= '3.14' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version >= '3.14' and platform_machine == 'arm64' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version >= '3.14' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version >= '3.14' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version == '3.13.*' and platform_machine == 'arm64' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version < '3.13' and platform_machine == 'arm64' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
 ]
 dependencies = [
     { name = "csbdeep", marker = "platform_machine == 'arm64' or (platform_machine != 'arm64' and extra != 'group-7-shrimpy-dynatrack') or (platform_machine != 'arm64' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or sys_platform != 'darwin'" },
@@ -5826,23 +5775,32 @@ version = "2.12.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "(python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')",
+    "python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "(python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')",
+    "python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "(python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')",
+    "python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
     "python_full_version >= '3.14' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version >= '3.14' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version >= '3.14' and platform_machine == 'arm64' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version >= '3.14' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version >= '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version >= '3.14' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version == '3.13.*' and platform_machine == 'arm64' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version == '3.13.*' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "(python_full_version < '3.13' and platform_machine == 'arm64' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')",
+    "python_full_version < '3.13' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
+    "python_full_version < '3.13' and sys_platform != 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
 ]
 dependencies = [
     { name = "cuda-bindings", marker = "sys_platform == 'linux' or (extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },

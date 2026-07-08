@@ -65,7 +65,7 @@ fov = [
   "tensorflow-cpu",  # StarDist backend; CPU build avoids GPU contention with torch
   "instanseg-torch", # InstanSeg nuclei/cell segmentation (torch-native)
   "imageio",         # 8-bit PNG export
-  "napari[pyqt5]",   # interactive viewing (PyQt5: glibc-2.28 compatible)
+  "napari[pyqt6]",   # interactive viewing (PyQt6: matches pymmcore-gui's binding)
   "napari-iohub",    # OME-Zarr / HCS reader plugin for napari
   # analysis stack used by the pipeline / feature viewer / goodness prediction
   "scikit-learn",    # decision-tree model + PCA/t-SNE in the feature viewer

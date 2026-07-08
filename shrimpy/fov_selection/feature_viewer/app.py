@@ -23,7 +23,7 @@ import sys
 
 from collections import OrderedDict
 
-os.environ.setdefault("QT_API", "pyqt5")
+os.environ.setdefault("QT_API", "pyqt6")
 
 from pathlib import Path
 
