@@ -51,12 +51,27 @@ def acquire():
     default=False,
     help="Use UniMMCore instead of standard CMMCorePlus",
 )
+@click.option(
+    "--napari-viewer",
+    is_flag=True,
+    default=False,
+    help="Show acquired data live in a separate-process napari viewer.",
+)
+@click.option(
+    "--napari-cache-mb",
+    type=float,
+    default=8192.0,
+    show_default=True,
+    help="Approximate RAM budget (MB) for the viewer's in-memory frame cache.",
+)
 def mantis(
     mm_config: Path,
     mda_config: Path,
     output_dir: Path,
     name: str,
     unicore: bool,
+    napari_viewer: bool,
+    napari_cache_mb: float,
 ):
     """Run Mantis microscope acquisition.
 
@@ -111,7 +126,25 @@ def mantis(
                 device.connect_z_stage(core)
                 device.connect_to_mda(core)
     engine = MantisEngine(core)
-    engine.acquire(output_dir=output_dir, name=name, mda_config=mda_config)
+
+    feeder = None
+    if napari_viewer:
+        from shrimpy.viewer import ViewerFeeder
+
+        # Mantis is an oblique-plane light-sheet microscope, so the deskew widget is
+        # shown by default (on, toggleable). Other microscopes pass deskew=False.
+        feeder = ViewerFeeder(core, cache_mb=napari_cache_mb, deskew=True)
+        feeder.start()
+
+    try:
+        engine.acquire(output_dir=output_dir, name=name, mda_config=mda_config)
+    finally:
+        if feeder is not None:
+            # Keep the window open after acquisition so the user can inspect the
+            # cached data, then release shared memory once they close it.
+            logger.info("Acquisition done; viewer window left open until closed.")
+            feeder.join()
+            feeder.cleanup()
 
 
 @acquire.command()

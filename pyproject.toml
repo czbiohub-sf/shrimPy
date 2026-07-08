@@ -24,8 +24,6 @@ dependencies = [
   "click",
   "numpy",
   "ome-writers[acquire-zarr]",
-  # TODO: test v0.7.0, even simple acquisitions would fail
-  "acquire-zarr==0.6.0",
   "pymmcore>=11.14.0.75.0",
   "pymmcore-gui",
   "pymmcore-plus",
@@ -38,6 +36,7 @@ dependencies = [
 
 [project.optional-dependencies]
 build = ["build", "twine"]
+viewer = ["napari[pyqt6]", "napari-deskew-preview"]
 
 [dependency-groups]
 dev = [
@@ -72,8 +71,9 @@ packages = ["shrimpy"]
 
 [tool.uv.sources]
 pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "dev" }
-ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "add-plate-row-col" }
-useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "add-plate-row-col" }
+ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
+useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "main" }
+napari-deskew-preview = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview", branch = "main" }
 # Windows: CUDA build via cu132 index (requires CUDA Toolkit 13.2 on the machine)
 # for the production `dynatrack` group; the CI-only `test-cpu` group takes the
 # CPU wheel instead. Elsewhere (macOS/Linux) both fall back to PyPI (CPU/MPS).
@@ -96,8 +96,6 @@ cytoland = { git = "https://github.com/mehta-lab/VisCy", subdirectory = "applica
 conflicts = [[{ group = "dynatrack" }, { group = "test-cpu" }]]
 
 [[tool.uv.index]]
-# TODO: upda CUDA toolkit on mantis microscope
-# https://developer.nvidia.com/cuda-13-2-1-download-archive?target_os=Windows&target_arch=x86_64&target_version=11&target_type=exe_network
 name = "pytorch-cu132"
 url = "https://download.pytorch.org/whl/cu132"
 explicit = true
