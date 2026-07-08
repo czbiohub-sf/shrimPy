@@ -603,3 +603,48 @@ class ReplayCamera(SimpleCameraDevice):
         volume = self._get_volume(key, t % self._nt, c % self._nc)
         # Copy so callers can't mutate the cached volume through the view
         return volume[z % self._nz].copy()
+
+
+def relabel_store_dtype(store_path, target_dtype) -> int:
+    """Relabel every array's dtype metadata in an OME-Zarr store, in place.
+
+    Fixes the dtype MISLABEL produced when a floating-point ReplayCamera is
+    acquired through MMCore's integer-only pixel model: MMCore reports 4
+    bytes/pixel, so the writer labels the output arrays ``uint32`` even though
+    the bytes written are the camera's real ``float32``. The pixel *bytes* are
+    already correct -- only the zarr ``data_type`` (and ``fill_value``) label is
+    wrong -- so this rewrites the metadata to ``target_dtype`` for every array
+    of matching itemsize. No pixel data is touched, so the correction is
+    lossless and every reader (iohub, the FOV pipeline, napari) then gets the
+    true values.
+
+    On a real microscope (integer camera, correctly labeled) this is a no-op.
+
+    Returns the number of arrays relabeled.
+    """
+    import glob
+    import json
+    import os
+
+    target = np.dtype(target_dtype)
+    changed = 0
+    for zj in glob.glob(os.path.join(str(store_path), "**", "zarr.json"), recursive=True):
+        with open(zj) as f:
+            meta = json.load(f)
+        if meta.get("node_type") != "array":
+            continue
+        cur = meta.get("data_type")
+        if cur is None or cur == target.name:
+            continue
+        try:
+            if np.dtype(cur).itemsize != target.itemsize:
+                continue  # different width -> reinterpreting bytes would corrupt
+        except TypeError:
+            continue
+        meta["data_type"] = target.name
+        if "fill_value" in meta:
+            meta["fill_value"] = float(target.type(meta["fill_value"] or 0))
+        with open(zj, "w") as f:
+            json.dump(meta, f)
+        changed += 1
+    return changed

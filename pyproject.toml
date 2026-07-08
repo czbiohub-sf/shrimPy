@@ -74,6 +74,10 @@ fov = [
   "pandas",          # feature-matrix tables throughout
   "matplotlib",      # figures (predict_fov_goodness, viewer)
   "joblib",          # save/load the trained tree model
+  # reconstruction for the FOV pre-scan (deskew -> phase -> virtual staining),
+  # mirroring the `dynatrack` group so a fov-only venv can run preprocessing too.
+  "biahub[stain]",   # deskew + cytoland virtual staining (pulls waveorder/cytoland/jsonargparse)
+  "torch",           # phase / VS / cellpose backend
 ]
 
 [project.scripts]

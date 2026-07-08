@@ -133,11 +133,92 @@ def infer_source(dataset_tag: str, label: str, proj_channels: list[str]) -> str:
     return SOURCE_DEFAULT
 
 
+def object_feature_rows(
+    lbl,
+    intensity,
+    px_um,
+    *,
+    dataset_tag,
+    well_row,
+    well_col,
+    fov,
+    timepoint,
+    channel,
+    source,
+    projection_type,
+):
+    """Per-object feature rows from a single (label mask, intensity) pair.
+
+    Array-based core shared by the batch pipeline (``rows_for_timepoint``) and
+    the online FOV-selection decision, so both compute identical features.
+
+    Parameters
+    ----------
+    lbl : np.ndarray
+        2D instance-label mask (Y, X), integer ids (0 = background).
+    intensity : np.ndarray | None
+        2D intensity image (Y, X) the mask was segmented from, or None.
+    px_um : float
+        XY pixel size in microns (isotropic).
+    channel : str
+        Organelle/channel label, e.g. ``'nuclei'`` / ``'membrane'``.
+    """
+    out: list[dict] = []
+    lbl = np.asarray(lbl).astype(np.uint32)
+    if lbl.max() == 0:
+        return out
+    Y, X = lbl.shape
+    intensity = np.asarray(intensity, np.float32) if intensity is not None else None
+    p = regionprops_table(lbl, intensity_image=intensity, properties=PROPS)
+    cy, cx = p["centroid-0"], p["centroid-1"]
+    # nearest-neighbor distance among same-channel centroids (px -> um)
+    if len(cy) >= 2:
+        d, _ = cKDTree(np.column_stack([cy, cx])).query(np.column_stack([cy, cx]), k=2)
+        nn_px = d[:, 1]
+    else:
+        nn_px = np.full(len(cy), np.nan)
+    for k in range(len(p["label"])):
+        cyk, cxk = float(cy[k]), float(cx[k])
+        out.append({
+            "dataset": dataset_tag, "well_row": well_row, "well_col": well_col, "fov": fov,
+            "timepoint": timepoint, "channel": channel, "organelle": organelle_label(channel),
+            "segmentation_source": source,
+            "projection_type": projection_type,
+            "label_id": int(p["label"][k]),
+            "centroid_x_norm": cxk / X, "centroid_y_norm": cyk / Y,
+            "area_px": int(p["area"][k]),
+            "area_um2": float(p["area"][k]) * px_um * px_um,
+            "equivalent_diameter_um": float(p["equivalent_diameter_area"][k]) * px_um,
+            "eccentricity": float(p["eccentricity"][k]),
+            "solidity": float(p["solidity"][k]),
+            "extent": float(p["extent"][k]),
+            "intensity_mean": float(p["intensity_mean"][k]),
+            "intensity_max": float(p["intensity_max"][k]),
+            # Raw mask bounding box in pixels (skimage convention: min inclusive,
+            # max exclusive). Kept raw so any edge margin can be applied later
+            # from the FOV matrix WITHOUT re-extracting -- edge_frac_<k> is derived
+            # in build_fov_feature_matrix.py by comparing these to a margin.
+            "bbox_min_row": int(p["bbox-0"][k]),
+            "bbox_min_col": int(p["bbox-1"][k]),
+            "bbox_max_row": int(p["bbox-2"][k]),
+            "bbox_max_col": int(p["bbox-3"][k]),
+            "dist_to_edge_norm": min(cxk / X, cyk / Y, (X - cxk) / X, (Y - cyk) / Y),
+            "nearest_neighbor_dist_um": float(nn_px[k]) * px_um,
+            "image_width_px": X, "image_height_px": Y,
+            "pixel_size_um": px_um,
+        })
+    return out
+
+
 def rows_for_timepoint(dataset_tag, name, pos, t, mask_channels, proj_channels):
-    """Per-object row dicts for ONE (position, timepoint), both channels."""
+    """Per-object row dicts for ONE (position, timepoint), both channels.
+
+    Thin store-bound wrapper over ``object_feature_rows``: pulls the label mask
+    + intensity image for each channel out of the zarr Position node and
+    delegates the per-object feature computation.
+    """
     row, col, fov = name.split("/")
     arr = pos["0"]  # (T, C, 1, Y, X)
-    _, _, _, Y, X = arr.shape
     chans = list(pos.channel_names)
     px_um = float(list(pos.scale)[-1])  # X pixel size (um); isotropic XY here
     out = []
@@ -145,49 +226,24 @@ def rows_for_timepoint(dataset_tag, name, pos, t, mask_channels, proj_channels):
         label = channel_label(c)
         source = infer_source(dataset_tag, label, proj_channels)
         lbl = np.asarray(arr[t, chans.index(c), 0]).astype(np.uint32)
-        if lbl.max() == 0:
-            continue
         # intensity image = the prediction channel this mask was segmented from
         proj = next((p for p in proj_channels if p.startswith(label)), None)
         intensity = np.asarray(arr[t, chans.index(proj), 0], np.float32) if proj else None
-        p = regionprops_table(lbl, intensity_image=intensity, properties=PROPS)
-        cy, cx = p["centroid-0"], p["centroid-1"]
-        # nearest-neighbor distance among same-channel centroids (px -> um)
-        if len(cy) >= 2:
-            d, _ = cKDTree(np.column_stack([cy, cx])).query(np.column_stack([cy, cx]), k=2)
-            nn_px = d[:, 1]
-        else:
-            nn_px = np.full(len(cy), np.nan)
-        for k in range(len(p["label"])):
-            cyk, cxk = float(cy[k]), float(cx[k])
-            out.append({
-                "dataset": dataset_tag, "well_row": row, "well_col": col, "fov": fov,
-                "timepoint": t, "channel": label, "organelle": organelle_label(label),
-                "segmentation_source": source,
-                "projection_type": projection_type(proj or c),
-                "label_id": int(p["label"][k]),
-                "centroid_x_norm": cxk / X, "centroid_y_norm": cyk / Y,
-                "area_px": int(p["area"][k]),
-                "area_um2": float(p["area"][k]) * px_um * px_um,
-                "equivalent_diameter_um": float(p["equivalent_diameter_area"][k]) * px_um,
-                "eccentricity": float(p["eccentricity"][k]),
-                "solidity": float(p["solidity"][k]),
-                "extent": float(p["extent"][k]),
-                "intensity_mean": float(p["intensity_mean"][k]),
-                "intensity_max": float(p["intensity_max"][k]),
-                # Raw mask bounding box in pixels (skimage convention: min inclusive,
-                # max exclusive). Kept raw so any edge margin can be applied later
-                # from the FOV matrix WITHOUT re-extracting -- edge_frac_<k> is derived
-                # in build_fov_feature_matrix.py by comparing these to a margin.
-                "bbox_min_row": int(p["bbox-0"][k]),
-                "bbox_min_col": int(p["bbox-1"][k]),
-                "bbox_max_row": int(p["bbox-2"][k]),
-                "bbox_max_col": int(p["bbox-3"][k]),
-                "dist_to_edge_norm": min(cxk / X, cyk / Y, (X - cxk) / X, (Y - cyk) / Y),
-                "nearest_neighbor_dist_um": float(nn_px[k]) * px_um,
-                "image_width_px": X, "image_height_px": Y,
-                "pixel_size_um": px_um,
-            })
+        out.extend(
+            object_feature_rows(
+                lbl,
+                intensity,
+                px_um,
+                dataset_tag=dataset_tag,
+                well_row=row,
+                well_col=col,
+                fov=fov,
+                timepoint=t,
+                channel=label,
+                source=source,
+                projection_type=projection_type(proj or c),
+            )
+        )
     return out
 
 

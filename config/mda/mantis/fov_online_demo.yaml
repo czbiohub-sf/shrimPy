@@ -1,0 +1,96 @@
+# Full online FOV-selection demo (M2): ONE experiment =
+#   pre-scan (BF, full z, all positions)
+#   -> per-FOV: deskew -> phase -> virtual stain -> project -> segment -> tree
+#   -> timelapse on the positions the model predicts "good".
+#
+# Replays the A549 0-flatfield store (raw BF + GFP), matching the online scope.
+
+# ---- TIMELAPSE parameters (run on the SELECTED positions) ----
+stage_positions:
+  - name: "B/3/000000"
+    x: 0
+    y: 0
+  - name: "B/3/003003"
+    x: 0
+    y: 1
+  - name: "B/4/000000"
+    x: 1
+    y: 0
+
+time_plan:
+  prioritize_duration: true
+  interval: 1
+  loops: 1            # set >1 for a real timelapse over time
+
+z_plan:
+  top: 79.95
+  bottom: -80.1
+  step: 0.15
+  go_up: true
+
+channels:
+  - config: BF - Oblique
+    group: Channel
+    exposure: 1.0
+  - config: GFP EX488 EM525-45
+    group: Channel
+    exposure: 1.0
+
+# ---- FOV-SELECTION parameters (pre-scan + reconstruction + decision) ----
+metadata:
+  mantis:
+    fov_selection:
+      enabled: true
+      input_channel: "BF - Oblique"   # channel fed to reconstruction
+      projection: sum                 # model uses *_vs_sum__* features
+      threshold: 0.5                  # P(good) cutoff
+      pixel_size_um: 0.1133           # true XY pixel size (replay core reports a preset)
+      model_path: /hpc/projects/comp.micro/microscope_dev/smart_fov_selection/fov_selection_output/fov_features/split_analysis/max_accuracy/model_on_three_dataset/final_model_nuclei-vs_membrane-vs.joblib
+
+      # Explicit pre-scan block (single timepoint forced; z_plan omitted -> timelapse's).
+      prescan:
+        channels:
+          - config: BF - Oblique
+            group: Channel
+            exposure: 1.0
+
+      # Reconstruction: BF -> nuclei/membrane. Mirrors the DynaTrack config; the
+      # VS model is the A549-finetuned VSCyto3D. pixel size / z step are injected
+      # from pixel_size_um above and z_plan.step (single source of truth).
+      reconstruction:
+        preprocessing: ['deskew', 'phase', 'vs']
+        deskew:
+          ls_angle_deg: 30.0
+          keep_overhang: false
+          average_n_slices: 3
+        phase:
+          transfer_function:
+            wavelength_illumination: 0.450
+            z_padding: 5
+            index_of_refraction_media: 1.4
+            numerical_aperture_detection: 1.35
+            numerical_aperture_illumination: 0.52
+            invert_phase_contrast: false
+          apply_inverse:
+            reconstruction_algorithm: Tikhonov
+            regularization_strength: 0.01
+        virtual_staining:
+          ckpt_path: /hpc/projects/organelle_phenotyping/models/VSCyto3D-A549-infection-finetune/4gpu_bf16_bs16_to_ep7/checkpoints/epoch=7-step=832.ckpt
+          target_channels: ['nuclei', 'membrane']
+          sliding_window_step: 1
+          model:
+            class_path: cytoland.engine.VSUNet
+            init_args:
+              architecture: fcmae
+              model_config:
+                in_channels: 1
+                out_channels: 2
+                in_stack_depth: 15
+                encoder_blocks: [3, 3, 9, 3]
+                dims: [96, 192, 384, 768]
+                encoder_drop_path_rate: 0.1
+                stem_kernel_size: [5, 4, 4]
+                decoder_conv_blocks: 2
+                pretraining: false
+              test_time_augmentations: false
+              tta_type: mean
