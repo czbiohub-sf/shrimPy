@@ -28,8 +28,6 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
-
 from shrimpy.fov_selection.manager import FovSelection
 from shrimpy.fov_selection.online_selection import select_good_fovs
 
@@ -67,10 +65,6 @@ class FovSelectionAcquisition:
         )
         prescan_name = f"{name}_prescan"
         self._engine.acquire(output_dir=output_dir, name=prescan_name, mda_config=prescan)
-        # Replay-only dtype fix (no-op on a real integer camera): correct the
-        # written store's uint32 label back to the camera's real float32 so the
-        # decision (and any reader) sees the true values.
-        self._maybe_relabel_replay(self._latest_store(output_dir, prescan_name))
 
         # --- Decision: choose the good FOVs ---------------------------------
         good = self._select(sequence, fov_cfg, output_dir, prescan_name)
@@ -82,7 +76,6 @@ class FovSelectionAcquisition:
         timelapse = sequence.replace(stage_positions=good)
         logger.info("FOV selection: timelapse of %d selected positions", len(good))
         self._engine.acquire(output_dir=output_dir, name=name, mda_config=timelapse)
-        self._maybe_relabel_replay(self._latest_store(output_dir, name))
 
     def _select(self, sequence, fov_cfg, output_dir, prescan_name):
         """Return the good subset of ``sequence.stage_positions``.
@@ -104,44 +97,6 @@ class FovSelectionAcquisition:
         names = [p.name for p in sequence.stage_positions]
         good_names = set(fs.select(prescan_store, names))
         return [p for p in sequence.stage_positions if p.name in good_names]
-
-    def _maybe_relabel_replay(self, store_path: Path) -> None:
-        """Correct a replay store's uint32->float32 dtype mislabel, in place.
-
-        No-op unless the active camera is a floating-point ReplayCamera (i.e. a
-        replay acquisition through MMCore's integer-only pixel model). See
-        ``shrimpy.replay_camera.relabel_store_dtype``.
-        """
-        dt = self._replay_float_dtype()
-        if dt is None:
-            return
-        from shrimpy.replay_camera import relabel_store_dtype
-
-        n = relabel_store_dtype(store_path, dt)
-        if n:
-            logger.info(
-                "FOV selection: relabeled %d arrays in %s -> %s (replay dtype fix)",
-                n,
-                store_path.name,
-                dt,
-            )
-
-    def _replay_float_dtype(self):
-        """Return the ReplayCamera's float dtype if replaying float data, else None."""
-        core = self._engine.mmcore
-        try:
-            from shrimpy.replay_camera import ReplayCamera
-
-            cam = core.getCameraDevice()
-            if cam and core.isPyDevice(cam):
-                dev = core._pydevices[cam]  # PyDeviceManager: subscript, not .get()
-                if isinstance(dev, ReplayCamera):
-                    dt = np.dtype(dev.dtype())
-                    if dt.kind == "f":
-                        return dt
-        except Exception:
-            logger.debug("replay dtype check failed", exc_info=True)
-        return None
 
     @staticmethod
     def _latest_store(output_dir: Path, base_name: str) -> Path:
