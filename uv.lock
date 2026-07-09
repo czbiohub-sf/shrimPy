@@ -495,7 +495,7 @@ name = "cryptography"
 version = "46.0.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cffi", marker = "platform_python_implementation != 'PyPy' and sys_platform != 'darwin'" },
+    { name = "cffi", marker = "platform_python_implementation != 'PyPy' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/60/04/ee2a9e8542e4fa2773b81771ff8349ff19cdd56b7258a0cc442639052edb/cryptography-46.0.5.tar.gz", hash = "sha256:abace499247268e3757271b2f1e244b36b06f8515cf27c4d49468fc9eb16e93d", size = 750064, upload-time = "2026-02-10T19:18:38.255Z" }
 wheels = [
@@ -2422,8 +2422,8 @@ wheels = [
 
 [[package]]
 name = "pymmcore-plus"
-version = "0.18.2.dev13+g226bc70d5"
-source = { git = "https://github.com/ieivanov/pymmcore-plus?branch=dev#226bc70d5d8bf05ff23c380d25757a6a0bb6bdfc" }
+version = "0.18.2.dev14+gcd99c1c04"
+source = { git = "https://github.com/ieivanov/pymmcore-plus?branch=sequenced-event-plate-indices#cd99c1c046da3a3dacd0c80c60ba6620383311fb" }
 dependencies = [
     { name = "numpy" },
     { name = "ome-types" },
@@ -3062,8 +3062,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography", marker = "sys_platform != 'darwin'" },
-    { name = "jeepney", marker = "sys_platform != 'darwin'" },
+    { name = "cryptography", marker = "sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "jeepney", marker = "sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [
@@ -3172,7 +3172,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "ome-writers", extras = ["acquire-zarr"], git = "https://github.com/ieivanov/ome-writers?branch=main" },
     { name = "pymmcore", specifier = ">=11.14.0.75.0" },
-    { name = "pymmcore-plus", git = "https://github.com/ieivanov/pymmcore-plus?branch=dev" },
+    { name = "pymmcore-plus", git = "https://github.com/ieivanov/pymmcore-plus?branch=sequenced-event-plate-indices" },
     { name = "pymmcore-widgets" },
     { name = "pyyaml" },
     { name = "qtpy" },

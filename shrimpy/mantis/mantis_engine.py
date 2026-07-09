@@ -30,6 +30,12 @@ FAST_XY_STAGE_SPEED = 5.75  # in mm/s, used for long moves
 NEGLIGIBLE_XY_DISTANCE = 1  # in um, moves below this are ignored
 SHORT_XY_DISTANCE = 2000  # in um, threshold between slow and fast speed
 
+# --- Quick hack: skip a specific channel for specific wells ---------------
+# Skip acquiring SKIP_CHANNEL_CONFIG for any stage position whose
+# (plate_row, plate_col) is listed in SKIP_WELLS.
+SKIP_CHANNEL_CONFIG = "mCherry EX561 EM600-37"
+SKIP_WELLS = {(0, 1), (0, 2)}  # (plate_row, plate_col) pairs
+
 
 class MantisEngine(MDAEngine):
     """Custom MDA engine for the Mantis microscope.
@@ -128,6 +134,16 @@ class MantisEngine(MDAEngine):
 
     def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
+        # Quick hack: skip a specific channel for positions in specific wells.
+        # Done before any stage movement/autofocus so skipped events are cheap.
+        if self._should_skip_event(event):
+            num_frames = len(event.events) if isinstance(event, SequencedEvent) else 1
+            logger.info(
+                f"Skipping channel '{SKIP_CHANNEL_CONFIG}' at position "
+                f"'{event.pos_name}' (well in SKIP_WELLS)"
+            )
+            raise SkipEvent(num_frames=num_frames, reason="channel skipped for this well")
+
         # Set XY stage position and engage autofocus
         # Note: this command will not move the stage if the target position is the same
         # as the last commanded position and force_set_xy_position is False.
@@ -166,6 +182,42 @@ class MantisEngine(MDAEngine):
                 core.setProperty(setting[0], setting[1], setting[2])
         else:
             logger.debug("No reset hardware sequencing settings specified")
+
+    def _should_skip_event(self, event: MDAEvent) -> bool:
+        """Return True if this event should be skipped (quick hack).
+
+        Skips SKIP_CHANNEL_CONFIG for stage positions whose
+        (plate_row, plate_col) is listed in SKIP_WELLS.
+        """
+        if event.channel is None or event.channel.config != SKIP_CHANNEL_CONFIG:
+            return False
+
+        row, col = self._plate_indices(event)
+        return (row, col) in SKIP_WELLS
+
+    @staticmethod
+    def _plate_indices(event: MDAEvent) -> tuple[int | None, int | None]:
+        """Return (plate_row, plate_col) for the well of ``event``.
+
+        Hardware-sequenced events arrive as SequencedEvents, which carry
+        ``plate_row``/``plate_col`` directly (populated by pymmcore-plus'
+        EventCombiner). Plain, non-sequenced MDAEvents don't, so we fall back to
+        looking the position up from the parent sequence by position index.
+        """
+        row = getattr(event, "plate_row", None)
+        col = getattr(event, "plate_col", None)
+        if row is not None or col is not None:
+            return row, col
+
+        seq = event.sequence
+        p_idx = event.index.get("p")
+        if seq is None or p_idx is None:
+            return None, None
+        try:
+            position = seq.stage_positions[p_idx]
+        except (IndexError, TypeError):
+            return None, None
+        return getattr(position, "plate_row", None), getattr(position, "plate_col", None)
 
     def _set_event_properties(self, properties: Iterable[tuple]) -> None:
         """Set properties for the current event."""
