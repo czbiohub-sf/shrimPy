@@ -29,6 +29,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+
 from iohub import open_ome_zarr
 from iohub.ngff import TransformationMeta
 
@@ -49,25 +50,25 @@ INPUT_ZARRS = [
 ]
 
 # Cellpose diameter (px) by channel role, inferred from the channel name.
-NUCLEI_DIAMETER: float | None = None    # None = auto-scale (correct for nuclei)
+NUCLEI_DIAMETER: float | None = None  # None = auto-scale (correct for nuclei)
 MEMBRANE_DIAMETER: float | None = 120.0  # whole-cell needs an explicit diameter
-MEMBRANE_HINT = "membrane"               # channels containing this use MEMBRANE_DIAMETER
+MEMBRANE_HINT = "membrane"  # channels containing this use MEMBRANE_DIAMETER
 
 # ---- cellpose model + shared eval parameters ------------------------------
-MODEL_NAME = "cpdino"            # Cellpose-DINO (fastest; quality ties cyto3/cpsam)
+MODEL_NAME = "cpdino"  # Cellpose-DINO (fastest; quality ties cyto3/cpsam)
 # Label channel/store suffix = model name (a LABEL_CHANNEL_HINTS entry), e.g. "_cpdino".
 OUTPUT_SUFFIX = f"_{MODEL_NAME}"
 USE_GPU = True
-CELLPROB_THRESHOLD = 0.0         # lower=more/larger masks, higher=stricter
-FLOW_THRESHOLD = 0.4             # mask shape QC
-MIN_SIZE = 15                    # drop masks smaller than this many px
+CELLPROB_THRESHOLD = 0.0  # lower=more/larger masks, higher=stricter
+FLOW_THRESHOLD = 0.4  # mask shape QC
+MIN_SIZE = 15  # drop masks smaller than this many px
 NORMALIZE_PERCENTILES: tuple[float, float] | None = None  # (low, high) or None=default(1,99)
 
 # ---- throughput / scope ---------------------------------------------------
-BATCH_SIZE = 64                  # cellpose tiles per forward pass
-CHUNK_SIZE = 16                  # images per GPU batch (across positions+timepoints)
+BATCH_SIZE = 64  # cellpose tiles per forward pass
+CHUNK_SIZE = 16  # images per GPU batch (across positions+timepoints)
 POSITIONS: list[str] | None = None  # specific positions, e.g. ["B/3/000000"]; None=all
-MAX_POSITIONS: int | None = None    # None = entire dataset; int for a quick look
+MAX_POSITIONS: int | None = None  # None = entire dataset; int for a quick look
 RESUME = True
 # =============================================================================
 
@@ -154,14 +155,16 @@ def segment_store(model, input_zarr: Path) -> None:
     print("Segmentations (label channels):")
     for t in tasks:
         print(f"  {t['input']:32s} -> {t['output']:36s} (diameter={t['diameter']})")
-    print(f"Positions: {len(remaining)} to do, {skipped} done | images={len(work)} "
-          f"chunk={CHUNK_SIZE} tile_batch={BATCH_SIZE}")
+    print(
+        f"Positions: {len(remaining)} to do, {skipped} done | images={len(work)} "
+        f"chunk={CHUNK_SIZE} tile_batch={BATCH_SIZE}"
+    )
 
     in_arrs = {name: pos["0"] for name, pos in positions}
     base_kw = _base_kwargs()
     n_done = 0
     for start in range(0, len(work), CHUNK_SIZE):
-        chunk = work[start:start + CHUNK_SIZE]
+        chunk = work[start : start + CHUNK_SIZE]
         # Read every input channel once for the chunk (used for copy + segmentation).
         chan_imgs = {
             ci: [np.asarray(in_arrs[name][t, ci, 0]) for name, t in chunk]
@@ -199,14 +202,17 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--input", type=Path, default=None,
+        "--input",
+        type=Path,
+        default=None,
         help="Segment a single store (default: every store in INPUT_ZARRS). "
-             "Used to fan out one SLURM job per dataset (see submit_cellpose.sh).",
+        "Used to fan out one SLURM job per dataset (see submit_cellpose.sh).",
     )
     parser.add_argument(
-        "--list", action="store_true",
+        "--list",
+        action="store_true",
         help="Print the configured INPUT_ZARRS (one per line) and exit. "
-             "Lets submit_cellpose.sh read the store list from this one source of truth.",
+        "Lets submit_cellpose.sh read the store list from this one source of truth.",
     )
     cli = parser.parse_args()
 

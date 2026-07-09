@@ -116,7 +116,9 @@ def fov_feature_matrix(
             projection_type=projection,
         )
         if not rows:
-            logger.warning("FOV selection: no %s objects segmented; features -> NaN", organelle)
+            logger.warning(
+                "FOV selection: no %s objects segmented; features -> NaN", organelle
+            )
             continue
         agg = group_features(pd.DataFrame(rows))
         prefix = f"{organelle}_{source}_{projection}"

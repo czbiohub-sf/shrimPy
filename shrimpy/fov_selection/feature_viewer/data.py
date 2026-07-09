@@ -36,14 +36,25 @@ REDUCED_RE = re.compile(r"^(PCA|TSNE|UMAP)\d+$")
 # features. Any leftover "*__png" pointer columns are dropped via feature_columns'
 # numeric test and the app's column filters.
 META_BLACKLIST = {
-    "dataset", "well_row", "well_col", "fov", "timepoint",
-    "filename", "goodness", "score",
-    "image_width_px", "image_height_px", "pixel_size_um",
-    "__dataset", "__png", "__src",
+    "dataset",
+    "well_row",
+    "well_col",
+    "fov",
+    "timepoint",
+    "filename",
+    "goodness",
+    "score",
+    "image_width_px",
+    "image_height_px",
+    "pixel_size_um",
+    "__dataset",
+    "__png",
+    "__src",
 }
 
 try:
     import umap  # noqa: F401
+
     HAS_UMAP = True
 except Exception:  # noqa: BLE001
     HAS_UMAP = False
@@ -69,7 +80,7 @@ def _file_identity_keys(stem: str) -> list:
     m_t = re.search(r"_t(\d+)", stem)
     t = int(m_t.group(1)) if m_t else 0
     core = stem[: m_t.start()] if m_t else stem
-    core = re.sub(r"_N\d+$", "", core)      # drop trailing object-count annotation
+    core = re.sub(r"_N\d+$", "", core)  # drop trailing object-count annotation
     parts = [p for p in re.split(r"[-_]", core) if p]
     int_idx = [i for i, p in enumerate(parts) if p.isdigit()]
     if int_idx:
@@ -87,7 +98,7 @@ def index_composites(folder: Path) -> dict:
     for p in sorted(folder.iterdir()):
         if p.suffix.lower() in _IMG_EXT:
             for k in _file_identity_keys(p.stem):
-                idx.setdefault(k, str(p))    # sorted() -> stable first-match
+                idx.setdefault(k, str(p))  # sorted() -> stable first-match
     return idx
 
 
@@ -121,13 +132,15 @@ def wire_composites(df: pd.DataFrame, composites_root: Path, cache: dict) -> lis
     if not folders:
         return [""] * len(df)
     row_keys = [_row_identity_keys(df.iloc[i]) for i in range(len(df))]
-    best = max(folders.values(),
-               key=lambda idx: sum(any(k in idx for k in ks) for ks in row_keys))
+    best = max(
+        folders.values(), key=lambda idx: sum(any(k in idx for k in ks) for ks in row_keys)
+    )
     return [next((best[k] for k in ks if k in best), "") for ks in row_keys]
 
 
-def load_matrices(csv_paths: list[str | Path],
-                  composites_root: Path = COMPOSITES_ROOT) -> pd.DataFrame:
+def load_matrices(
+    csv_paths: list[str | Path], composites_root: Path = COMPOSITES_ROOT
+) -> pd.DataFrame:
     """Concatenate feature CSVs; add __dataset (tag), __src, and __png (composite path).
 
     Each *_fov_feature_matrix.csv is now one row per FOV, so each row maps to a single
@@ -162,7 +175,7 @@ def feature_columns(df: pd.DataFrame) -> list[str]:
 @dataclass
 class Filter:
     column: str
-    kind: str            # "range" (numeric) or "isin" (categorical)
+    kind: str  # "range" (numeric) or "isin" (categorical)
     lo: float = 0.0
     hi: float = 0.0
     values: tuple = ()
@@ -188,8 +201,14 @@ def apply_filters(df: pd.DataFrame, filters: list[Filter]) -> np.ndarray:
     return np.where(mask)[0]
 
 
-def run_reduction(X: np.ndarray, method: str, *, perplexity: float = 30.0,
-                  n_neighbors: int = 15, seed: int = 0) -> np.ndarray:
+def run_reduction(
+    X: np.ndarray,
+    method: str,
+    *,
+    perplexity: float = 30.0,
+    n_neighbors: int = 15,
+    seed: int = 0,
+) -> np.ndarray:
     """Standardize + impute features, return an (n, 3) embedding. Always 3 comps."""
     from sklearn.impute import SimpleImputer
     from sklearn.preprocessing import StandardScaler
@@ -199,14 +218,23 @@ def run_reduction(X: np.ndarray, method: str, *, perplexity: float = 30.0,
     n = X.shape[0]
     if method == "PCA":
         from sklearn.decomposition import PCA
+
         return PCA(n_components=3, random_state=seed).fit_transform(X)
     if method == "t-SNE":
         from sklearn.manifold import TSNE
+
         perp = min(perplexity, max(5, (n - 1) // 3))
-        return TSNE(n_components=3, perplexity=perp, init="pca",
-                    learning_rate="auto", random_state=seed).fit_transform(X)
+        return TSNE(
+            n_components=3,
+            perplexity=perp,
+            init="pca",
+            learning_rate="auto",
+            random_state=seed,
+        ).fit_transform(X)
     if method == "UMAP":
         import umap
-        return umap.UMAP(n_components=3, n_neighbors=min(n_neighbors, max(2, n - 1)),
-                         random_state=seed).fit_transform(X)
+
+        return umap.UMAP(
+            n_components=3, n_neighbors=min(n_neighbors, max(2, n - 1)), random_state=seed
+        ).fit_transform(X)
     raise ValueError(f"unknown method {method!r}")

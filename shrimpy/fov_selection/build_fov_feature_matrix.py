@@ -81,23 +81,33 @@ EDGE_MARGIN_FRAC = 0.01
 
 # The per-variant features produced by group_features(), in output order.
 FEATURE_NAMES = [
-    "object_count", "objects_per_10um2", "coverage_frac", "edge_frac",
-    "com_offset_norm", "nn_um_mean", "nn_cv", "densest_grid_frac",
-    "eccentricity_mean", "solidity_mean",
+    "object_count",
+    "objects_per_10um2",
+    "coverage_frac",
+    "edge_frac",
+    "com_offset_norm",
+    "nn_um_mean",
+    "nn_cv",
+    "densest_grid_frac",
+    "eccentricity_mean",
+    "solidity_mean",
 ]
 
 
 def group_features(g: pd.DataFrame) -> dict:
     n = len(g)
-    W = float(g["image_width_px"].iloc[0]); H = float(g["image_height_px"].iloc[0])
+    W = float(g["image_width_px"].iloc[0])
+    H = float(g["image_height_px"].iloc[0])
     px = float(g["pixel_size_um"].iloc[0])
     cx = g["centroid_x_norm"].to_numpy(float) * W
     cy = g["centroid_y_norm"].to_numpy(float) * H
 
-    rec = {"object_count": n,
-           # nuclei per 10 um^2 (physical density)
-           "objects_per_10um2": 10.0 * n / (W * H * px * px) if px else np.nan,
-           "coverage_frac": float(g["area_px"].sum() / (W * H))}
+    rec = {
+        "object_count": n,
+        # nuclei per 10 um^2 (physical density)
+        "objects_per_10um2": 10.0 * n / (W * H * px * px) if px else np.nan,
+        "coverage_frac": float(g["area_px"].sum() / (W * H)),
+    }
     # Edge-touching is derived here from the raw per-object bounding box, so the
     # margin can be re-tuned WITHOUT re-extracting object features. A mask counts as
     # touching the border if its bbox comes within EDGE_MARGIN_FRAC of any edge (the
@@ -105,11 +115,10 @@ def group_features(g: pd.DataFrame) -> dict:
     if {"bbox_min_row", "bbox_min_col", "bbox_max_row", "bbox_max_col"} <= set(g.columns):
         b_top = g["bbox_min_row"].to_numpy(float)
         b_left = g["bbox_min_col"].to_numpy(float)
-        b_bot = g["bbox_max_row"].to_numpy(float)   # skimage max is exclusive
+        b_bot = g["bbox_max_row"].to_numpy(float)  # skimage max is exclusive
         b_right = g["bbox_max_col"].to_numpy(float)
         my, mx = EDGE_MARGIN_FRAC * H, EDGE_MARGIN_FRAC * W
-        touch = ((b_top <= my) | (b_left <= mx)
-                 | (b_bot >= H - my) | (b_right >= W - mx))
+        touch = (b_top <= my) | (b_left <= mx) | (b_bot >= H - my) | (b_right >= W - mx)
         rec["edge_frac"] = float(touch.mean())
     else:  # legacy per-object CSV without bbox columns
         src = "touches_edge" if "touches_edge" in g.columns else None
@@ -131,7 +140,8 @@ def group_features(g: pd.DataFrame) -> dict:
     rec["nn_cv"] = float(nn_um.std() / nn_um.mean()) if nn_um.size and nn_um.mean() else np.nan
     gx = np.clip((cx / W * GRID).astype(int), 0, GRID - 1)
     gy = np.clip((cy / H * GRID).astype(int), 0, GRID - 1)
-    counts = np.zeros(GRID * GRID, int); np.add.at(counts, gy * GRID + gx, 1)
+    counts = np.zeros(GRID * GRID, int)
+    np.add.at(counts, gy * GRID + gx, 1)
     rec["densest_grid_frac"] = float(counts.max() / n)
     rec["eccentricity_mean"] = float(g["eccentricity"].mean())
     rec["solidity_mean"] = float(g["solidity"].mean())
@@ -153,8 +163,10 @@ def variant_tags(obj: pd.DataFrame) -> dict[str, str]:
         channels_by_tag.setdefault(prefix, set()).add(r.channel)
     for prefix, chans in channels_by_tag.items():
         if len(chans) > 1:
-            print(f"  ! variant-prefix collision {prefix!r} <- {sorted(chans)}; "
-                  f"using raw channel names for these")
+            print(
+                f"  ! variant-prefix collision {prefix!r} <- {sorted(chans)}; "
+                f"using raw channel names for these"
+            )
             for c in chans:
                 tag_by_channel[c] = c
     return tag_by_channel
@@ -193,7 +205,7 @@ def build(obj: pd.DataFrame, id_keys: list[str], out: Path, tag: str) -> None:
         df["goodness"] = np.nan
 
     ordered = list(id_keys)
-    if "goodness" not in ordered:      # place the label right after the FOV identifiers
+    if "goodness" not in ordered:  # place the label right after the FOV identifiers
         ordered.append("goodness")
     ordered += FOV_META
     for prefix in variant_order:
@@ -201,14 +213,18 @@ def build(obj: pd.DataFrame, id_keys: list[str], out: Path, tag: str) -> None:
     ordered = [c for c in ordered if c in df.columns]
     df = df.reindex(columns=ordered + [c for c in df.columns if c not in ordered])
     df.to_csv(out, index=False)
-    print(f"[{tag}] {len(obj)} objects -> {len(df)} FOV rows "
-          f"({len(variant_order)} variants: {', '.join(variant_order)}) -> {out.name}")
+    print(
+        f"[{tag}] {len(obj)} objects -> {len(df)} FOV rows "
+        f"({len(variant_order)} variants: {', '.join(variant_order)}) -> {out.name}"
+    )
 
 
 def zarr_tags() -> list[str]:
     """Dataset tags with a per-object CSV in FEATURES_DIR (one FOV matrix each)."""
-    return sorted(c.name.replace("_object_features.csv", "")
-                  for c in FEATURES_DIR.glob("*_object_features.csv"))
+    return sorted(
+        c.name.replace("_object_features.csv", "")
+        for c in FEATURES_DIR.glob("*_object_features.csv")
+    )
 
 
 def build_zarr(tag: str) -> None:
@@ -231,12 +247,14 @@ def main() -> None:
 
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
-        "--tag", default=None,
+        "--tag",
+        default=None,
         help="Build the FOV matrix for a single zarr dataset by tag (default: all zarr "
-             "datasets in FEATURES_DIR + OpenCell). Use 'opencell' for the OpenCell matrix.",
+        "datasets in FEATURES_DIR + OpenCell). Use 'opencell' for the OpenCell matrix.",
     )
     ap.add_argument(
-        "--list", action="store_true",
+        "--list",
+        action="store_true",
         help="Print the buildable zarr dataset tags (one per line) and exit.",
     )
     cli = ap.parse_args()

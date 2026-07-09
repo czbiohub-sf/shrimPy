@@ -30,6 +30,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
+
 from iohub import open_ome_zarr
 from iohub.ngff import TransformationMeta
 
@@ -65,7 +66,7 @@ CHANNELS_TO_PROJECT = {
 
 # Only process positions whose row (first path component) is in this set.
 # None or empty == all rows.
-ROWS: set[str] | None = None #{"H2BC21"}
+ROWS: set[str] | None = None  # {"H2BC21"}
 
 # Process only the first N positions (handy for a smoke test). None = all.
 MAX_POSITIONS: int | None = None
@@ -88,7 +89,11 @@ _W: dict = {}
 
 def default_workers() -> int:
     """All available cores minus 2 (leave headroom on a shared login node)."""
-    n = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 2)
+    n = (
+        len(os.sched_getaffinity(0))
+        if hasattr(os, "sched_getaffinity")
+        else (os.cpu_count() or 2)
+    )
     return max(1, n - 2)
 
 
@@ -150,7 +155,7 @@ def main() -> None:
     done = {name for name, _ in out_plate.positions()} if mode == "a" else set()
     todo = [n for n in all_names if n not in done]
 
-    print(f"Inputs:")
+    print("Inputs:")
     for key, path in INPUTS.items():
         print(f"  [{key}] {path}")
     print(f"Output: {OUTPUT_ZARR}  (mode={mode})")

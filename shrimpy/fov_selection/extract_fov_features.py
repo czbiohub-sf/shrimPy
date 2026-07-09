@@ -38,6 +38,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
 from iohub import open_ome_zarr
 from scipy.spatial import cKDTree
 from skimage.measure import regionprops_table
@@ -86,17 +87,45 @@ RESUME = True  # skip a dataset whose per-object CSV already exists
 
 # skimage regionprops properties (new-style names).
 PROPS = (
-    "label", "centroid", "area", "equivalent_diameter_area",
-    "eccentricity", "solidity", "extent", "bbox",
-    "intensity_mean", "intensity_max",
+    "label",
+    "centroid",
+    "area",
+    "equivalent_diameter_area",
+    "eccentricity",
+    "solidity",
+    "extent",
+    "bbox",
+    "intensity_mean",
+    "intensity_max",
 )
 PER_OBJECT_COLUMNS = [
-    "dataset", "well_row", "well_col", "fov", "timepoint", "channel",
-    "segmentation_source", "projection_type", "label_id", "centroid_x_norm", "centroid_y_norm",
-    "area_px", "area_um2", "equivalent_diameter_um", "eccentricity", "solidity",
-    "extent", "intensity_mean", "intensity_max",
-    "bbox_min_row", "bbox_min_col", "bbox_max_row", "bbox_max_col",
-    "dist_to_edge_norm", "nearest_neighbor_dist_um", "image_width_px", "image_height_px",
+    "dataset",
+    "well_row",
+    "well_col",
+    "fov",
+    "timepoint",
+    "channel",
+    "segmentation_source",
+    "projection_type",
+    "label_id",
+    "centroid_x_norm",
+    "centroid_y_norm",
+    "area_px",
+    "area_um2",
+    "equivalent_diameter_um",
+    "eccentricity",
+    "solidity",
+    "extent",
+    "intensity_mean",
+    "intensity_max",
+    "bbox_min_row",
+    "bbox_min_col",
+    "bbox_max_row",
+    "bbox_max_col",
+    "dist_to_edge_norm",
+    "nearest_neighbor_dist_um",
+    "image_width_px",
+    "image_height_px",
     "pixel_size_um",
 ]
 # =============================================================================
@@ -179,34 +208,43 @@ def object_feature_rows(
         nn_px = np.full(len(cy), np.nan)
     for k in range(len(p["label"])):
         cyk, cxk = float(cy[k]), float(cx[k])
-        out.append({
-            "dataset": dataset_tag, "well_row": well_row, "well_col": well_col, "fov": fov,
-            "timepoint": timepoint, "channel": channel, "organelle": organelle_label(channel),
-            "segmentation_source": source,
-            "projection_type": projection_type,
-            "label_id": int(p["label"][k]),
-            "centroid_x_norm": cxk / X, "centroid_y_norm": cyk / Y,
-            "area_px": int(p["area"][k]),
-            "area_um2": float(p["area"][k]) * px_um * px_um,
-            "equivalent_diameter_um": float(p["equivalent_diameter_area"][k]) * px_um,
-            "eccentricity": float(p["eccentricity"][k]),
-            "solidity": float(p["solidity"][k]),
-            "extent": float(p["extent"][k]),
-            "intensity_mean": float(p["intensity_mean"][k]),
-            "intensity_max": float(p["intensity_max"][k]),
-            # Raw mask bounding box in pixels (skimage convention: min inclusive,
-            # max exclusive). Kept raw so any edge margin can be applied later
-            # from the FOV matrix WITHOUT re-extracting -- edge_frac_<k> is derived
-            # in build_fov_feature_matrix.py by comparing these to a margin.
-            "bbox_min_row": int(p["bbox-0"][k]),
-            "bbox_min_col": int(p["bbox-1"][k]),
-            "bbox_max_row": int(p["bbox-2"][k]),
-            "bbox_max_col": int(p["bbox-3"][k]),
-            "dist_to_edge_norm": min(cxk / X, cyk / Y, (X - cxk) / X, (Y - cyk) / Y),
-            "nearest_neighbor_dist_um": float(nn_px[k]) * px_um,
-            "image_width_px": X, "image_height_px": Y,
-            "pixel_size_um": px_um,
-        })
+        out.append(
+            {
+                "dataset": dataset_tag,
+                "well_row": well_row,
+                "well_col": well_col,
+                "fov": fov,
+                "timepoint": timepoint,
+                "channel": channel,
+                "organelle": organelle_label(channel),
+                "segmentation_source": source,
+                "projection_type": projection_type,
+                "label_id": int(p["label"][k]),
+                "centroid_x_norm": cxk / X,
+                "centroid_y_norm": cyk / Y,
+                "area_px": int(p["area"][k]),
+                "area_um2": float(p["area"][k]) * px_um * px_um,
+                "equivalent_diameter_um": float(p["equivalent_diameter_area"][k]) * px_um,
+                "eccentricity": float(p["eccentricity"][k]),
+                "solidity": float(p["solidity"][k]),
+                "extent": float(p["extent"][k]),
+                "intensity_mean": float(p["intensity_mean"][k]),
+                "intensity_max": float(p["intensity_max"][k]),
+                # Raw mask bounding box in pixels (skimage convention: min inclusive,
+                # max exclusive). Kept raw so any edge margin can be applied later
+                # from the FOV matrix WITHOUT re-extracting -- edge_frac_<k> is derived
+                # in build_fov_feature_matrix.py by comparing these to a margin.
+                "bbox_min_row": int(p["bbox-0"][k]),
+                "bbox_min_col": int(p["bbox-1"][k]),
+                "bbox_max_row": int(p["bbox-2"][k]),
+                "bbox_max_col": int(p["bbox-3"][k]),
+                "dist_to_edge_norm": min(cxk / X, cyk / Y, (X - cxk) / X, (Y - cyk) / Y),
+                "nearest_neighbor_dist_um": float(nn_px[k]) * px_um,
+                "image_width_px": X,
+                "image_height_px": Y,
+                "pixel_size_um": px_um,
+            }
+        )
     return out
 
 
@@ -252,12 +290,14 @@ def main() -> None:
 
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
-        "--dataset", default=None,
+        "--dataset",
+        default=None,
         help="Extract features for a single dataset by tag (default: all in DATASETS). "
-             "Used to fan out one job per dataset (see submit_features.sh).",
+        "Used to fan out one job per dataset (see submit_features.sh).",
     )
     ap.add_argument(
-        "--list", action="store_true",
+        "--list",
+        action="store_true",
         help="Print configured dataset tags (one per line) and exit.",
     )
     cli = ap.parse_args()
@@ -271,8 +311,9 @@ def main() -> None:
     if cli.dataset is not None:
         datasets = [d for d in DATASETS if d["tag"] == cli.dataset]
         if not datasets:
-            raise SystemExit(f"unknown dataset tag {cli.dataset!r}; "
-                             f"known: {[d['tag'] for d in DATASETS]}")
+            raise SystemExit(
+                f"unknown dataset tag {cli.dataset!r}; known: {[d['tag'] for d in DATASETS]}"
+            )
 
     for ds in datasets:
         tag, store = ds["tag"], ds["store"]
@@ -283,14 +324,18 @@ def main() -> None:
         OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
         obj_csv = OUTPUT_ROOT / f"{tag}_object_features.csv"
         if RESUME and obj_csv.exists():
-            print(f"\n[{tag}] {obj_csv.name} exists -- skipping (RESUME). Delete it to rebuild.")
+            print(
+                f"\n[{tag}] {obj_csv.name} exists -- skipping (RESUME). Delete it to rebuild."
+            )
             plate.close()
             continue
 
         positions = list(plate.positions())
         n_t = positions[0][1]["0"].shape[0]
         total = len(positions) * n_t
-        print(f"\n[{tag}] {len(positions)} positions x {n_t} t = {total} FOV-timepoints | masks={mask_channels}")
+        print(
+            f"\n[{tag}] {len(positions)} positions x {n_t} t = {total} FOV-timepoints | masks={mask_channels}"
+        )
         all_rows = []
         n = 0
         for name, pos in positions:

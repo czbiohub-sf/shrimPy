@@ -1,22 +1,20 @@
-"""FOV-selection preprocessing -- deskew, phase reconstruction, virtual staining.
+"""Shared label-free preprocessing -- deskew, phase reconstruction, virtual staining.
 
-Copied from ``shrimpy/dynatrack/preprocessing.py`` and DECOUPLED from
-``DynaTrackConfig`` so FOV-selection reconstruction can evolve independently of
-DynaTrack's tracking. The only real change from the DynaTrack version is
-``build_preprocessor``: it takes explicit arguments (``preprocessing``,
-``deskew``, ``phase``, ``virtual_staining``) instead of a config object. The
-``_LabelfreePreprocessor`` class is unchanged -- it already took explicit
-settings.
+Turns a raw brightfield ``(Z, Y, X)`` stack into one or more processed channels.
+Used by both DynaTrack (``shrimpy.dynatrack``) and FOV selection
+(``shrimpy.fov_selection``); it is deliberately decoupled from either package's
+config object -- :func:`build_preprocessor` takes the reconstruction settings as
+explicit arguments so each caller extracts them from its own config.
 
 For a VS pipeline the preprocessor turns a raw brightfield ``(Z, Y, X)`` stack
 into a dict of virtual-stained channels ``{'nuclei': ..., 'membrane': ...}``
-(plus ``'phase'`` as a debug intermediate) -- exactly the inputs the FOV
-pipeline segments.
+(plus ``'phase'`` as a debug intermediate). For a non-VS pipeline it returns a
+single entry keyed by ``output_channel`` (raw/deskewed/phase volume).
 
 Requires optional dependencies: ``waveorder`` (phase) and ``cytoland`` (VS),
-which live in the ``dynatrack`` dependency group::
+which live in the ``dynatrack`` / ``fov`` dependency groups::
 
-    uv sync --group dynatrack
+    uv sync --group dynatrack   # or: --group fov
 """
 
 from __future__ import annotations
@@ -57,7 +55,7 @@ def _resolve_device() -> torch.device:
     from waveorder.device import resolve_device
 
     device = resolve_device("auto")
-    logger.info("FOV selection compute device: %s", device)
+    logger.info("Preprocessing compute device: %s", device)
     return device
 
 
@@ -71,10 +69,9 @@ def build_preprocessor(
 ) -> Callable[[np.ndarray], dict] | None:
     """Build a preprocessing callable from explicit reconstruction settings.
 
-    Decoupled from DynaTrack: instead of a ``DynaTrackConfig`` this takes the
-    reconstruction fields directly. The pixel size / z step must already be
-    injected into ``deskew`` and ``phase`` by the caller (see
-    ``FovSelectionConfig``/the manager), as DynaTrack does at runtime.
+    The pixel size / z step must already be injected into ``deskew`` and
+    ``phase`` by the caller (DynaTrack and FOV selection both do this from a
+    single source of truth: ``core.getPixelSizeUm()`` and the z_plan step).
 
     Parameters
     ----------
@@ -83,7 +80,9 @@ def build_preprocessor(
         function.
     preprocessing : list[str] | None
         Ordered steps, e.g. ``['deskew', 'phase', 'vs']``. ``None``/``[]`` ->
-        no preprocessing (returns ``None``).
+        no preprocessing (returns ``None``). Only the reconstruction steps
+        (``'deskew'``, ``'phase'``, ``'vs'``) are consumed here; downstream
+        steps such as projection/segmentation are handled by the caller.
     deskew, phase, virtual_staining : dict | None
         Sub-configs for the biahub deskew, waveorder phase, and cytoland VS
         steps (only used when the corresponding step is in ``preprocessing``).
@@ -103,7 +102,7 @@ def build_preprocessor(
 
     if "phase" not in pipeline and "deskew" not in pipeline:
         logger.warning(
-            "FOV-selection preprocessing requires 'deskew' and/or 'phase' step; got %s",
+            "Preprocessing requires a 'deskew' and/or 'phase' step; got %s",
             pipeline,
         )
         return None
@@ -135,7 +134,9 @@ class _LabelfreePreprocessor:
     """Stateful preprocessor that caches the transfer function and VS model.
 
     Callable as ``preprocessor(volume_bf: np.ndarray) -> dict[str, torch.Tensor]``.
-    Copied verbatim from DynaTrack (it already took explicit settings).
+
+    Uses ``waveorder.models.phase_thick_3d`` directly (not the xarray-based
+    ``waveorder.api.phase``) for lower overhead and explicit GPU control.
     """
 
     def __init__(
@@ -147,21 +148,30 @@ class _LabelfreePreprocessor:
         output_channel: str,
     ) -> None:
         self._zyx_shape = zyx_shape
+        # Validated upstream settings models: biahub DeskewSettings and the
+        # waveorder phase settings.
         self._deskew_settings = deskew_settings
         self._phase_settings = phase_settings
         self._vs_config = vs_config
         self._output_channel = output_channel
         self._device = None
 
+        # Cached state (computed by warm_up or lazily on first call)
         self._transfer_function: tuple[torch.Tensor, ...] | None = None
         self._vs_model = None
+        # Derived from vs_config when the VS model is loaded (see _load_vs_model)
         self._vs_target_channels: list[str] = ["nuclei", "membrane"]
         self._vs_step: int = 1
 
     def warm_up(self) -> None:
-        """Pre-compute the transfer function and load the VS model."""
+        """Pre-compute the transfer function and load the VS model.
+
+        Called before acquisition starts so the first reconstruction doesn't
+        pay the initialization cost.
+        """
         self._device = _resolve_device()
 
+        # If deskewing, downstream shape is deskewed + rotated (np.rot90 in _deskew).
         if self._deskew_settings is not None:
             from biahub.deskew import get_deskewed_data_shape
 
@@ -170,7 +180,7 @@ class _LabelfreePreprocessor:
                 **_settings_kwargs(get_deskewed_data_shape, self._deskew_settings),
             )
             logger.info(
-                "FOV selection: deskew will reshape %s -> %s",
+                "Preprocessing: deskew will reshape %s -> %s",
                 self._zyx_shape,
                 deskewed_shape,
             )
@@ -180,9 +190,9 @@ class _LabelfreePreprocessor:
             self._compute_transfer_function()
 
         if self._vs_config is not None:
-            logger.info("FOV selection: pre-loading VS model...")
+            logger.info("Preprocessing: pre-loading VS model...")
             self._vs_model = self._load_vs_model()
-            logger.info("FOV selection: VS model ready")
+            logger.info("Preprocessing: VS model ready")
 
     def _compute_transfer_function(self) -> None:
         """Compute the transfer function and move to the target device."""
@@ -191,7 +201,7 @@ class _LabelfreePreprocessor:
         if self._device is None:
             self._device = _resolve_device()
 
-        logger.info("FOV selection: computing transfer function...")
+        logger.info("Preprocessing: computing transfer function...")
         t0 = _time.monotonic()
 
         tf_params = _settings_kwargs(
@@ -199,21 +209,27 @@ class _LabelfreePreprocessor:
         )
         tf_params["zyx_shape"] = self._zyx_shape
 
+        # calculate_transfer_function runs on CPU internally
         real_tf, imag_tf = calculate_transfer_function(**tf_params)
 
+        # Move to target device for fast apply_inverse
         self._transfer_function = (
             real_tf.to(self._device),
             imag_tf.to(self._device),
         )
 
         logger.info(
-            "FOV selection: transfer function ready on %s (%.1fs, computed on CPU)",
+            "Preprocessing: transfer function ready on %s (%.1fs, computed on CPU)",
             self._device,
             _time.monotonic() - t0,
         )
 
     def __call__(self, volume_bf: np.ndarray) -> dict[str, torch.Tensor]:
         """Preprocess a brightfield z-stack -> dict of channel ZYX tensors.
+
+        The input numpy volume is moved to the target device once; all
+        subsequent steps (deskew, phase, VS) operate on torch tensors and
+        return tensors on-device. Callers convert to numpy only when needed.
 
         For a VS pipeline the keys are ``virtual_staining.target_channels``
         (e.g. ``'nuclei'``, ``'membrane'``) plus ``'phase'`` (debug). For a
@@ -223,21 +239,29 @@ class _LabelfreePreprocessor:
 
         channels: dict[str, torch.Tensor] = {}
 
+        # Move to device once; downstream steps stay on-device.
         volume = torch.as_tensor(volume_bf, device=self._device, dtype=torch.float32)
 
+        # 1. Deskew
         if self._deskew_settings is not None:
             volume = self._deskew(volume)
 
+        # 2. Phase reconstruction
         if self._phase_settings is not None:
             volume_phase = self._reconstruct_phase(volume)
         else:
             volume_phase = volume
 
+        # 3. Virtual staining
         if self._vs_config is not None:
+            # VS emits one channel per vs target (e.g. 'nuclei', 'membrane').
+            # Keep 'phase' as a debug-only intermediate.
             if self._phase_settings is not None:
                 channels["phase"] = volume_phase
             channels.update(self._predict_vs(volume_phase))
         else:
+            # Non-VS: a single processed representation of the input channel
+            # (raw/deskewed/phase), keyed by output_channel.
             channels[self._output_channel] = volume_phase
 
         self._log_gpu_memory()
@@ -247,7 +271,7 @@ class _LabelfreePreprocessor:
         """Apply deskewing via biahub's ``fast_deskew_zyx`` on the target device."""
         from biahub.deskew import fast_deskew_zyx
 
-        logger.info("FOV selection: deskewing volume %s...", tuple(volume.shape))
+        logger.info("Preprocessing: deskewing volume %s...", tuple(volume.shape))
         t0 = _time.monotonic()
 
         result = fast_deskew_zyx(
@@ -255,7 +279,7 @@ class _LabelfreePreprocessor:
         )
 
         logger.info(
-            "FOV selection: deskew took %.1fs (%s -> %s)",
+            "Preprocessing: deskew took %.1fs (%s -> %s)",
             _time.monotonic() - t0,
             tuple(volume.shape),
             tuple(result.shape),
@@ -266,10 +290,11 @@ class _LabelfreePreprocessor:
         """Apply phase reconstruction via waveorder on the target device."""
         from waveorder.models.phase_thick_3d import apply_inverse_transfer_function
 
+        # Compute transfer function once and cache
         if self._transfer_function is None:
             self._compute_transfer_function()
 
-        logger.info("FOV selection: reconstructing phase on %s...", self._device)
+        logger.info("Preprocessing: reconstructing phase on %s...", self._device)
         t0 = _time.monotonic()
 
         inverse_config = _settings_kwargs(
@@ -281,20 +306,30 @@ class _LabelfreePreprocessor:
             volume_bf, *self._transfer_function, z_padding=z_padding, **inverse_config
         )
 
-        logger.info("FOV selection: phase reconstruction took %.1fs", _time.monotonic() - t0)
+        logger.info("Preprocessing: phase reconstruction took %.1fs", _time.monotonic() - t0)
         return t_phase
 
     def _predict_vs(self, volume_phase: torch.Tensor) -> dict[str, torch.Tensor]:
-        """Apply virtual staining via cytoland; one channel per target channel."""
+        """Apply virtual staining via cytoland; one channel per target channel.
+
+        The target channels and the sliding-window step are read from the
+        config in :meth:`_load_vs_model` (as biahub does).
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            e.g. ``{'nuclei': ..., 'membrane': ...}`` ZYX tensors on device.
+        """
         import torch
 
         if self._vs_model is None:
-            logger.info("FOV selection: loading VS model...")
+            logger.info("Preprocessing: loading VS model...")
             self._vs_model = self._load_vs_model()
 
-        logger.info("FOV selection: predicting virtual staining...")
+        logger.info("Preprocessing: predicting virtual staining...")
         t0 = _time.monotonic()
 
+        # cytoland expects (B, C, Z, Y, X) input
         t_input = volume_phase.to(dtype=torch.float32)[None, None]
 
         with torch.no_grad():
@@ -302,33 +337,50 @@ class _LabelfreePreprocessor:
                 t_input, out_channel=len(self._vs_target_channels), step=self._vs_step
             )
 
+        # Output shape: (B, C_out, Z, Y, X), one channel per target channel,
+        # keyed by its bare target-channel name.
         result = {
             name: t_output[0, i].detach() for i, name in enumerate(self._vs_target_channels)
         }
 
-        logger.info("FOV selection: VS prediction took %.1fs", _time.monotonic() - t0)
+        logger.info("Preprocessing: VS prediction took %.1fs", _time.monotonic() - t0)
         return result
 
     def _load_vs_model(self):
-        """Validate the VS config and load the cytoland model for inference."""
+        """Validate the VS config and load the cytoland model for inference.
+
+        Mirrors biahub's ``virtual_stain``: the ``model`` block is validated and
+        instantiated against cytoland's own ``VSUNet`` class via jsonargparse
+        (the same machinery ``viscy predict`` uses), so the config stays in sync
+        with cytoland and a bad key errors early. ``out_channel`` and the
+        sliding-window ``step`` are derived from the config rather than
+        hard-coded.
+
+        Reconstruction runs on the raw reconstructed volume, so input
+        normalization and test-time augmentation are intentionally not applied;
+        if the config requests either, a warning is logged rather than silently
+        ignoring it.
+        """
         import jsonargparse
 
         from cytoland.engine import AugmentedPredictionVSUNet, VSUNet
 
         cfg = self._vs_config
 
+        # Warn (don't silently ignore) about features that are not applied.
         model_init_args = cfg.get("model", {}).get("init_args", {})
         if model_init_args.get("test_time_augmentations"):
             logger.warning(
-                "FOV selection VS: 'test_time_augmentations' is set but not applied; "
-                "ignoring it."
+                "VS: 'test_time_augmentations' is set in virtual_staining, but it is "
+                "not applied here; ignoring it."
             )
         if "data" in cfg or "normalizations" in cfg:
             logger.warning(
-                "FOV selection VS: input normalization configured but not applied; "
-                "reconstruction runs on the raw phase volume."
+                "VS: input normalization configured in virtual_staining is not "
+                "applied; reconstruction runs on the raw reconstructed volume."
             )
 
+        # Validate/instantiate the model against cytoland's VSUNet signature.
         parser = jsonargparse.ArgumentParser()
         parser.add_subclass_arguments(VSUNet, "model")
         parser.add_argument("--ckpt_path", type=str, required=True)
@@ -338,6 +390,9 @@ class _LabelfreePreprocessor:
         )
         parsed = parser.parse_object(cfg)
 
+        # Route ckpt_path into the model init args so VSUNet loads the
+        # checkpoint's state_dict itself (as `viscy predict` does), keeping
+        # shrimpy free of any assumption about the checkpoint layout.
         parsed.model.init_args.ckpt_path = str(parsed.ckpt_path)
         instances = parser.instantiate_classes(parsed)
         vsunet = instances.model
@@ -347,6 +402,7 @@ class _LabelfreePreprocessor:
 
         device = self._device
         vsunet.eval().to(device)
+        # Wrap the bare nn.Module without TTA transforms (identity defaults).
         return AugmentedPredictionVSUNet(model=vsunet.model).to(device).eval()
 
     @staticmethod
@@ -359,7 +415,7 @@ class _LabelfreePreprocessor:
                 alloc = torch.cuda.memory_allocated() / 1e6
                 reserved = torch.cuda.memory_reserved() / 1e6
                 logger.debug(
-                    "FOV selection GPU memory: %.0f MB allocated, %.0f MB reserved",
+                    "GPU memory: %.0f MB allocated, %.0f MB reserved",
                     alloc,
                     reserved,
                 )

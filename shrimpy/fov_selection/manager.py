@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from shrimpy.fov_selection import pipeline as P
-from shrimpy.fov_selection.preprocessing import build_preprocessor
+from shrimpy.preprocessing import build_preprocessor
 
 if TYPE_CHECKING:
     pass

@@ -128,9 +128,7 @@ def mantis(
     if fov_cfg and fov_cfg.get("enabled"):
         from shrimpy.fov_selection.controller import FovSelectionAcquisition
 
-        logger.info(
-            "FOV selection enabled: pre-scan -> select -> timelapse (one experiment)"
-        )
+        logger.info("FOV selection enabled: pre-scan -> select -> timelapse (one experiment)")
         FovSelectionAcquisition(engine).run(sequence, output_dir, name)
     else:
         engine.acquire(output_dir=output_dir, name=name, mda_config=sequence)
