@@ -6,10 +6,10 @@ two internal acquisition phases:
   1. pre-scan  : acquire every candidate position once (single timepoint), using
                  the pre-scan parameters (default: same as the timelapse, but
                  typically the brightfield channel only).
-  2. decision  : choose the "good" positions. If the config supplies a
-                 ``model_path`` (+ reconstruction), the real ``FovSelection``
-                 manager runs reconstruct -> project -> segment -> features ->
-                 tree per FOV; otherwise a dummy selector is used (M1).
+  2. decision  : the ``FovSelection`` manager runs reconstruct -> project ->
+                 segment -> features -> tree per FOV to pick the "good"
+                 positions. A ``model_path`` is required; the run errors out
+                 before acquiring anything if it is missing.
   3. timelapse : the full acquisition, restricted to the selected positions.
 
 The user sets this up as a single experiment (one config, one launch); the two
@@ -29,7 +29,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from shrimpy.fov_selection.manager import FovSelection
-from shrimpy.fov_selection.online_selection import select_good_fovs
 
 if TYPE_CHECKING:
     from useq import MDASequence
@@ -55,6 +54,12 @@ class FovSelectionAcquisition:
         """Run the two-phase FOV-selection acquisition from one config."""
         output_dir = Path(output_dir)
         fov_cfg = (sequence.metadata.get("mantis", {}) or {}).get("fov_selection", {})
+        if not fov_cfg.get("model_path"):
+            raise ValueError(
+                "FOV selection is enabled but no 'model_path' is configured under "
+                "metadata.mantis.fov_selection. Provide a trained FOV-selection "
+                "model (.joblib), or disable fov_selection. Aborting before acquisition."
+            )
 
         # --- Phase 1: pre-scan (single timepoint over all candidate positions)
         prescan = self._build_prescan(sequence, fov_cfg)
@@ -80,14 +85,10 @@ class FovSelectionAcquisition:
     def _select(self, sequence, fov_cfg, output_dir, prescan_name):
         """Return the good subset of ``sequence.stage_positions``.
 
-        Uses the real ``FovSelection`` manager when a ``model_path`` is
-        configured (reads the just-written pre-scan store); otherwise falls back
-        to the dummy selector.
+        Runs the ``FovSelection`` manager on the just-written pre-scan store.
+        ``model_path`` is validated in ``run`` before any acquisition, so it is
+        guaranteed present here.
         """
-        if not fov_cfg.get("model_path"):
-            logger.info("FOV selection: no model_path configured; using dummy selector")
-            return select_good_fovs(sequence.stage_positions)
-
         z_step = getattr(sequence.z_plan, "step", None) if sequence.z_plan else None
         px_um = fov_cfg.get("pixel_size_um") or self._engine.mmcore.getPixelSizeUm()
         fs = FovSelection.from_metadata(fov_cfg, pixel_size_um=px_um, z_step_um=z_step)
