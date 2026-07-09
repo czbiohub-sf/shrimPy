@@ -29,8 +29,8 @@ ARTIFACTS (under .../split_analysis/final_model/)
   feature_histograms_<channel>.png            per-dataset good/bad histograms of ALL base
                                               features (one per model channel) + decision lines
 
-    python -m shrimpy.fov_selection.predict_fov_goodness
-    python -m shrimpy.fov_selection.predict_fov_goodness --target <matrix.csv> --out <matrix.csv>
+    python -m shrimpy.scripts.predict_fov_goodness
+    python -m shrimpy.scripts.predict_fov_goodness --target <matrix.csv> --out <matrix.csv>
 """
 
 from __future__ import annotations
