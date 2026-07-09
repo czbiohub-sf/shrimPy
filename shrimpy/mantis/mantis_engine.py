@@ -14,7 +14,7 @@ from ome_writers import (
 )
 from pymmcore_plus.core import CMMCorePlus
 from pymmcore_plus.core._constants import Keyword
-from pymmcore_plus.core._sequencing import SequencedEvent
+from pymmcore_plus.core._sequencing import SequencedEvent, _plate_indices_for_event
 from pymmcore_plus.mda import MDAEngine, SkipEvent
 from pymmcore_plus.metadata import SummaryMetaV1
 from pymmcore_plus.metadata.serialize import to_builtins
@@ -223,23 +223,16 @@ class MantisEngine(MDAEngine):
 
         Hardware-sequenced events arrive as SequencedEvents, which carry
         ``plate_row``/``plate_col`` directly (populated by pymmcore-plus'
-        EventCombiner). Plain, non-sequenced MDAEvents don't, so we fall back to
-        looking the position up from the parent sequence by position index.
+        EventCombiner). Their ``index`` is empty and ``sequence`` is ``None``, so
+        the stored fields are the only way to recover the well. Plain,
+        non-sequenced MDAEvents don't carry the fields, so fall back to the
+        shared pymmcore-plus lookup via the originating stage position.
         """
         row = getattr(event, "plate_row", None)
         col = getattr(event, "plate_col", None)
         if row is not None or col is not None:
             return row, col
-
-        seq = event.sequence
-        p_idx = event.index.get("p")
-        if seq is None or p_idx is None:
-            return None, None
-        try:
-            position = seq.stage_positions[p_idx]
-        except (IndexError, TypeError):
-            return None, None
-        return getattr(position, "plate_row", None), getattr(position, "plate_col", None)
+        return _plate_indices_for_event(event)
 
     def _set_event_properties(self, properties: Iterable[tuple]) -> None:
         """Set properties for the current event."""
