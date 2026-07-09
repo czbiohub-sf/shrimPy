@@ -112,26 +112,11 @@ def mantis(
                 device.connect_to_mda(core)
     engine = MantisEngine(core)
 
-    # Route: if FOV selection is enabled in the config, run the two-phase
-    # (pre-scan -> select -> timelapse) flow via the controller; otherwise run
-    # the sequence once. The engine stays generic; the controller owns the
-    # FOV-selection orchestration.
-    from useq import MDASequence
-
-    sequence = MDASequence.from_file(mda_config)
-    fov_cfg = (
-        (sequence.metadata.get("mantis", {}) or {}).get("fov_selection")
-        if sequence.metadata
-        else None
-    )
-
-    if fov_cfg and fov_cfg.get("enabled"):
-        from shrimpy.fov_selection.controller import FovSelectionAcquisition
-
-        logger.info("FOV selection enabled: pre-scan -> select -> timelapse (one experiment)")
-        FovSelectionAcquisition(engine).run(sequence, output_dir, name)
-    else:
-        engine.acquire(output_dir=output_dir, name=name, mda_config=sequence)
+    # FOV selection (when enabled in metadata.mantis.fov_selection) is handled
+    # inside the engine: the pre-scan is timepoint 0 of this run and the decision
+    # streams in via frameReady to gate the timelapse. No special routing here --
+    # the engine reads the metadata, like it does for DynaTrack.
+    engine.acquire(output_dir=output_dir, name=name, mda_config=mda_config)
 
 
 @acquire.command()

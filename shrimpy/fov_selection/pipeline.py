@@ -38,20 +38,41 @@ def project_zyx(zyx: np.ndarray, method: str = "sum") -> np.ndarray:
     return reduce(zyx, axis=0).astype(np.float32)
 
 
-def load_cellpose_model(model_name: str | None = None, gpu: bool = True):
-    """Load a Cellpose model once (reuse across FOVs). Defaults to the batch
-    script's ``MODEL_NAME`` (e.g. ``'cpdino'``)."""
+def load_cellpose_model(segmentation: dict | None = None):
+    """Load a Cellpose model once (reuse across FOVs).
+
+    ``segmentation`` is the config block: ``model_name`` (defaults to the batch
+    script's ``MODEL_NAME``, e.g. ``'cpdino'``) and ``gpu``. This is the
+    switchable-segmentation entry point -- other ``model`` backends (e.g.
+    watershed) would branch here.
+    """
     from cellpose import models
 
     from shrimpy.fov_selection import segment_cellpose as sc
 
-    name = model_name or getattr(sc, "MODEL_NAME", "cpsam")
+    seg = segmentation or {}
+    backend = seg.get("model", "cellpose")
+    if backend != "cellpose":
+        raise NotImplementedError(
+            f"segmentation.model={backend!r} is not supported yet; only 'cellpose'."
+        )
+    name = seg.get("model_name") or getattr(sc, "MODEL_NAME", "cpsam")
+    gpu = seg.get("gpu", True)
     logger.info("FOV selection: loading Cellpose model %r (gpu=%s)", name, gpu)
     return models.CellposeModel(gpu=gpu, pretrained_model=name)
 
 
-def _diameter_for(organelle: str) -> float | None:
-    """Membrane channels use an explicit diameter; nuclei auto-scale (None)."""
+def _diameter_for(organelle: str, segmentation: dict | None = None) -> float | None:
+    """Per-organelle Cellpose diameter (microns); ``None`` means auto-scale.
+
+    Prefers an explicit ``segmentation.diameters[organelle]`` from config; falls
+    back to the batch script's membrane-hint policy (membrane gets an explicit
+    diameter, nuclei auto-scale).
+    """
+    diameters = (segmentation or {}).get("diameters") or {}
+    if organelle in diameters:
+        return diameters[organelle]
+
     from shrimpy.fov_selection import segment_cellpose as sc
 
     hint = getattr(sc, "MEMBRANE_HINT", "membrane")
@@ -60,21 +81,28 @@ def _diameter_for(organelle: str) -> float | None:
     return getattr(sc, "NUCLEI_DIAMETER", None)
 
 
-def segment_2d(img2d: np.ndarray, model, organelle: str) -> np.ndarray:
+def segment_2d(
+    img2d: np.ndarray, model, organelle: str, segmentation: dict | None = None
+) -> np.ndarray:
     """Segment one 2D projection with Cellpose; returns a uint32 label mask.
 
-    Uses the same thresholds / min_size / diameter policy as the batch script.
+    Thresholds / min_size / batch_size / per-organelle diameter come from the
+    ``segmentation`` config block, falling back to the batch script's defaults so
+    the online segmentation matches training when unset.
     """
     from shrimpy.fov_selection import segment_cellpose as sc
 
+    seg = segmentation or {}
     kwargs = {
-        "flow_threshold": getattr(sc, "FLOW_THRESHOLD", 0.4),
-        "cellprob_threshold": getattr(sc, "CELLPROB_THRESHOLD", 0.0),
-        "batch_size": getattr(sc, "BATCH_SIZE", 64),
-        "min_size": getattr(sc, "MIN_SIZE", 15),
+        "flow_threshold": seg.get("flow_threshold", getattr(sc, "FLOW_THRESHOLD", 0.4)),
+        "cellprob_threshold": seg.get(
+            "cellprob_threshold", getattr(sc, "CELLPROB_THRESHOLD", 0.0)
+        ),
+        "batch_size": seg.get("batch_size", getattr(sc, "BATCH_SIZE", 64)),
+        "min_size": seg.get("min_size", getattr(sc, "MIN_SIZE", 15)),
         "normalize": True,
     }
-    diam = _diameter_for(organelle)
+    diam = _diameter_for(organelle, seg)
     if diam is not None:
         kwargs["diameter"] = diam
     # eval returns (masks, flows, styles); masks is a list of 2D masks (one per
@@ -133,6 +161,72 @@ def load_fov_model(path: str):
 
     logger.info("FOV selection: loading model %s", path)
     return joblib.load(path)
+
+
+def _to_numpy(x) -> np.ndarray:
+    """Detach a torch tensor (or pass through an array) to a numpy array."""
+    return x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)
+
+
+def decide_fov(
+    preprocessor,
+    cellpose,
+    model: dict,
+    bf_zyx: np.ndarray,
+    *,
+    target_channels: list[str],
+    projection: str = "sum",
+    px_um: float,
+    threshold: float = 0.5,
+    segmentation: dict | None = None,
+) -> tuple[float, bool]:
+    """Run one FOV's good/bad decision end to end.
+
+    Reconstructs the input z-stack (``preprocessor``), projects and segments each
+    ``target_channels`` channel, builds the variant-prefixed feature matrix, and
+    predicts with the trained tree. Shared by the streaming worker and tests so
+    the online decision matches training exactly.
+
+    Parameters
+    ----------
+    preprocessor : callable
+        ``build_preprocessor(...)`` result; ``(Z, Y, X) -> {channel: ZYX tensor}``.
+    cellpose : CellposeModel
+        Loaded segmentation model (see :func:`load_cellpose_model`).
+    model : dict
+        Trained FOV-goodness model ``{imputer, tree, features}``.
+    bf_zyx : np.ndarray
+        Raw input-channel z-stack ``(Z, Y, X)``.
+    target_channels : list[str]
+        Reconstructed channels to segment/feature (e.g. ``['nuclei', 'membrane']``).
+    projection : str
+        ``'sum'`` (trained default) or ``'max'``.
+    px_um : float
+        XY pixel size in microns (physical feature units).
+    threshold : float
+        P(good) cutoff.
+    segmentation : dict | None
+        Segmentation config block (model, thresholds, per-organelle diameters).
+
+    Returns
+    -------
+    tuple[float, bool]
+        ``(proba_good, is_good)`` for this FOV.
+    """
+    bf_zyx = np.asarray(bf_zyx)
+    channels = preprocessor(bf_zyx)  # {'nuclei', 'membrane', 'phase'}
+
+    projections: dict[str, np.ndarray] = {}
+    masks: dict[str, np.ndarray] = {}
+    for organelle in target_channels:
+        vol = _to_numpy(channels[organelle])
+        proj = project_zyx(vol, projection)
+        projections[organelle] = proj
+        masks[organelle] = segment_2d(proj, cellpose, organelle, segmentation)
+
+    matrix = fov_feature_matrix(projections, masks, px_um, projection, source="vs")
+    proba, good = predict_good(model, matrix, threshold)
+    return float(proba[0]), bool(good[0])
 
 
 def predict_good(model: dict, matrix_df, threshold: float = 0.5):

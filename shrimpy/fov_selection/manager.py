@@ -1,91 +1,210 @@
-"""Engine-facing coordinator for online FOV selection.
+"""Engine-facing coordinator for online, streaming FOV selection.
 
-Mirrors ``shrimpy.dynatrack.manager.DynaTrack``: built from the acquisition
-metadata via :meth:`FovSelection.from_metadata`, it turns one pre-scan FOV's
-brightfield z-stack into a good/bad verdict:
+Mirrors :class:`shrimpy.dynatrack.manager.DynaTrack`: an acquisition engine
+builds a :class:`FovSelection` from the ``fov_selection`` metadata section and
+interacts with that object only. It turns the pre-scan (timepoint 0 of the run,
+acquired on ``input_channel``) into a per-FOV good/bad verdict:
 
     BF z-stack -> reconstruct (deskew -> phase -> virtual stain)   [preprocessing.py]
                -> project -> segment -> features -> tree predict   [pipeline.py]
 
-The heavy objects (reconstruction preprocessor, Cellpose model, trained tree)
-are built lazily on the first FOV (``_ensure_built``), since the reconstruction
-transfer function needs the acquired ZYX shape.
+The decision is streamed: as each pre-scan FOV's z-stack completes in
+``on_frame_ready`` it is submitted to a worker subprocess (torch/GPU isolation,
+like DynaTrack). ``drain`` provides the barrier the engine's ``event_iterator``
+waits on before the timelapse phase, and ``good_position_names`` gates which
+FOVs are imaged for the rest of the run.
 
-Config lives under ``metadata.mantis.fov_selection`` and maps onto
-:class:`FovSelectionConfig`. Scale parameters (XY pixel size, Z step) are the
-single source of truth injected into the deskew/phase sub-configs -- as
-DynaTrack does -- so they are not duplicated in the config.
+Config lives under ``metadata.mantis.fov_selection``. Scale parameters (XY pixel
+size, Z step) are the single source of truth injected into the deskew/phase
+sub-configs (as DynaTrack does), so they are not duplicated in the config.
 """
 
 from __future__ import annotations
 
 import copy
 import logging
+import threading
 
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-from shrimpy.fov_selection import pipeline as P
-from shrimpy.preprocessing import build_preprocessor
-
 if TYPE_CHECKING:
-    pass
+    from collections.abc import Callable
+    from pathlib import Path
+
+    from useq import MDAEvent, MDASequence
 
 logger = logging.getLogger(__name__)
 
 # Channels the decision needs (segmented + fed to the model).
 DEFAULT_TARGET_CHANNELS = ["nuclei", "membrane"]
 
+# Timepoint used for the pre-scan (first timepoint of the run).
+PRESCAN_TIMEPOINT = 0
+
 
 class FovSelection:
-    """Coordinates the online FOV-selection decision for one acquisition.
+    """Coordinates the online, streaming FOV-selection decision for one run.
 
     Parameters
     ----------
     config : dict
         The ``fov_selection`` metadata block.
+    sequence : MDASequence
+        The acquisition sequence being run; provides the pre-scan channel list
+        and the number of z-slices per stack.
     pixel_size_um : float
         XY pixel size (microns) -- injected into deskew/phase and used for
         physical feature units.
     z_step_um : float
-        Z step (microns) of the pre-scan z_plan -- injected into deskew
-        (``scan_step_um``) and phase (``z_pixel_size``).
+        Z step (microns) -- injected into deskew (``scan_step_um``) and phase
+        (``z_pixel_size``).
+    decide_fn : callable | None
+        Optional in-process decider ``(bf_zyx) -> (proba, good)``. When given,
+        decisions run on the executor thread instead of the worker subprocess
+        (used by tests and custom deciders); ``start`` then skips spawning the
+        worker.
     """
 
-    def __init__(self, config: dict, pixel_size_um: float, z_step_um: float) -> None:
+    def __init__(
+        self,
+        config: dict,
+        sequence: MDASequence,
+        pixel_size_um: float,
+        z_step_um: float,
+        decide_fn: Callable[[np.ndarray], tuple[float, bool]] | None = None,
+    ) -> None:
         self.config = config
         self._pixel_size_um = pixel_size_um
         self._z_step_um = z_step_um
+        # Acquired channel fed to reconstruction.
         self._input_channel = config.get("input_channel", "BF - Oblique")
-        self._projection = config.get("projection", "sum")
-        self._threshold = float(config.get("threshold", 0.5))
+        # Ordered preprocessing steps (DynaTrack style), e.g.
+        # ['deskew', 'phase', 'vs', 'sum_projection', 'segmentation']. The
+        # reconstruction steps are consumed by build_preprocessor; projection and
+        # segmentation are consumed here / in the pipeline.
+        self._steps = list(config.get("preprocessing") or [])
+        self._projection = self._projection_from_steps(self._steps)
+        self._segmentation = config.get("segmentation", {}) or {}
+        model_cfg = config.get("model", {}) or {}
+        self._threshold = float(model_cfg.get("threshold", 0.5))
+        # Channels the decision is computed on (segmented + fed to the model);
+        # may be raw input channels or preprocessed (VS) channels. Defaults to
+        # the virtual-staining target channels.
+        vs_cfg = config.get("virtual_staining", {}) or {}
         self._target_channels = list(
-            (config.get("reconstruction", {}).get("virtual_staining", {}) or {}).get(
-                "target_channels", DEFAULT_TARGET_CHANNELS
-            )
+            config.get("fov_selection_channels")
+            or vs_cfg.get("target_channels")
+            or DEFAULT_TARGET_CHANNELS
         )
-        # Lazily built (need the acquired ZYX shape for the transfer function).
-        self._preprocessor = None
-        self._cellpose = None
-        self._model = None
+
+        self._validate_input_channel(sequence)
+        self._require_segmentation_step()
+        self._expected_slices = max(sequence.sizes.get("z", 1), 1)
+
+        # Per-(timepoint, position) frame buffering for the pre-scan stacks.
+        self._frames: dict[tuple[int, int], list[np.ndarray]] = {}
+        self._names: dict[int, str] = {}
+
+        # Verdicts, keyed by position name. Written from the executor thread,
+        # read from the acquisition thread -> guarded by a lock.
+        self._verdicts: dict[str, tuple[float, bool]] = {}
+        self._verdicts_lock = threading.Lock()
+
+        # Single-worker executor with at most one in-flight decision, so only
+        # one FOV's frames are held past the acquisition of the next stack.
+        self._executor: ThreadPoolExecutor | None = None
+        self._pending: Future | None = None
+        self._worker = None  # FovSelectionWorker (subprocess) unless decide_fn set
+        self._decide_fn = decide_fn
+
+    # -- construction ------------------------------------------------------
 
     @classmethod
     def from_metadata(
         cls,
         meta: dict | None,
+        sequence: MDASequence,
         pixel_size_um: float,
-        z_step_um: float,
+        decide_fn: Callable[[np.ndarray], tuple[float, bool]] | None = None,
     ) -> FovSelection | None:
         """Build the coordinator from the ``fov_selection`` metadata block.
 
-        Returns ``None`` when FOV selection is disabled.
+        Returns ``None`` when FOV selection is disabled. Raises when it is
+        enabled but no ``model_path`` is configured (fail before acquiring) or
+        when the pixel size / z step needed for reconstruction are missing.
         """
         if not meta or not meta.get("enabled", False):
             return None
-        if not meta.get("model_path"):
-            raise ValueError("fov_selection.model_path is required when enabled")
-        return cls(meta, pixel_size_um=pixel_size_um, z_step_um=z_step_um)
+        if not (meta.get("model", {}) or {}).get("path"):
+            raise ValueError(
+                "FOV selection is enabled but no 'model.path' is configured under "
+                "metadata.mantis.fov_selection. Provide a trained FOV-selection model "
+                "(.joblib), or disable fov_selection. Aborting before acquisition."
+            )
+        if not pixel_size_um:
+            raise ValueError(
+                "FOV selection: pixel size is not set (core.getPixelSizeUm() returned "
+                "0 or None); calibrate the pixel size in Micro-Manager."
+            )
+        z_step_um = getattr(sequence.z_plan, "step", None) if sequence.z_plan else None
+        if not z_step_um:
+            raise ValueError(
+                "FOV selection: the sequence z_plan has no step; a stepped z_plan is "
+                "required to derive the Z scale for reconstruction."
+            )
+        return cls(
+            config=meta,
+            sequence=sequence,
+            pixel_size_um=pixel_size_um,
+            z_step_um=z_step_um,
+            decide_fn=decide_fn,
+        )
+
+    def _validate_input_channel(self, sequence: MDASequence) -> None:
+        names = [ch.config for ch in sequence.channels]
+        if self._input_channel not in names:
+            raise ValueError(
+                f"FOV selection input_channel {self._input_channel!r} is not one of "
+                f"the acquisition channels {names}."
+            )
+
+    def _require_segmentation_step(self) -> None:
+        """The trained tree model consumes segmented features -> require the step."""
+        if "segmentation" not in self._steps:
+            raise ValueError(
+                "fov_selection.preprocessing must include a 'segmentation' step; the "
+                f"trained tree model requires segmented features. Got {self._steps}."
+            )
+
+    @staticmethod
+    def _projection_from_steps(steps: list[str]) -> str:
+        """Derive the projection method from the preprocessing step list."""
+        if "max_projection" in steps:
+            return "max"
+        if "sum_projection" in steps:
+            return "sum"
+        raise ValueError(
+            "fov_selection.preprocessing must include a projection step "
+            "('sum_projection' or 'max_projection')."
+        )
+
+    def _recon_config(self) -> dict:
+        """Assemble the reconstruction sub-config for build_preprocessor.
+
+        The deskew/phase/virtual_staining blocks live directly under
+        ``fov_selection`` (DynaTrack style); only the reconstruction steps of the
+        preprocessing list are relevant to the preprocessor (it ignores
+        projection/segmentation).
+        """
+        return {
+            "preprocessing": self._steps,
+            "deskew": self.config.get("deskew"),
+            "phase": self.config.get("phase"),
+            "virtual_staining": self.config.get("virtual_staining"),
+        }
 
     def _inject_scales(self, recon: dict) -> dict:
         """Inject XY pixel size / Z step into the deskew and phase sub-configs.
@@ -105,81 +224,145 @@ class FovSelection:
             tf["z_pixel_size"] = self._z_step_um
         return recon
 
-    def _ensure_built(self, zyx_shape: tuple[int, int, int]) -> None:
-        """Build the preprocessor, Cellpose model, and tree on the first FOV."""
-        if self._model is not None:
-            return
-        recon = self._inject_scales(self.config.get("reconstruction", {}) or {})
-        self._preprocessor = build_preprocessor(
-            zyx_shape=zyx_shape,
-            preprocessing=recon.get("preprocessing"),
-            deskew=recon.get("deskew"),
-            phase=recon.get("phase"),
-            virtual_staining=recon.get("virtual_staining"),
-        )
-        if self._preprocessor is None:
-            raise ValueError(
-                "fov_selection.reconstruction produced no preprocessor; a "
-                "'deskew'/'phase'/'vs' pipeline is required to make nuclei/membrane."
-            )
-        self._cellpose = P.load_cellpose_model(
-            model_name=self.config.get("cellpose_model"), gpu=True
-        )
-        self._model = P.load_fov_model(self.config["model_path"])
-        logger.info("FOV selection: reconstruction + Cellpose + tree ready")
+    # -- lifecycle ---------------------------------------------------------
 
-    def _to_numpy(self, x) -> np.ndarray:
-        return x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)
+    def start(
+        self,
+        zyx_shape: tuple[int, int, int],
+        log_file_path: Path | None = None,
+    ) -> None:
+        """Start the worker subprocess (unless a ``decide_fn`` was injected).
 
-    def decide(self, bf_zyx: np.ndarray) -> tuple[float, bool]:
-        """Reconstruct one BF z-stack and return ``(proba_good, is_good)``."""
-        bf_zyx = np.asarray(bf_zyx)
-        self._ensure_built(tuple(bf_zyx.shape))
-
-        channels = self._preprocessor(bf_zyx)  # {'nuclei', 'membrane', 'phase'}
-        projections, masks = {}, {}
-        for organelle in self._target_channels:
-            vol = self._to_numpy(channels[organelle])
-            proj = P.project_zyx(vol, self._projection)
-            projections[organelle] = proj
-            masks[organelle] = P.segment_2d(proj, self._cellpose, organelle)
-
-        matrix = P.fov_feature_matrix(
-            projections, masks, self._pixel_size_um, self._projection, source="vs"
-        )
-        proba, good = P.predict_good(self._model, matrix, self._threshold)
-        return float(proba[0]), bool(good[0])
-
-    def select(self, prescan_store_path, position_names) -> list[str]:
-        """Decide each named position in the pre-scan store; return good names.
-
-        Positions are opened **by explicit path** (``<store>/<name>``) rather than
-        via the plate's ``positions()`` enumeration: the acquisition write path
-        can leave the HCS well ``images`` metadata incomplete, so ``positions()``
-        finds nothing even though the arrays are present. The caller (controller)
-        already knows the acquired position names. See docs/replay_camera_todo.md.
+        The worker needs the acquired frame shape, so call this after hardware
+        setup has applied the ROI.
         """
-        from iohub.ngff import open_ome_zarr
+        if self._decide_fn is None:
+            from shrimpy.fov_selection.worker import FovSelectionWorker
 
-        store = str(prescan_store_path).rstrip("/")
-        good: list[str] = []
-        for name in position_names:
-            pos = open_ome_zarr(f"{store}/{name}", mode="r")
-            chans = list(pos.channel_names)
-            if self._input_channel not in chans:
-                raise ValueError(
-                    f"input_channel {self._input_channel!r} not in {chans} at {name}"
-                )
-            ci = chans.index(self._input_channel)
-            bf_zyx = np.asarray(pos.data[0, ci])  # (Z, Y, X)
-            proba, is_good = self.decide(bf_zyx)
-            logger.info(
-                "FOV selection: %s -> proba=%.3f %s",
-                name,
-                proba,
-                "GOOD" if is_good else "bad",
+            recon = self._inject_scales(self._recon_config())
+            logger.info("FOV selection: starting worker process for shape %s", zyx_shape)
+            self._worker = FovSelectionWorker(
+                recon=recon,
+                target_channels=self._target_channels,
+                segmentation=self._segmentation,
+                model_path=self.config["model"]["path"],
+                projection=self._projection,
+                threshold=self._threshold,
+                px_um=self._pixel_size_um,
+                zyx_shape=zyx_shape,
+                log_file_path=log_file_path,
             )
-            if is_good:
-                good.append(name)
-        logger.info("FOV selection: %d/%d positions kept", len(good), len(position_names))
-        return good
+            self._worker.start()
+        self._executor = ThreadPoolExecutor(max_workers=1)
+        self._pending = None
+
+    def on_frame_ready(self, img: np.ndarray, event: MDAEvent) -> None:
+        """Buffer pre-scan frames per position and submit completed stacks.
+
+        Connect to the core's ``frameReady`` signal. Only the pre-scan timepoint
+        (t=0) and the ``input_channel`` are buffered; frames are matched by
+        channel *name* (not index) since the pre-scan phase yields only the
+        input channel. When all z-slices for a position have arrived, the stack
+        is submitted for a decision.
+        """
+        channel = getattr(getattr(event, "channel", None), "config", None)
+        if channel != self._input_channel:
+            return
+        if event.index.get("t", 0) != PRESCAN_TIMEPOINT:
+            return
+
+        p_idx = event.index.get("p", 0)
+        tp = (PRESCAN_TIMEPOINT, p_idx)
+        self._frames.setdefault(tp, []).append(img.copy())
+        self._names[p_idx] = event.pos_name or f"p{p_idx}"
+
+        if len(self._frames[tp]) >= self._expected_slices:
+            frames = self._frames.pop(tp)
+            self._on_position_complete(p_idx, self._names[p_idx], frames)
+
+    def _on_position_complete(self, p_idx: int, name: str, frames: list[np.ndarray]) -> None:
+        """Submit one completed pre-scan stack for a decision (bounded).
+
+        Waits for the previous decision to finish before submitting the next, so
+        at most one FOV's frames are in flight -- this is the backpressure that
+        keeps the pre-scan from buffering a whole plate in memory. Runs on the
+        acquisition thread (``frameReady``), so waiting here pauses acquisition.
+        """
+        if self._executor is None:
+            return
+        self._await_pending()
+        self._pending = self._executor.submit(self._decide_task, p_idx, name, frames)
+
+    def _await_pending(self, timeout: float = 600) -> None:
+        if self._pending is not None:
+            try:
+                self._pending.result(timeout=timeout)
+            except Exception:
+                logger.exception("FOV selection: pending decision failed")
+            self._pending = None
+
+    def _decide_task(self, p_idx: int, name: str, frames: list[np.ndarray]) -> None:
+        """Run one decision (worker subprocess or in-process) and store the verdict."""
+        if self._decide_fn is not None:
+            bf_zyx = np.stack(frames, axis=0)
+            del frames
+            proba, good = self._decide_fn(bf_zyx)
+            self._record(name, proba, good)
+            return
+
+        self._worker.submit(PRESCAN_TIMEPOINT, p_idx, name, frames)
+        del frames  # free the main-process copy once pickled to the queue
+        result = self._worker.get_result()
+        if result is None:
+            logger.warning("FOV selection: no result from worker for %s; treating as bad", name)
+            self._record(name, float("nan"), False)
+            return
+        self._record(name, result["proba"], result["good"])
+
+    def _record(self, name: str, proba: float, good: bool) -> None:
+        with self._verdicts_lock:
+            self._verdicts[name] = (float(proba), bool(good))
+        logger.info(
+            "FOV selection: %s -> proba=%.3f %s", name, proba, "GOOD" if good else "bad"
+        )
+
+    def drain(self, timeout: float = 600) -> None:
+        """Block until all submitted pre-scan decisions have completed.
+
+        The barrier the engine's ``event_iterator`` waits on after the pre-scan
+        phase and before gating the timelapse.
+        """
+        self._await_pending(timeout=timeout)
+
+    def is_good(self, name: str) -> bool:
+        """Whether ``name`` was decided good. Unknown/undecided names are bad."""
+        with self._verdicts_lock:
+            verdict = self._verdicts.get(name)
+        return bool(verdict[1]) if verdict is not None else False
+
+    def good_position_names(self) -> list[str]:
+        """Names of positions decided good, in decision order."""
+        with self._verdicts_lock:
+            return [name for name, (_p, good) in self._verdicts.items() if good]
+
+    @property
+    def input_channel(self) -> str:
+        """Acquisition channel used for the pre-scan (fed to reconstruction)."""
+        return self._input_channel
+
+    @property
+    def num_decided(self) -> int:
+        with self._verdicts_lock:
+            return len(self._verdicts)
+
+    def shutdown(self) -> None:
+        """Finish any in-flight decision and shut down the worker + executor."""
+        self._await_pending()
+        if self._worker is not None:
+            self._worker.shutdown()
+            self._worker = None
+        if self._executor is not None:
+            self._executor.shutdown(wait=True)
+            self._executor = None
+        self._frames = {}
+        self._names = {}
