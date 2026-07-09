@@ -7,7 +7,7 @@ name = "shrimpy"
 description = "Custom acquisition engines for optical microscopes based on pymmcore-plus"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.11, <4.0"
+requires-python = ">=3.12, <4.0"
 
 # the dynamically determined project metadata attributes
 dynamic = ["version"]
@@ -16,7 +16,7 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
 ]
 
 # list package dependencies here
@@ -42,7 +42,7 @@ dev = [
   "pre-commit~=4.5",
   "pytest~=9.0",
   "ruff~=0.15",
-  "iohub==0.3.0a6"
+  "iohub"
 ]
 
 [project.scripts]
@@ -59,7 +59,7 @@ local_scheme = "no-local-version"
 packages = ["shrimpy"]
 
 [tool.uv.sources]
-pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "dev"}
+pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "dev" }
 ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
 useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "main" }
 napari-deskew-preview = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview", branch = "main" }
@@ -67,7 +67,7 @@ napari-deskew-preview = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-
 [tool.ruff]
 # Ruff replaces black, isort, flake8, and pylint
 line-length = 95
-target-version = "py311"
+target-version = "py312"
 
 # Exclude non-package code
 exclude = ["archive", "examples", "scripts"]
