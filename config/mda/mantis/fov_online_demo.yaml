@@ -1,27 +1,47 @@
-# Online FOV-selection demo (M3): ONE streaming run.
+# Online FOV-selection demo (M4): TWO sequential runs.
 #
-#   timepoint 0  = pre-scan on `input_channel` over all `search_mda` candidates.
-#                  As each FOV's z-stack completes, it is reconstructed
-#                  (deskew -> phase -> virtual stain), projected, segmented, and
-#                  scored by the trained tree -- streamed via frameReady in a
-#                  worker subprocess (torch/GPU isolation, like DynaTrack).
-#   timepoint >=1 = full timelapse, acquired ONLY on the FOVs predicted "good".
+#   RUN 1  pre-scan  on `input_channel` over all candidate FOVs (one timepoint,
+#                    full z). As each FOV's z-stack completes it is reconstructed
+#                    (deskew -> phase -> virtual stain), projected, segmented, and
+#                    scored by the trained tree -- streamed via frameReady in a
+#                    worker subprocess (torch/GPU isolation, like DynaTrack).
+#                    output=None (nothing written) unless save_prescan.
+#   RUN 2  timelapse full channels + z, on the FOVs predicted "good" ONLY.
 #
-# Single run => one output store, one array shape per position, so the pre-scan
-# z-range equals the timelapse z-range (a single-run constraint). The pre-scan
-# consumes timepoint 0; set time_plan.loops = desired_timelapse_points + 1.
-#
-# Replays the A549 store (raw BF + GFP), matching the online scope.
+# `time_plan.loops` is the number of TIMELAPSE timepoints (the pre-scan is its
+# own run -- no +1). Replays the A549 store (raw BF + GFP), matching the scope.
 
-# ---- TIMELAPSE parameters (run on the SELECTED positions) ----
-# Main stage_positions is EMPTY: the candidate FOVs are defined in
-# fov_selection.search_mda below (DynaTrack-style separation).
-stage_positions: []
+# ---- Candidate FOVs (top-level stage_positions) ----
+# A useq WellPlatePlan (select wells + a per-well FOV grid): the pre-scan run
+# images ALL of these; the timelapse run images only the ones decided "good".
+# useq assigns plate_row/plate_col + slash-free field names, so the output is a
+# proper HCS OME-Zarr (row/col/fov).
+#
+# Here: wells B/3, B/4, B/5 with a 7x7 FOV grid = 147 candidates (the full
+# offline dataset). Offline, the ReplayCamera maps each plate position to the
+# matching source FOV (well B/3 fov k -> k-th source FOV in B/3, row-major).
+# For a quick smoke test, drop well_points_plan to rows/columns 1.
+stage_positions:
+  a1_center_xy: [0.0, 0.0]
+  plate:
+    rows: 4
+    columns: 6
+    name: 24-well
+    well_size: [15.6, 15.6]
+    well_spacing: [19.0, 19.0]
+  selected_wells:
+    - [1, 1, 1]     # rows: B, B, B
+    - [2, 3, 4]     # columns: 3, 4, 5
+  well_points_plan:
+    rows: 7           # 7x7 = 49 FOVs/well; B/3,B/4,B/5 -> 147 total
+    columns: 7
+    fov_height: 180.0
+    fov_width: 180.0
 
 time_plan:
   prioritize_duration: true
   interval: 1
-  loops: 2            # t0 = pre-scan, t1 = timelapse (raise for a longer timelapse)
+  loops: 1            # number of TIMELAPSE timepoints (pre-scan is a separate run; no +1)
 
 z_plan:
   top: 79.95
@@ -54,6 +74,10 @@ metadata:
 
     fov_selection:
       enabled: true
+
+      # Debug outputs (off by default):
+      save_prescan: True   # write the pre-scan run to <name>_prescan.ome.zarr
+      save_decision: True  # per-FOV masks/features/goodness under <name>_fov_debug/
 
       # Acquired channel fed to reconstruction (the pre-scan channel).
       input_channel: "BF - Oblique"
@@ -126,36 +150,3 @@ metadata:
       model:
         path: /hpc/projects/comp.micro/microscope_dev/smart_fov_selection/fov_selection_output/fov_features/split_analysis/max_accuracy/model_on_three_dataset/final_model_nuclei-vs_membrane-vs.joblib
         threshold: 0.5
-
-      # Pre-scan MDA: defines which FOVs are searched, as a useq WellPlatePlan
-      # (like config/mda/mantis/fov_selection_demo.yaml) so it scales -- pick
-      # wells and a per-well FOV grid instead of listing paths. useq assigns
-      # plate_row/plate_col + slash-free field names, so the output is a proper
-      # HCS OME-Zarr (row/col/fov). Only stage_positions is used for acquisition
-      # (pre-scan channel = input_channel; z = the main z_plan, per the
-      # single-run constraint above).
-      #
-      # Here: wells B/3, B/4, B/5 with a 1x1 FOV grid (3 candidates). Offline,
-      # the ReplayCamera maps each plate position to the matching source FOV
-      # (well B/3 fov 0 -> source B/3/000000, etc.).
-      search_mda:
-        stage_positions:
-          a1_center_xy: [0.0, 0.0]
-          plate:
-            rows: 4
-            columns: 6
-            name: 24-well
-            well_size: [15.6, 15.6]
-            well_spacing: [19.0, 19.0]
-          selected_wells:
-            - [1, 1, 1]     # rows: B, B, B
-            - [2, 3, 4]     # columns: 3, 4, 5
-          well_points_plan:
-            rows: 1
-            columns: 1
-            fov_height: 180.0
-            fov_width: 180.0
-        channels:
-          - config: BF - Oblique
-            group: Channel
-            exposure: 1.0

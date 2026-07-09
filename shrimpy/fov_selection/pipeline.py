@@ -111,12 +111,60 @@ def segment_2d(
     return np.asarray(masks[0], np.uint32)
 
 
+# Aggregate features derivable from the label mask alone (object count + total
+# coverage), i.e. WITHOUT regionprops shape/intensity props or cKDTree spacing.
+# When the trained model only needs these, the expensive per-object extraction is
+# skipped. Values are computed identically to group_features (see _cheap_features).
+CHEAP_FEATURE_KEYS = frozenset({"object_count", "objects_per_10um2", "coverage_frac"})
+
+
+def _parse_needed_features(needed: list[str]) -> dict[tuple[str, str, str], set[str]]:
+    """Group model feature columns by ``(organelle, source, projection)`` prefix.
+
+    Column convention: ``<organelle>_<source>_<projection>__<key>``. The last two
+    underscore tokens of the prefix are source/projection; the rest is the
+    organelle (which may itself contain underscores).
+    """
+    groups: dict[tuple[str, str, str], set[str]] = {}
+    for col in needed:
+        prefix, _, key = col.partition("__")
+        parts = prefix.split("_")
+        if len(parts) < 3:
+            continue
+        organelle = "_".join(parts[:-2])
+        groups.setdefault((organelle, parts[-2], parts[-1]), set()).add(key)
+    return groups
+
+
+def _cheap_features(mask: np.ndarray, px_um: float, keys: set[str]) -> dict[str, float]:
+    """Aggregate features for ``keys`` from the mask alone (no regionprops).
+
+    Numerically identical to ``group_features`` for the cheap keys. Returns an
+    empty dict when the mask has no objects, matching the full path (no object
+    rows -> feature absent -> NaN -> imputed downstream).
+    """
+    m = np.asarray(mask)
+    h, w = m.shape
+    n = int((np.unique(m) != 0).sum())
+    if n == 0:
+        return {}
+    out: dict[str, float] = {}
+    if "object_count" in keys:
+        out["object_count"] = n
+    if "objects_per_10um2" in keys:
+        out["objects_per_10um2"] = 10.0 * n / (w * h * px_um * px_um) if px_um else float("nan")
+    if "coverage_frac" in keys:
+        out["coverage_frac"] = float(np.count_nonzero(m) / (w * h))
+    return out
+
+
 def fov_feature_matrix(
     projections: dict[str, np.ndarray],
     masks: dict[str, np.ndarray],
     px_um: float,
     projection: str = "sum",
     source: str = "vs",
+    needed: list[str] | None = None,
 ):
     """Build a 1-row feature matrix (variant-prefixed columns) for one FOV.
 
@@ -125,33 +173,52 @@ def fov_feature_matrix(
     convention ``<organelle>_<source>_<projection>__<feature>`` (e.g.
     ``nuclei_vs_sum__coverage_frac``), computed via the shared
     ``object_feature_rows`` + ``group_features``.
+
+    When ``needed`` (the trained model's feature list) is given, only those
+    columns are computed: organelles that contribute no needed feature are
+    skipped, and organelles whose needed features are all cheap
+    (:data:`CHEAP_FEATURE_KEYS`) skip the expensive per-object extraction. This
+    is a pure speed-up -- the computed values are identical to the full path.
     """
     import pandas as pd
 
+    groups = _parse_needed_features(needed) if needed is not None else None
+
     feat: dict[str, float] = {}
     for organelle, proj in projections.items():
-        rows = object_feature_rows(
-            masks[organelle],
-            proj,
-            px_um,
-            dataset_tag="live",
-            well_row="",
-            well_col="",
-            fov="",
-            timepoint=0,
-            channel=organelle,
-            source=source,
-            projection_type=projection,
-        )
-        if not rows:
-            logger.warning(
-                "FOV selection: no %s objects segmented; features -> NaN", organelle
-            )
-            continue
-        agg = group_features(pd.DataFrame(rows))
         prefix = f"{organelle}_{source}_{projection}"
+        keys_needed = None
+        if groups is not None:
+            keys_needed = groups.get((organelle, source, projection))
+            if not keys_needed:
+                continue  # this organelle contributes no needed feature
+
+        if keys_needed is not None and keys_needed <= CHEAP_FEATURE_KEYS:
+            agg = _cheap_features(masks[organelle], px_um, keys_needed)
+        else:
+            rows = object_feature_rows(
+                masks[organelle],
+                proj,
+                px_um,
+                dataset_tag="live",
+                well_row="",
+                well_col="",
+                fov="",
+                timepoint=0,
+                channel=organelle,
+                source=source,
+                projection_type=projection,
+            )
+            if not rows:
+                logger.warning(
+                    "FOV selection: no %s objects segmented; features -> NaN", organelle
+                )
+                continue
+            agg = group_features(pd.DataFrame(rows))
+
         for k, v in agg.items():
-            feat[f"{prefix}__{k}"] = v
+            if keys_needed is None or k in keys_needed:
+                feat[f"{prefix}__{k}"] = v
     return pd.DataFrame([feat])
 
 
@@ -179,13 +246,18 @@ def decide_fov(
     px_um: float,
     threshold: float = 0.5,
     segmentation: dict | None = None,
-) -> tuple[float, bool]:
+    return_artifacts: bool = False,
+) -> tuple[float, bool] | tuple[float, bool, dict]:
     """Run one FOV's good/bad decision end to end.
 
     Reconstructs the input z-stack (``preprocessor``), projects and segments each
     ``target_channels`` channel, builds the variant-prefixed feature matrix, and
     predicts with the trained tree. Shared by the streaming worker and tests so
     the online decision matches training exactly.
+
+    When ``return_artifacts`` is set, also returns a dict with the per-channel 2D
+    ``projections`` and label ``masks`` and the 1-row ``features`` DataFrame (used
+    by the worker to persist decision debug artifacts).
 
     Parameters
     ----------
@@ -224,8 +296,13 @@ def decide_fov(
         projections[organelle] = proj
         masks[organelle] = segment_2d(proj, cellpose, organelle, segmentation)
 
-    matrix = fov_feature_matrix(projections, masks, px_um, projection, source="vs")
+    matrix = fov_feature_matrix(
+        projections, masks, px_um, projection, source="vs", needed=model.get("features")
+    )
     proba, good = predict_good(model, matrix, threshold)
+    if return_artifacts:
+        artifacts = {"projections": projections, "masks": masks, "features": matrix}
+        return float(proba[0]), bool(good[0]), artifacts
     return float(proba[0]), bool(good[0])
 
 

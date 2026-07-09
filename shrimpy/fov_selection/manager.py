@@ -2,17 +2,16 @@
 
 Mirrors :class:`shrimpy.dynatrack.manager.DynaTrack`: an acquisition engine
 builds a :class:`FovSelection` from the ``fov_selection`` metadata section and
-interacts with that object only. It turns the pre-scan (timepoint 0 of the run,
-acquired on ``input_channel``) into a per-FOV good/bad verdict:
+interacts with that object only. It turns the pre-scan run (a single-timepoint
+run on ``input_channel`` over all candidate FOVs) into a per-FOV good/bad verdict:
 
     BF z-stack -> reconstruct (deskew -> phase -> virtual stain)   [preprocessing.py]
                -> project -> segment -> features -> tree predict   [pipeline.py]
 
 The decision is streamed: as each pre-scan FOV's z-stack completes in
 ``on_frame_ready`` it is submitted to a worker subprocess (torch/GPU isolation,
-like DynaTrack). ``drain`` provides the barrier the engine's ``event_iterator``
-waits on before the timelapse phase, and ``good_position_names`` gates which
-FOVs are imaged for the rest of the run.
+like DynaTrack). ``drain`` is awaited after the pre-scan run, and
+``good_position_names`` selects which FOVs the timelapse run images.
 
 Config lives under ``metadata.mantis.fov_selection``. Scale parameters (XY pixel
 size, Z step) are the single source of truth injected into the deskew/phase
@@ -26,13 +25,13 @@ import logging
 import threading
 
 from concurrent.futures import Future, ThreadPoolExecutor
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from useq import MDAEvent, MDASequence
 
@@ -74,11 +73,16 @@ class FovSelection:
         sequence: MDASequence,
         pixel_size_um: float,
         z_step_um: float,
+        data_path: Path | None = None,
         decide_fn: Callable[[np.ndarray], tuple[float, bool]] | None = None,
     ) -> None:
         self.config = config
         self._pixel_size_um = pixel_size_um
         self._z_step_um = z_step_um
+        # Optional per-FOV debug artifacts (segmentation, features, goodness),
+        # written by the worker to a sibling directory next to the output store.
+        self._save_decision = bool(config.get("save_decision", False))
+        self._debug_dir = self._debug_dir_for(data_path) if self._save_decision else None
         # Acquired channel fed to reconstruction.
         self._input_channel = config.get("input_channel", "BF - Oblique")
         # Ordered preprocessing steps (DynaTrack style), e.g.
@@ -122,12 +126,26 @@ class FovSelection:
 
     # -- construction ------------------------------------------------------
 
+    @staticmethod
+    def _debug_dir_for(data_path: Path | None) -> Path | None:
+        """Sibling ``<name>_fov_debug/`` directory next to the output store."""
+        if data_path is None:
+            return None
+        data_path = Path(data_path)
+        name = data_path.name
+        for suffix in (".ome.zarr", ".zarr"):
+            if name.endswith(suffix):
+                name = name[: -len(suffix)]
+                break
+        return data_path.with_name(f"{name}_fov_debug")
+
     @classmethod
     def from_metadata(
         cls,
         meta: dict | None,
         sequence: MDASequence,
         pixel_size_um: float,
+        data_path: Path | None = None,
         decide_fn: Callable[[np.ndarray], tuple[float, bool]] | None = None,
     ) -> FovSelection | None:
         """Build the coordinator from the ``fov_selection`` metadata block.
@@ -160,6 +178,7 @@ class FovSelection:
             sequence=sequence,
             pixel_size_um=pixel_size_um,
             z_step_um=z_step_um,
+            data_path=data_path,
             decide_fn=decide_fn,
         )
 
@@ -251,6 +270,7 @@ class FovSelection:
                 px_um=self._pixel_size_um,
                 zyx_shape=zyx_shape,
                 log_file_path=log_file_path,
+                debug_dir=self._debug_dir,
             )
             self._worker.start()
         self._executor = ThreadPoolExecutor(max_workers=1)
@@ -314,7 +334,9 @@ class FovSelection:
         del frames  # free the main-process copy once pickled to the queue
         result = self._worker.get_result()
         if result is None:
-            logger.warning("FOV selection: no result from worker for %s; treating as bad", name)
+            logger.warning(
+                "FOV selection: no result from worker for %s; treating as bad", name
+            )
             self._record(name, float("nan"), False)
             return
         self._record(name, result["proba"], result["good"])
@@ -329,8 +351,8 @@ class FovSelection:
     def drain(self, timeout: float = 600) -> None:
         """Block until all submitted pre-scan decisions have completed.
 
-        The barrier the engine's ``event_iterator`` waits on after the pre-scan
-        phase and before gating the timelapse.
+        Awaited in ``teardown_sequence`` after the pre-scan run finishes, before
+        ``good_position_names`` is read to build the timelapse run.
         """
         self._await_pending(timeout=timeout)
 
