@@ -30,12 +30,6 @@ FAST_XY_STAGE_SPEED = 5.75  # in mm/s, used for long moves
 NEGLIGIBLE_XY_DISTANCE = 1  # in um, moves below this are ignored
 SHORT_XY_DISTANCE = 2000  # in um, threshold between slow and fast speed
 
-# --- Quick hack: skip a specific channel for specific wells ---------------
-# Skip acquiring SKIP_CHANNEL_CONFIG for any stage position whose
-# (plate_row, plate_col) is listed in SKIP_WELLS.
-SKIP_CHANNEL_CONFIG = "mCherry EX561 EM600-37"
-SKIP_WELLS = {(0, 1), (0, 2)}  # (plate_row, plate_col) pairs
-
 
 class MantisEngine(MDAEngine):
     """Custom MDA engine for the Mantis microscope.
@@ -73,6 +67,9 @@ class MantisEngine(MDAEngine):
         self._autofocus_fail_at_index = None
         self._xy_stage_device = None
         self._xy_stage_speed = None
+        # Optional channel-skipping config (see setup_sequence / _should_skip_event)
+        self._skip_channel = None
+        self._skip_wells: set[tuple[int, int]] = set()
 
         # Register event callbacks for logging
         mmc.mda.set_engine(self)
@@ -126,6 +123,29 @@ class MantisEngine(MDAEngine):
         self._xy_stage_device = core.getXYStageDevice()
         logger.debug(f"XY stage device: {self._xy_stage_device}")
 
+        # Configure optional channel skipping, e.g.:
+        #   metadata:
+        #     mantis:
+        #       skip:
+        #         channel: "mCherry EX561 EM600-37"
+        #         wells:
+        #           - [0, 1]
+        #           - [0, 2]
+        self._skip_channel = None
+        self._skip_wells = set()
+        if skip := microscope_meta.get("skip"):
+            self._skip_channel = skip.get("channel")
+            self._skip_wells = {tuple(well) for well in skip.get("wells", [])}
+            if self._skip_channel and self._skip_wells:
+                logger.info(
+                    f"Will skip channel '{self._skip_channel}' at wells "
+                    f"{sorted(self._skip_wells)}"
+                )
+            else:
+                logger.warning(
+                    "Ignoring 'skip' config: both 'channel' and 'wells' are required"
+                )
+
         logger.info("Mantis hardware setup completed successfully")
 
         # Call parent setup last so SummaryMetaV1 captures the fully
@@ -134,13 +154,12 @@ class MantisEngine(MDAEngine):
 
     def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
-        # Quick hack: skip a specific channel for positions in specific wells.
+        # Skip a configured channel for positions in configured wells.
         # Done before any stage movement/autofocus so skipped events are cheap.
         if self._should_skip_event(event):
             num_frames = len(event.events) if isinstance(event, SequencedEvent) else 1
             logger.info(
-                f"Skipping channel '{SKIP_CHANNEL_CONFIG}' at position "
-                f"'{event.pos_name}' (well in SKIP_WELLS)"
+                f"Skipping channel '{self._skip_channel}' at position '{event.pos_name}'"
             )
             raise SkipEvent(num_frames=num_frames, reason="channel skipped for this well")
 
@@ -184,16 +203,19 @@ class MantisEngine(MDAEngine):
             logger.debug("No reset hardware sequencing settings specified")
 
     def _should_skip_event(self, event: MDAEvent) -> bool:
-        """Return True if this event should be skipped (quick hack).
+        """Return True if this event should be skipped.
 
-        Skips SKIP_CHANNEL_CONFIG for stage positions whose
-        (plate_row, plate_col) is listed in SKIP_WELLS.
+        Skips ``self._skip_channel`` for stage positions whose
+        (plate_row, plate_col) is listed in ``self._skip_wells``. Both are read
+        from ``metadata.mantis.skip`` in setup_sequence.
         """
-        if event.channel is None or event.channel.config != SKIP_CHANNEL_CONFIG:
+        if not self._skip_channel or not self._skip_wells:
+            return False
+        if event.channel is None or event.channel.config != self._skip_channel:
             return False
 
         row, col = self._plate_indices(event)
-        return (row, col) in SKIP_WELLS
+        return (row, col) in self._skip_wells
 
     @staticmethod
     def _plate_indices(event: MDAEvent) -> tuple[int | None, int | None]:
