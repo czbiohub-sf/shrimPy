@@ -134,3 +134,23 @@ def test_require_gpu_false_allows_cpu(monkeypatch):
 
     # Default require_gpu=False: builds without raising on CPU.
     assert build_preprocessor(ZYX, ["phase"], require_gpu=False) is not None
+
+
+def test_flat_field_bf_matches_biahub_reference():
+    """The torch (GPU-capable) flat-field matches biahub's numpy reference.
+
+    Uses an even Z count, where numpy median averages the two middle values --
+    the case torch.median gets wrong but Tensor.quantile(0.5) gets right.
+    """
+    np = pytest.importorskip("numpy")
+    torch = pytest.importorskip("torch")
+    ff = pytest.importorskip("biahub.flat_field_correction")
+
+    rng = np.random.default_rng(3)
+    vol = rng.integers(80, 600, (8, 6, 10)).astype(np.float32)  # even Z
+    ref = ff.flat_field_correction(vol, axis=0).astype(np.float32)
+
+    pre = _bare_preprocessor()
+    out = pre._flat_field_BF(torch.as_tensor(vol, dtype=torch.float32)).numpy()
+
+    assert np.allclose(ref, out, atol=1e-2)

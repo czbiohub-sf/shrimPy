@@ -263,13 +263,13 @@ class _LabelfreePreprocessor:
         pfx = f"[{label}] " if label else ""
         channels: dict[str, torch.Tensor] = {}
 
-        # 0. Flat-field correction (on the raw BF stack, before deskew), matching
-        # the production reconstruction (biahub mantis-v2.nf 0-flatfield step).
-        if self._apply_flatfield:
-            volume_bf = self._step(pfx, "flatfield", self._flat_field, volume_bf)
-
-        # Move to device once; downstream steps stay on-device.
+        # Move to device once; all steps (flat-field, deskew, phase, VS) run on-device.
         volume = torch.as_tensor(volume_bf, device=self._device, dtype=torch.float32)
+
+        # 0. Flat-field correction (BRIGHT-FIELD only), matching the production
+        # reconstruction (biahub mantis-v2.nf 0-flatfield step).
+        if self._apply_flatfield:
+            volume = self._step(pfx, "flatfield", self._flat_field_BF, volume)
 
         # 1. Deskew
         if self._deskew_settings is not None:
@@ -323,18 +323,26 @@ class _LabelfreePreprocessor:
         logger.info("%s%s ok (%.1fs)", pfx, name, _time.monotonic() - t0)
         return result
 
-    def _flat_field(self, volume_bf: np.ndarray) -> np.ndarray:
-        """Flat-field correct the raw BF z-stack via biahub's ``flat_field_correction``.
+    def _flat_field_BF(self, volume: torch.Tensor) -> torch.Tensor:
+        """Flat-field correct a **bright-field** z-stack on the compute device.
 
-        Delegates to the same library function the production reconstruction
-        (biahub ``mantis-v2.nf`` 0-flatfield step) uses -- divides out the
-        median-over-Z illumination pattern, preserving its mean -- so the online
-        input matches the offline flat-fielded input. Cast to float32 to match
-        biahub's flat-field output dtype before deskew.
+        NOTE: bright-field only -- do NOT use on fluorescence images. It divides
+        out the per-pixel median-over-Z illumination pattern (preserving its
+        mean), the same correction biahub's production reconstruction
+        (``mantis-v2.nf`` 0-flatfield step) applies. That assumes a spatially
+        structured, roughly static transmitted-light background, which holds for
+        bright field but not for fluorescence (sparse signal on a dark
+        background) -- there the per-pixel median is ~background and dividing by
+        it would corrupt the signal.
+
+        Implemented in torch so it runs on the GPU (the previous numpy version
+        was a large per-FOV CPU bottleneck). ``Tensor.quantile(0.5)`` matches
+        ``numpy.median`` (linear interpolation, averaging the two middle values
+        for an even Z count), unlike ``torch.median`` which returns the lower
+        middle -- so the result matches biahub's offline flat-fielded input.
         """
-        from biahub.flat_field_correction import flat_field_correction
-
-        return flat_field_correction(np.asarray(volume_bf), axis=0).astype(np.float32)
+        static_pattern = volume.quantile(0.5, dim=0)  # (Y, X) per-pixel median over Z
+        return volume / static_pattern * static_pattern.mean()
 
     def _deskew(self, volume: torch.Tensor) -> torch.Tensor:
         """Apply deskewing via biahub's ``fast_deskew_zyx`` on the target device."""
