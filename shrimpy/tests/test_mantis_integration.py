@@ -117,9 +117,10 @@ def test_demo_mda_acquisition(demo_engine, demo_mda_sequence, tmp_path):
     _data = _pos.data
 
     assert num_positions == 8, f"Expected 8 positions, found {num_positions}"
-    # Confirm expected position name. Unnamed positions fall back to a
-    # zero-padded FOV index (ome-writers: `f"{fov_idx:04d}"`), e.g. "0000".
-    assert _pos_name == "A/1/0000"
+    # Confirm expected position name. Unnamed positions in wells fall back to
+    # a zero-padded FOV index (ome-writers: `f"fov{gp_idx}"`), e.g. "fov0",
+    # see https://github.com/pymmcore-plus/ome-writers/pull/136
+    assert _pos_name == "A/1/fov0"
     # ROI is now applied via the setup event in MDASequence
     setup_roi = demo_mda_sequence.setup.roi
     assert _data.shape == (
