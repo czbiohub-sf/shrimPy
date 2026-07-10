@@ -51,7 +51,7 @@ def _sequence(**overrides) -> MDASequence:
             {"config": "GFP", "group": "Channel"},
         ],
         metadata={
-            "mantis": {"fov_selection": {"enabled": True, "input_channel": "BF - Oblique"}}
+            "mantis": {"fov_selection": {"enabled": True, "prescan_channel": "BF - Oblique"}}
         },
     )
     kwargs.update(overrides)
@@ -66,7 +66,7 @@ def _sequence(**overrides) -> MDASequence:
 def test_enabled_fov_config_returns_block_when_enabled():
     cfg = _enabled_fov_config(_sequence())
     assert cfg is not None
-    assert cfg["input_channel"] == "BF - Oblique"
+    assert cfg["prescan_channel"] == "BF - Oblique"
 
 
 def test_enabled_fov_config_none_when_disabled():
@@ -83,11 +83,11 @@ def test_enabled_fov_config_none_when_absent():
 # ---------------------------------------------------------------------------
 
 
-def test_prescan_is_input_channel_only_one_timepoint_full_z():
+def test_prescan_is_prescan_channel_only_one_timepoint_full_z():
     seq = _sequence()
     ps = _build_prescan_sequence(seq, "BF - Oblique")
 
-    assert [c.config for c in ps.channels] == ["BF - Oblique"]  # input channel only
+    assert [c.config for c in ps.channels] == ["BF - Oblique"]  # prescan channel only
     assert ps.sizes["t"] == 1  # single pre-scan timepoint
     assert ps.sizes["z"] == seq.sizes["z"]  # full z retained
     assert ps.sizes["p"] == 3  # all candidates
@@ -95,7 +95,7 @@ def test_prescan_is_input_channel_only_one_timepoint_full_z():
     assert ps.metadata["mantis"]["fov_selection"]["enabled"] is True
 
 
-def test_prescan_raises_on_unknown_input_channel():
+def test_prescan_raises_on_unknown_prescan_channel():
     with pytest.raises(ValueError, match="not one of the acquisition channels"):
         _build_prescan_sequence(_sequence(), "NoSuchChannel")
 

@@ -65,6 +65,7 @@ class FovSelectionWorker:
         zyx_shape: tuple[int, int, int],
         log_file_path: Path | None = None,
         debug_dir: Path | None = None,
+        require_gpu: bool = True,
     ) -> None:
         self._recon = recon
         self._target_channels = target_channels
@@ -78,6 +79,8 @@ class FovSelectionWorker:
         # When set, per-FOV debug artifacts (projections, masks, features,
         # decisions.csv) are written here (save_decision).
         self._debug_dir = debug_dir
+        # Fail fast if the reconstruction can't run on a GPU (fov_selection.require_gpu).
+        self._require_gpu = require_gpu
         self._process: mp.Process | None = None
         self._input_queue: mp.Queue | None = None
         self._output_queue: mp.Queue | None = None
@@ -103,6 +106,7 @@ class FovSelectionWorker:
                 self._output_queue,
                 self._log_file_path,
                 self._debug_dir,
+                self._require_gpu,
             ),
             daemon=True,
         )
@@ -165,6 +169,7 @@ def _worker_loop(
     output_queue: mp.Queue,
     log_file_path: Path | None = None,
     debug_dir: Path | None = None,
+    require_gpu: bool = True,
 ) -> None:
     """Main loop for the FOV-selection worker process."""
     # Mirror DynaTrack's subprocess logging: file handler to the parent's log
@@ -199,6 +204,7 @@ def _worker_loop(
             deskew=recon.get("deskew"),
             phase=recon.get("phase"),
             virtual_staining=recon.get("virtual_staining"),
+            require_gpu=require_gpu,
         )
         if preprocessor is None:
             raise ValueError(
@@ -251,6 +257,7 @@ def _worker_loop(
                     threshold=threshold,
                     segmentation=segmentation,
                     return_artifacts=debug_dir is not None,
+                    label=name,
                 )
                 if debug_dir is not None:
                     proba, good, artifacts = result

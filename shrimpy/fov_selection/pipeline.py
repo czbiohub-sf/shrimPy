@@ -247,6 +247,7 @@ def decide_fov(
     threshold: float = 0.5,
     segmentation: dict | None = None,
     return_artifacts: bool = False,
+    label: str = "",
 ) -> tuple[float, bool] | tuple[float, bool, dict]:
     """Run one FOV's good/bad decision end to end.
 
@@ -279,14 +280,18 @@ def decide_fov(
         P(good) cutoff.
     segmentation : dict | None
         Segmentation config block (model, thresholds, per-organelle diameters).
+    label : str
+        FOV/position name, prefixed to per-step logs so preprocessing and
+        segmentation success/failure is attributable to a specific FOV.
 
     Returns
     -------
     tuple[float, bool]
         ``(proba_good, is_good)`` for this FOV.
     """
+    pfx = f"[{label}] " if label else ""
     bf_zyx = np.asarray(bf_zyx)
-    channels = preprocessor(bf_zyx)  # {'nuclei', 'membrane', 'phase'}
+    channels = preprocessor(bf_zyx, label=label)  # {'nuclei', 'membrane', 'phase'}
 
     projections: dict[str, np.ndarray] = {}
     masks: dict[str, np.ndarray] = {}
@@ -294,7 +299,14 @@ def decide_fov(
         vol = _to_numpy(channels[organelle])
         proj = project_zyx(vol, projection)
         projections[organelle] = proj
-        masks[organelle] = segment_2d(proj, cellpose, organelle, segmentation)
+        try:
+            mask = segment_2d(proj, cellpose, organelle, segmentation)
+        except Exception as exc:
+            logger.error("%ssegment %s FAILED: %s", pfx, organelle, exc)
+            raise
+        masks[organelle] = mask
+        n_objects = int((np.unique(mask) != 0).sum())
+        logger.info("%ssegment %s ok (%d objects)", pfx, organelle, n_objects)
 
     matrix = fov_feature_matrix(
         projections, masks, px_um, projection, source="vs", needed=model.get("features")

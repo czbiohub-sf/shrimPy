@@ -183,7 +183,7 @@ class MantisEngine(MDAEngine):
             self.mmcore.mda.events.frameReady.connect(self._fov.on_frame_ready)
             logger.info(
                 "FOV selection pre-scan: on '%s', %d candidate positions",
-                self._fov.input_channel,
+                self._fov.prescan_channel,
                 len(sequence.stage_positions),
             )
 
@@ -546,13 +546,13 @@ class MantisEngine(MDAEngine):
     ) -> None:
         """Two sequential runs: pre-scan (decide) then timelapse on good FOVs.
 
-        Run 1 pre-scans all candidate FOVs on ``input_channel`` only (one
+        Run 1 pre-scans all candidate FOVs on ``prescan_channel`` only (one
         timepoint, full z); the decision streams in via ``frameReady`` and the
         good FOV names are captured in ``teardown_sequence``. Run 2 images only
         the good FOVs. See ``docs/fov_selection_integration_plan.md``.
         """
-        input_channel = fov_cfg.get("input_channel", "BF - Oblique")
-        prescan_seq = _build_prescan_sequence(sequence, input_channel)
+        prescan_channel = fov_cfg.get("prescan_channel", "BF - Oblique")
+        prescan_seq = _build_prescan_sequence(sequence, prescan_channel)
 
         prescan_output = None
         if fov_cfg.get("save_prescan"):
@@ -560,7 +560,7 @@ class MantisEngine(MDAEngine):
 
         logger.info(
             "FOV selection: pre-scan run on '%s' (%d candidate FOVs); output=%s",
-            input_channel,
+            prescan_channel,
             len(prescan_seq.stage_positions),
             prescan_output or "discarded",
         )
@@ -631,17 +631,17 @@ def _enabled_fov_config(sequence: MDASequence) -> dict | None:
     return None
 
 
-def _build_prescan_sequence(sequence: MDASequence, input_channel: str) -> MDASequence:
-    """Pre-scan sequence: ``input_channel`` only, one timepoint, all candidates.
+def _build_prescan_sequence(sequence: MDASequence, prescan_channel: str) -> MDASequence:
+    """Pre-scan sequence: ``prescan_channel`` only, one timepoint, all candidates.
 
     Keeps the candidate ``stage_positions`` and ``z_plan`` (full z is needed for
     virtual-staining quality) and ``fov_selection`` metadata (so
     ``setup_sequence`` builds the ``FovSelection`` coordinator).
     """
-    channels = [c for c in sequence.channels if c.config == input_channel]
+    channels = [c for c in sequence.channels if c.config == prescan_channel]
     if not channels:
         raise ValueError(
-            f"FOV selection input_channel {input_channel!r} is not one of the "
+            f"FOV selection prescan_channel {prescan_channel!r} is not one of the "
             f"acquisition channels {[c.config for c in sequence.channels]}."
         )
     return sequence.replace(channels=channels, time_plan={"loops": 1, "interval": 0})

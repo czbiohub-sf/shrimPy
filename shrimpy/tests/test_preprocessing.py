@@ -116,3 +116,21 @@ def test_call_vs_pipeline_assembles_target_channels(monkeypatch):
     out = pre(np.zeros(ZYX, dtype="float32"))
 
     assert set(out) == {"phase", "nuclei", "membrane"}
+
+
+def test_require_gpu_raises_when_device_is_cpu(monkeypatch):
+    """FOV selection (require_gpu=True) must fail fast on a CPU-only machine."""
+    torch = pytest.importorskip("torch")
+    monkeypatch.setattr("shrimpy.preprocessing._resolve_device", lambda: torch.device("cpu"))
+
+    with pytest.raises(RuntimeError, match="GPU required but none detected"):
+        build_preprocessor(ZYX, ["phase"], require_gpu=True)
+
+
+def test_require_gpu_false_allows_cpu(monkeypatch):
+    """DynaTrack / default callers keep working on CPU (no fail-fast)."""
+    torch = pytest.importorskip("torch")
+    monkeypatch.setattr("shrimpy.preprocessing._resolve_device", lambda: torch.device("cpu"))
+
+    # Default require_gpu=False: builds without raising on CPU.
+    assert build_preprocessor(ZYX, ["phase"], require_gpu=False) is not None

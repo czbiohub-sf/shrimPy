@@ -66,6 +66,7 @@ def build_preprocessor(
     phase: dict | None = None,
     virtual_staining: dict | None = None,
     output_channel: str = "phase",
+    require_gpu: bool = False,
 ) -> Callable[[np.ndarray], dict] | None:
     """Build a preprocessing callable from explicit reconstruction settings.
 
@@ -79,16 +80,21 @@ def build_preprocessor(
         Shape of the raw z-stack ``(Z, Y, X)`` -- needed for the transfer
         function.
     preprocessing : list[str] | None
-        Ordered steps, e.g. ``['deskew', 'phase', 'vs']``. ``None``/``[]`` ->
-        no preprocessing (returns ``None``). Only the reconstruction steps
-        (``'deskew'``, ``'phase'``, ``'vs'``) are consumed here; downstream
-        steps such as projection/segmentation are handled by the caller.
+        Ordered steps, e.g. ``['flatfield', 'deskew', 'phase', 'vs']``.
+        ``None``/``[]`` -> no preprocessing (returns ``None``). Only the
+        reconstruction steps (``'flatfield'``, ``'deskew'``, ``'phase'``,
+        ``'vs'``) are consumed here; downstream steps such as
+        projection/segmentation are handled by the caller.
     deskew, phase, virtual_staining : dict | None
         Sub-configs for the biahub deskew, waveorder phase, and cytoland VS
         steps (only used when the corresponding step is in ``preprocessing``).
     output_channel : str
         Name for the single output channel in a NON-VS pipeline. Ignored for a
         VS pipeline (which emits one channel per ``target_channels`` name).
+    require_gpu : bool
+        When True, ``warm_up`` raises if the resolved compute device is the CPU
+        (no GPU detected) and each call verifies the reconstruction ran on the
+        GPU. Used by FOV selection, whose per-FOV decision is impractical on CPU.
 
     Returns
     -------
@@ -121,10 +127,12 @@ def build_preprocessor(
 
     preprocessor = _LabelfreePreprocessor(
         zyx_shape=zyx_shape,
+        apply_flatfield="flatfield" in pipeline,
         deskew_settings=deskew_settings,
         phase_settings=phase_settings,
         vs_config=virtual_staining if "vs" in pipeline else None,
         output_channel=output_channel,
+        require_gpu=require_gpu,
     )
     preprocessor.warm_up()
     return preprocessor
@@ -146,14 +154,18 @@ class _LabelfreePreprocessor:
         phase_settings: Any | None,
         vs_config: dict[str, Any] | None,
         output_channel: str,
+        apply_flatfield: bool = False,
+        require_gpu: bool = False,
     ) -> None:
         self._zyx_shape = zyx_shape
+        self._apply_flatfield = apply_flatfield
         # Validated upstream settings models: biahub DeskewSettings and the
         # waveorder phase settings.
         self._deskew_settings = deskew_settings
         self._phase_settings = phase_settings
         self._vs_config = vs_config
         self._output_channel = output_channel
+        self._require_gpu = require_gpu
         self._device = None
 
         # Cached state (computed by warm_up or lazily on first call)
@@ -170,6 +182,13 @@ class _LabelfreePreprocessor:
         pay the initialization cost.
         """
         self._device = _resolve_device()
+        if self._require_gpu and self._device.type == "cpu":
+            raise RuntimeError(
+                "GPU required but none detected: the preprocessing compute device "
+                "resolved to CPU. Deskew/phase/virtual-staining for FOV selection "
+                "must run on a GPU -- run on a GPU node (check CUDA / "
+                "CUDA_VISIBLE_DEVICES), or disable fov_selection."
+            )
 
         # If deskewing, downstream shape is deskewed + rotated (np.rot90 in _deskew).
         if self._deskew_settings is not None:
@@ -224,12 +243,16 @@ class _LabelfreePreprocessor:
             _time.monotonic() - t0,
         )
 
-    def __call__(self, volume_bf: np.ndarray) -> dict[str, torch.Tensor]:
+    def __call__(self, volume_bf: np.ndarray, label: str = "") -> dict[str, torch.Tensor]:
         """Preprocess a brightfield z-stack -> dict of channel ZYX tensors.
 
         The input numpy volume is moved to the target device once; all
         subsequent steps (deskew, phase, VS) operate on torch tensors and
         return tensors on-device. Callers convert to numpy only when needed.
+
+        ``label`` (e.g. the FOV/position name) is prefixed to each step's INFO
+        log so success/failure is attributable to a specific FOV:
+        ``[<label>] deskew ok (0.4s)`` / ``[<label>] virtual staining FAILED: ...``.
 
         For a VS pipeline the keys are ``virtual_staining.target_channels``
         (e.g. ``'nuclei'``, ``'membrane'``) plus ``'phase'`` (debug). For a
@@ -237,18 +260,24 @@ class _LabelfreePreprocessor:
         """
         import torch
 
+        pfx = f"[{label}] " if label else ""
         channels: dict[str, torch.Tensor] = {}
+
+        # 0. Flat-field correction (on the raw BF stack, before deskew), matching
+        # the production reconstruction (biahub mantis-v2.nf 0-flatfield step).
+        if self._apply_flatfield:
+            volume_bf = self._step(pfx, "flatfield", self._flat_field, volume_bf)
 
         # Move to device once; downstream steps stay on-device.
         volume = torch.as_tensor(volume_bf, device=self._device, dtype=torch.float32)
 
         # 1. Deskew
         if self._deskew_settings is not None:
-            volume = self._deskew(volume)
+            volume = self._step(pfx, "deskew", self._deskew, volume)
 
         # 2. Phase reconstruction
         if self._phase_settings is not None:
-            volume_phase = self._reconstruct_phase(volume)
+            volume_phase = self._step(pfx, "phase", self._reconstruct_phase, volume)
         else:
             volume_phase = volume
 
@@ -258,31 +287,65 @@ class _LabelfreePreprocessor:
             # Keep 'phase' as a debug-only intermediate.
             if self._phase_settings is not None:
                 channels["phase"] = volume_phase
-            channels.update(self._predict_vs(volume_phase))
+            channels.update(
+                self._step(pfx, "virtual staining", self._predict_vs, volume_phase)
+            )
         else:
             # Non-VS: a single processed representation of the input channel
             # (raw/deskewed/phase), keyed by output_channel.
             channels[self._output_channel] = volume_phase
 
+        if self._require_gpu:
+            offenders = [n for n, t in channels.items() if t.device.type == "cpu"]
+            if offenders:
+                raise RuntimeError(
+                    f"{pfx}GPU required but preprocessing output is on CPU "
+                    f"(channels {offenders}); a reconstruction step fell back to CPU."
+                )
+
         self._log_gpu_memory()
         return channels
+
+    @staticmethod
+    def _step(pfx: str, name: str, fn, arg):
+        """Run one preprocessing step, logging explicit per-FOV success/failure.
+
+        Logs ``[<label>] <name> ok (<t>s)`` on success; on failure logs
+        ``[<label>] <name> FAILED: <error>`` at ERROR level and re-raises so the
+        caller (worker) records the FOV as bad.
+        """
+        t0 = _time.monotonic()
+        try:
+            result = fn(arg)
+        except Exception as exc:
+            logger.error("%s%s FAILED: %s", pfx, name, exc)
+            raise
+        logger.info("%s%s ok (%.1fs)", pfx, name, _time.monotonic() - t0)
+        return result
+
+    def _flat_field(self, volume_bf: np.ndarray) -> np.ndarray:
+        """Flat-field correct the raw BF z-stack via biahub's ``flat_field_correction``.
+
+        Delegates to the same library function the production reconstruction
+        (biahub ``mantis-v2.nf`` 0-flatfield step) uses -- divides out the
+        median-over-Z illumination pattern, preserving its mean -- so the online
+        input matches the offline flat-fielded input. Cast to float32 to match
+        biahub's flat-field output dtype before deskew.
+        """
+        from biahub.flat_field_correction import flat_field_correction
+
+        return flat_field_correction(np.asarray(volume_bf), axis=0).astype(np.float32)
 
     def _deskew(self, volume: torch.Tensor) -> torch.Tensor:
         """Apply deskewing via biahub's ``fast_deskew_zyx`` on the target device."""
         from biahub.deskew import fast_deskew_zyx
 
-        logger.info("Preprocessing: deskewing volume %s...", tuple(volume.shape))
-        t0 = _time.monotonic()
-
+        logger.debug("Preprocessing: deskewing volume %s...", tuple(volume.shape))
         result = fast_deskew_zyx(
             raw_data=volume, **_settings_kwargs(fast_deskew_zyx, self._deskew_settings)
         )
-
-        logger.info(
-            "Preprocessing: deskew took %.1fs (%s -> %s)",
-            _time.monotonic() - t0,
-            tuple(volume.shape),
-            tuple(result.shape),
+        logger.debug(
+            "Preprocessing: deskew %s -> %s", tuple(volume.shape), tuple(result.shape)
         )
         return result
 
@@ -294,9 +357,7 @@ class _LabelfreePreprocessor:
         if self._transfer_function is None:
             self._compute_transfer_function()
 
-        logger.info("Preprocessing: reconstructing phase on %s...", self._device)
-        t0 = _time.monotonic()
-
+        logger.debug("Preprocessing: reconstructing phase on %s...", self._device)
         inverse_config = _settings_kwargs(
             apply_inverse_transfer_function, self._phase_settings.apply_inverse
         )
@@ -305,8 +366,6 @@ class _LabelfreePreprocessor:
         t_phase = apply_inverse_transfer_function(
             volume_bf, *self._transfer_function, z_padding=z_padding, **inverse_config
         )
-
-        logger.info("Preprocessing: phase reconstruction took %.1fs", _time.monotonic() - t0)
         return t_phase
 
     def _predict_vs(self, volume_phase: torch.Tensor) -> dict[str, torch.Tensor]:
@@ -326,9 +385,7 @@ class _LabelfreePreprocessor:
             logger.info("Preprocessing: loading VS model...")
             self._vs_model = self._load_vs_model()
 
-        logger.info("Preprocessing: predicting virtual staining...")
-        t0 = _time.monotonic()
-
+        logger.debug("Preprocessing: predicting virtual staining...")
         # cytoland expects (B, C, Z, Y, X) input
         t_input = volume_phase.to(dtype=torch.float32)[None, None]
 
@@ -342,8 +399,6 @@ class _LabelfreePreprocessor:
         result = {
             name: t_output[0, i].detach() for i, name in enumerate(self._vs_target_channels)
         }
-
-        logger.info("Preprocessing: VS prediction took %.1fs", _time.monotonic() - t0)
         return result
 
     def _load_vs_model(self):

@@ -3,7 +3,7 @@
 Mirrors :class:`shrimpy.dynatrack.manager.DynaTrack`: an acquisition engine
 builds a :class:`FovSelection` from the ``fov_selection`` metadata section and
 interacts with that object only. It turns the pre-scan run (a single-timepoint
-run on ``input_channel`` over all candidate FOVs) into a per-FOV good/bad verdict:
+run on ``prescan_channel`` over all candidate FOVs) into a per-FOV good/bad verdict:
 
     BF z-stack -> reconstruct (deskew -> phase -> virtual stain)   [preprocessing.py]
                -> project -> segment -> features -> tree predict   [pipeline.py]
@@ -83,8 +83,11 @@ class FovSelection:
         # written by the worker to a sibling directory next to the output store.
         self._save_decision = bool(config.get("save_decision", False))
         self._debug_dir = self._debug_dir_for(data_path) if self._save_decision else None
-        # Acquired channel fed to reconstruction.
-        self._input_channel = config.get("input_channel", "BF - Oblique")
+        # Fail fast if reconstruction can't run on a GPU. Default True; set
+        # fov_selection.require_gpu: false to allow a (slow) CPU run for debugging.
+        self._require_gpu = bool(config.get("require_gpu", True))
+        # Acquired channel imaged during the pre-scan and fed to reconstruction.
+        self._prescan_channel = config.get("prescan_channel", "BF - Oblique")
         # Ordered preprocessing steps (DynaTrack style), e.g.
         # ['deskew', 'phase', 'vs', 'sum_projection', 'segmentation']. The
         # reconstruction steps are consumed by build_preprocessor; projection and
@@ -94,6 +97,9 @@ class FovSelection:
         self._segmentation = config.get("segmentation", {}) or {}
         model_cfg = config.get("model", {}) or {}
         self._threshold = float(model_cfg.get("threshold", 0.5))
+        # What the fov_selection_channels are: 'vs' (virtual-stained -> requires a
+        # 'vs' preprocessing step) or 'fluor' (acquired fluorescence -> no VS).
+        self._channels_type = config.get("fov_selection_channels_type", "vs")
         # Channels the decision is computed on (segmented + fed to the model);
         # may be raw input channels or preprocessed (VS) channels. Defaults to
         # the virtual-staining target channels.
@@ -104,7 +110,8 @@ class FovSelection:
             or DEFAULT_TARGET_CHANNELS
         )
 
-        self._validate_input_channel(sequence)
+        self._validate_prescan_channel(sequence)
+        self._validate_channels_type()
         self._require_segmentation_step()
         self._expected_slices = max(sequence.sizes.get("z", 1), 1)
 
@@ -182,12 +189,31 @@ class FovSelection:
             decide_fn=decide_fn,
         )
 
-    def _validate_input_channel(self, sequence: MDASequence) -> None:
+    def _validate_prescan_channel(self, sequence: MDASequence) -> None:
         names = [ch.config for ch in sequence.channels]
-        if self._input_channel not in names:
+        if self._prescan_channel not in names:
             raise ValueError(
-                f"FOV selection input_channel {self._input_channel!r} is not one of "
+                f"FOV selection prescan_channel {self._prescan_channel!r} is not one of "
                 f"the acquisition channels {names}."
+            )
+
+    def _validate_channels_type(self) -> None:
+        """Validate ``fov_selection_channels_type`` and guard the preprocessing steps.
+
+        Only ``'vs'`` (virtual-stained) and ``'fluor'`` (acquired fluorescence)
+        are supported. ``'vs'`` requires a ``'vs'`` step in the preprocessing list
+        (the decision runs on virtual-stained channels); ``'fluor'`` does not.
+        """
+        valid = ("vs", "fluor")
+        if self._channels_type not in valid:
+            raise ValueError(
+                f"fov_selection.fov_selection_channels_type must be one of {valid}; "
+                f"got {self._channels_type!r}."
+            )
+        if self._channels_type == "vs" and "vs" not in self._steps:
+            raise ValueError(
+                "fov_selection_channels_type='vs' requires a 'vs' step in "
+                f"fov_selection.preprocessing; got {self._steps}."
             )
 
     def _require_segmentation_step(self) -> None:
@@ -271,6 +297,7 @@ class FovSelection:
                 zyx_shape=zyx_shape,
                 log_file_path=log_file_path,
                 debug_dir=self._debug_dir,
+                require_gpu=self._require_gpu,
             )
             self._worker.start()
         self._executor = ThreadPoolExecutor(max_workers=1)
@@ -280,13 +307,13 @@ class FovSelection:
         """Buffer pre-scan frames per position and submit completed stacks.
 
         Connect to the core's ``frameReady`` signal. Only the pre-scan timepoint
-        (t=0) and the ``input_channel`` are buffered; frames are matched by
+        (t=0) and the ``prescan_channel`` are buffered; frames are matched by
         channel *name* (not index) since the pre-scan phase yields only the
-        input channel. When all z-slices for a position have arrived, the stack
+        prescan channel. When all z-slices for a position have arrived, the stack
         is submitted for a decision.
         """
         channel = getattr(getattr(event, "channel", None), "config", None)
-        if channel != self._input_channel:
+        if channel != self._prescan_channel:
             return
         if event.index.get("t", 0) != PRESCAN_TIMEPOINT:
             return
@@ -368,9 +395,9 @@ class FovSelection:
             return [name for name, (_p, good) in self._verdicts.items() if good]
 
     @property
-    def input_channel(self) -> str:
+    def prescan_channel(self) -> str:
         """Acquisition channel used for the pre-scan (fed to reconstruction)."""
-        return self._input_channel
+        return self._prescan_channel
 
     @property
     def num_decided(self) -> int:

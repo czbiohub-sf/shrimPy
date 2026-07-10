@@ -82,16 +82,24 @@ metadata:
       # Acquired channel fed to reconstruction (the pre-scan channel).
       input_channel: "BF - Oblique"
 
+      # What the fov_selection_channels are:
+      #   'vs'    -> virtual-stained; requires a 'vs' preprocessing step (checked)
+      #   'fluor' -> acquired fluorescence channels; no VS step needed
+      fov_selection_channels_type: vs
+
       # Channels the decision is computed on (segmented + fed to the model).
       # May be raw input channels or preprocessed (VS) channels; here the
-      # virtual-stained nuclei/membrane.
+      # virtual-stained nuclei and membrane.
       fov_selection_channels: ['nuclei', 'membrane']
 
-      # Ordered preprocessing steps. Reconstruction steps (deskew/phase/vs) are
-      # consumed by the shared preprocessor; sum_projection/segmentation are
-      # consumed by the FOV pipeline. Some algorithms (e.g. DynaCLR) would omit
-      # 'segmentation'; the current tree model requires it.
-      preprocessing: ['deskew', 'phase', 'vs', 'sum_projection', 'segmentation']
+      # Ordered preprocessing steps. Reconstruction steps (flatfield/deskew/
+      # phase/vs) are consumed by the shared preprocessor; sum_projection/
+      # segmentation are consumed by the FOV pipeline. 'flatfield' matches the
+      # production reconstruction (biahub mantis-v2.nf 0-flatfield) so the online
+      # decision runs on the same flat-fielded input as the offline model.
+      # Some algorithms (e.g. DynaCLR) would omit 'segmentation'; the current
+      # tree model requires it.
+      preprocessing: ['flatfield', 'deskew', 'phase', 'vs', 'sum_projection', 'segmentation']
 
       deskew:
         ls_angle_deg: 30.0
