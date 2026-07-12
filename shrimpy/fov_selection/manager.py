@@ -3,7 +3,7 @@
 Mirrors :class:`shrimpy.dynatrack.manager.DynaTrack`: an acquisition engine
 builds a :class:`FovSelection` from the ``fov_selection`` metadata section and
 interacts with that object only. It turns the pre-scan run (a single-timepoint
-run on ``prescan_channel`` over all candidate FOVs) into a per-FOV good/bad verdict:
+run on ``fov_selection_channel`` over all candidate FOVs) into a per-FOV good/bad verdict:
 
     BF z-stack -> reconstruct (deskew -> phase -> virtual stain)   [preprocessing.py]
                -> project -> segment -> features -> tree predict   [pipeline.py]
@@ -88,7 +88,7 @@ class FovSelection:
         # fov_selection.require_gpu: false to allow a (slow) CPU run for debugging.
         self._require_gpu = bool(config.get("require_gpu", True))
         # Acquired channel imaged during the pre-scan and fed to reconstruction.
-        self._prescan_channel = config.get("prescan_channel", "BF - Oblique")
+        self._fov_selection_channel = config.get("fov_selection_channel", "BF - Oblique")
         # Ordered preprocessing steps (DynaTrack style), e.g.
         # ['deskew', 'phase', 'vs', 'sum_projection', 'segmentation']. The
         # reconstruction steps are consumed by build_preprocessor; projection and
@@ -111,7 +111,7 @@ class FovSelection:
             or DEFAULT_TARGET_CHANNELS
         )
 
-        self._validate_prescan_channel(sequence)
+        self._validate_fov_selection_channel(sequence)
         self._validate_channels_type()
         self._require_segmentation_step()
         self._expected_slices = max(sequence.sizes.get("z", 1), 1)
@@ -195,11 +195,11 @@ class FovSelection:
             decide_fn=decide_fn,
         )
 
-    def _validate_prescan_channel(self, sequence: MDASequence) -> None:
+    def _validate_fov_selection_channel(self, sequence: MDASequence) -> None:
         names = [ch.config for ch in sequence.channels]
-        if self._prescan_channel not in names:
+        if self._fov_selection_channel not in names:
             raise ValueError(
-                f"FOV selection prescan_channel {self._prescan_channel!r} is not one of "
+                f"FOV selection fov_selection_channel {self._fov_selection_channel!r} is not one of "
                 f"the acquisition channels {names}."
             )
 
@@ -313,13 +313,13 @@ class FovSelection:
         """Buffer pre-scan frames per position and submit completed stacks.
 
         Connect to the core's ``frameReady`` signal. Only the pre-scan timepoint
-        (t=0) and the ``prescan_channel`` are buffered; frames are matched by
+        (t=0) and the ``fov_selection_channel`` are buffered; frames are matched by
         channel *name* (not index) since the pre-scan phase yields only the
         prescan channel. When all z-slices for a position have arrived, the stack
         is submitted for a decision.
         """
         channel = getattr(getattr(event, "channel", None), "config", None)
-        if channel != self._prescan_channel:
+        if channel != self._fov_selection_channel:
             return
         if event.index.get("t", 0) != PRESCAN_TIMEPOINT:
             return
@@ -426,9 +426,9 @@ class FovSelection:
             return [name for name, (_p, good) in self._verdicts.items() if good]
 
     @property
-    def prescan_channel(self) -> str:
+    def fov_selection_channel(self) -> str:
         """Acquisition channel used for the pre-scan (fed to reconstruction)."""
-        return self._prescan_channel
+        return self._fov_selection_channel
 
     @property
     def num_decided(self) -> int:

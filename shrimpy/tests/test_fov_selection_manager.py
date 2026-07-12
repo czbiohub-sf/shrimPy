@@ -33,7 +33,7 @@ N_Z = 5
 META = {
     "enabled": True,
     "model": {"path": "dummy.joblib"},
-    "prescan_channel": "BF",
+    "fov_selection_channel": "BF",
     "preprocessing": ["deskew", "phase", "vs", "sum_projection", "segmentation"],
 }
 
@@ -86,9 +86,9 @@ def test_from_metadata_requires_pixel_size():
         FovSelection.from_metadata(META, SEQUENCE, pixel_size_um=0.0)
 
 
-def test_from_metadata_rejects_unknown_prescan_channel():
-    with pytest.raises(ValueError, match="prescan_channel"):
-        FovSelection.from_metadata({**META, "prescan_channel": "nope"}, SEQUENCE, 0.1)
+def test_from_metadata_rejects_unknown_fov_selection_channel():
+    with pytest.raises(ValueError, match="fov_selection_channel"):
+        FovSelection.from_metadata({**META, "fov_selection_channel": "nope"}, SEQUENCE, 0.1)
 
 
 def test_streaming_decision_partitions_good_and_bad():

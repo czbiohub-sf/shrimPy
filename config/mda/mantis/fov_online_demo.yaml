@@ -1,42 +1,27 @@
 # Online FOV-selection demo (M4): TWO sequential runs.
 #
-#   RUN 1  pre-scan  on `input_channel` over all candidate FOVs (one timepoint,
-#                    full z). As each FOV's z-stack completes it is reconstructed
-#                    (deskew -> phase -> virtual stain), projected, segmented, and
-#                    scored by the trained tree -- streamed via frameReady in a
-#                    worker subprocess (torch/GPU isolation, like DynaTrack).
-#                    output=None (nothing written) unless save_prescan.
-#   RUN 2  timelapse full channels + z, on the FOVs predicted "good" ONLY.
+#   RUN 1  pre-scan  a complete, independent MDASequence defined under
+#                    `metadata.mantis.fov_selection.prescan_mda`. It carries its
+#                    own `stage_positions` (all candidate FOVs) and `z_plan`, and
+#                    images only its `fov_selection_channel`. As each FOV's z-stack
+#                    completes it is reconstructed (deskew -> phase -> virtual
+#                    stain), projected, segmented, and scored by the trained tree
+#                    -- streamed via frameReady in a worker subprocess (torch/GPU
+#                    isolation, like DynaTrack). output=None (nothing written)
+#                    unless save_prescan.
+#   RUN 2  timelapse this top-level MDASequence (full channels + z), on the FOVs
+#                    predicted "good" ONLY. Its `stage_positions` are EMPTY here
+#                    and filled at runtime from the good pre-scan FOVs.
 #
-# `time_plan.loops` is the number of TIMELAPSE timepoints (the pre-scan is its
-# own run -- no +1). Replays the A549 store (raw BF + GFP), matching the scope.
+# Defining the pre-scan as its own MDASequence (rather than deriving it from the
+# timelapse sequence) lets it use a different z-plan -- e.g. a single 2D slice for
+# fluorescence-based selection -- independent of the timelapse. Replays the A549
+# store (raw BF + GFP), matching the scope.
 
-# ---- Candidate FOVs (top-level stage_positions) ----
-# A useq WellPlatePlan (select wells + a per-well FOV grid): the pre-scan run
-# images ALL of these; the timelapse run images only the ones decided "good".
-# useq assigns plate_row/plate_col + slash-free field names, so the output is a
-# proper HCS OME-Zarr (row/col/fov).
-#
-# Here: wells B/3, B/4, B/5 with a 7x7 FOV grid = 147 candidates (the full
-# offline dataset). Offline, the ReplayCamera maps each plate position to the
-# matching source FOV (well B/3 fov k -> k-th source FOV in B/3, row-major).
-# For a quick smoke test, drop well_points_plan to rows/columns 1.
-stage_positions:
-  a1_center_xy: [0.0, 0.0]
-  plate:
-    rows: 4
-    columns: 6
-    name: 24-well
-    well_size: [15.6, 15.6]
-    well_spacing: [19.0, 19.0]
-  selected_wells:
-    - [1, 1, 1]     # rows: B, B, B
-    - [2, 3, 4]     # columns: 3, 4, 5
-  well_points_plan:
-    rows: 7           # 7x7 = 49 FOVs/well; B/3,B/4,B/5 -> 147 total
-    columns: 7
-    fov_height: 180.0
-    fov_width: 180.0
+# ---- Timelapse stage_positions (top-level) ----
+# EMPTY: the timelapse images only the FOVs the pre-scan decides are "good". The
+# candidate FOVs are defined under metadata.mantis.fov_selection.prescan_mda.
+stage_positions: []
 
 time_plan:
   prioritize_duration: true
@@ -75,22 +60,47 @@ metadata:
     fov_selection:
       enabled: true
 
-      # Debug outputs (off by default):
-      save_prescan: True   # write the pre-scan run to <name>_prescan.ome.zarr
-      save_decision: True  # per-FOV masks/features/goodness under <name>_fov_debug/
-
-      # Acquired channel fed to reconstruction (the pre-scan channel).
-      input_channel: "BF - Oblique"
-
-      # What the fov_selection_channels are:
-      #   'vs'    -> virtual-stained; requires a 'vs' preprocessing step (checked)
-      #   'fluor' -> acquired fluorescence channels; no VS step needed
-      fov_selection_channels_type: vs
-
-      # Channels the decision is computed on (segmented + fed to the model).
-      # May be raw input channels or preprocessed (VS) channels; here the
-      # virtual-stained nuclei and membrane.
-      fov_selection_channels: ['nuclei', 'membrane']
+      # ---- Pre-scan MDASequence ----
+      # A complete, valid MDASequence run FIRST over all candidate FOVs. Its
+      # stage_positions (a useq WellPlatePlan: select wells + a per-well FOV grid)
+      # are the candidates; useq assigns plate_row/plate_col + slash-free field
+      # names, so the output is a proper HCS OME-Zarr (row/col/fov). Here: wells
+      # B/3, B/4, B/5 with a 7x7 FOV grid = 147 candidates (the full offline
+      # dataset). Offline, the ReplayCamera maps each plate position to the
+      # matching source FOV (well B/3 fov k -> k-th source FOV in B/3, row-major).
+      # For a quick smoke test, drop well_points_plan to rows/columns 1.
+      #
+      # Must be a single timepoint (validated); it images only `fov_selection_channel`.
+      # The z_plan may differ from the timelapse -- e.g. a single 2D slice.
+      prescan_mda:
+        stage_positions:
+          a1_center_xy: [0.0, 0.0]
+          plate:
+            rows: 4
+            columns: 6
+            name: 24-well
+            well_size: [15.6, 15.6]
+            well_spacing: [19.0, 19.0]
+          selected_wells:
+            - [1, 1, 1]     # rows: B, B, B
+            - [2, 3, 4]     # columns: 3, 4, 5
+          well_points_plan:
+            rows: 7           # 7x7 = 49 FOVs/well; B/3,B/4,B/5 -> 147 total
+            columns: 7
+            fov_height: 180.0
+            fov_width: 180.0
+        time_plan:
+          loops: 1            # single pre-scan timepoint (validated)
+          interval: 0
+        z_plan:
+          top: 79.95
+          bottom: -80.1
+          step: 0.15
+          go_up: true
+        channels:
+          - config: BF - Oblique
+            group: Channel
+            exposure: 1.0
 
       # Ordered preprocessing steps. Reconstruction steps (flatfield/deskew/
       # phase/vs) are consumed by the shared preprocessor; sum_projection/
@@ -158,3 +168,21 @@ metadata:
       model:
         path: /hpc/projects/comp.micro/microscope_dev/smart_fov_selection/fov_selection_output/fov_features/split_analysis/max_accuracy/model_on_three_dataset/final_model_nuclei-vs_membrane-vs.joblib
         threshold: 0.5
+
+      # FOV selection decision
+      # Debug outputs (off by default):
+      save_prescan: True   # write the pre-scan run to <name>_prescan.ome.zarr
+      save_decision: True  # per-FOV masks/features/goodness under <name>_fov_debug/
+
+      # Acquired channel fed to reconstruction (must be one of prescan_mda.channels).
+      fov_selection_channel: "BF - Oblique"
+
+      # What the fov_selection_channels are:
+      #   'vs'    -> virtual-stained; requires a 'vs' preprocessing step (checked)
+      #   'fluor' -> acquired fluorescence channels; no VS step needed
+      fov_selection_channels_type: vs
+
+      # Channels the decision is computed on (segmented + fed to the model).
+      # May be raw input channels or preprocessed (VS) channels; here the
+      # virtual-stained nuclei and membrane.
+      fov_selection_channels: ['nuclei', 'membrane']

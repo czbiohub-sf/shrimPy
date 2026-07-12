@@ -14,7 +14,7 @@ acquisition. Validated offline with the ReplayCamera replaying a real A549 store
 
 ```
 RUN 1  PRE-SCAN     core.mda.run(prescan_seq, output=None)
-│                   all candidates · input_channel only · loops=1 · full z
+│                   fov_selection.prescan_mda · all candidates · loops=1
 │      └─ frameReady ─► worker subprocess (per FOV as its z-stack completes):
 │                          deskew -> phase -> vs -> project -> segment
 │                          -> features -> tree -> good/bad
@@ -24,10 +24,15 @@ RUN 2  TIMELAPSE    core.mda.run(timelapse_seq, output=<name>.ome.zarr)
                     GOOD FOVs only · full channels + z · loops=N
 ```
 
-- Pre-scan run: `input_channel` only (full z, for VS quality), one timepoint,
-  all candidates. `output=None` writes nothing (unless `save_prescan`); the
-  decision still streams via `frameReady` (emitted independent of the sink).
-- Timelapse run: only good FOVs are in `stage_positions`, so there is no
+- Pre-scan run: its own complete `MDASequence`, defined under
+  `metadata.mantis.fov_selection.prescan_mda` — own `stage_positions` (the
+  candidates) and `z_plan` (may be a single 2D slice for fluorescence selection,
+  independent of the timelapse). Must be a single timepoint (validated) and
+  image only `fov_selection_channel`. `output=None` writes nothing (unless
+  `save_prescan`); the decision still streams via `frameReady` (emitted
+  independent of the sink).
+- Timelapse run: the top-level sequence, whose `stage_positions` are **empty**
+  in the config and filled at runtime with the good FOVs — so there is no
   per-event gating. `time_plan.loops` = timelapse points (**no `+1`**).
 
 ## Why two sequential runs
@@ -41,17 +46,28 @@ filter).
 
 ## Engine integration (`shrimpy/mantis/mantis_engine.py`)
 
-- `acquire()` — orchestrator: build `prescan_seq` (`_build_prescan_sequence`),
+- `acquire()` — orchestrator, inlined (no helper method): build `prescan_seq`,
   run it, read the good names (captured in teardown), build `timelapse_seq`
-  (`_build_timelapse_sequence` + `_filter_good_positions`, `fov_selection`
-  disabled), run it into the main store. No good FOV → warn and skip run 2.
+  (`fov_selection` disabled), run it into the main store. No good FOV → warn and
+  skip run 2. The sequence builders live in the `fov_selection` package (below),
+  not the engine, so the engine stays thin.
 - `setup_sequence()` — builds `FovSelection.from_metadata(...)` + starts the
-  worker after ROI; non-`None` only for the pre-scan run (timelapse disables it).
+  worker after ROI (via the shared `_zyx_shape` helper, also used by DynaTrack);
+  non-`None` only for the pre-scan run (timelapse disables `fov_selection`).
 - `teardown_sequence()` — captures `good_position_names()` onto the engine, then
   disconnects `frameReady` and shuts down the worker (verdicts survive shutdown).
 - `event_iterator()` / `setup_event()` — no FOV logic (DynaTrack logic unchanged).
-- Candidates live in top-level `stage_positions` (a `WellPlatePlan`); filtering
-  to the good subset preserves `plate_row`/`plate_col` → HCS store of good FOVs.
+
+## Sequence builders (`shrimpy/fov_selection/sequences.py`)
+
+- `enabled_fov_config(sequence)` — the `fov_selection` block when enabled.
+- `build_prescan_sequence(sequence, fov_cfg)` — parses `prescan_mda` into an
+  `MDASequence`; validates single timepoint + `fov_selection_channel`; injects the
+  `fov_selection` config (minus `prescan_mda`) and shared mantis hardware
+  settings into its metadata so `setup_sequence` builds the coordinator.
+- `build_timelapse_sequence(sequence, prescan_seq, good_names)` — `sequence`
+  with `stage_positions` replaced by the good candidates (`_filter_good_positions`
+  preserves `plate_row`/`plate_col` → HCS store) and `fov_selection` disabled.
 
 ## FOV-selection package (`shrimpy/fov_selection/`)
 
@@ -82,9 +98,17 @@ DynaTrack-style: `deskew` / `phase` / `virtual_staining` blocks directly under
 `fov_selection`; scale (XY pixel size, Z step) is fetched from the Core and the
 z_plan step and injected (single source of truth, never in the config).
 
-- `input_channel` — acquired channel fed to reconstruction (pre-scan channel).
+- `fov_selection_channel` — acquired channel fed to reconstruction (must be one of
+  `prescan_mda.channels`).
+- `fov_selection_channels_type` — `vs` (virtual-stained; requires a `vs`
+  preprocessing step, checked) or `fluor` (acquired fluorescence; no VS needed).
 - `fov_selection_channels` — channels the decision is computed on (raw or
   preprocessed; here VS `nuclei`/`membrane`).
+- `prescan_mda` — a complete, valid `MDASequence` (own `stage_positions`,
+  `z_plan`, `time_plan`, `channels`) run first over all candidates. Its
+  `stage_positions` is a useq **`WellPlatePlan`** (select wells + a per-well FOV
+  grid) → proper HCS OME-Zarr (`plate_row`/`plate_col` + slash-free field names).
+- `require_gpu` (bool, default true) — fail if reconstruction is not on GPU.
 - `preprocessing` — ordered step list, e.g.
   `['deskew','phase','vs','sum_projection','segmentation']`. Reconstruction steps
   feed `build_preprocessor`; projection + segmentation are consumed by the
@@ -96,9 +120,8 @@ z_plan step and injected (single source of truth, never in the config).
   instead of discarding it (`output=None`).
 - `save_decision` (bool) — write per-FOV debug artifacts (preprocessed FOV,
   features CSV, goodness) to a debug dir next to the output.
-- Top-level `stage_positions` — a useq **`WellPlatePlan`** (select wells + a
-  per-well FOV grid), the candidate FOVs; produces a proper HCS OME-Zarr
-  (`plate_row`/`plate_col` + slash-free field names).
+- Top-level `stage_positions` — **empty** (`[]`); filled at runtime with the good
+  pre-scan FOVs. Candidates are defined under `prescan_mda.stage_positions`.
 
 ## Offline ReplayCamera mapping
 
@@ -118,10 +141,14 @@ drives real stage coordinates and there is one naming system.
 - **M3.** Single streaming run folded into the engine (`event_iterator` barrier
   + `setup_event` gating); unified `shrimpy/preprocessing.py`; `WellPlatePlan`
   config + HCS output. Superseded by M4.
-- **M4 — IN PROGRESS.** Two sequential runs (pre-scan `output=None` + timelapse
-  on good FOVs only); candidates in top-level `stage_positions` (drop
-  `_inject_fov_candidates`); `save_prescan` + `save_decision` flags; engine hooks
-  simplified (no barrier/`SkipEvent`).
+- **M4.** Two sequential runs (pre-scan `output=None` + timelapse on good FOVs
+  only); candidates in top-level `stage_positions`; `save_prescan` +
+  `save_decision` flags; engine hooks simplified (no barrier/`SkipEvent`).
+- **M4.1 — IN PROGRESS.** Addressed Ivan's review: pre-scan is now its own
+  `MDASequence` under `fov_selection.prescan_mda` (own z-plan → enables 2D /
+  future looping pre-scan), main `stage_positions` empty; sequence builders moved
+  to `fov_selection/sequences.py`; `acquire()` branch inlined; shared
+  `_zyx_shape` helper.
 
 ## Tests
 

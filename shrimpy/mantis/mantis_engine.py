@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import json
 import logging
 import os
@@ -25,6 +24,12 @@ from useq import MDAEvent, MDASequence
 
 from shrimpy.dynatrack import DynaTrack
 from shrimpy.fov_selection import FovSelection
+from shrimpy.fov_selection.sequences import (
+    build_prescan_sequence,
+    build_timelapse_sequence,
+    fov_selection_config,
+    prescan_output_path,
+)
 
 # Get the logger instance (will be configured by the CLI entry point)
 logger = logging.getLogger(__name__)
@@ -183,7 +188,7 @@ class MantisEngine(MDAEngine):
             self.mmcore.mda.events.frameReady.connect(self._fov.on_frame_ready)
             logger.info(
                 "FOV selection pre-scan: on '%s', %d candidate positions",
-                self._fov.prescan_channel,
+                self._fov.fov_selection_channel,
                 len(sequence.stage_positions),
             )
 
@@ -200,25 +205,34 @@ class MantisEngine(MDAEngine):
         # the actual acquired frame size (also used to build the preprocessor,
         # when configured, inside the worker).
         if self._dynatrack is not None:
-            zyx_shape = (
-                max(sequence.sizes.get("z", 1), 1),
-                self.mmcore.getImageHeight(),
-                self.mmcore.getImageWidth(),
+            self._dynatrack.start(
+                zyx_shape=self._zyx_shape(sequence),
+                log_file_path=_find_shrimpy_log_file(),
             )
-            self._dynatrack.start(zyx_shape=zyx_shape, log_file_path=_find_shrimpy_log_file())
 
         # FOV selection runs its reconstruction in a worker subprocess for the
         # same torch/GPU isolation reason; start it after the ROI is applied so
         # the acquired frame shape (used to build the transfer function) is known.
         if self._fov is not None:
-            zyx_shape = (
-                max(sequence.sizes.get("z", 1), 1),
-                self.mmcore.getImageHeight(),
-                self.mmcore.getImageWidth(),
+            self._fov.start(
+                zyx_shape=self._zyx_shape(sequence),
+                log_file_path=_find_shrimpy_log_file(),
             )
-            self._fov.start(zyx_shape=zyx_shape, log_file_path=_find_shrimpy_log_file())
 
         return result
+
+    def _zyx_shape(self, sequence: MDASequence) -> tuple[int, int, int]:
+        """Acquired (Z, Y, X) frame shape for the current ROI.
+
+        Shared by DynaTrack and FOV selection when starting their worker
+        subprocesses. Called after the setup event has applied the ROI, so
+        ``getImageHeight``/``getImageWidth`` reflect the actual frame size.
+        """
+        return (
+            max(sequence.sizes.get("z", 1), 1),
+            self.mmcore.getImageHeight(),
+            self.mmcore.getImageWidth(),
+        )
 
     def event_iterator(self, events: Iterable[MDAEvent]):
         """Wrap event iteration to apply DynaTrack position updates.
@@ -295,6 +309,12 @@ class MantisEngine(MDAEngine):
         if self._fov is not None:
             self._fov.drain()
             self._fov_good_names = self._fov.good_position_names()
+            logger.info(
+                "FOV selection: %d/%d FOVs good: %s",
+                len(self._fov_good_names),
+                len(sequence.stage_positions),
+                self._fov_good_names,
+            )
             self.mmcore.mda.events.frameReady.disconnect(self._fov.on_frame_ready)
             self._fov.shutdown()
             self._fov = None
@@ -527,59 +547,27 @@ class MantisEngine(MDAEngine):
         data_path = output_dir / f"{name}.ome.zarr"
         self._data_path = data_path
 
-        fov_cfg = _enabled_fov_config(sequence)
-        if fov_cfg is None:
+        fov_cfg = fov_selection_config(sequence)
+        if not fov_cfg.get("enabled", False):
+            # FOV selection is off -> ordinary single-run acquisition.
             logger.info(f"Starting acquisition: {name}")
             self._run_mda(sequence, data_path, write_summary=True)
-            logger.info("Acquisition completed successfully")
-            return
+        else:
+            # FOV selection is on -> adaptive two-run acquisition: a pre-scan run
+            # decides which candidate FOVs are "good" (self._fov_good_names,
+            # captured in teardown_sequence), then the timelapse images only
+            # those. Sequence building lives in shrimpy/fov_selection/sequences.py.
+            prescan_seq = build_prescan_sequence(sequence, fov_cfg)
+            prescan_output = prescan_output_path(fov_cfg, output_dir, name)
+            self._run_mda(prescan_seq, prescan_output, write_summary=prescan_output is not None)
 
-        self._acquire_with_fov_selection(sequence, output_dir, name, data_path, fov_cfg)
+            good = list(self._fov_good_names)
+            if not good:
+                logger.warning("FOV selection: no good FOVs; skipping the timelapse run.")
+                return
+            timelapse_seq = build_timelapse_sequence(sequence, prescan_seq, good)
+            self._run_mda(timelapse_seq, data_path, write_summary=True)
 
-    def _acquire_with_fov_selection(
-        self,
-        sequence: MDASequence,
-        output_dir: Path,
-        name: str,
-        data_path: Path,
-        fov_cfg: dict,
-    ) -> None:
-        """Two sequential runs: pre-scan (decide) then timelapse on good FOVs.
-
-        Run 1 pre-scans all candidate FOVs on ``prescan_channel`` only (one
-        timepoint, full z); the decision streams in via ``frameReady`` and the
-        good FOV names are captured in ``teardown_sequence``. Run 2 images only
-        the good FOVs. See ``docs/fov_selection_integration_plan.md``.
-        """
-        prescan_channel = fov_cfg.get("prescan_channel", "BF - Oblique")
-        prescan_seq = _build_prescan_sequence(sequence, prescan_channel)
-
-        prescan_output = None
-        if fov_cfg.get("save_prescan"):
-            prescan_output = output_dir / f"{name}_prescan.ome.zarr"
-
-        logger.info(
-            "FOV selection: pre-scan run on '%s' (%d candidate FOVs); output=%s",
-            prescan_channel,
-            len(prescan_seq.stage_positions),
-            prescan_output or "discarded",
-        )
-        self._run_mda(prescan_seq, prescan_output, write_summary=prescan_output is not None)
-
-        good = list(self._fov_good_names)
-        logger.info(
-            "FOV selection: %d/%d FOVs good: %s",
-            len(good),
-            len(prescan_seq.stage_positions),
-            good,
-        )
-        if not good:
-            logger.warning("FOV selection: no good FOVs; skipping the timelapse run.")
-            return
-
-        timelapse_seq = _build_timelapse_sequence(sequence, good)
-        logger.info("FOV selection: timelapse run on %d good FOVs", len(good))
-        self._run_mda(timelapse_seq, data_path, write_summary=True)
         logger.info("Acquisition completed successfully")
 
     def _run_mda(
@@ -620,98 +608,6 @@ class MantisEngine(MDAEngine):
             dimension_overrides={"z": {"chunk_size": min(512, sequence.sizes["z"])}},
             overwrite=False,
         )
-
-
-def _enabled_fov_config(sequence: MDASequence) -> dict | None:
-    """Return the ``fov_selection`` metadata block when enabled, else ``None``."""
-    meta = sequence.metadata.get("mantis", {}) if sequence.metadata else {}
-    fov_cfg = meta.get("fov_selection")
-    if fov_cfg and fov_cfg.get("enabled"):
-        return fov_cfg
-    return None
-
-
-def _build_prescan_sequence(sequence: MDASequence, prescan_channel: str) -> MDASequence:
-    """Pre-scan sequence: ``prescan_channel`` only, one timepoint, all candidates.
-
-    Keeps the candidate ``stage_positions`` and ``z_plan`` (full z is needed for
-    virtual-staining quality) and ``fov_selection`` metadata (so
-    ``setup_sequence`` builds the ``FovSelection`` coordinator).
-    """
-    channels = [c for c in sequence.channels if c.config == prescan_channel]
-    if not channels:
-        raise ValueError(
-            f"FOV selection prescan_channel {prescan_channel!r} is not one of the "
-            f"acquisition channels {[c.config for c in sequence.channels]}."
-        )
-    return sequence.replace(channels=channels, time_plan={"loops": 1, "interval": 0})
-
-
-def _build_timelapse_sequence(sequence: MDASequence, good_names: list[str]) -> MDASequence:
-    """Timelapse sequence: good FOVs only, ``fov_selection`` disabled.
-
-    Uses the original ``time_plan`` as-is (``loops`` is the timelapse point count;
-    the pre-scan is its own run, so there is no ``+1``). Disabling
-    ``fov_selection`` in the metadata makes ``setup_sequence`` build no
-    coordinator for this run.
-    """
-    good_positions = _filter_good_positions(sequence, good_names)
-    meta = copy.deepcopy(sequence.metadata) if sequence.metadata else {}
-    fov_cfg = meta.get("mantis", {}).get("fov_selection")
-    if fov_cfg is not None:
-        fov_cfg["enabled"] = False
-    return sequence.replace(stage_positions=good_positions, metadata=meta)
-
-
-def _row_index_to_letter(index: int) -> str:
-    """Zero-based row index -> name (A, B, ..., Z, AA, ...), matching useq."""
-    name = ""
-    while index >= 0:
-        name = chr(index % 26 + 65) + name
-        index = index // 26 - 1
-    return name
-
-
-def _filter_good_positions(sequence: MDASequence, good_names: list[str]) -> list:
-    """Candidate positions whose name is in ``good_names`` (order preserved).
-
-    Iterating ``sequence.stage_positions`` yields expanded ``AbsolutePosition``
-    objects that carry ``plate_row``/``plate_col``, so the filtered list still
-    produces a proper HCS OME-Zarr for the good FOVs. Two adjustments are made so
-    the rebuilt explicit list matches what the ``WellPlatePlan`` path would emit:
-
-    * integer plate coordinates are converted to strings (``1 -> "B"``,
-      ``3 -> "4"``) -- useq forbids a field-suffixed name on a standalone position
-      with *integer* plate coords, but accepts an explicit name with *string* ones;
-    * the useq FOV name (e.g. ``"B4_0000"``) is reduced to the per-well field name
-      (``"0000"``) -- the well's image path must be alphanumeric (iohub rejects the
-      underscore), and this is exactly what ome-writers' WellPlatePlan builder uses.
-
-    The ReplayCamera maps positions by ``plate_row``/``plate_col`` and per-well
-    order, not by name, so the rename does not affect offline replay.
-    """
-    good = set(good_names)
-    out = []
-    for idx, pos in enumerate(sequence.stage_positions):
-        if (pos.name or f"p{idx}") not in good:
-            continue
-        if isinstance(pos.plate_row, int) and isinstance(pos.plate_col, int):
-            row_letter = _row_index_to_letter(pos.plate_row)
-            col_label = str(pos.plate_col + 1)
-            well_name = f"{row_letter}{col_label}"
-            field_name = pos.name or ""
-            if field_name.startswith(f"{well_name}_"):
-                field_name = field_name[len(well_name) + 1 :]
-            field_name = "".join(c for c in field_name if c.isalnum()) or f"{idx:04d}"
-            pos = pos.model_copy(
-                update={
-                    "plate_row": row_letter,
-                    "plate_col": col_label,
-                    "name": field_name,
-                }
-            )
-        out.append(pos)
-    return out
 
 
 def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
