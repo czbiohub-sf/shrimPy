@@ -23,6 +23,7 @@ from __future__ import annotations
 import copy
 import logging
 import threading
+import time
 
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
@@ -123,6 +124,11 @@ class FovSelection:
         # read from the acquisition thread -> guarded by a lock.
         self._verdicts: dict[str, tuple[float, bool]] = {}
         self._verdicts_lock = threading.Lock()
+
+        # Timing: when each FOV's z-stack finished acquiring (set in
+        # on_frame_ready), used to measure stack-complete -> verdict latency.
+        self._stack_done_at: dict[str, float] = {}
+        self._decision_latencies: list[float] = []
 
         # Single-worker executor with at most one in-flight decision, so only
         # one FOV's frames are held past the acquisition of the next stack.
@@ -325,6 +331,9 @@ class FovSelection:
 
         if len(self._frames[tp]) >= self._expected_slices:
             frames = self._frames.pop(tp)
+            # Stamp the moment the z-stack finished acquiring, so _record can
+            # measure the acquired -> good/bad-decision latency for this FOV.
+            self._stack_done_at[self._names[p_idx]] = time.monotonic()
             self._on_position_complete(p_idx, self._names[p_idx], frames)
 
     def _on_position_complete(self, p_idx: int, name: str, frames: list[np.ndarray]) -> None:
@@ -371,8 +380,30 @@ class FovSelection:
     def _record(self, name: str, proba: float, good: bool) -> None:
         with self._verdicts_lock:
             self._verdicts[name] = (float(proba), bool(good))
+        started = self._stack_done_at.pop(name, None)
+        latency = time.monotonic() - started if started is not None else None
+        if latency is not None:
+            self._decision_latencies.append(latency)
         logger.info(
-            "FOV selection: %s -> proba=%.3f %s", name, proba, "GOOD" if good else "bad"
+            "FOV selection: %s -> proba=%.3f %s%s",
+            name,
+            proba,
+            "GOOD" if good else "bad",
+            f" (acquired->decision {latency:.1f}s)" if latency is not None else "",
+        )
+
+    def _log_latency_summary(self) -> None:
+        """Log the average acquired-stack -> good/bad-decision latency."""
+        lat = self._decision_latencies
+        if not lat:
+            return
+        logger.info(
+            "FOV selection: acquired->decision latency avg %.1fs over %d FOVs "
+            "(min %.1fs, max %.1fs)",
+            sum(lat) / len(lat),
+            len(lat),
+            min(lat),
+            max(lat),
         )
 
     def drain(self, timeout: float = 600) -> None:
@@ -407,6 +438,7 @@ class FovSelection:
     def shutdown(self) -> None:
         """Finish any in-flight decision and shut down the worker + executor."""
         self._await_pending()
+        self._log_latency_summary()
         if self._worker is not None:
             self._worker.shutdown()
             self._worker = None
