@@ -17,6 +17,7 @@ from shrimpy.fov_selection.sequences import (
     _filter_good_positions,
     build_prescan_sequence,
     build_timelapse_sequence,
+    expand_candidate_fovs,
     fov_selection_config,
 )
 
@@ -48,6 +49,33 @@ def _fov_cfg(**overrides) -> dict:
         "fov_selection_channel": "BF - Oblique",
         "prescan_mda": {
             "stage_positions": PLATE,
+            "time_plan": {"loops": 1, "interval": 0},
+            "z_plan": {"top": 1, "bottom": -1, "step": 1},  # 3 slices
+            "channels": [{"config": "BF - Oblique", "group": "Channel"}],
+        },
+    }
+    cfg.update(overrides)
+    return cfg
+
+
+# Candidate FOVs as free-XY centers + a top-level grid_plan (no plate layout):
+# two centers, each with a 2x2 FOV grid -> 8 candidates named "<center>_<g>".
+def _grid_fov_cfg(**overrides) -> dict:
+    """FOV-selection block whose pre-scan uses explicit positions + a grid_plan."""
+    cfg = {
+        "enabled": True,
+        "fov_selection_channel": "BF - Oblique",
+        "prescan_mda": {
+            "stage_positions": [
+                {"x": 21080.0, "y": 24030.0, "z": 5.0, "name": "site0"},
+                {"x": 100.0, "y": 200.0},  # unnamed -> "p1"
+            ],
+            "grid_plan": {
+                "rows": 2,
+                "columns": 2,
+                "fov_height": 180.0,
+                "fov_width": 180.0,
+            },
             "time_plan": {"loops": 1, "interval": 0},
             "z_plan": {"top": 1, "bottom": -1, "step": 1},  # 3 slices
             "channels": [{"config": "BF - Oblique", "group": "Channel"}],
@@ -216,3 +244,86 @@ def test_timelapse_positions_produce_readable_hcs_plate():
         ("B", "4", "0000"),
         ("B", "5", "0000"),
     ]
+
+
+# ---------------------------------------------------------------------------
+# grid_plan (free-XY) candidate style
+# ---------------------------------------------------------------------------
+
+
+def test_prescan_grid_plan_expands_to_one_position_per_fov():
+    # A top-level grid_plan must be flattened so each FOV is its own position
+    # (its own p_idx), not left on useq's separate `g` axis.
+    seq = _sequence(metadata={"mantis": {"fov_selection": _grid_fov_cfg()}})
+    ps = build_prescan_sequence(seq, fov_selection_config(seq))
+
+    assert ps.grid_plan is None  # grid axis collapsed into positions
+    assert ps.sizes["p"] == 8  # 2 centers x 2x2 grid
+    assert ps.sizes["g"] == 0
+    # names are unique and derive from the center (unnamed center -> "p1")
+    names = [p.name for p in ps.stage_positions]
+    assert names == [f"site0_{g:04d}" for g in range(4)] + [f"p1_{g:04d}" for g in range(4)]
+    assert len(set(names)) == len(names)
+
+
+def test_expand_candidate_fovs_absolute_xy_and_inherited_z():
+    seq = _sequence(metadata={"mantis": {"fov_selection": _grid_fov_cfg()}})
+    ps = build_prescan_sequence(seq, fov_selection_config(seq))
+    by_name = {p.name: p for p in ps.stage_positions}
+
+    # 180 um FOV, 2x2 grid centered on (21080, 24030): +/-90 um in each axis.
+    assert (by_name["site0_0000"].x, by_name["site0_0000"].y) == (20990.0, 24120.0)
+    assert (by_name["site0_0003"].x, by_name["site0_0003"].y) == (20990.0, 23940.0)
+    # z is inherited from the center; the unnamed center had no z.
+    assert by_name["site0_0000"].z == 5.0
+    assert by_name["p1_0000"].z is None
+    # no plate layout for the free-XY style
+    assert by_name["site0_0000"].plate_row is None
+
+
+def test_grid_style_good_positions_pass_through_filter_unchanged():
+    # Without plate coords the good FOVs are kept verbatim (name + XY), producing
+    # a flat, non-HCS list for the timelapse run.
+    seq = _sequence(metadata={"mantis": {"fov_selection": _grid_fov_cfg()}})
+    ps = build_prescan_sequence(seq, fov_selection_config(seq))
+    good = _filter_good_positions(ps, ["site0_0001", "p1_0003"])
+
+    assert [(g.name, g.x, g.y, g.plate_row) for g in good] == [
+        ("site0_0001", 21170.0, 24120.0, None),
+        ("p1_0003", 10.0, 110.0, None),
+    ]
+
+
+def test_wellplate_style_is_not_expanded_by_grid_helper():
+    # The WellPlatePlan path already expands per-FOV; build_prescan_sequence must
+    # leave it as a WellPlatePlan (with plate_row/col) rather than flattening it.
+    seq = _sequence()
+    ps = build_prescan_sequence(seq, fov_selection_config(seq))
+    assert ps.grid_plan is None
+    assert all(p.plate_row is not None for p in ps.stage_positions)
+
+
+def test_explicit_positions_no_grid_pass_through():
+    # A plain explicit list with no grid_plan is not expanded by build_prescan.
+    cfg = _grid_fov_cfg()
+    cfg["prescan_mda"].pop("grid_plan")
+    seq = _sequence(metadata={"mantis": {"fov_selection": cfg}})
+    ps = build_prescan_sequence(seq, fov_selection_config(seq))
+    assert ps.grid_plan is None
+    assert ps.sizes["p"] == 2  # the two centers, unexpanded
+
+
+def test_expand_candidate_fovs_unit():
+    # Direct unit check of the expansion helper: 1 center x 2x2 grid -> 4 FOVs.
+    seq = MDASequence(
+        stage_positions=[{"x": 0.0, "y": 0.0, "name": "c"}],
+        grid_plan={"rows": 2, "columns": 2, "fov_height": 180.0, "fov_width": 180.0},
+    )
+    fovs = expand_candidate_fovs(seq)
+    assert [f.name for f in fovs] == ["c_0000", "c_0001", "c_0002", "c_0003"]
+    assert {(f.x, f.y) for f in fovs} == {
+        (-90.0, 90.0),
+        (90.0, 90.0),
+        (90.0, -90.0),
+        (-90.0, -90.0),
+    }

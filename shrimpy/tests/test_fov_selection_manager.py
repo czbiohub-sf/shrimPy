@@ -148,20 +148,32 @@ def test_channels_type_defaults_to_vs_and_requires_vs_step():
 
 
 def test_channels_type_vs_without_vs_step_raises():
-    meta = {**META, "fov_selection_channels_type": "vs",
-            "preprocessing": ["deskew", "phase", "sum_projection", "segmentation"]}
+    meta = {
+        **META,
+        "fov_selection_channels_type": "vs",
+        "preprocessing": ["deskew", "phase", "sum_projection", "segmentation"],
+    }
     with pytest.raises(ValueError, match="requires a 'vs' step"):
-        FovSelection.from_metadata(meta, SEQUENCE, pixel_size_um=0.1, decide_fn=_good_if_positive)
+        FovSelection.from_metadata(
+            meta, SEQUENCE, pixel_size_um=0.1, decide_fn=_good_if_positive
+        )
 
 
 def test_channels_type_fluor_does_not_require_vs_step():
-    meta = {**META, "fov_selection_channels_type": "fluor",
-            "preprocessing": ["deskew", "phase", "sum_projection", "segmentation"]}
-    fov = FovSelection.from_metadata(meta, SEQUENCE, pixel_size_um=0.1, decide_fn=_good_if_positive)
+    meta = {
+        **META,
+        "fov_selection_channels_type": "fluor",
+        "preprocessing": ["deskew", "phase", "sum_projection", "segmentation"],
+    }
+    fov = FovSelection.from_metadata(
+        meta, SEQUENCE, pixel_size_um=0.1, decide_fn=_good_if_positive
+    )
     assert fov is not None
 
 
 def test_channels_type_invalid_raises():
     meta = {**META, "fov_selection_channels_type": "brightfield"}
     with pytest.raises(ValueError, match="must be one of"):
-        FovSelection.from_metadata(meta, SEQUENCE, pixel_size_um=0.1, decide_fn=_good_if_positive)
+        FovSelection.from_metadata(
+            meta, SEQUENCE, pixel_size_um=0.1, decide_fn=_good_if_positive
+        )

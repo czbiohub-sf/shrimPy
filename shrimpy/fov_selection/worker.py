@@ -193,7 +193,7 @@ def _worker_loop(
     log = logging.getLogger("shrimpy.fov_selection.worker")
 
     try:
-        from shrimpy.fov_selection import pipeline as P
+        from shrimpy.fov_selection import pipeline
         from shrimpy.preprocessing import build_preprocessor
 
         log.info("FOV-selection worker: initializing for shape %s...", zyx_shape)
@@ -211,8 +211,8 @@ def _worker_loop(
                 "fov_selection.reconstruction produced no preprocessor; a "
                 "'deskew'/'phase'/'vs' pipeline is required to make nuclei/membrane."
             )
-        cellpose = P.load_cellpose_model(segmentation)
-        model = P.load_fov_model(model_path)
+        cellpose = pipeline.load_cellpose_model(segmentation)
+        model = pipeline.load_fov_model(model_path)
 
         output_queue.put({"type": "ready"})
         log.info("FOV-selection worker: reconstruction + Cellpose + tree ready")
@@ -246,7 +246,7 @@ def _worker_loop(
                 bf_zyx.shape[0],
             )
             try:
-                result = P.decide_fov(
+                result = pipeline.decide_fov(
                     preprocessor,
                     cellpose,
                     model,
@@ -337,7 +337,9 @@ def _write_decision_artifacts(
     _append_summary_row(debug_dir, name, proba, good, artifacts.get("features"))
 
 
-def _append_summary_row(debug_dir: Path, name: str, proba: float, good: bool, features) -> None:
+def _append_summary_row(
+    debug_dir: Path, name: str, proba: float, good: bool, features
+) -> None:
     """Append one FOV's row (name, proba, good, + all features) to fov_summary.csv.
 
     Uses pandas concat so FOVs with different feature columns (e.g. no membrane

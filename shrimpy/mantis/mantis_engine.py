@@ -559,7 +559,9 @@ class MantisEngine(MDAEngine):
             # those. Sequence building lives in shrimpy/fov_selection/sequences.py.
             prescan_seq = build_prescan_sequence(sequence, fov_cfg)
             prescan_output = prescan_output_path(fov_cfg, output_dir, name)
-            self._run_mda(prescan_seq, prescan_output, write_summary=prescan_output is not None)
+            self._run_mda(
+                prescan_seq, prescan_output, write_summary=prescan_output is not None
+            )
 
             good = list(self._fov_good_names)
             if not good:
@@ -611,7 +613,12 @@ class MantisEngine(MDAEngine):
 
 
 def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
-    """Get next available acquisition name with incremented index.
+    """Return ``name`` if free, else ``name`` with the next free ``_<idx>`` suffix.
+
+    Guards an acquisition from crashing (the zarr writer refuses to overwrite) or
+    silently clobbering a previous experiment: the bare ``name`` is used as-is
+    when ``<name>.ome.zarr`` does not yet exist in ``output_dir``; otherwise a
+    ``_1``, ``_2``, ... suffix is appended until an unused name is found.
 
     Parameters
     ----------
@@ -623,12 +630,14 @@ def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
     Returns
     -------
     str
-        Acquisition name with index (e.g., "acq_1", "acq_2", etc.).
+        A name whose ``<name>.ome.zarr`` does not exist (e.g. ``acq``, ``acq_1``,
+        ``acq_2``, ...).
     """
+    if not (output_dir / f"{name}.ome.zarr").exists():
+        return name
     idx = 1
     while True:
         indexed_name = f"{name}_{idx}"
-        data_path = output_dir / f"{indexed_name}.ome.zarr"
-        if not data_path.exists():
+        if not (output_dir / f"{indexed_name}.ome.zarr").exists():
             return indexed_name
         idx += 1

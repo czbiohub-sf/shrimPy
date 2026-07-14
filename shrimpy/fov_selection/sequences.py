@@ -15,7 +15,7 @@ import copy
 
 from pathlib import Path
 
-from useq import MDASequence
+from useq import MDASequence, Position, WellPlatePlan
 
 
 def fov_selection_config(sequence: MDASequence) -> dict:
@@ -62,6 +62,13 @@ def build_prescan_sequence(sequence: MDASequence, fov_cfg: dict) -> MDASequence:
     metadata so ``setup_sequence`` builds the ``FovSelection`` coordinator and
     configures the scope the same way as the timelapse run.
 
+    Candidate FOVs may be defined in either useq style: a ``WellPlatePlan``
+    (select wells + a per-well FOV grid; each FOV expands to its own position with
+    ``plate_row``/``plate_col``), or explicit ``stage_positions`` plus a top-level
+    ``grid_plan`` (a grid around each free XY center, no plate layout). The grid
+    style is normalized to one position per FOV via :func:`expand_candidate_fovs`
+    so both styles feed the same per-FOV decision path.
+
     Raises
     ------
     ValueError
@@ -96,6 +103,18 @@ def build_prescan_sequence(sequence: MDASequence, fov_cfg: dict) -> MDASequence:
             f"pre-scan channels {channel_configs}."
         )
 
+    # A top-level grid_plan keeps its FOVs on a separate `g` axis while the
+    # selection pipeline scores one candidate FOV per `stage_position`. Flatten
+    # the grid into explicit per-FOV positions (WellPlatePlan already expands
+    # per-FOV, so it is left untouched).
+    if (
+        not isinstance(prescan_seq.stage_positions, WellPlatePlan)
+        and prescan_seq.grid_plan is not None
+    ):
+        prescan_seq = prescan_seq.replace(
+            stage_positions=expand_candidate_fovs(prescan_seq), grid_plan=None
+        )
+
     # Inject the fov_selection config + shared mantis hardware settings into the
     # pre-scan metadata. Drop prescan_mda from the injected block so the coordinator
     # doesn't carry a redundant nested copy of itself.
@@ -111,6 +130,38 @@ def build_prescan_sequence(sequence: MDASequence, fov_cfg: dict) -> MDASequence:
             prescan_mantis[key] = copy.deepcopy(parent_mantis[key])
 
     return prescan_seq.replace(metadata=prescan_meta)
+
+
+def expand_candidate_fovs(prescan_seq: MDASequence) -> list[Position]:
+    """Flatten explicit ``stage_positions`` + a top-level ``grid_plan`` into one
+    :class:`useq.Position` per candidate FOV.
+
+    useq keeps ``grid_plan`` FOVs on a separate ``g`` axis while the FOV-selection
+    pipeline treats each candidate FOV as its own ``stage_position`` (its own
+    ``p_idx`` + name -- see ``fov_selection.manager``). This expands each center's
+    grid into distinct positions -- absolute XY from useq's event iterator, ``z``
+    inherited from the center, names ``"{center}_{g:04d}"`` -- so the free-XY grid
+    style is scored and filtered exactly like the ``WellPlatePlan`` style. The
+    expanded positions carry no ``plate_row``/``plate_col`` (there is no plate),
+    so their good FOVs fall through the non-plate branch of
+    :func:`_filter_good_positions` and produce a flat (non-HCS) OME-Zarr.
+    """
+    centers = list(prescan_seq.stage_positions)
+    grid = MDASequence(stage_positions=centers, grid_plan=prescan_seq.grid_plan)
+    out: list[Position] = []
+    for event in grid.iter_events():
+        p_idx = event.index.get("p", 0)
+        g_idx = event.index.get("g", 0)
+        base = centers[p_idx].name or f"p{p_idx}"
+        out.append(
+            Position(
+                x=event.x_pos,
+                y=event.y_pos,
+                z=centers[p_idx].z,
+                name=f"{base}_{g_idx:04d}",
+            )
+        )
+    return out
 
 
 def build_timelapse_sequence(

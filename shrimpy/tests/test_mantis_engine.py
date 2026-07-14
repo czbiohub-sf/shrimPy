@@ -54,31 +54,33 @@ def _make_sequence(mantis_meta: dict | None = None) -> MDASequence:
 
 
 def test_next_name_first_acquisition_in_empty_dir(tmp_path):
-    # Empty directory → index starts at 1
+    # Empty directory → the bare name is used as-is (no suffix appended)
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq"
+
+
+def test_next_name_appends_suffix_when_bare_name_taken(tmp_path):
+    # acq.ome.zarr already exists → append the first free suffix, acq_1
+    (tmp_path / "acq.ome.zarr").mkdir()
     assert _get_next_acquisition_name(tmp_path, "acq") == "acq_1"
 
 
-def test_next_name_skips_existing_index(tmp_path):
-    # acq_1.ome.zarr already exists → should return acq_2
-    (tmp_path / "acq_1.ome.zarr").mkdir()
-    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"
-
-
 def test_next_name_skips_multiple_existing(tmp_path):
-    # acq_1 through acq_3 exist → should return acq_4
+    # acq + acq_1 through acq_3 exist → should return acq_4
+    (tmp_path / "acq.ome.zarr").mkdir()
     for i in range(1, 4):
         (tmp_path / f"acq_{i}.ome.zarr").mkdir()
     assert _get_next_acquisition_name(tmp_path, "acq") == "acq_4"
 
 
 def test_next_name_different_base_names_dont_collide(tmp_path):
-    # "experiment_1.ome.zarr" exists, but asking for "acq" → acq_1
-    (tmp_path / "experiment_1.ome.zarr").mkdir()
-    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_1"
+    # "experiment.ome.zarr" exists, but asking for "acq" → bare "acq"
+    (tmp_path / "experiment.ome.zarr").mkdir()
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq"
 
 
 def test_next_name_gap_in_indices(tmp_path):
-    # acq_1 exists, acq_2 missing, acq_3 exists → returns acq_2
+    # acq + acq_1 exist, acq_2 missing, acq_3 exists → returns acq_2
+    (tmp_path / "acq.ome.zarr").mkdir()
     (tmp_path / "acq_1.ome.zarr").mkdir()
     (tmp_path / "acq_3.ome.zarr").mkdir()
     assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"

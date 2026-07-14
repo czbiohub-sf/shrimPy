@@ -105,9 +105,31 @@ z_plan step and injected (single source of truth, never in the config).
 - `fov_selection_channels` — channels the decision is computed on (raw or
   preprocessed; here VS `nuclei`/`membrane`).
 - `prescan_mda` — a complete, valid `MDASequence` (own `stage_positions`,
-  `z_plan`, `time_plan`, `channels`) run first over all candidates. Its
-  `stage_positions` is a useq **`WellPlatePlan`** (select wells + a per-well FOV
-  grid) → proper HCS OME-Zarr (`plate_row`/`plate_col` + slash-free field names).
+  `z_plan`, `time_plan`, `channels`) run first over all candidates. Candidate FOVs
+  may be given in **either** useq style:
+  - a **`WellPlatePlan`** (select wells + a per-well FOV grid) → each FOV expands
+    to its own position with `plate_row`/`plate_col` + slash-free field names →
+    proper HCS OME-Zarr. Use when the sample is a well plate.
+    ```yaml
+    stage_positions:
+      a1_center_xy: [21080, 24030]
+      plate: {rows: 4, columns: 6, name: 24-well, well_size: [15.6, 15.6], well_spacing: [19.0, 19.0]}
+      selected_wells: [[1, 1, 1], [2, 3, 4]]
+      well_points_plan: {rows: 7, columns: 7, fov_height: 180.0, fov_width: 180.0}
+    ```
+  - explicit **`stage_positions` + a top-level `grid_plan`** — a grid around each
+    free XY center, no plate layout required. `build_prescan_sequence` calls
+    `expand_candidate_fovs` to flatten the `grid_plan` (which useq keeps on a
+    separate `g` axis) into one position per FOV, named `"<center>_<g>"`
+    (unnamed centers → `"p<idx>"`); the good FOVs then produce a flat (non-HCS)
+    OME-Zarr. Use when candidates are arbitrary points not tied to a plate.
+    ```yaml
+    stage_positions:
+      - {x: 21080, y: 24030, name: site0}
+    grid_plan: {rows: 3, columns: 3, fov_height: 180.0, fov_width: 180.0}
+    ```
+  Both styles feed the same per-FOV decision path (one candidate FOV = one
+  `p_idx` + unique name).
 - `require_gpu` (bool, default true) — fail if reconstruction is not on GPU.
 - `preprocessing` — ordered step list, e.g.
   `['deskew','phase','vs','sum_projection','segmentation']`. Reconstruction steps
@@ -162,11 +184,41 @@ drives real stage coordinates and there is one naming system.
 - **Test on a full dataset.** Run over the whole plate (all 147 positions) rather
   than the 3-position demo — validate memory (one-in-flight backpressure),
   wall-clock, and the HCS output at scale.
+- **Wire the GUI to `acquire()`** so FOV selection is available from the ▶ Run
+  Acquisition button, not just programmatically (see "Known gap" below). Needs a
+  worker thread since `acquire()` is blocking.
 
-## Known issue (not blocking)
+## Known gap — GUI run path bypasses `acquire()`
 
-`make format` reports ~25 pre-existing `ruff` naming complaints (e.g. `X`/`Xi`
-in `pipeline.py:predict_good`, `import pipeline as P` in `worker.py`) in code
-that predates the M4 work — the same 25 appear with our changes stashed, so they
-are not introduced here. The auto-formatting step still runs; only the style
-*check* fails. Left as-is for now (small mechanical renames when we get to it).
+FOV selection lives entirely in `MantisEngine.acquire()`, which orchestrates the
+two sequential runs (pre-scan → timelapse). But the GUI's **▶ Run Acquisition**
+button (`MantisAcquisitionWidget._run_acquisition`) does **not** call `acquire()`
+— it drives a single `self._mmc.run_mda(sequence, output=..., block=False)`
+directly (so the GUI stays responsive). A single `run_mda` fires the engine's
+`setup_sequence`/`teardown_sequence` hooks but runs the sequence **once**; it
+never builds `prescan_seq`/`timelapse_seq` or reads `good_position_names()`.
+
+Consequence: **enabling `metadata.mantis.fov_selection` from the GUI does nothing
+adaptive** — the single run just images whatever `stage_positions` the sequence
+carries (which for a FOV-selection config is empty). FOV selection currently only
+works via a programmatic `acquire()` call, not the GUI.
+
+The `_get_next_acquisition_name` de-duplication *is* wired into both paths: the
+GUI resolves a unique `<name>.ome.zarr` in `_resolve_output_path()` before
+`run_mda`, and `acquire()` calls the same helper. That part is consistent; only
+the two-run orchestration is missing from the GUI.
+
+To close the gap, route `_run_acquisition` through `acquire(output_dir, name,
+sequence)` when `fov_selection.enabled`. `acquire()` is **blocking** (it calls
+`core.mda.run()` synchronously, twice), so it must run on a worker thread (e.g.
+`QThread`/`concurrent.futures`) to keep the GUI responsive, with the existing
+`sequenceStarted`/`sequenceFinished` signals driving the status/pause UI. Left
+out of M4.1 scope; tracked here for M5.
+
+## Style
+
+The `ruff` naming complaints that previously affected the FOV-selection files are
+resolved: `predict_good` uses `x`/`x_imputed` (was `X`/`Xi`, `N806`) and
+`worker.py`/`test_fov_selection_pipeline.py` import `pipeline` directly (was
+`import pipeline as P`, `N812`). The pre-commit `ruff` + `ruff-format` hooks pass
+on the committed files.

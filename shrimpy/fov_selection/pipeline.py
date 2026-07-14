@@ -139,20 +139,23 @@ def _parse_needed_features(needed: list[str]) -> dict[tuple[str, str, str], set[
 def _cheap_features(mask: np.ndarray, px_um: float, keys: set[str]) -> dict[str, float]:
     """Aggregate features for ``keys`` from the mask alone (no regionprops).
 
-    Numerically identical to ``group_features`` for the cheap keys. Returns an
-    empty dict when the mask has no objects, matching the full path (no object
-    rows -> feature absent -> NaN -> imputed downstream).
+    Numerically identical to ``group_features`` for the cheap keys. An empty mask
+    yields genuine zeros (``object_count=0``, ``coverage_frac=0``,
+    ``objects_per_10um2=0``): "no objects" is a real measurement, not missing
+    data, so it is reported faithfully for the model to act on -- NOT dropped to
+    NaN, which the median imputer would then fill with a typical FOV's value and
+    make an empty FOV look good.
     """
     m = np.asarray(mask)
     h, w = m.shape
     n = int((np.unique(m) != 0).sum())
-    if n == 0:
-        return {}
     out: dict[str, float] = {}
     if "object_count" in keys:
         out["object_count"] = n
     if "objects_per_10um2" in keys:
-        out["objects_per_10um2"] = 10.0 * n / (w * h * px_um * px_um) if px_um else float("nan")
+        out["objects_per_10um2"] = (
+            10.0 * n / (w * h * px_um * px_um) if px_um else float("nan")
+        )
     if "coverage_frac" in keys:
         out["coverage_frac"] = float(np.count_nonzero(m) / (w * h))
     return out
@@ -210,11 +213,21 @@ def fov_feature_matrix(
                 projection_type=projection,
             )
             if not rows:
+                # No objects segmented: faithfully report the density features as a
+                # real zero (object_count=0, coverage_frac=0, objects_per_10um2=0) so
+                # the model can act on an empty FOV, instead of dropping the organelle
+                # entirely -> every column NaN -> median-imputed to a typical FOV ->
+                # empty FOV misclassified good. Shape/spatial features are genuinely
+                # undefined with no objects, so they stay absent -> NaN -> imputed.
                 logger.warning(
-                    "FOV selection: no %s objects segmented; features -> NaN", organelle
+                    "FOV selection: no %s objects segmented; density features -> 0, "
+                    "shape/spatial features -> NaN",
+                    organelle,
                 )
-                continue
-            agg = group_features(pd.DataFrame(rows))
+                cheap = keys_needed if keys_needed is not None else CHEAP_FEATURE_KEYS
+                agg = _cheap_features(masks[organelle], px_um, set(cheap) & CHEAP_FEATURE_KEYS)
+            else:
+                agg = group_features(pd.DataFrame(rows))
 
         for k, v in agg.items():
             if keys_needed is None or k in keys_needed:
@@ -326,8 +339,8 @@ def predict_good(model: dict, matrix_df, threshold: float = 0.5):
     the model's median imputer (same as the offline predictor).
     """
     features = model["features"]
-    X = matrix_df.reindex(columns=features)
-    Xi = model["imputer"].transform(X)
-    proba = model["tree"].predict_proba(Xi)[:, 1]
+    x = matrix_df.reindex(columns=features)
+    x_imputed = model["imputer"].transform(x)
+    proba = model["tree"].predict_proba(x_imputed)[:, 1]
     good = [bool(p >= threshold) for p in proba]
     return proba, good
