@@ -260,6 +260,7 @@ def decide_fov(
     threshold: float = 0.5,
     segmentation: dict | None = None,
     return_artifacts: bool = False,
+    return_stacks: bool = False,
     label: str = "",
 ) -> tuple[float, bool] | tuple[float, bool, dict]:
     """Run one FOV's good/bad decision end to end.
@@ -271,7 +272,11 @@ def decide_fov(
 
     When ``return_artifacts`` is set, also returns a dict with the per-channel 2D
     ``projections`` and label ``masks`` and the 1-row ``features`` DataFrame (used
-    by the worker to persist decision debug artifacts).
+    by the worker for the lightweight PNG/CSV debug artifacts). ``return_stacks``
+    (which implies ``return_artifacts``) additionally fills ``stacks`` with the
+    per-step 3D volumes (``deskew`` / ``phase`` intermediates + each VS target) for
+    the reconstruction OME-Zarr; it is kept separate because those volumes are
+    large and only the pre-scan reconstruction store needs them.
 
     Parameters
     ----------
@@ -304,12 +309,28 @@ def decide_fov(
     """
     pfx = f"[{label}] " if label else ""
     bf_zyx = np.asarray(bf_zyx)
-    channels = preprocessor(bf_zyx, label=label)  # {'nuclei', 'membrane', 'phase'}
+    # The per-step 3D intermediates (deskew / phase volumes) are only needed for
+    # the reconstruction store, which is expensive to build and write -- so pull
+    # them only when return_stacks is set. return_artifacts alone (projections /
+    # masks / features for the lightweight PNG/CSV debug) stays cheap.
+    channels = preprocessor(
+        bf_zyx, label=label, return_intermediates=return_stacks
+    )  # {'nuclei', 'membrane', 'phase', ('deskew')}
+
+    # Per-step 3D stacks for the reconstruction store (deskew, phase, and each VS
+    # target volume); only populated when return_stacks is set.
+    stacks: dict[str, np.ndarray] = {}
+    if return_stacks:
+        for key in ("deskew", "phase"):
+            if key in channels:
+                stacks[key] = _to_numpy(channels[key])
 
     projections: dict[str, np.ndarray] = {}
     masks: dict[str, np.ndarray] = {}
     for organelle in target_channels:
         vol = _to_numpy(channels[organelle])
+        if return_stacks:
+            stacks[organelle] = vol
         proj = project_zyx(vol, projection)
         projections[organelle] = proj
         try:
@@ -326,7 +347,12 @@ def decide_fov(
     )
     proba, good = predict_good(model, matrix, threshold)
     if return_artifacts:
-        artifacts = {"projections": projections, "masks": masks, "features": matrix}
+        artifacts = {
+            "stacks": stacks,
+            "projections": projections,
+            "masks": masks,
+            "features": matrix,
+        }
         return float(proba[0]), bool(good[0]), artifacts
     return float(proba[0]), bool(good[0])
 

@@ -7,8 +7,9 @@
 #                    completes it is reconstructed (deskew -> phase -> virtual
 #                    stain), projected, segmented, and scored by the trained tree
 #                    -- streamed via frameReady in a worker subprocess (torch/GPU
-#                    isolation, like DynaTrack). output=None (nothing written)
-#                    unless save_prescan.
+#                    isolation, like DynaTrack). The pre-scan run writes nothing
+#                    itself; when save_pre_scan_omezarr is set the worker writes the
+#                    per-step reconstruction to <name>_prescan.ome.zarr.
 #   RUN 2  timelapse this top-level MDASequence (full channels + z), on the FOVs
 #                    predicted "good" ONLY. Its `stage_positions` are EMPTY here
 #                    and filled at runtime from the good pre-scan FOVs.
@@ -171,8 +172,9 @@ metadata:
 
       # FOV selection decision
       # Debug outputs (off by default):
-      save_prescan: True   # write the pre-scan run to <name>_prescan.ome.zarr
-      save_decision: True  # per-FOV masks/features/goodness under <name>_fov_debug/
+      save_pre_scan_omezarr: True  # write the per-step reconstruction (deskew/phase/vs/
+                                   # projection/mask channels) to <name>_prescan.ome.zarr
+      save_decision: True  # per-FOV projection/mask PNGs + fov_summary.csv under <name>_fov_debug/
 
       # Acquired channel fed to reconstruction (must be one of prescan_mda.channels).
       fov_selection_channel: "BF - Oblique"

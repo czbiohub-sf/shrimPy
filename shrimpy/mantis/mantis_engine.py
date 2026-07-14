@@ -28,7 +28,6 @@ from shrimpy.fov_selection.sequences import (
     build_prescan_sequence,
     build_timelapse_sequence,
     fov_selection_config,
-    prescan_output_path,
 )
 
 # Get the logger instance (will be configured by the CLI entry point)
@@ -558,10 +557,10 @@ class MantisEngine(MDAEngine):
             # captured in teardown_sequence), then the timelapse images only
             # those. Sequence building lives in shrimpy/fov_selection/sequences.py.
             prescan_seq = build_prescan_sequence(sequence, fov_cfg)
-            prescan_output = prescan_output_path(fov_cfg, output_dir, name)
-            self._run_mda(
-                prescan_seq, prescan_output, write_summary=prescan_output is not None
-            )
+            # The pre-scan run writes nothing to disk itself: the decision streams
+            # via frameReady, and (when save_pre_scan_omezarr is set) the worker
+            # writes the per-step reconstruction to <name>_prescan.ome.zarr.
+            self._run_mda(prescan_seq, None, write_summary=False)
 
             good = list(self._fov_good_names)
             if not good:

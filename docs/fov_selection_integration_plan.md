@@ -28,9 +28,10 @@ RUN 2  TIMELAPSE    core.mda.run(timelapse_seq, output=<name>.ome.zarr)
   `metadata.mantis.fov_selection.prescan_mda` — own `stage_positions` (the
   candidates) and `z_plan` (may be a single 2D slice for fluorescence selection,
   independent of the timelapse). Must be a single timepoint (validated) and
-  image only `fov_selection_channel`. `output=None` writes nothing (unless
-  `save_prescan`); the decision still streams via `frameReady` (emitted
-  independent of the sink).
+  image only `fov_selection_channel`. The pre-scan run's MDA sink is always
+  `output=None` (it writes no raw store); the decision streams via `frameReady`
+  (emitted independent of the sink), and when `save_pre_scan_omezarr` is set the
+  worker writes the per-step reconstruction to `<name>_prescan.ome.zarr`.
 - Timelapse run: the top-level sequence, whose `stage_positions` are **empty**
   in the config and filled at runtime with the good FOVs — so there is no
   per-event gating. `time_plan.loops` = timelapse points (**no `+1`**).
@@ -138,10 +139,18 @@ z_plan step and injected (single source of truth, never in the config).
 - `segmentation` — switchable model + params (only `cellpose` today; defaults
   fall back to the batch script's training values).
 - `model` — trained FOV-goodness `.joblib` `path` + `threshold`.
-- `save_prescan` (bool) — write the pre-scan run to `<name>_prescan.ome.zarr`
-  instead of discarding it (`output=None`).
-- `save_decision` (bool) — write per-FOV debug artifacts (preprocessed FOV,
-  features CSV, goodness) to a debug dir next to the output.
+- `save_pre_scan_omezarr` (bool) — write the pre-scan **reconstruction** to
+  `<name>_prescan.ome.zarr` (HCS, one position per FOV) with **every
+  reconstruction stage as a separate 3D channel** — `deskew`, `phase`, one
+  `<ch>_vs` per virtual-stained target, plus the 2D `<ch>_projection` and
+  `<ch>_mask` broadcast across Z — so a viewer can scrub Z through each step and
+  see which stage went wrong. This replaces the old raw pre-scan store (the
+  pre-scan run no longer writes raw slices). The heavy per-step 3D stacks are only
+  built when this flag is on.
+- `save_decision` (bool) — write the lightweight per-FOV debug artifacts to a
+  `<name>_fov_debug/` dir next to the output: projection/mask PNGs (quick QC) and a
+  combined `fov_summary.csv` (name, proba, good, + features). Independent of
+  `save_pre_scan_omezarr`.
 - Top-level `stage_positions` — **empty** (`[]`); filled at runtime with the good
   pre-scan FOVs. Candidates are defined under `prescan_mda.stage_positions`.
 
@@ -164,7 +173,7 @@ drives real stage coordinates and there is one naming system.
   + `setup_event` gating); unified `shrimpy/preprocessing.py`; `WellPlatePlan`
   config + HCS output. Superseded by M4.
 - **M4.** Two sequential runs (pre-scan `output=None` + timelapse on good FOVs
-  only); candidates in top-level `stage_positions`; `save_prescan` +
+  only); candidates in top-level `stage_positions`; `save_pre_scan_omezarr` +
   `save_decision` flags; engine hooks simplified (no barrier/`SkipEvent`).
 - **M4.1 — IN PROGRESS.** Addressed Ivan's review: pre-scan is now its own
   `MDASequence` under `fov_selection.prescan_mda` (own z-plan → enables 2D /

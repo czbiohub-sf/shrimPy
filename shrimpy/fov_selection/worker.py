@@ -65,6 +65,7 @@ class FovSelectionWorker:
         zyx_shape: tuple[int, int, int],
         log_file_path: Path | None = None,
         debug_dir: Path | None = None,
+        recon_zarr_path: Path | None = None,
         require_gpu: bool = True,
     ) -> None:
         self._recon = recon
@@ -76,9 +77,13 @@ class FovSelectionWorker:
         self._px_um = px_um
         self._zyx_shape = zyx_shape
         self._log_file_path = log_file_path
-        # When set, per-FOV debug artifacts (projections, masks, features,
-        # decisions.csv) are written here (save_decision).
+        # When set, the lightweight per-FOV debug artifacts (projection/mask PNGs +
+        # fov_summary.csv) are written here (save_decision).
         self._debug_dir = debug_dir
+        # When set, the per-step reconstruction OME-Zarr (deskew / phase / vs /
+        # projection / mask channels, one position per FOV) is written to this path
+        # -- the <name>_prescan.ome.zarr store (save_pre_scan_omezarr).
+        self._recon_zarr_path = recon_zarr_path
         # Fail fast if the reconstruction can't run on a GPU (fov_selection.require_gpu).
         self._require_gpu = require_gpu
         self._process: mp.Process | None = None
@@ -106,6 +111,7 @@ class FovSelectionWorker:
                 self._output_queue,
                 self._log_file_path,
                 self._debug_dir,
+                self._recon_zarr_path,
                 self._require_gpu,
             ),
             daemon=True,
@@ -169,6 +175,7 @@ def _worker_loop(
     output_queue: mp.Queue,
     log_file_path: Path | None = None,
     debug_dir: Path | None = None,
+    recon_zarr_path: Path | None = None,
     require_gpu: bool = True,
 ) -> None:
     """Main loop for the FOV-selection worker process."""
@@ -246,6 +253,9 @@ def _worker_loop(
                 bf_zyx.shape[0],
             )
             try:
+                # Artifacts are needed for either debug output; the heavy per-step
+                # 3D stacks are needed only for the reconstruction store.
+                need_artifacts = debug_dir is not None or recon_zarr_path is not None
                 result = pipeline.decide_fov(
                     preprocessor,
                     cellpose,
@@ -256,12 +266,16 @@ def _worker_loop(
                     px_um=px_um,
                     threshold=threshold,
                     segmentation=segmentation,
-                    return_artifacts=debug_dir is not None,
+                    return_artifacts=need_artifacts,
+                    return_stacks=recon_zarr_path is not None,
                     label=name,
                 )
-                if debug_dir is not None:
+                if need_artifacts:
                     proba, good, artifacts = result
-                    _write_decision_artifacts(debug_dir, name, proba, good, artifacts)
+                    if recon_zarr_path is not None:
+                        _write_reconstruction_zarr(recon_zarr_path, p_idx, name, artifacts)
+                    if debug_dir is not None:
+                        _write_decision_artifacts(debug_dir, name, proba, good, artifacts)
                 else:
                     proba, good = result
                 elapsed = _time.monotonic() - t0
@@ -312,16 +326,19 @@ def _write_decision_artifacts(
     good: bool,
     artifacts: dict,
 ) -> None:
-    """Persist one FOV's decision artifacts (save_decision).
+    """Persist one FOV's lightweight decision artifacts (save_decision).
 
     Layout: all files live directly in ``<debug_dir>/`` (no per-FOV subfolders, so
     every FOV's images can be browsed together). Per FOV per target channel:
     ``<name>_<ch>_projection.png`` (grayscale, min/max stretched) and
-    ``<name>_<ch>_mask.png`` (colorized labels) for quick visual QC. One combined
-    ``<debug_dir>/fov_summary.csv`` gets a row per FOV -- ``name, proba, good``
-    followed by every feature column -- so all FOVs are viewable at a glance in one
-    file. Runs in the worker subprocess one FOV at a time, so the summary
-    read/append/write is unsynchronized-safe.
+    ``<name>_<ch>_mask.png`` (colorized labels) for quick visual QC without a zarr
+    viewer. One combined ``fov_summary.csv`` gets a row per FOV -- ``name, proba,
+    good`` followed by every feature column -- so all FOVs are viewable at a glance.
+
+    The full per-step 3D reconstruction is written separately as the pre-scan
+    OME-Zarr (see :func:`_write_reconstruction_zarr`, gated by
+    ``save_pre_scan_omezarr``). Runs in the worker subprocess one FOV at a time, so
+    the summary read/append/write is unsynchronized-safe.
     """
     from pathlib import Path as _Path
 
@@ -335,6 +352,110 @@ def _write_decision_artifacts(
         _save_label_png(debug_dir / f"{safe}_{channel}_mask.png", mask)
 
     _append_summary_row(debug_dir, name, proba, good, artifacts.get("features"))
+
+
+def _assemble_debug_channels(artifacts: dict) -> tuple[list[str], np.ndarray | None]:
+    """Stack every debug artifact into one ``(C, Z, Y, X)`` float32 volume.
+
+    Channel order (only those present are emitted, and the set is fixed by the
+    pipeline config so it is identical for every FOV in a run):
+
+        ``deskew``, ``phase``, ``<ch>_vs`` (per VS target),
+        ``<ch>_projection``, ``<ch>_mask``
+
+    The 3D ``deskew`` / ``phase`` / ``<ch>_vs`` stacks share one ``(Z, Y, X)`` (the
+    deskewed shape that phase and VS both operate on). The 2D projection and mask
+    are broadcast to that same Z (identical plane on every slice) so a single
+    channel axis lines them all up in one store. Labels are cast to float32 (a
+    single OME-Zarr array is one dtype); exact for label ids up to 2**24.
+    """
+    stacks = artifacts.get("stacks") or {}
+    projections = artifacts.get("projections") or {}
+    masks = artifacts.get("masks") or {}
+
+    reference = next((v for v in stacks.values() if getattr(v, "ndim", 0) == 3), None)
+    if reference is None:
+        return [], None
+    nz, ny, nx = reference.shape
+
+    names: list[str] = []
+    arrays: list[np.ndarray] = []
+
+    def _add_3d(name: str, vol: np.ndarray) -> None:
+        names.append(name)
+        arrays.append(np.asarray(vol, np.float32))
+
+    def _add_2d_broadcast(name: str, plane: np.ndarray) -> None:
+        plane = np.asarray(plane, np.float32)
+        names.append(name)
+        arrays.append(np.broadcast_to(plane, (nz, *plane.shape)))
+
+    for key in ("deskew", "phase"):
+        if key in stacks:
+            _add_3d(key, stacks[key])
+    for organelle in (k for k in stacks if k not in ("deskew", "phase")):
+        _add_3d(f"{organelle}_vs", stacks[organelle])
+    for organelle, proj in projections.items():
+        _add_2d_broadcast(f"{organelle}_projection", proj)
+    for organelle, mask in masks.items():
+        _add_2d_broadcast(f"{organelle}_mask", mask)
+
+    return names, np.stack(arrays, axis=0)
+
+
+def _write_reconstruction_zarr(
+    zarr_path: Path, p_idx: int, name: str, artifacts: dict
+) -> None:
+    """Append one FOV's reconstruction stages to the shared pre-scan HCS store.
+
+    Writes ``<name>_prescan.ome.zarr`` with one position per FOV (path
+    ``0/<p_idx>/<name>``) and the channels from :func:`_assemble_debug_channels` --
+    every reconstruction step (deskew / phase / vs volumes in 3D, plus the 2D
+    projection / mask broadcast across Z). Created on the first FOV (with the
+    channel names) and reopened read/write for each subsequent FOV; the worker
+    decides one FOV at a time, so no locking is needed.
+    """
+    channel_names, czyx = _assemble_debug_channels(artifacts)
+    if czyx is None:
+        logger.warning("FOV selection: no 3D stacks to write for %s; skipping zarr", name)
+        return
+
+    from pathlib import Path
+
+    from iohub.ngff import open_ome_zarr
+
+    nc, nz, ny, nx = czyx.shape
+    zarr_path = Path(zarr_path)
+    zarr_path.parent.mkdir(parents=True, exist_ok=True)
+    if zarr_path.exists():
+        store = open_ome_zarr(str(zarr_path), mode="r+")
+    else:
+        store = open_ome_zarr(
+            str(zarr_path),
+            layout="hcs",
+            mode="w",
+            channel_names=channel_names,
+            version="0.5",
+        )
+    try:
+        # iohub path parts must be alphanumeric (e.g. "B4_0000" -> "B40000").
+        pos_name = "".join(c for c in str(name) if c.isalnum()) or f"p{p_idx}"
+        pos = store.create_position("0", str(p_idx), pos_name)
+        image = pos.create_zeros(
+            "0",
+            shape=(1, nc, nz, ny, nx),
+            chunks=(1, 1, min(32, nz), ny, nx),
+            dtype=np.float32,
+        )
+        image[0] = czyx
+        logger.info(
+            "FOV selection: wrote pre-scan reconstruction for %s (channels=%s, zyx=%s)",
+            name,
+            channel_names,
+            (nz, ny, nx),
+        )
+    finally:
+        store.close()
 
 
 def _append_summary_row(

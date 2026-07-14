@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import copy
 
-from pathlib import Path
-
 from useq import MDASequence, Position, WellPlatePlan
 
 
@@ -26,17 +24,6 @@ def fov_selection_config(sequence: MDASequence) -> dict:
     """
     meta = sequence.metadata.get("mantis", {}) if sequence.metadata else {}
     return meta.get("fov_selection") or {}
-
-
-def prescan_output_path(fov_cfg: dict, output_dir: Path, name: str) -> Path | None:
-    """Where to write the pre-scan run, or ``None`` to discard it.
-
-    The pre-scan is written only when ``save_prescan`` is set (debugging); the
-    decision streams via ``frameReady`` regardless, so discarding it is the norm.
-    """
-    if fov_cfg.get("save_prescan"):
-        return Path(output_dir) / f"{name}_prescan.ome.zarr"
-    return None
 
 
 # Mantis hardware-setup metadata keys that the pre-scan run must share with the

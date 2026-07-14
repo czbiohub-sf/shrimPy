@@ -80,10 +80,19 @@ class FovSelection:
         self.config = config
         self._pixel_size_um = pixel_size_um
         self._z_step_um = z_step_um
-        # Optional per-FOV debug artifacts (segmentation, features, goodness),
-        # written by the worker to a sibling directory next to the output store.
+        # Optional lightweight per-FOV debug artifacts (projection/mask PNGs +
+        # fov_summary.csv), written by the worker to a sibling directory next to
+        # the output store.
         self._save_decision = bool(config.get("save_decision", False))
         self._debug_dir = self._debug_dir_for(data_path) if self._save_decision else None
+        # When set, the per-step reconstruction OME-Zarr (deskew / phase / vs /
+        # projection / mask channels) is written to <name>_prescan.ome.zarr next to
+        # the output store -- replacing the raw pre-scan store, so the pre-scan run
+        # itself writes nothing to disk. Independent of save_decision.
+        self._save_pre_scan_omezarr = bool(config.get("save_pre_scan_omezarr", False))
+        self._recon_zarr_path = (
+            self._prescan_recon_path_for(data_path) if self._save_pre_scan_omezarr else None
+        )
         # Fail fast if reconstruction can't run on a GPU. Default True; set
         # fov_selection.require_gpu: false to allow a (slow) CPU run for debugging.
         self._require_gpu = bool(config.get("require_gpu", True))
@@ -151,6 +160,19 @@ class FovSelection:
                 name = name[: -len(suffix)]
                 break
         return data_path.with_name(f"{name}_fov_debug")
+
+    @staticmethod
+    def _prescan_recon_path_for(data_path: Path | None) -> Path | None:
+        """Sibling ``<name>_prescan.ome.zarr`` store next to the output store."""
+        if data_path is None:
+            return None
+        data_path = Path(data_path)
+        name = data_path.name
+        for suffix in (".ome.zarr", ".zarr"):
+            if name.endswith(suffix):
+                name = name[: -len(suffix)]
+                break
+        return data_path.with_name(f"{name}_prescan.ome.zarr")
 
     @classmethod
     def from_metadata(
@@ -303,6 +325,7 @@ class FovSelection:
                 zyx_shape=zyx_shape,
                 log_file_path=log_file_path,
                 debug_dir=self._debug_dir,
+                recon_zarr_path=self._recon_zarr_path,
                 require_gpu=self._require_gpu,
             )
             self._worker.start()

@@ -243,7 +243,12 @@ class _LabelfreePreprocessor:
             _time.monotonic() - t0,
         )
 
-    def __call__(self, volume_bf: np.ndarray, label: str = "") -> dict[str, torch.Tensor]:
+    def __call__(
+        self,
+        volume_bf: np.ndarray,
+        label: str = "",
+        return_intermediates: bool = False,
+    ) -> dict[str, torch.Tensor]:
         """Preprocess a brightfield z-stack -> dict of channel ZYX tensors.
 
         The input numpy volume is moved to the target device once; all
@@ -257,6 +262,12 @@ class _LabelfreePreprocessor:
         For a VS pipeline the keys are ``virtual_staining.target_channels``
         (e.g. ``'nuclei'``, ``'membrane'``) plus ``'phase'`` (debug). For a
         non-VS pipeline there is a single entry keyed by ``output_channel``.
+
+        ``return_intermediates`` additionally exposes the per-step debug
+        intermediates -- the post-``'deskew'`` volume and the ``'phase'`` volume
+        (whenever those steps ran) -- so a caller can persist every stage for
+        step-by-step debugging. Off by default so the normal decision path is
+        unchanged.
         """
         import torch
 
@@ -272,8 +283,10 @@ class _LabelfreePreprocessor:
             volume = self._step(pfx, "flatfield", self._flat_field_BF, volume)
 
         # 1. Deskew
+        volume_deskewed = None
         if self._deskew_settings is not None:
             volume = self._step(pfx, "deskew", self._deskew, volume)
+            volume_deskewed = volume
 
         # 2. Phase reconstruction
         if self._phase_settings is not None:
@@ -294,6 +307,14 @@ class _LabelfreePreprocessor:
             # Non-VS: a single processed representation of the input channel
             # (raw/deskewed/phase), keyed by output_channel.
             channels[self._output_channel] = volume_phase
+
+        # Expose per-step intermediates for debug persistence (does not change the
+        # decision, which only reads the VS target channels).
+        if return_intermediates:
+            if volume_deskewed is not None:
+                channels.setdefault("deskew", volume_deskewed)
+            if self._phase_settings is not None:
+                channels.setdefault("phase", volume_phase)
 
         if self._require_gpu:
             offenders = [n for n, t in channels.items() if t.device.type == "cpu"]
