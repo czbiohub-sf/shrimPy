@@ -42,14 +42,28 @@ from matplotlib.path import Path as MplPath
 from matplotlib.transforms import IdentityTransform
 from mpl_toolkits.mplot3d import proj3d
 
+from shrimpy.fov_selection import fov_model as FM
+from shrimpy.scripts import ranking as RANK
+
 from . import data as D
 
-DEFAULT_DIR = "/hpc/projects/comp.micro/microscope_dev/smart_fov_selection/fov_selection_output/fov_features"
+DEFAULT_DIR = os.environ.get(
+    "FOV_VIEWER_DIR",
+    "/hpc/projects/comp.micro/microscope_dev/smart_fov_selection/fov_selection_output",
+)
+# Where named ranking profiles (per biological question) are saved/loaded.
+PROFILE_DIR = Path(
+    os.environ.get("FOV_RANK_PROFILE_DIR", str(Path(DEFAULT_DIR) / "ranking_profiles"))
+)
 REDUCE_PREFIX = {"PCA": "PCA", "t-SNE": "TSNE", "UMAP": "UMAP"}
 MAX_THUMBS = 200  # cap thumbnails rendered at once (refine the selection for more)
+RANK_PAGE = 200  # Rank tab: FOV tiles materialized per page (infinite scroll)
 DETAIL_SKIP = {"__src", "__png", "png", "__dataset"}
 THUMB_CACHE_MAX = 1000  # LRU cap on decoded thumbnails (path,size) -> QPixmap
-FOCUS_COLOR = "#ffd24d"  # highlight color for the clicked point / thumbnail
+# highlight color for the clicked FOV: blue border on the thumbnail (Analysis + Rank
+# tabs) and the scatter focus ring / Rank histogram value line. Shared so both tabs match.
+FOCUS_COLOR = "#2979ff"
+RANK_CLICK_COLOR = FOCUS_COLOR  # Rank tab: clicked-FOV border + its value line in the hists
 THUMB_QSS = "background:#111; color:#666; border:1px solid #333;"
 THUMB_FOCUS_QSS = f"background:#111; color:#666; border:3px solid {FOCUS_COLOR};"
 
@@ -64,7 +78,7 @@ ACCENT = "#8c8c8c"  # neutral grey accent
 GOODNESS_CATEGORIES = {1.0: "good (1)", 0.0: "neutral (0)", -1.0: "bad (-1)"}
 GOODNESS_COLORS = {
     "good (1)": "#4caf50",  # green
-    "neutral (0)": "#bdbdbd",  # grey
+    "neutral (0)": "#ffd24d",  # yellow
     "bad (-1)": "#e53935",  # red
     "unlabeled": "#5b8def",  # blue
 }
@@ -72,10 +86,32 @@ GOODNESS_COLORS = {
 # (None == unlabeled / NaN). A column is shown only if the loaded data has ≥1 FOV in it.
 GOODNESS_LABEL_ORDER = [
     ("Good", 1.0, "#4caf50"),
-    ("Neutral", 0.0, "#bdbdbd"),
+    ("Neutral", 0.0, "#ffd24d"),
     ("Bad", -1.0, "#e53935"),
     ("Nan", None, "#5b8def"),
 ]
+
+
+def goodness_color(v) -> str:
+    """Semantic color for a `goodness` value: good=green, neutral=yellow, bad=red,
+    unlabeled (NaN/None)=blue. Used for scatter points and FOV thumbnail borders."""
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return GOODNESS_COLORS["unlabeled"]
+    return GOODNESS_COLORS.get(
+        GOODNESS_CATEGORIES.get(float(v), ""), GOODNESS_COLORS["unlabeled"]
+    )
+
+
+def _border_qss(color: str) -> str:
+    """Thumbnail stylesheet with a 3px border of the given color."""
+    return f"background:#111; color:#666; border:3px solid {color};"
+
+
+def goodness_border_qss(v) -> str:
+    """Thumbnail stylesheet with a 3px border colored by the FOV's goodness label."""
+    return _border_qss(goodness_color(v))
+
+
 DARK_QSS = """
 QWidget { background:#3c3c3c; color:#ececec; font-size:12px; }
 QScrollArea { border:none; }
@@ -221,7 +257,6 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.plot_pos = np.array([], int)
         self.sel_pos: list[int] = []
         self.reduced_cols: list[str] = []
-        self.col_filters: dict[str, set] = {}  # metadata column -> kept value set (str)
         self.thresholds: dict[str, tuple] = {}  # feature column -> (lo, hi) kept range
         self.lasso_sel = None  # lasso filter: positions, or None = show all
         self.hidden = np.array([], bool)  # True = "removed" (invisible, not deleted)
@@ -230,6 +265,10 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self._focus_marker = None  # scatter ring artist
         self._focus_label = None  # highlighted thumbnail
         self._picked = False  # was a scatter point hit on this click?
+        # Rank tab: per-feature desirability knobs for the production DesirabilityModel.
+        # feature -> {"direction","lo","hi","soft","weight"} (the config's model.features).
+        self.rank_ranges: dict = {}
+        self.rank_sort = False  # sort the Analysis FOV panel by `score` (legacy hook)
         self._ready = False
 
         left_col = QtWidgets.QSplitter(QtCore.Qt.Vertical)
@@ -251,6 +290,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(main, "Analysis")
         self._label_tab_index = self.tabs.addTab(self._build_label_tab(), "Label")
+        self._rank_tab_index = self.tabs.addTab(self._build_rank_tab(), "Rank")
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self.setCentralWidget(self.tabs)
         self._ready = True
@@ -279,7 +319,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         colA = QtWidgets.QVBoxLayout()
         colB = QtWidgets.QVBoxLayout()
         colC = QtWidgets.QVBoxLayout()
-        # colA = sections 1-2, colB = sections 3-4, colC = section 5 + the 6|7 row
+        # colA = sections 1-2, colB = sections 3-4, colC = the 5|6 row
         for cc, stretch in ((colA, 3), (colB, 4), (colC, 4)):
             cols.addLayout(cc, stretch)
 
@@ -298,21 +338,35 @@ class FeatureViewer(QtWidgets.QMainWindow):
         gv.addWidget(self.ds_list)
         colA.addWidget(g)
 
-        # --- 2. filter (col A): pick a column, keep the selected values ---
-        g = QtWidgets.QGroupBox("2. Filter FOVs  (keep selected values)")
+        # --- 2. feature thresholds (col A) ---
+        g = QtWidgets.QGroupBox("2. Feature thresholds  (keep in range)")
         gv = QtWidgets.QVBoxLayout(g)
-        self.filter_col = QtWidgets.QComboBox()
-        self.filter_col.currentTextChanged.connect(self._on_filter_col)
-        gv.addWidget(self.filter_col)
-        self.f_vals = QtWidgets.QListWidget()
-        self.f_vals.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
-        self.f_vals.setMaximumHeight(150)
-        gv.addWidget(self.f_vals)
-        ap = QtWidgets.QPushButton("Apply")
-        ap.clicked.connect(self.on_apply_filter)
-        ca = QtWidgets.QPushButton("Cancel all")
-        ca.clicked.connect(self.on_cancel_filters)
-        gv.addLayout(self._btn_row(ap, ca))
+        self.thr_col = QtWidgets.QComboBox()
+        self.thr_col.currentTextChanged.connect(self._on_thr_col)
+        gv.addWidget(self.thr_col)
+        hr = QtWidgets.QHBoxLayout()
+        self.thr_lo = QtWidgets.QDoubleSpinBox()
+        self.thr_hi = QtWidgets.QDoubleSpinBox()
+        for s in (self.thr_lo, self.thr_hi):
+            s.setDecimals(4)
+            s.setRange(-1e12, 1e12)
+            self._as_entry(s)
+        hr.addWidget(QtWidgets.QLabel("min"))
+        hr.addWidget(self.thr_lo)
+        hr.addWidget(QtWidgets.QLabel("max"))
+        hr.addWidget(self.thr_hi)
+        gv.addLayout(hr)
+        adt = QtWidgets.QPushButton("Add / update")
+        adt.clicked.connect(self.on_add_threshold)
+        rmt = QtWidgets.QPushButton("Remove")
+        rmt.clicked.connect(self.on_remove_threshold)
+        clt = QtWidgets.QPushButton("Clear")
+        clt.clicked.connect(self.on_clear_thresholds)
+        gv.addLayout(self._btn_row(adt, rmt, clt))
+        self.thr_list = QtWidgets.QListWidget()
+        self.thr_list.setMaximumHeight(90)
+        gv.addWidget(self.thr_list)
+        # visible-FOV count after thresholds / lasso (shared by apply_filters)
         self.filter_summary = QtWidgets.QLabel("no filter")
         self.filter_summary.setWordWrap(True)
         gv.addWidget(self.filter_summary)
@@ -376,39 +430,9 @@ class FeatureViewer(QtWidgets.QMainWindow):
         colB.addWidget(g)
         colB.addStretch(1)
 
-        # --- 5. feature thresholds (col C) ---
-        g = QtWidgets.QGroupBox("5. Feature thresholds  (keep in range)")
-        gv = QtWidgets.QVBoxLayout(g)
-        self.thr_col = QtWidgets.QComboBox()
-        self.thr_col.currentTextChanged.connect(self._on_thr_col)
-        gv.addWidget(self.thr_col)
-        hr = QtWidgets.QHBoxLayout()
-        self.thr_lo = QtWidgets.QDoubleSpinBox()
-        self.thr_hi = QtWidgets.QDoubleSpinBox()
-        for s in (self.thr_lo, self.thr_hi):
-            s.setDecimals(4)
-            s.setRange(-1e12, 1e12)
-            self._as_entry(s)
-        hr.addWidget(QtWidgets.QLabel("min"))
-        hr.addWidget(self.thr_lo)
-        hr.addWidget(QtWidgets.QLabel("max"))
-        hr.addWidget(self.thr_hi)
-        gv.addLayout(hr)
-        adt = QtWidgets.QPushButton("Add / update")
-        adt.clicked.connect(self.on_add_threshold)
-        rmt = QtWidgets.QPushButton("Remove")
-        rmt.clicked.connect(self.on_remove_threshold)
-        clt = QtWidgets.QPushButton("Clear")
-        clt.clicked.connect(self.on_clear_thresholds)
-        gv.addLayout(self._btn_row(adt, rmt, clt))
-        self.thr_list = QtWidgets.QListWidget()
-        self.thr_list.setMaximumHeight(90)
-        gv.addWidget(self.thr_list)
-        colC.addWidget(g)
-
-        # --- 6 + 7 sit side by side in one narrower row under section 5 ---
-        # --- 6. removed-points history ---
-        g6 = QtWidgets.QGroupBox("6. Removed points")
+        # --- 5 + 6 sit side by side in one narrower row (col C) ---
+        # --- 5. removed-points history ---
+        g6 = QtWidgets.QGroupBox("5. Removed points")
         gv6 = QtWidgets.QVBoxLayout(g6)
         self.history_list = QtWidgets.QListWidget()
         self.history_list.setMaximumHeight(120)
@@ -421,8 +445,8 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.hidden_count = QtWidgets.QLabel("0 points hidden")
         gv6.addWidget(self.hidden_count)
 
-        # --- 7. label selected FOVs (goodness) ---
-        g7 = QtWidgets.QGroupBox("7. Label FOVs  (goodness)")
+        # --- 6. label selected FOVs (goodness) ---
+        g7 = QtWidgets.QGroupBox("6. Label FOVs  (goodness)")
         gv7 = QtWidgets.QVBoxLayout(g7)
         self.label_value = QtWidgets.QComboBox()
         self.label_value.addItem("Good (1)", 1)
@@ -504,7 +528,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.size_slider.sliderReleased.connect(self._rebuild_grid)
         head.addWidget(self.size_slider)
         v.addLayout(head)
-        self.grid_info = QtWidgets.QLabel("—")
+        self.grid_info = QtWidgets.QLabel("-")
         self.grid_info.setWordWrap(True)
         v.addWidget(self.grid_info)
         self.scroll = QtWidgets.QScrollArea()
@@ -562,7 +586,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.label_save_btn.clicked.connect(self.on_save_labels)
         head.addWidget(self.label_save_btn)
         v.addLayout(head)
-        self.label_info = QtWidgets.QLabel("—")
+        self.label_info = QtWidgets.QLabel("-")
         self.label_info.setWordWrap(True)
         v.addWidget(self.label_info)
         self.label_cols_host = QtWidgets.QWidget()
@@ -576,6 +600,11 @@ class FeatureViewer(QtWidgets.QMainWindow):
         return w
 
     def _on_tab_changed(self, index):
+        if index == getattr(self, "_rank_tab_index", -1):
+            # built while hidden (viewport width unknown) -> reflow with the real width
+            QtCore.QTimer.singleShot(0, self._rank_reflow)
+            QtCore.QTimer.singleShot(0, self._rank_load_visible)
+            return
         if index != getattr(self, "_label_tab_index", -1):
             return
         # build panels the first time the Label tab is shown after data changes; do NOT
@@ -944,7 +973,19 @@ class FeatureViewer(QtWidgets.QMainWindow):
         )
         if not files:
             return
-        df = D.load_matrices(files)
+        self._load_files(files)
+
+    def _load_files(self, files):
+        """Load feature CSV(s) via the shared composites root (file dialog / env)."""
+        root = getattr(self, "composites_root", None) or D.COMPOSITES_ROOT
+        self._ingest(D.load_matrices(files, composites_root=root), files)
+
+    def _load_paired(self, pairs):
+        """Load explicit (csv, png_folder) pairs, each matrix with its own image folder."""
+        self._ingest(D.load_paired(pairs), [c for c, _ in pairs])
+
+    def _ingest(self, df, files):
+        """Common post-load wiring for both load paths."""
         self.df = (
             df if self.df is None else pd.concat([self.df, df], ignore_index=True, sort=False)
         )
@@ -982,7 +1023,6 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.df = None
         self.filt = np.array([], int)
         self.reduced_cols = []
-        self.col_filters = {}
         self.thresholds = {}
         self.lasso_sel = None
         self._thumb_cache.clear()
@@ -1199,58 +1239,12 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self.cb_color.setCurrentText(cur_color)
         elif "goodness" in all_cols:  # default only on first populate
             self.cb_color.setCurrentText("goodness")
-        # filterable columns: categorical / low-cardinality (value-pick filter);
-        # datasets are managed in section 1, so "dataset" is excluded here.
-        fcols = []
-        if self.df is not None:
-            for c in all_cols:
-                if c == "dataset":
-                    continue
-                if (
-                    2 <= self.df[c].nunique(dropna=False) <= 50
-                ):  # categorical / low-cardinality
-                    fcols.append(c)
-        self.filter_col.clear()
-        self.filter_col.addItems(fcols)
         self.thr_col.clear()
         self.thr_col.addItems(axis_opts)  # numeric features + reduced comps
         self.cb_z.setEnabled(self.mode.currentText() == "3D")
         self._ready = True
-        self._on_filter_col(self.filter_col.currentText())
         self._on_thr_col(self.thr_col.currentText())
-
-    # ----- filters: pick a column, keep the selected values -----
-    def _on_filter_col(self, col):
-        """Show the column's values; pre-select the active keep-set (or all)."""
-        if self.df is None or not col or col not in self.df.columns:
-            self.f_vals.clear()
-            return
-        self.f_vals.blockSignals(True)
-        self.f_vals.clear()
-        kept = self.col_filters.get(col)
-        for v in sorted(self.df[col].fillna("NaN").astype(str).unique(), key=str):
-            it = QtWidgets.QListWidgetItem(v)
-            self.f_vals.addItem(it)
-            it.setSelected(kept is None or v in kept)
-        self.f_vals.blockSignals(False)
-
-    def on_apply_filter(self):
-        """Keep only the selected values for the current column (AND across columns)."""
-        col = self.filter_col.currentText()
-        if self.df is None or not col:
-            return
-        sel = {i.text() for i in self.f_vals.selectedItems()}
-        allv = {self.f_vals.item(i).text() for i in range(self.f_vals.count())}
-        if sel and sel != allv:
-            self.col_filters[col] = sel
-        else:  # all (or none) selected -> no restriction on this column
-            self.col_filters.pop(col, None)
-        self.apply_filters()
-
-    def on_cancel_filters(self):
-        self.col_filters = {}
-        self.apply_filters()
-        self._on_filter_col(self.filter_col.currentText())
+        self._sync_rank_tab()
 
     # ----- feature thresholds: keep FOVs whose feature is within [lo, hi] -----
     def _on_thr_col(self, feat):
@@ -1308,9 +1302,6 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self.set_selection([])
             return
         mask = np.ones(len(self.df), bool)
-        for col, kept in self.col_filters.items():
-            if col in self.df.columns:
-                mask &= self.df[col].fillna("NaN").astype(str).isin(kept).to_numpy()
         for feat, (lo, hi) in self.thresholds.items():
             if feat in self.df.columns:
                 v = self.df[feat].to_numpy(float)
@@ -1319,8 +1310,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.lasso_sel = None  # changing the filters resets the lasso filter
         if self.focus_pos is not None and self.focus_pos not in set(self.filt.tolist()):
             self._clear_focus()
-        parts = [f"{c} ∈ {{{','.join(sorted(v))}}}" for c, v in self.col_filters.items()]
-        parts += [f"{f} ∈ [{lo:g},{hi:g}]" for f, (lo, hi) in self.thresholds.items()]
+        parts = [f"{f} ∈ [{lo:g},{hi:g}]" for f, (lo, hi) in self.thresholds.items()]
         desc = "; ".join(parts) if parts else "no filter"
         self.filter_summary.setText(f"{len(self.filt)} / {len(self.df)} FOVs  ·  {desc}")
         # re-fit a reduced embedding on the new survivors (else newly-included FOVs
@@ -1330,10 +1320,20 @@ class FeatureViewer(QtWidgets.QMainWindow):
 
     def _shown(self):
         """Visible positions shown in the panel: lasso subset if active, else all
-        filtered -- always excluding removed (hidden) FOVs."""
+        filtered -- always excluding removed (hidden) FOVs. Ordered by `score`
+        (descending) when the Rank tab has ranked the FOVs."""
         if self.lasso_sel is not None:
-            return [p for p in self.lasso_sel if not self.hidden[p]]
-        return list(self._effective())
+            pos = [p for p in self.lasso_sel if not self.hidden[p]]
+        else:
+            pos = list(self._effective())
+        return self._sort_by_score(pos)
+
+    def _sort_by_score(self, pos):
+        """Order positions best-first by the `score` column; NaN scores sink to the end."""
+        if not self.rank_sort or self.df is None or "score" not in self.df.columns or not pos:
+            return pos
+        s = self.df["score"].to_numpy(float)
+        return sorted(pos, key=lambda p: np.inf if np.isnan(s[p]) else -s[p])
 
     def _refresh_panel(self):
         self.set_selection(self._shown())
@@ -1741,7 +1741,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
             return
         shown = self._balanced_cap(self.sel_pos, MAX_THUMBS)
         extra = (
-            f"  ({len(shown)} of {len(self.sel_pos)}, sampled across datasets — refine selection)"
+            f"  ({len(shown)} of {len(self.sel_pos)}, sampled across datasets, refine selection)"
             if len(self.sel_pos) > len(shown)
             else ""
         )
@@ -1753,7 +1753,11 @@ class FeatureViewer(QtWidgets.QMainWindow):
             lab = QtWidgets.QLabel()
             lab.setFixedSize(size, size)
             lab.setAlignment(QtCore.Qt.AlignCenter)
-            lab.setStyleSheet(THUMB_QSS)
+            # border colored by goodness label (green/yellow/red/blue); stored so the
+            # focus highlight can restore it after un-focusing.
+            qss = goodness_border_qss(row.get("goodness", np.nan))
+            lab._base_qss = qss
+            lab.setStyleSheet(qss)
             lab.setCursor(QtCore.Qt.PointingHandCursor)
             lab.setToolTip(f"{row.get('__dataset', '')}\n{self._row_id(row)}")
             lab.setText("…")
@@ -1829,7 +1833,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self._focus_marker = None
             self.canvas.draw_idle()
         if self._focus_label is not None:
-            self._focus_label.setStyleSheet(THUMB_QSS)
+            self._focus_label.setStyleSheet(getattr(self._focus_label, "_base_qss", THUMB_QSS))
             self._focus_label = None
         self.details.clearSelection()  # keep the table (it lists the whole selection)
 
@@ -1861,7 +1865,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
 
     def _highlight_thumb(self, pos, scroll_grid):
         if self._focus_label is not None:
-            self._focus_label.setStyleSheet(THUMB_QSS)
+            self._focus_label.setStyleSheet(getattr(self._focus_label, "_base_qss", THUMB_QSS))
             self._focus_label = None
         for it in self._thumb_items:
             if it[3] == pos:
@@ -1872,18 +1876,566 @@ class FeatureViewer(QtWidgets.QMainWindow):
                     self._load_visible_thumbs()
                 break
 
+    # ============================================================== rank tab
+    def _build_rank_tab(self):
+        """Tune the production DesirabilityModel: per-feature ideal range + shoulder +
+        direction. LEFT = feature-value histograms with the desirability curve overlaid
+        (dashed) plus a table of the range/direction/shoulder knobs and a Re-rank button.
+        RIGHT = the loaded FOVs as thumbnails ordered best-first by the resulting score."""
+        split = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+
+        # ---------------------------------------- LEFT: parameter tuning
+        left = QtWidgets.QWidget()
+        lv = QtWidgets.QVBoxLayout(left)
+        bar = QtWidgets.QHBoxLayout()
+        bar.addWidget(QtWidgets.QLabel("<b>Desirability ranges</b>"))
+        bar.addStretch(1)
+        b_load = QtWidgets.QPushButton("Load…")
+        b_load.clicked.connect(self._on_rank_load)
+        b_save = QtWidgets.QPushButton("Save…")
+        b_save.clicked.connect(self._on_rank_save)
+        b_reset = QtWidgets.QPushButton("Reset to data")
+        b_reset.clicked.connect(self._on_rank_reset_defaults)
+        for b in (b_load, b_save, b_reset):
+            bar.addWidget(b)
+        lv.addLayout(bar)
+
+        # top: per-feature histograms with the desirability curve as a dashed overlay
+        self.rank_fig = Figure(figsize=(4, 6), facecolor="#3c3c3c")
+        self.rank_canvas = FigureCanvas(self.rank_fig)
+        hist_scroll = QtWidgets.QScrollArea()
+        hist_scroll.setWidgetResizable(True)
+        hist_scroll.setWidget(self.rank_canvas)
+        lv.addWidget(hist_scroll, 3)
+
+        # bottom: the tunable knobs, one row per feature
+        lv.addWidget(
+            QtWidgets.QLabel(
+                "direction: higher/lower ramp across [lo, hi]; target = ideal in [lo, hi] "
+                "fading over the shoulder. A missing feature contributes 0."
+            )
+        )
+        self.rank_table = QtWidgets.QTableWidget(0, 5)
+        self.rank_table.setHorizontalHeaderLabels(
+            ["feature", "direction", "range lo", "range hi", "shoulder"]
+        )
+        self.rank_table.horizontalHeader().setSectionResizeMode(
+            0, QtWidgets.QHeaderView.Stretch
+        )
+        self.rank_table.verticalHeader().setVisible(False)
+        self.rank_table.setMaximumHeight(240)
+        lv.addWidget(self.rank_table, 2)
+
+        act = QtWidgets.QHBoxLayout()
+        rerank = QtWidgets.QPushButton("Re-rank")
+        rerank.setStyleSheet("font-weight:bold; padding:4px 16px;")
+        rerank.clicked.connect(self._rerank)
+        act.addWidget(rerank)
+        act.addStretch(1)
+        lv.addLayout(act)
+        self.rank_status = QtWidgets.QLabel("load data to tune the desirability ranges")
+        self.rank_status.setWordWrap(True)
+        lv.addWidget(self.rank_status)
+
+        # ---------------------------------------- RIGHT: FOVs ordered by score
+        right = QtWidgets.QWidget()
+        rv = QtWidgets.QVBoxLayout(right)
+        head = QtWidgets.QHBoxLayout()
+        head.addWidget(QtWidgets.QLabel("<b>FOVs ranked by score</b> (best first)"))
+        head.addStretch(1)
+        head.addWidget(QtWidgets.QLabel("thumb size"))
+        self.rank_size_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.rank_size_slider.setRange(60, 400)
+        self.rank_size_slider.setValue(140)
+        self.rank_size_slider.setFixedWidth(140)
+        self.rank_size_slider.sliderReleased.connect(self._rank_rebuild_grid)
+        head.addWidget(self.rank_size_slider)
+        rv.addLayout(head)
+        self.rank_grid_info = QtWidgets.QLabel("-")
+        rv.addWidget(self.rank_grid_info)
+        self.rank_scroll = QtWidgets.QScrollArea()
+        self.rank_scroll.setWidgetResizable(True)
+        self.rank_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.rank_grid_host = QtWidgets.QWidget()
+        self.rank_grid = QtWidgets.QGridLayout(self.rank_grid_host)
+        self.rank_grid.setSpacing(4)
+        self.rank_grid.setAlignment(QtCore.Qt.AlignTop)
+        self.rank_scroll.setWidget(self.rank_grid_host)
+        self.rank_scroll.verticalScrollBar().valueChanged.connect(self._rank_load_visible)
+        rv.addWidget(self.rank_scroll, 1)
+        self._rank_thumb_items: list[list] = []  # [label, png, loaded, pos, score, rank]
+        self._rank_ncols = 0
+        self._rank_order: list[int] = []
+        self._rank_focus_pos = None  # df position of the clicked FOV (blue highlight)
+        self._rank_focus_label = None
+
+        split.addWidget(left)
+        split.addWidget(right)
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 4)
+        split.setSizes([760, 900])
+        return split
+
+    # ---- rank tab: knob state ----
+    def _rank_feature_list(self):
+        return D.feature_columns(self.df) if self.df is not None else []
+
+    def _rank_seed_ranges(self):
+        """Seed per-feature knobs from the data: direction by feature-name default; a target
+        band = [q25, q75] with an IQR shoulder; a monotone range = [q05, q95]."""
+        ranges = {}
+        for f in self._rank_feature_list():
+            v = self.df[f].to_numpy(float)
+            v = v[~np.isnan(v)]
+            if v.size:
+                q05, q25, _q50, q75, q95 = np.quantile(v, [0.05, 0.25, 0.5, 0.75, 0.95])
+            else:
+                q05 = q25 = q75 = q95 = 0.0
+            direction = RANK.DEFAULT_DIRECTION.get(RANK._feature_suffix(f), "target")
+            if direction == "target":
+                lo, hi = float(q25), float(q75)
+            else:
+                lo, hi = float(q05), float(q95)
+            ranges[f] = {
+                "direction": direction,
+                "lo": lo,
+                "hi": hi,
+                "soft": float(max(hi - lo, 1e-9)),
+                "weight": 1.0,
+            }
+        return ranges
+
+    def _mk_spin(self, val):
+        s = QtWidgets.QDoubleSpinBox()
+        s.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        s.setKeyboardTracking(False)
+        s.setDecimals(5)
+        s.setRange(-1e12, 1e12)
+        bad = val is None or (isinstance(val, float) and np.isnan(val))
+        s.setValue(0.0 if bad else float(val))
+        s.wheelEvent = lambda e: e.ignore()
+        return s
+
+    def _rank_populate_table(self):
+        tbl = self.rank_table
+        tbl.blockSignals(True)
+        tbl.setRowCount(0)
+        feats = list(self.rank_ranges)
+        tbl.setRowCount(len(feats))
+        for i, f in enumerate(feats):
+            spec = self.rank_ranges[f]
+            item = QtWidgets.QTableWidgetItem(f)
+            item.setFlags(QtCore.Qt.ItemIsEnabled)
+            tbl.setItem(i, 0, item)
+            combo = QtWidgets.QComboBox()
+            combo.addItems(list(FM.DesirabilityModel.DIRECTIONS))
+            combo.setCurrentText(spec["direction"])
+            combo.currentTextChanged.connect(lambda _t, r=i: self._on_rank_dir_changed(r))
+            tbl.setCellWidget(i, 1, combo)
+            for col, key in ((2, "lo"), (3, "hi"), (4, "soft")):
+                spin = self._mk_spin(spec[key])
+                # committing a value (Enter / focus-out) redraws the desirability curve
+                # for that feature, without changing the axes or re-ranking the FOVs.
+                spin.editingFinished.connect(self._rank_refresh_curves)
+                tbl.setCellWidget(i, col, spin)
+            self._rank_set_soft_enabled(i, spec["direction"] == "target")
+        tbl.blockSignals(False)
+
+    def _rank_set_soft_enabled(self, row, on):
+        w = self.rank_table.cellWidget(row, 4)  # shoulder only matters for a target band
+        if w is not None:
+            w.setEnabled(on)
+
+    def _on_rank_dir_changed(self, row):
+        combo = self.rank_table.cellWidget(row, 1)
+        self._rank_set_soft_enabled(row, combo.currentText() == "target")
+        self._rank_refresh_curves()  # direction changes the curve shape -> redraw it
+
+    def _rank_refresh_curves(self):
+        """Redraw the desirability dashed lines from the current knobs (on Enter / commit /
+        direction change), WITHOUT re-ranking the FOVs. The histograms and their locked axes
+        are unchanged -- only the overlaid profile moves. Re-rank still recomputes scores."""
+        if self.df is None or not self.rank_ranges:
+            return
+        self._read_rank_table()
+        self._rank_draw_hists()
+
+    def _read_rank_table(self):
+        """Pull the table widgets back into ``self.rank_ranges``."""
+        tbl = self.rank_table
+        for i, f in enumerate(list(self.rank_ranges)):
+            direction = tbl.cellWidget(i, 1).currentText()
+            lo, hi = tbl.cellWidget(i, 2).value(), tbl.cellWidget(i, 3).value()
+            if hi < lo:
+                lo, hi = hi, lo
+            soft = tbl.cellWidget(i, 4).value()
+            self.rank_ranges[f] = {
+                "direction": direction,
+                "lo": lo,
+                "hi": hi,
+                "soft": soft if soft > 0 else max(hi - lo, 1e-9),
+                "weight": 1.0,
+            }
+
+    def _rank_model_cfg(self):
+        """Build the DesirabilityModel config block from the current knobs."""
+        feats = {
+            f: {
+                "direction": s["direction"],
+                "range": [s["lo"], s["hi"]],
+                "soft": s["soft"],
+                "weight": s.get("weight", 1.0),
+            }
+            for f, s in self.rank_ranges.items()
+        }
+        return {"type": "ranking_by_defined_range", "features": feats}
+
+    # ---- rank tab: actions ----
+    def _rerank(self):
+        """Score every FOV with the current knobs, reorder the right-side grid, and redraw
+        the histogram overlays. Bound to the Re-rank button."""
+        if self.df is None or not self.rank_ranges:
+            self.rank_status.setText("no features to rank; load data first")
+            return
+        self._read_rank_table()
+        model = FM.build_fov_model(self._rank_model_cfg())
+        proba, _good = model.predict(self.df)
+        self.df["score"] = np.asarray(proba, float)
+        # best-first; NaN scores sink to the end (numpy argsort puts NaN last)
+        self._rank_order = list(np.argsort(-self.df["score"].to_numpy(float), kind="stable"))
+        self._rank_rebuild_grid()
+        self._rank_draw_hists()
+        s = self.df["score"]
+        self.rank_status.setText(
+            f"ranked {len(self.df)} FOV(s) · score in [{s.min():.3f}, {s.max():.3f}]; "
+            "top_fov in the config keeps the highest-scoring FOVs"
+        )
+
+    def _rank_draw_hists(self):
+        """One histogram of measured values per feature, with the desirability curve (dashed,
+        right axis) and the [lo, hi] band marked.
+
+        Axis limits are LOCKED to the full data range of each feature, so the whole
+        histogram is always shown and tuning the target range never rescales the axes.
+        Only redrawn on Re-rank / load (never live while editing the knobs)."""
+        fig = self.rank_fig
+        fig.clear()
+        feats = list(self.rank_ranges)
+        if self.df is None or not feats:
+            self.rank_canvas.draw_idle()
+            return
+        ncol = 2
+        nrow = int(np.ceil(len(feats) / ncol))
+        self.rank_canvas.setMinimumHeight(210 * nrow)
+        for i, f in enumerate(feats):
+            ax = fig.add_subplot(nrow, ncol, i + 1, facecolor="#2b2b2b")
+            spec = self.rank_ranges[f]
+            v = self.df[f].to_numpy(float)
+            v = v[~np.isnan(v)]
+            if v.size:
+                lo_x, hi_x = float(v.min()), float(v.max())
+                ax.hist(v, bins=30, range=(lo_x, hi_x), color="#9a9a9a", alpha=0.85)
+            else:
+                lo_x, hi_x = float(spec["lo"]), float(spec["hi"])
+            if hi_x <= lo_x:
+                hi_x = lo_x + 1e-9
+            # desirability curve over the FIXED data range (right axis, 0..1)
+            xs = np.linspace(lo_x, hi_x, 200)
+            d = FM.DesirabilityModel._desirability(
+                xs, spec["lo"], spec["hi"], spec["direction"], spec["soft"]
+            )
+            ax2 = ax.twinx()
+            ax2.plot(xs, d, "--", color="#ffffff", lw=1.6)
+            ax2.set_ylim(-0.05, 1.08)
+            ax2.tick_params(colors="#ffffff", labelsize=6)
+            # mark the [lo, hi] band only where it falls inside the visible data range
+            for lim in (spec["lo"], spec["hi"]):
+                if lo_x <= lim <= hi_x:
+                    ax.axvline(lim, color="#8fd694", lw=0.8, ls=":")
+            # the clicked FOV's value for this feature (blue vertical dashed line)
+            if self._rank_focus_pos is not None:
+                fv = (
+                    float(self.df.iloc[self._rank_focus_pos][f])
+                    if f in self.df.columns
+                    else np.nan
+                )
+                if not np.isnan(fv):
+                    ax.axvline(fv, color=RANK_CLICK_COLOR, lw=1.6, ls="--")
+            # lock x to the full histogram, independent of the knobs; disable autoscale so
+            # a later artist (moved desirability curve / band line) can never rescale it.
+            for a in (ax, ax2):
+                a.set_xlim(lo_x, hi_x)
+                a.set_autoscalex_on(False)
+            ax.set_title(f"{f}  ({spec['direction']})", color="#ececec", fontsize=7)
+            ax.tick_params(colors="#bbbbbb", labelsize=6)
+            for sp in ax.spines.values():
+                sp.set_color("#666")
+        fig.tight_layout(pad=0.6)
+        self.rank_canvas.draw_idle()
+
+    # ---- rank tab: right-side thumbnail grid (ordered by score) ----
+    def _annotate_pixmap(self, pm, text):
+        """Return a copy of ``pm`` with a small rank/score caption painted top-left."""
+        out = QtGui.QPixmap(pm)
+        p = QtGui.QPainter(out)
+        p.fillRect(0, 0, out.width(), 16, QtGui.QColor(0, 0, 0, 130))
+        p.setPen(QtGui.QColor("#ffffff"))
+        p.drawText(3, 12, text)
+        p.end()
+        return out
+
+    def _rank_rebuild_grid(self):
+        while self.rank_grid.count():
+            it = self.rank_grid.takeAt(0)
+            if it.widget():
+                it.widget().deleteLater()
+        self._rank_thumb_items = []
+        self._rank_ncols = 0
+        self._rank_focus_label = None  # tiles are recreated; re-applied by _rank_grow
+        if self.df is None or not self._rank_order:
+            self.rank_grid_info.setText("no FOVs")
+            return
+        self._rank_grow(reset=True)  # first page; more pages load as the user scrolls
+
+    def _rank_grow(self, reset: bool = False):
+        """Create placeholder tiles for the next page of ranked FOVs (infinite scroll):
+        ALL FOVs are shown, but tiles are materialized RANK_PAGE at a time as the user
+        scrolls toward the bottom. Thumbnails within a page still decode lazily."""
+        order = self._rank_order
+        built = len(self._rank_thumb_items)
+        if not reset and built >= len(order):
+            return
+        target = min(len(order), built + RANK_PAGE)
+        size = self.rank_size_slider.value()
+        for rank in range(built, target):
+            pos = order[rank]
+            row = self.df.iloc[pos]
+            png = row.get("__png", "")
+            score = float(row.get("score", float("nan")))
+            lab = QtWidgets.QLabel()
+            lab.setFixedSize(size, size)
+            lab.setAlignment(QtCore.Qt.AlignCenter)
+            lab.setCursor(QtCore.Qt.PointingHandCursor)
+            lab._base_qss = goodness_border_qss(row.get("goodness", np.nan))
+            if pos == self._rank_focus_pos:  # keep the blue highlight across rebuilds
+                lab.setStyleSheet(_border_qss(RANK_CLICK_COLOR))
+                self._rank_focus_label = lab
+            else:
+                lab.setStyleSheet(lab._base_qss)
+            lab.setToolTip(f"#{rank + 1}  score={score:.3f}\n{self._row_id(row)}")
+            lab.setText("…")
+            lab.mousePressEvent = lambda e, p=int(pos): self._rank_on_click(p)
+            self._rank_thumb_items.append([lab, png, False, int(pos), score, rank + 1])
+        loaded = len(self._rank_thumb_items)
+        more = "  · scroll for more" if loaded < len(order) else ""
+        self.rank_grid_info.setText(f"{loaded} of {len(order)} FOV(s) loaded{more}")
+        self._rank_ncols = 0  # force re-place of all current tiles
+        self._rank_reflow()
+        QtCore.QTimer.singleShot(0, self._rank_load_visible)
+
+    def _rank_on_click(self, pos: int):
+        """Select a FOV: blue border on its tile + a vertical line at its value in each
+        histogram. Clicking the selected FOV again clears the selection."""
+        if self._rank_focus_label is not None:  # un-highlight the previous tile
+            self._rank_focus_label.setStyleSheet(
+                getattr(self._rank_focus_label, "_base_qss", THUMB_QSS)
+            )
+            self._rank_focus_label = None
+        toggled_off = pos == self._rank_focus_pos
+        self._rank_focus_pos = None if toggled_off else int(pos)
+        if not toggled_off:
+            for it in self._rank_thumb_items:
+                if it[3] == pos:
+                    it[0].setStyleSheet(_border_qss(RANK_CLICK_COLOR))
+                    self._rank_focus_label = it[0]
+                    break
+        self._rank_draw_hists()  # (re)draw the value lines for the current selection
+
+    def _rank_reflow(self):
+        if not self._rank_thumb_items:
+            return
+        size = self.rank_size_slider.value()
+        vw = self.rank_scroll.viewport().width() - 12
+        ncols = max(1, vw // (size + self.rank_grid.spacing()))
+        if ncols == self._rank_ncols:
+            return
+        self._rank_ncols = ncols
+        for i, item in enumerate(self._rank_thumb_items):
+            self.rank_grid.addWidget(item[0], i // ncols, i % ncols)
+        QtCore.QTimer.singleShot(0, self._rank_load_visible)
+
+    def _rank_load_visible(self, *_):
+        if not self._rank_thumb_items:
+            return
+        sb = self.rank_scroll.verticalScrollBar()
+        y0, y1 = sb.value(), sb.value() + self.rank_scroll.viewport().height()
+        size = self.rank_size_slider.value()
+        rowh = size + self.rank_grid.spacing()
+        vw = self.rank_scroll.viewport().width() - 12
+        ncols = max(1, vw // rowh)
+        margin = rowh
+        for idx, it in enumerate(self._rank_thumb_items):
+            lab, png, loaded = it[0], it[1], it[2]
+            if loaded:
+                continue
+            top = (idx // ncols) * rowh
+            if top + size < y0 - margin or top > y1 + margin:
+                continue
+            if png and Path(png).exists():
+                pm = self._load_thumb(png, size)
+                if not pm.isNull():
+                    lab.setText("")
+                    lab.setPixmap(self._annotate_pixmap(pm, f"#{it[5]}  {it[4]:.2f}"))
+                else:
+                    lab.setText("bad png")
+            else:
+                lab.setText(f"#{it[5]}  {it[4]:.2f}\n(no png)")
+            it[2] = True
+        # infinite scroll: near the bottom and more FOVs remain -> materialize next page
+        if (
+            len(self._rank_thumb_items) < len(self._rank_order)
+            and sb.value() >= sb.maximum() - 2 * rowh
+        ):
+            QtCore.QTimer.singleShot(0, self._rank_grow)
+
+    # ---- rank tab: sync + profile IO ----
+    def _sync_rank_tab(self):
+        """Rebuild the Rank tab for the currently loaded data (called after load/remove)."""
+        if not hasattr(self, "rank_table"):
+            return
+        feats = self._rank_feature_list()
+        if not feats:
+            self.rank_ranges = {}
+            self.rank_table.setRowCount(0)
+            self.rank_fig.clear()
+            self.rank_canvas.draw_idle()
+            self._rank_order = []
+            self._rank_rebuild_grid()
+            self.rank_status.setText("no features found in the loaded data")
+            return
+        if list(self.rank_ranges) != feats:  # new / changed feature set -> reseed
+            self.rank_ranges = self._rank_seed_ranges()
+            self._rank_populate_table()
+        self._rerank()
+
+    def _on_rank_reset_defaults(self):
+        if self.df is None:
+            self.rank_status.setText("load data first")
+            return
+        self.rank_ranges = self._rank_seed_ranges()
+        self._rank_populate_table()
+        self._rerank()
+
+    def _on_rank_save(self):
+        if not self.rank_ranges:
+            self.rank_status.setText("nothing to save; load data first")
+            return
+        self._read_rank_table()
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Save desirability ranges",
+            str(PROFILE_DIR / "desirability_ranges.json"),
+            "JSON (*.json)",
+        )
+        if not path:
+            return
+        import json
+
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_text(json.dumps(self._rank_model_cfg(), indent=2))
+        self.rank_status.setText(
+            f"saved ranges → {Path(path).name} (paste under fov_selection.model in the config)"
+        )
+
+    def _on_rank_load(self):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Load desirability ranges", str(PROFILE_DIR), "JSON (*.json)"
+        )
+        if not path:
+            return
+        import json
+
+        try:
+            cfg = json.loads(Path(path).read_text())
+            feats = cfg.get("features", cfg) if isinstance(cfg, dict) else {}
+            ranges = {}
+            for f, s in feats.items():
+                rng = s.get("range", [s.get("lo"), s.get("hi")])
+                lo, hi = float(rng[0]), float(rng[1])
+                ranges[f] = {
+                    "direction": s.get("direction", "target"),
+                    "lo": lo,
+                    "hi": hi,
+                    "soft": float(s.get("soft") or max(hi - lo, 1e-9)),
+                    "weight": float(s.get("weight", 1.0)),
+                }
+        except Exception as e:  # noqa: BLE001
+            self.rank_status.setText(f"load failed: {e}")
+            return
+        self.rank_ranges = ranges
+        self._rank_populate_table()
+        if self.df is not None:
+            self._rerank()
+        self.rank_status.setText(f"loaded ranges from {Path(path).name}")
+
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._reflow()
         self._load_visible_thumbs()
         self._reflow_all_label_panels()
+        if hasattr(self, "rank_grid"):
+            self._rank_reflow()
+            self._rank_load_visible()
 
 
 def main():
-    app = QtWidgets.QApplication(sys.argv)
+    import argparse
+
+    ap = argparse.ArgumentParser(description="FOV feature viewer")
+    ap.add_argument(
+        "--csv",
+        action="append",
+        default=[],
+        help="matrix CSV to auto-load (repeatable; pair with --png-folder)",
+    )
+    ap.add_argument(
+        "--png-folder",
+        action="append",
+        default=[],
+        help="folder of that matrix's per-FOV PNGs (repeatable; paired with --csv)",
+    )
+    ap.add_argument("csvs", nargs="*", help="[legacy] CSV(s) resolved via --composites-root")
+    ap.add_argument(
+        "--composites-root",
+        default=None,
+        help="[legacy] parent folder whose subfolders hold per-FOV images",
+    )
+    args = ap.parse_args()
+
+    if args.csv and args.png_folder and len(args.csv) != len(args.png_folder):
+        ap.error(
+            f"--csv ({len(args.csv)}) and --png-folder ({len(args.png_folder)}) "
+            "must be given the same number of times (paired by order)"
+        )
+
+    app = QtWidgets.QApplication(sys.argv[:1])  # keep argv out of Qt's parser
     apply_dark(app)
     win = FeatureViewer()
+    if args.composites_root:
+        win.composites_root = Path(args.composites_root)
     win.show()
+    if args.csv:  # explicit (csv, png_folder) pairs
+        folders = args.png_folder or [None] * len(args.csv)
+        win._load_paired(
+            list(
+                zip(
+                    [str(Path(c)) for c in args.csv],
+                    [str(Path(f)) if f else None for f in folders],
+                )
+            )
+        )
+    elif args.csvs:  # legacy: composites-root + positional csvs
+        win._load_files([str(Path(c)) for c in args.csvs])
     sys.exit(app.exec_())
 
 

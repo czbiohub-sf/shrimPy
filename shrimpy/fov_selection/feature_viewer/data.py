@@ -13,6 +13,7 @@ subfolder that covers the most of its rows.
 
 from __future__ import annotations
 
+import os
 import re
 
 from dataclasses import dataclass
@@ -21,15 +22,33 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-# Where the per-FOV composite images live (one subfolder per dataset).
+# Where the per-FOV composite images live (one subfolder per dataset). Override with
+# the FOV_COMPOSITES_ROOT env var, e.g. to point at bf_midslice_fov_features/ (whose
+# <tag>_midslice_png/ subfolders hold the per-FOV brightfield middle-slice images).
 COMPOSITES_ROOT = Path(
-    "/hpc/projects/comp.micro/microscope_dev/smart_fov_selection/"
-    "fov_selection_output/fov_features/fov_composites"
+    os.environ.get(
+        "FOV_COMPOSITES_ROOT",
+        "/hpc/projects/comp.micro/microscope_dev/smart_fov_selection/"
+        "fov_selection_output/fov_features/fov_composites",
+    )
 )
 _IMG_EXT = {".png", ".tif", ".tiff", ".jpg", ".jpeg"}
 
 # Reduced-embedding columns (PCA1, TSNE2, UMAP3, ...) are outputs, not input features.
 REDUCED_RE = re.compile(r"^(PCA|TSNE|UMAP)\d+$")
+
+# Features retired from the pipeline (see build_fov_feature_matrix.FEATURE_NAMES). They
+# are hidden from the viewer even when older matrix CSVs still carry the columns. Matched
+# by suffix -- the token after "__", or the whole name for plain (unprefixed) columns.
+REMOVED_FEATURE_SUFFIXES = frozenset(
+    {
+        "object_count",
+        "objects_per_10um2",
+        "edge_frac",
+        "eccentricity_mean",
+        "solidity_mean",
+    }
+)
 
 # Columns that are identifiers/metadata, never used as reduction features. Per-variant
 # feature columns (e.g. nuclei_vs_max__object_count) are NOT here -- they ARE the
@@ -44,6 +63,8 @@ META_BLACKLIST = {
     "filename",
     "goodness",
     "score",
+    "predicted_good_proba",  # model outputs, never ranking/reduction INPUTS
+    "predicted_goodness",
     "image_width_px",
     "image_height_px",
     "pixel_size_um",
@@ -144,8 +165,11 @@ def load_matrices(
     """Concatenate feature CSVs; add __dataset (tag), __src, and __png (composite path).
 
     Each *_fov_feature_matrix.csv is now one row per FOV, so each row maps to a single
-    composite image. __png is resolved from `composites_root` by FOV identity (see
-    wire_composites); rows with no matching composite get "" and the viewer shows a
+    composite image. If a sibling `<csv_stem>_png/` folder exists next to the CSV (the
+    convention for the paired matrices, e.g. *_nuclei_seg_instance_fov_matrix_png/ and
+    *_bf_midslice_instance_fov_matrix_png/), __png is resolved directly from that folder
+    by exact filename; otherwise it falls back to `composites_root` matched by FOV
+    identity (see wire_composites). Rows with no match get "" and the viewer shows a
     placeholder.
     """
     frames = []
@@ -156,7 +180,39 @@ def load_matrices(
         tag = p.name.replace("_fov_feature_matrix.csv", "").replace(".csv", "")
         df["__dataset"] = tag
         df["__src"] = str(p)
-        df["__png"] = wire_composites(df, composites_root, cache)
+        sibling_png = p.with_name(p.stem + "_png")
+        if sibling_png.is_dir():
+            df["__png"] = wire_folder(df, sibling_png)
+        else:
+            df["__png"] = wire_composites(df, composites_root, cache)
+        frames.append(df)
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def wire_folder(df: pd.DataFrame, png_folder: str | Path) -> list[str]:
+    """Resolve each row's image from a folder indexed DIRECTLY (not its subfolders).
+
+    Matches by the row's `filename` column (exact PNG stem) first, then by FOV identity
+    (well_col, fov, timepoint). Use when a matrix is paired with one explicit image
+    folder (CLI --csv/--png-folder)."""
+    idx = index_composites(Path(png_folder))
+    if not idx:
+        return [""] * len(df)
+    return [
+        next((idx[k] for k in _row_identity_keys(df.iloc[i]) if k in idx), "")
+        for i in range(len(df))
+    ]
+
+
+def load_paired(pairs: list[tuple[str, str]]) -> pd.DataFrame:
+    """Load (csv, png_folder) pairs; each row's __png is resolved from its OWN folder."""
+    frames = []
+    for csv, folder in pairs:
+        p = Path(csv)
+        df = pd.read_csv(p)
+        df["__dataset"] = p.name.replace("_fov_feature_matrix.csv", "").replace(".csv", "")
+        df["__src"] = str(p)
+        df["__png"] = wire_folder(df, folder) if folder else [""] * len(df)
         frames.append(df)
     return pd.concat(frames, ignore_index=True, sort=False)
 
@@ -166,6 +222,8 @@ def feature_columns(df: pd.DataFrame) -> list[str]:
     cols = []
     for c in df.columns:
         if c in META_BLACKLIST or REDUCED_RE.match(c):
+            continue
+        if c.split("__")[-1] in REMOVED_FEATURE_SUFFIXES:  # retired feature; hide it
             continue
         if pd.api.types.is_numeric_dtype(df[c]):
             cols.append(c)
