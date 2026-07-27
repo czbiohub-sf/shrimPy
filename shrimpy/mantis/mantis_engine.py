@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 
 from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
+import psutil
 
 from ome_writers import (
     AcquisitionSettings,
@@ -20,6 +22,8 @@ from pymmcore_plus.metadata import SummaryMetaV1
 from pymmcore_plus.metadata.serialize import to_builtins
 from useq import MDAEvent, MDASequence
 
+from shrimpy.dynatrack import DynaTrack
+
 # Get the logger instance (will be configured by the CLI entry point)
 logger = logging.getLogger(__name__)
 
@@ -29,6 +33,20 @@ SLOW_XY_STAGE_SPEED = 2.0  # in mm/s, used for short moves to maintain autofocus
 FAST_XY_STAGE_SPEED = 5.75  # in mm/s, used for long moves
 NEGLIGIBLE_XY_DISTANCE = 1  # in um, moves below this are ignored
 SHORT_XY_DISTANCE = 2000  # in um, threshold between slow and fast speed
+
+_PROC = psutil.Process(os.getpid())
+
+
+def _rss_gb() -> float:
+    return _PROC.memory_info().rss / (1024**3)
+
+
+def _find_shrimpy_log_file() -> Path | None:
+    """Return the path of the FileHandler attached to the shrimpy logger."""
+    for handler in logging.getLogger("shrimpy").handlers:
+        if isinstance(handler, logging.FileHandler):
+            return Path(handler.baseFilename)
+    return None
 
 
 class MantisEngine(MDAEngine):
@@ -55,7 +73,7 @@ class MantisEngine(MDAEngine):
         kwargs.setdefault("force_set_xy_position", False)
         # Set acquisition timeout to guard against stalling due to dropped frames
         # or missed trigger pulses
-        kwargs.setdefault("timeout_base", 2.0)
+        kwargs.setdefault("timeout_base", 10.0)
         kwargs.setdefault("timeout_multiplier", 1.0)
         kwargs.setdefault("timeout_first_frame", None)
         kwargs.setdefault("timeout_action", "warn")
@@ -67,6 +85,8 @@ class MantisEngine(MDAEngine):
         self._autofocus_fail_at_index = None
         self._xy_stage_device = None
         self._xy_stage_speed = None
+        self._dynatrack: DynaTrack | None = None
+        self._data_path: Path | None = None
 
         # Register event callbacks for logging
         mmc.mda.set_engine(self)
@@ -120,11 +140,74 @@ class MantisEngine(MDAEngine):
         self._xy_stage_device = core.getXYStageDevice()
         logger.debug(f"XY stage device: {self._xy_stage_device}")
 
+        # Setup DynaTrack position tracking. The XY pixel size (from the core)
+        # and the sequence z_plan step are the single source of truth for all
+        # scale parameters; DynaTrack derives and injects them.
+        self._dynatrack = DynaTrack.from_metadata(
+            microscope_meta.get("dynatrack"),
+            sequence,
+            data_path=self._data_path,
+            pixel_size_um=core.getPixelSizeUm(),
+        )
+        if self._dynatrack is not None:
+            self.mmcore.mda.events.frameReady.connect(self._dynatrack.on_frame_ready)
+            cfg = self._dynatrack.config
+            preprocessing = cfg.preprocessing or ["none"]
+            logger.info(
+                "DynaTrack enabled: "
+                f"input_channel={cfg.input_channel} -> tracking_channel={cfg.tracking_channel}, "
+                f"preprocessing=[{', '.join(preprocessing)}], "
+                f"tracking_method={cfg.tracking_method}, "
+                f"tracking_interval={cfg.tracking_interval}, "
+                f"reference_update_interval={cfg.reference_update_interval}"
+            )
+
         logger.info("Mantis hardware setup completed successfully")
 
-        # Call parent setup last so SummaryMetaV1 captures the fully
-        # configured hardware state (ROI, focus device, etc.).
-        return super().setup_sequence(sequence)
+        # Call parent setup so SummaryMetaV1 captures the fully configured
+        # hardware state and the setup event applies the ROI.
+        result = super().setup_sequence(sequence)
+
+        # DynaTrack runs in a worker subprocess for GPU/torch isolation:
+        # torch's OpenMP runtime segfaults when it coexists with the sequenced
+        # camera readout in the acquisition process. The worker is started after
+        # the setup event has applied the ROI, so getImageHeight/Width reflects
+        # the actual acquired frame size (also used to build the preprocessor,
+        # when configured, inside the worker).
+        if self._dynatrack is not None:
+            zyx_shape = (
+                max(sequence.sizes.get("z", 1), 1),
+                self.mmcore.getImageHeight(),
+                self.mmcore.getImageWidth(),
+            )
+            self._dynatrack.start(zyx_shape=zyx_shape, log_file_path=_find_shrimpy_log_file())
+
+        return result
+
+    def event_iterator(self, events: Iterable[MDAEvent]):
+        """Wrap event iteration to apply position updates before logging.
+
+        By applying position updates here (before the MDA runner emits
+        ``eventStarted``), the logged event reflects the corrected
+        coordinates rather than the original sequence values.
+
+        At timepoint boundaries the iterator drains any pending DynaTrack
+        update so that (a) position corrections are applied before the new
+        timepoint starts and (b) frame data does not accumulate unboundedly
+        in the executor queue.
+        """
+        last_t: int | None = None
+        for event in super().event_iterator(events):
+            if self._dynatrack is not None:
+                idx = (
+                    event.events[0].index if isinstance(event, SequencedEvent) else event.index
+                )
+                t_idx = idx.get("t", 0)
+                if last_t is not None and t_idx != last_t:
+                    self._dynatrack.drain_pending()
+                last_t = t_idx
+                event = self._dynatrack.apply_position_update(event)
+            yield event
 
     def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
@@ -146,10 +229,25 @@ class MantisEngine(MDAEngine):
             num_frames = len(event.events) if isinstance(event, SequencedEvent) else 1
             raise SkipEvent(num_frames=num_frames, reason="autofocus failed")
 
+        # DEBUG:
+        free_capacity = self.mmcore.getBufferFreeCapacity()
+        total_capacity = self.mmcore.getBufferTotalCapacity()
+        logger.debug(f"Circular buffer capacity: {free_capacity} / {total_capacity} frames")
+        logger.debug(
+            f"MantisEngine[mem]: setup_event rss={_rss_gb():.2f} GB "
+            f"mm_buf_used={total_capacity - free_capacity}/{total_capacity}"
+        )
+
         # Call parent setup_event
         super().setup_event(event)
 
     def teardown_sequence(self, sequence):
+        # DynaTrack: disconnect callback and shutdown
+        if self._dynatrack is not None:
+            self.mmcore.mda.events.frameReady.disconnect(self._dynatrack.on_frame_ready)
+            self._dynatrack.shutdown()
+            self._dynatrack = None
+
         super().teardown_sequence(sequence)
 
         core = self.mmcore
@@ -178,6 +276,9 @@ class MantisEngine(MDAEngine):
                 # Skip setting Z position if autofocus is enabled to avoid
                 # disengaging autofocus lock; autofocus algorithm will set Z
                 # position independently
+                logger.debug(
+                    "Skipping Z set on autofocus stage: %s.%s = %s", device, prop, value
+                )
                 continue
             super()._set_event_properties([(device, prop, value)])
 
@@ -369,6 +470,7 @@ class MantisEngine(MDAEngine):
             sequence = MDASequence.from_file(mda_config)
 
         data_path = output_dir / f"{name}.ome.zarr"
+        self._data_path = data_path
 
         # Write summary metadata after the zarr store is created
         # TODO: remove once ome-writers supports root-level metadata natively

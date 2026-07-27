@@ -25,6 +25,7 @@ dependencies = [
   "numpy",
   "ome-writers[acquire-zarr]",
   "pymmcore>=11.14.0.75.0",
+  "pymmcore-gui",
   "pymmcore-plus",
   "pymmcore-widgets",
   "PyYAML",
@@ -42,8 +43,18 @@ dev = [
   "pre-commit~=4.5",
   "pytest~=9.0",
   "ruff~=0.15",
-  "iohub"
+  "iohub",
+  "ipykernel",
 ]
+dynatrack = [
+  "biahub[stain]",  # [stain] pulls in cytoland, required for dynatrack
+  "matplotlib",
+  "torch",
+]
+# CI-only: the CPU torch build is all the DynaTrack *unit* tests need (they
+# exercise pure torch/numpy math, not biahub/cytoland). Avoids the ~2.5 GB
+# CUDA wheel the `dynatrack` group pulls on Windows.
+test-cpu = ["torch"]
 
 [project.scripts]
 shrimpy = "shrimpy.cli.main:cli"
@@ -63,6 +74,36 @@ pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "d
 ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
 useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "main" }
 napari-deskew-preview = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview", branch = "main" }
+# Windows: CUDA build via cu132 index (requires CUDA Toolkit 13.2 on the machine)
+# for the production `dynatrack` group; the CI-only `test-cpu` group takes the
+# CPU wheel instead. Elsewhere (macOS/Linux) both fall back to PyPI (CPU/MPS).
+torch = [
+  { index = "pytorch-cu132", group = "dynatrack", marker = "sys_platform == 'win32'" },
+  { index = "pytorch-cpu", group = "test-cpu", marker = "sys_platform == 'win32'" },
+]
+
+# no pipy release
+pymmcore-gui = { git = "https://github.com/pymmcore-plus/pymmcore-gui", branch = "main" }
+
+# needed for phase reconstruction, deskew, and virtual staining
+biahub = { git = "https://github.com/czbiohub-sf/biahub", rev = "b011bca57d5bf15c777839e4250e594f7471af3e"}
+
+# no pipy release yet; uv sources don't propagate, so mirror biahub's cytoland pin
+cytoland = { git = "https://github.com/mehta-lab/VisCy", subdirectory = "applications/cytoland", rev = "4b62365c0df25929bffc7f01b3bb2d1c11d69cce" }
+
+# torch's CUDA and CPU builds can't coexist; pick exactly one group.
+[tool.uv]
+conflicts = [[{ group = "dynatrack" }, { group = "test-cpu" }]]
+
+[[tool.uv.index]]
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.ruff]
 # Ruff replaces black, isort, flake8, and pylint
@@ -99,3 +140,5 @@ docstring-code-format = true
 
 [tool.pytest.ini_options]
 testpaths = ["shrimpy/tests"]
+# Never collect tests from archived/legacy code or scripts (any depth)
+norecursedirs = ["archive", "scripts"]

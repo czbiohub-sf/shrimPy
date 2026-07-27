@@ -15,7 +15,6 @@ import pytest
 
 from iohub import open_ome_zarr
 from iohub.ngff import Plate
-from pymmcore_plus.core import CMMCorePlus
 from useq import MDASequence, Position
 
 from shrimpy.mantis.mantis_engine import DEMO_PFS_METHOD, MantisEngine
@@ -30,11 +29,17 @@ DEMO_MDA_CONFIG = Path(__file__).parent / "artifacts" / "demo_mda_sequence.yaml"
 
 
 @pytest.fixture
-def demo_engine() -> MantisEngine:
-    """Create a MantisEngine backed by the real demo core."""
-    core = CMMCorePlus()
-    core.loadSystemConfiguration()
-    return MantisEngine(core)
+def demo_engine(demo_core) -> MantisEngine:
+    """Create a MantisEngine backed by the real demo core.
+
+    Depends on the ``demo_core`` fixture (rather than creating a local core)
+    so that pytest keeps a strong reference to the ``CMMCorePlus`` for the
+    lifetime of the test. ``MDAEngine`` only holds a weakref to the core, so a
+    locally-created core would be eligible for garbage collection as soon as
+    this fixture returns — leading to ``CMMCorePlus has been garbage collected``
+    errors or native segfaults mid-acquisition.
+    """
+    return MantisEngine(demo_core)
 
 
 @pytest.fixture
@@ -112,7 +117,9 @@ def test_demo_mda_acquisition(demo_engine, demo_mda_sequence, tmp_path):
     _data = _pos.data
 
     assert num_positions == 8, f"Expected 8 positions, found {num_positions}"
-    # Confirm expected position name
+    # Confirm expected position name. Unnamed positions in wells fall back to
+    # a zero-padded FOV index (ome-writers: `f"fov{gp_idx}"`), e.g. "fov0",
+    # see https://github.com/pymmcore-plus/ome-writers/pull/136
     assert _pos_name == "A/1/fov0"
     # ROI is now applied via the setup event in MDASequence
     setup_roi = demo_mda_sequence.setup.roi

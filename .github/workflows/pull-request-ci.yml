@@ -35,7 +35,9 @@ jobs:
       uses: astral-sh/setup-uv@v6
 
     - name: Install dependencies
-      run: uv sync
+      # test-cpu pulls the CPU torch wheel (not the ~2.5 GB CUDA build the
+      # production `dynatrack` group uses) — enough for the DynaTrack unit tests.
+      run: uv sync --group test-cpu
 
     - name: Install mmcore
       run: uv run mmcore install --test-adapters
