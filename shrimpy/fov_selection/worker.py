@@ -39,8 +39,11 @@ class FovSelectionWorker:
         Reconstructed channels to segment/feature (e.g. ``['nuclei', 'membrane']``).
     segmentation : dict
         Segmentation config block (model, thresholds, per-organelle diameters).
-    model_path : str
-        Path to the trained FOV-goodness ``.joblib``.
+    model_cfg : dict
+        The ``fov_selection.model`` config block, passed to
+        :func:`shrimpy.fov_selection.fov_model.build_fov_model`. Its ``type`` (one of
+        :data:`shrimpy.fov_selection.fov_model.MODEL_TYPES`) selects the model;
+        ``classification_tree`` additionally carries a ``path`` to a trained ``.joblib``.
     projection : str
         Projection method (``'sum'`` / ``'max'``).
     threshold : float
@@ -58,7 +61,7 @@ class FovSelectionWorker:
         recon: dict,
         target_channels: list[str],
         segmentation: dict,
-        model_path: str,
+        model_cfg: dict,
         projection: str,
         threshold: float,
         px_um: float,
@@ -71,7 +74,7 @@ class FovSelectionWorker:
         self._recon = recon
         self._target_channels = target_channels
         self._segmentation = segmentation
-        self._model_path = model_path
+        self._model_cfg = model_cfg
         self._projection = projection
         self._threshold = threshold
         self._px_um = px_um
@@ -102,7 +105,7 @@ class FovSelectionWorker:
                 self._recon,
                 self._target_channels,
                 self._segmentation,
-                self._model_path,
+                self._model_cfg,
                 self._projection,
                 self._threshold,
                 self._px_um,
@@ -166,7 +169,7 @@ def _worker_loop(
     recon: dict,
     target_channels: list[str],
     segmentation: dict,
-    model_path: str,
+    model_cfg: dict,
     projection: str,
     threshold: float,
     px_um: float,
@@ -200,6 +203,7 @@ def _worker_loop(
     log = logging.getLogger("shrimpy.fov_selection.worker")
 
     try:
+        from shrimpy.fov_selection import fov_model as fov_model_lib
         from shrimpy.fov_selection import pipeline
         from shrimpy.preprocessing import build_preprocessor
 
@@ -211,6 +215,7 @@ def _worker_loop(
             deskew=recon.get("deskew"),
             phase=recon.get("phase"),
             virtual_staining=recon.get("virtual_staining"),
+            output_channel=recon.get("output_channel", "phase"),
             require_gpu=require_gpu,
         )
         if preprocessor is None:
@@ -218,11 +223,18 @@ def _worker_loop(
                 "fov_selection.reconstruction produced no preprocessor; a "
                 "'deskew'/'phase'/'vs' pipeline is required to make nuclei/membrane."
             )
-        cellpose = pipeline.load_cellpose_model(segmentation)
-        model = pipeline.load_fov_model(model_path)
+        segmenter = pipeline.load_segmenter(segmentation)
+        # Pluggable FOV model built from the config (trained .joblib via 'path', or a
+        # hand-tuned 'type'); decide_fov calls model.predict, agnostic to the type.
+        model = fov_model_lib.build_fov_model(model_cfg)
 
         output_queue.put({"type": "ready"})
-        log.info("FOV-selection worker: reconstruction + Cellpose + tree ready")
+        log.info(
+            "FOV-selection worker: reconstruction + %s segmentation + %s (features=%s) ready",
+            (segmentation or {}).get("model", "cellpose"),
+            type(model).__name__,
+            model.feature_names,
+        )
 
     except Exception as e:
         output_queue.put({"type": "error", "error": str(e)})
@@ -258,7 +270,7 @@ def _worker_loop(
                 need_artifacts = debug_dir is not None or recon_zarr_path is not None
                 result = pipeline.decide_fov(
                     preprocessor,
-                    cellpose,
+                    segmenter,
                     model,
                     bf_zyx,
                     target_channels=target_channels,
@@ -291,10 +303,9 @@ def _worker_loop(
                     }
                 )
                 log.info(
-                    "FOV-selection worker: %s -> proba=%.3f %s (%.1fs)",
+                    "FOV-selection worker: %s -> score=%.3f (%.1fs)",
                     name,
                     proba,
-                    "GOOD" if good else "bad",
                     elapsed,
                 )
             except Exception as e:

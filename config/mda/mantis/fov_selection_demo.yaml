@@ -1,85 +1,139 @@
-# Setup
-setup:
-  roi: [225, 880, 1600, 256]
-  properties:
-    - ['Core', 'Focus', 'Z']
-    - ['Camera', 'OnCameraCCDXSize', '2048']
-    - ['Camera', 'OnCameraCCDYSize', '2048']
-    - ['Camera', 'PixelType', '16bit']
-    - ['XY', 'Velocity', '10000']
-    - ['Z', 'UseSequences', 'Yes']
+# FOV-selection REPLAY demo.
+#
+# Same FOV-selection settings as config/mda/mantis/config.yaml (ranking model,
+# preprocessing pipeline A = middle-slice brightfield + Cellpose-DINO, deskew, and the
+# gaussian ranking model), but the HARDWARE/scope config is set for the ReplayCamera/demo
+# core instead of real mantis:
+#   - no top-level `setup` block (the LS/Angle Galvo, Prime BSI Express, TS2_* devices and
+#     the 'Imaging Path' / 'Channels - Right' groups do not exist on the demo core);
+#   - channels use the demo ConfigGroup name 'Channel' (see MMConfig_A549_fov_replay.cfg);
+#   - autofocus disabled (real 'PFS' / 'ZDrive' are mantis-only; demo core has 'ObjectiveZ');
+#   - reset_hardware_sequencing_settings uses the demo 'PiezoZ' device;
+#   - prescan_mda positions use a WellPlatePlan (wells B/3, B/4, B/5, 7x7 grid) whose useq
+#     field names (B/3/000000, ...) map to the replay store's source FOVs.
+#
+# Run:
+#   uv run --group fov --group dev shrimpy acquire mantis \
+#     --mm-config config/MMConfig_A549_fov_replay.cfg \
+#     --mda-config config/mda/mantis/fov_selection_demo.yaml \
+#     --output-dir <existing dir> --name fov_replay_test --unicore
+# (point the .cfg DataPath at the A549 store first.)
 
-# Candidate FOVs (top-level): pre-scan images all of these, timelapse images
-# only the good ones. A useq WellPlatePlan (select wells + per-well FOV grid).
-stage_positions:
-  a1_center_xy: [0, 0]
-  plate:
-    columns: 6
-    name: 24-well
-    rows: 4
-    well_size:
-    - 15.6
-    - 15.6
-    well_spacing:
-    - 19.0
-    - 19.0
-  selected_wells:
-  - [0] # rows
-  - [0, 1] # columns
-  well_points_plan:
-    rows: 10
-    columns: 10
-    fov_height: 180.0
-    fov_width: 180.0
-    overlap:
-    - -10.0
-    - -10.0
+# ---- Timelapse stage_positions (top-level): EMPTY, filled at runtime with the good FOVs ----
+stage_positions: []
 
-# Define time plan (number of TIMELAPSE timepoints; pre-scan is a separate run)
 time_plan:
-  interval: 5.0
-  loops: 3
+  prioritize_duration: true
+  interval: 1
+  loops: 1            # TIMELAPSE timepoints (the pre-scan is a separate run)
 
-# Define z plan
 z_plan:
-  top: 89
-  bottom: -89
-  step: 15 # coarser sampling for demo
+  top: 79.95
+  bottom: -80.1
+  step: 0.15          # full Z range -> matches the replay store's 1068 slices
   go_up: true
 
-# Define channels
+# Demo ConfigGroup is 'Channel' (MMConfig_A549_fov_replay.cfg), not 'Channels - Right'.
 channels:
-- config: DAPI
-  group: Channel
-  exposure: 5.0
-  do_stack: true
-  z_offset: 0.0
-  acquire_every: 1
-  camera: null
-- config: FITC
-  group: Channel
-  exposure: 3.0
-  do_stack: true
-  z_offset: 0.0
-  acquire_every: 1
-  camera: null
+  - config: BF - Oblique
+    group: Channel
+    exposure: 5.0
+  - config: GFP EX488 EM525-45
+    group: Channel
+    exposure: 10.0
 
 autofocus_plan: null
 keep_shutter_open_across: []
 
-# Define metadata per microscope
 metadata:
-  pymmcore_widgets:
-    version: 0.10.2.dev23+g22b8c0aff.d20260106
   mantis:
+    # Demo device; TS2_*/XYStage resets are real-mantis only.
     reset_hardware_sequencing_settings:
-      - ['Z', 'UseSequences', 'No']
+      - ['PiezoZ', 'UseSequences', 'No']
     autofocus:
-      enabled: false
-      method: demo-PFS
-      stage: Z
-    # Pseudocode
+      enabled: false      # replay/demo: off (real 'PFS'/'ZDrive' are mantis-only)
+      method: demo-PFS    # if re-enabled on the demo core, use the simulated PFS path
+      stage: ObjectiveZ
+
     fov_selection:
       enabled: true
-      model: tree_1
-      target_fov_count: 9
+
+      # ---- Pre-scan MDASequence ----
+      # Candidate FOVs as a useq WellPlatePlan: wells B/3, B/4, B/5 with a 7x7 FOV grid =
+      # 147 candidates (the full offline dataset). useq assigns slash-free field names that
+      # the ReplayCamera maps to the matching source FOV (well B/3 fov k -> k-th source FOV in
+      # B/3, row-major). For a quick smoke test, drop well_points_plan rows/columns to 1-2.
+      # NO `setup` block here (real-mantis devices) and channel group is 'Channel' for replay.
+      prescan_mda:
+        stage_positions:
+          a1_center_xy: [0.0, 0.0]
+          plate:
+            rows: 4
+            columns: 6
+            name: 24-well
+            well_size: [15.6, 15.6]
+            well_spacing: [19.0, 19.0]
+          selected_wells:
+            - [1, 1, 1]     # rows: B, B, B
+            - [2, 3, 4]     # columns: 3, 4, 5  -> B/3, B/4, B/5
+          well_points_plan:
+            rows: 7           # 7x7 = 49 FOVs/well; B/3,B/4,B/5 -> 147 total
+            columns: 7
+            fov_height: 180.0
+            fov_width: 180.0
+        time_plan:
+          loops: 1            # single pre-scan timepoint (validated)
+          interval: 0
+        z_plan:
+          top: 79.95
+          bottom: -80.1
+          step: 0.15
+          go_up: true
+        channels:
+          - config: BF - Oblique
+            group: Channel
+            exposure: 5.0
+
+      # Acquired channel fed to reconstruction (must be one of prescan_mda.channels).
+      fov_selection_channel: "BF - Oblique"
+
+      # ---- Feature-extraction pipeline A: middle-slice brightfield + Cellpose-DINO ----
+      preprocessing: ['flatfield', 'deskew', 'middle_slice_projection', 'segmentation']
+
+      deskew:
+        ls_angle_deg: 30.0
+        keep_overhang: false
+        average_n_slices: 3
+
+      segmentation:
+        model: cellpose
+        model_name: cpdino
+        gpu: true
+        flow_threshold: 0.4
+        cellprob_threshold: 0.0
+        batch_size: 64
+        min_size: 15
+        diameters:            # microns; null -> Cellpose auto-scale
+          nuclei: null
+          membrane: 120.0
+
+      # ---- Ranking model (gaussian bells; from config.yaml) ----
+      model:
+        type: ranking_by_defined_range
+        top_fov: 20                    # keep (pass) the 20 highest-ranked FOVs; required
+        features:
+          coverage_frac:               # fraction of the FOV covered by objects (gaussian bell)
+            shape: gaussian
+            center: 0.68376            # peak desirability at this coverage
+            fwhm: 0.17561              # desirability = 0.5 at center +- 0.0878
+            weight: 1.0
+          max_gap_um:                  # largest object-free region radius (um) (gaussian bell)
+            shape: gaussian
+            center: 21.96101
+            fwhm: 7.81154
+            weight: 1.0
+
+      # Debug outputs
+      save_pre_scan_omezarr: True  # per-step reconstruction -> <name>_prescan.ome.zarr
+                                   # (NOTE: the code reads this key, not `save_prescan`)
+      save_decision: True          # per-FOV projection/mask PNGs + fov_summary.csv under <name>_fov_debug/

@@ -95,7 +95,7 @@ class MantisEngine(MDAEngine):
         self._fov: FovSelection | None = None
         # Good FOV names from the pre-scan run, captured in teardown_sequence so
         # acquire() can build the timelapse run after the pre-scan run returns.
-        self._fov_good_names: list[str] = []
+        self._fov_passed_names: list[str] = []
         self._data_path: Path | None = None
 
         # Register event callbacks for logging
@@ -301,18 +301,19 @@ class MantisEngine(MDAEngine):
             self._dynatrack.shutdown()
             self._dynatrack = None
 
-        # FOV selection (pre-scan run): capture the good FOV names before shutting
+        # FOV selection (pre-scan run): capture the passing FOV names before shutting
         # down so acquire() can build the timelapse run, then disconnect + shut
-        # down the worker. good_position_names() survives shutdown() (only the
+        # down the worker. passed_position_names() survives shutdown() (only the
         # frame buffers are cleared, not the verdicts).
         if self._fov is not None:
             self._fov.drain()
-            self._fov_good_names = self._fov.good_position_names()
+            self._fov.log_selection_summary()
+            self._fov_passed_names = self._fov.passed_position_names()
             logger.info(
-                "FOV selection: %d/%d FOVs good: %s",
-                len(self._fov_good_names),
+                "FOV selection: %d/%d FOVs passed: %s",
+                len(self._fov_passed_names),
                 len(sequence.stage_positions),
-                self._fov_good_names,
+                self._fov_passed_names,
             )
             self.mmcore.mda.events.frameReady.disconnect(self._fov.on_frame_ready)
             self._fov.shutdown()
@@ -553,7 +554,7 @@ class MantisEngine(MDAEngine):
             self._run_mda(sequence, data_path, write_summary=True)
         else:
             # FOV selection is on -> adaptive two-run acquisition: a pre-scan run
-            # decides which candidate FOVs are "good" (self._fov_good_names,
+            # decides which candidate FOVs pass selection (self._fov_passed_names,
             # captured in teardown_sequence), then the timelapse images only
             # those. Sequence building lives in shrimpy/fov_selection/sequences.py.
             prescan_seq = build_prescan_sequence(sequence, fov_cfg)
@@ -562,11 +563,11 @@ class MantisEngine(MDAEngine):
             # writes the per-step reconstruction to <name>_prescan.ome.zarr.
             self._run_mda(prescan_seq, None, write_summary=False)
 
-            good = list(self._fov_good_names)
-            if not good:
-                logger.warning("FOV selection: no good FOVs; skipping the timelapse run.")
+            passed = list(self._fov_passed_names)
+            if not passed:
+                logger.warning("FOV selection: no FOVs passed; skipping the timelapse run.")
                 return
-            timelapse_seq = build_timelapse_sequence(sequence, prescan_seq, good)
+            timelapse_seq = build_timelapse_sequence(sequence, prescan_seq, passed)
             self._run_mda(timelapse_seq, data_path, write_summary=True)
 
         logger.info("Acquisition completed successfully")

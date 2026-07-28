@@ -69,6 +69,8 @@ fov = [
   "napari-iohub",    # OME-Zarr / HCS reader plugin for napari
   # analysis stack used by the pipeline / feature viewer / goodness prediction
   "scikit-learn",    # decision-tree model + PCA/t-SNE in the feature viewer
+  "lightgbm",        # LightGBM lambdarank tier for tunable FOV ranking (ranking.py)
+  "interpret",       # Explainable Boosting Machine (GAM) tier for tunable FOV ranking
   "scikit-image",    # regionprops object features in extract_fov_features
   "scipy",           # nearest-neighbor / spatial stats in feature extraction
   "pandas",          # feature-matrix tables throughout

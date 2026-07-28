@@ -11,10 +11,10 @@ that single row, rather than as separate rows. The prefix is:
 
     <organelle>_<segmentation_source>_<projection_type>
 
-e.g. for the CAAX/H2B dataset each FOV row carries the 10 features below for each of:
+e.g. for the CAAX/H2B dataset each FOV row carries the features below for each of:
     nuclei_vs_max, nuclei_vs_sum, membrane_vs_max, membrane_vs_sum,
     nuclei_fluor_max, nuclei_fluor_sum
-as e.g. `nuclei_vs_max__object_count`, `membrane_vs_sum__coverage_frac`, ... Variants
+as e.g. `nuclei_vs_max__coverage_frac`, `membrane_vs_sum__nn_cv`, ... Variants
 absent for a given FOV (e.g. an empty mask) are left NaN.
 
 Each row is one FOV, so FOV visualization is one composite image per row; the feature
@@ -25,12 +25,12 @@ Every matrix also carries a `goodness` label column: good=1, neutral=0, bad=-1 (
 when unlabeled). OpenCell FOVs are labeled from manual scoring; all other datasets start
 unlabeled (NaN) and can be labeled interactively in the feature viewer.
 
-The 10 per-variant features (same set as the OpenCell analysis matrix,
-build_fov_features.py):
-  Density            object_count, objects_per_10um2, coverage_frac
-  Edge cut-off       edge_frac
-  Spatial distrib.   com_offset_norm, nn_um_mean, nn_cv, densest_grid_frac
-  Shape              eccentricity_mean, solidity_mean
+The per-variant features:
+  Coverage           coverage_frac
+  Spacing            nn_um_mean, nn_cv
+  Centering          com_offset_norm
+  Spatial voids      empty_grid_frac, occupancy_entropy, max_empty_radius_norm,
+                     max_gap_um (mask-derived; see mask_gap_features)
 
 Two input kinds:
   - zarr datasets   : <tag>_object_features.csv in FEATURES_DIR (HCS positions).
@@ -50,6 +50,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from scipy.ndimage import distance_transform_edt
+from scipy.spatial import cKDTree
+
 FEATURES_DIR = Path(
     "/hpc/projects/comp.micro/microscope_dev/smart_fov_selection/fov_selection_output/fov_features"
 )
@@ -58,7 +61,22 @@ OPENCELL_CSV = Path(
     "opencell/nuclei_segmentation/nuclei_object_features.csv"
 )
 OPENCELL_OUT = FEATURES_DIR / "2019_opencell_fov_scoring_fov_feature_matrix.csv"
-GRID = 8
+# Quadrat grid for empty_grid_frac / occupancy_entropy. ADAPTIVE: the grid side scales with
+# the object count so each cell holds ~GRID_LAMBDA objects on average (grid resolution tracks
+# density), clamped to [GRID_MIN, GRID_MAX]. This measures the spatial *pattern* independent
+# of how many cells there are (at the cost of the raw-density signal a fixed grid carried).
+GRID_LAMBDA = 2.0
+GRID_MIN, GRID_MAX = 2, 24
+
+
+def _adaptive_grid(n: int) -> int:
+    """Grid side G = round(sqrt(n / GRID_LAMBDA)), clamped to [GRID_MIN, GRID_MAX]."""
+    return int(np.clip(round(np.sqrt(max(int(n), 1) / GRID_LAMBDA)), GRID_MIN, GRID_MAX))
+EMPTY_RADIUS_SAMPLES = 40  # NxN test-point grid for the largest-empty-circle feature
+
+# Feature keys that need the label mask itself (not just the per-object centroid table);
+# produced by mask_gap_features(), so they are NOT in FEATURE_NAMES (the group_features set).
+MASK_FEATURE_KEYS = frozenset({"max_gap_um"})
 
 # Columns that identify ONE FOV (-> one output row). Everything else about a FOV is
 # spread across prefixed variant columns.
@@ -72,25 +90,17 @@ FOV_META = ["image_width_px", "image_height_px", "pixel_size_um"]
 # clean column prefix is built from these (see variant_tags()).
 VARIANT_KEYS = ["organelle", "segmentation_source", "projection_type"]
 
-# Border margin for edge_frac, as a fraction of image height/width. The VS prediction
-# has a ~0.3-0.6% zero-pad band, so masks of edge-clipped cells stop a few px short of
-# the true border; this margin absorbs it. Derived from the raw per-object bbox (see
-# group_features), so it can be re-tuned and the matrix rebuilt WITHOUT re-extracting
-# object features.
-EDGE_MARGIN_FRAC = 0.01
-
-# The per-variant features produced by group_features(), in output order.
+# The per-variant features produced by group_features(), in output order. Coverage +
+# spacing + large-scale-void / non-uniformity features (an empty center, ring, or single
+# clump that COM / local-NN features miss). max_gap_um is mask-derived (mask_gap_features).
 FEATURE_NAMES = [
-    "object_count",
-    "objects_per_10um2",
     "coverage_frac",
-    "edge_frac",
-    "com_offset_norm",
     "nn_um_mean",
     "nn_cv",
-    "densest_grid_frac",
-    "eccentricity_mean",
-    "solidity_mean",
+    "com_offset_norm",
+    "empty_grid_frac",
+    "occupancy_entropy",
+    "max_empty_radius_norm",
 ]
 
 
@@ -103,28 +113,8 @@ def group_features(g: pd.DataFrame) -> dict:
     cy = g["centroid_y_norm"].to_numpy(float) * H
 
     rec = {
-        "object_count": n,
-        # nuclei per 10 um^2 (physical density)
-        "objects_per_10um2": 10.0 * n / (W * H * px * px) if px else np.nan,
         "coverage_frac": float(g["area_px"].sum() / (W * H)),
     }
-    # Edge-touching is derived here from the raw per-object bounding box, so the
-    # margin can be re-tuned WITHOUT re-extracting object features. A mask counts as
-    # touching the border if its bbox comes within EDGE_MARGIN_FRAC of any edge (the
-    # margin absorbs the VS zero-pad band).
-    if {"bbox_min_row", "bbox_min_col", "bbox_max_row", "bbox_max_col"} <= set(g.columns):
-        b_top = g["bbox_min_row"].to_numpy(float)
-        b_left = g["bbox_min_col"].to_numpy(float)
-        b_bot = g["bbox_max_row"].to_numpy(float)  # skimage max is exclusive
-        b_right = g["bbox_max_col"].to_numpy(float)
-        my, mx = EDGE_MARGIN_FRAC * H, EDGE_MARGIN_FRAC * W
-        touch = (b_top <= my) | (b_left <= mx) | (b_bot >= H - my) | (b_right >= W - mx)
-        rec["edge_frac"] = float(touch.mean())
-    else:  # legacy per-object CSV without bbox columns
-        src = "touches_edge" if "touches_edge" in g.columns else None
-        rec["edge_frac"] = float(g[src].astype(bool).mean()) if src else np.nan
-    com = np.array([cx.mean(), cy.mean()])
-    rec["com_offset_norm"] = float(np.hypot(*(com - [W / 2, H / 2])) / (0.5 * np.hypot(W, H)))
     # Nearest-neighbor spacing in PHYSICAL units (um) so it is invariant to
     # magnification (pixel size); NN distance is a local density measure, so it is
     # independent of FOV size too. nn_cv (std/mean) is a unitless ratio -- the
@@ -138,14 +128,43 @@ def group_features(g: pd.DataFrame) -> dict:
     nn_um = nn_um[~np.isnan(nn_um)]
     rec["nn_um_mean"] = float(nn_um.mean()) if nn_um.size else np.nan
     rec["nn_cv"] = float(nn_um.std() / nn_um.mean()) if nn_um.size and nn_um.mean() else np.nan
-    gx = np.clip((cx / W * GRID).astype(int), 0, GRID - 1)
-    gy = np.clip((cy / H * GRID).astype(int), 0, GRID - 1)
-    counts = np.zeros(GRID * GRID, int)
-    np.add.at(counts, gy * GRID + gx, 1)
-    rec["densest_grid_frac"] = float(counts.max() / n)
-    rec["eccentricity_mean"] = float(g["eccentricity"].mean())
-    rec["solidity_mean"] = float(g["solidity"].mean())
+    # Center-of-mass offset: distance from the (unweighted) mean object centroid to the FOV
+    # center, normalized by the half-diagonal. 0 = objects centered on average; -> 1 = the
+    # object cloud is clumped toward one side / corner (off-center or partially-covered FOV).
+    com = np.array([cx.mean(), cy.mean()])
+    rec["com_offset_norm"] = float(np.hypot(*(com - [W / 2, H / 2])) / (0.5 * np.hypot(W, H)))
+    # --- spatial-distribution features (voids / non-uniformity that local NN misses) ---
+    grid = _adaptive_grid(n)  # grid resolution tracks the object count (see _adaptive_grid)
+    gx = np.clip((cx / W * grid).astype(int), 0, grid - 1)
+    gy = np.clip((cy / H * grid).astype(int), 0, grid - 1)
+    counts = np.zeros(grid * grid, int)
+    np.add.at(counts, gy * grid + gx, 1)
+    n_cells = grid * grid
+    # Fraction of grid cells with no object -> high for a ring / empty center / one clump.
+    rec["empty_grid_frac"] = float((counts == 0).sum() / n_cells)
+    # Occupancy spread across the grid (normalized Shannon entropy): uniform -> 1, concentrated -> 0.
+    p = counts[counts > 0] / counts.sum()
+    rec["occupancy_entropy"] = float(-(p * np.log(p)).sum() / np.log(n_cells)) if p.size else np.nan
+    # Largest object-free circle, from the centroids (grid-sampled), normalized by the
+    # half-diagonal: the radius of the biggest gap -> large when there is a big empty area.
+    s = EMPTY_RADIUS_SAMPLES
+    gxs, gys = np.meshgrid(np.linspace(0, W, s), np.linspace(0, H, s))
+    dmin, _ = cKDTree(np.column_stack([cx, cy])).query(np.column_stack([gxs.ravel(), gys.ravel()]))
+    rec["max_empty_radius_norm"] = float(dmin.max() / (0.5 * np.hypot(W, H)))
     return rec
+
+
+def mask_gap_features(mask: np.ndarray, px_um: float) -> dict:
+    """Spatial feature that needs the mask itself (not just centroids).
+
+    ``max_gap_um``: radius (um) of the largest object-free region, i.e. the max over
+    background pixels of the distance to the nearest foreground pixel (distance transform).
+    Large when the FOV has a big empty area such as an empty center. Empty mask -> NaN.
+    """
+    fg = np.asarray(mask) > 0
+    if not fg.any():
+        return {"max_gap_um": float("nan")}
+    return {"max_gap_um": float(distance_transform_edt(~fg).max()) * float(px_um)}
 
 
 def variant_tags(obj: pd.DataFrame) -> dict[str, str]:

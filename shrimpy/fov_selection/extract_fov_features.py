@@ -15,13 +15,8 @@ Per-object columns:
     centroid_x_norm/_y_norm  mask-center / image size (0..1)
     area_px, area_um2        mask size (pixels and physical)
     equivalent_diameter_um   diameter of a circle with the same area
-    eccentricity, solidity, extent   shape descriptors (QC / debris)
+    extent                   shape descriptor (QC / debris)
     intensity_mean/_max      prediction-channel signal under the mask
-    bbox_min_row/_col,       raw mask bounding box in px (skimage convention: min
-    bbox_max_row/_col          inclusive, max exclusive). Edge-touching is derived
-                               downstream at any margin from these + image size, so
-                               the margin can be re-tuned without re-extracting.
-    dist_to_edge_norm        centroid distance to nearest border / image size
     nearest_neighbor_dist_um  to nearest object of the same channel (crowding)
     image_width_px, image_height_px   total image size
 
@@ -91,10 +86,7 @@ PROPS = (
     "centroid",
     "area",
     "equivalent_diameter_area",
-    "eccentricity",
-    "solidity",
     "extent",
-    "bbox",
     "intensity_mean",
     "intensity_max",
 )
@@ -113,16 +105,9 @@ PER_OBJECT_COLUMNS = [
     "area_px",
     "area_um2",
     "equivalent_diameter_um",
-    "eccentricity",
-    "solidity",
     "extent",
     "intensity_mean",
     "intensity_max",
-    "bbox_min_row",
-    "bbox_min_col",
-    "bbox_max_row",
-    "bbox_max_col",
-    "dist_to_edge_norm",
     "nearest_neighbor_dist_um",
     "image_width_px",
     "image_height_px",
@@ -225,20 +210,9 @@ def object_feature_rows(
                 "area_px": int(p["area"][k]),
                 "area_um2": float(p["area"][k]) * px_um * px_um,
                 "equivalent_diameter_um": float(p["equivalent_diameter_area"][k]) * px_um,
-                "eccentricity": float(p["eccentricity"][k]),
-                "solidity": float(p["solidity"][k]),
                 "extent": float(p["extent"][k]),
                 "intensity_mean": float(p["intensity_mean"][k]),
                 "intensity_max": float(p["intensity_max"][k]),
-                # Raw mask bounding box in pixels (skimage convention: min inclusive,
-                # max exclusive). Kept raw so any edge margin can be applied later
-                # from the FOV matrix WITHOUT re-extracting -- edge_frac_<k> is derived
-                # in build_fov_feature_matrix.py by comparing these to a margin.
-                "bbox_min_row": int(p["bbox-0"][k]),
-                "bbox_min_col": int(p["bbox-1"][k]),
-                "bbox_max_row": int(p["bbox-2"][k]),
-                "bbox_max_col": int(p["bbox-3"][k]),
-                "dist_to_edge_norm": min(cxk / X, cyk / Y, (X - cxk) / X, (Y - cyk) / Y),
                 "nearest_neighbor_dist_um": float(nn_px[k]) * px_um,
                 "image_width_px": X,
                 "image_height_px": Y,

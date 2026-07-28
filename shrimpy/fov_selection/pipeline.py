@@ -1,18 +1,23 @@
 """Online per-FOV FOV-selection pipeline glue.
 
-Runs one FOV's decision in memory, reusing the offline pipeline's feature code
-so the online features match training exactly:
+Runs one FOV's decision in memory, reusing the offline feature code so online
+features match training exactly. Feature extraction is decoupled from the model:
 
-    reconstructed channels (nuclei, membrane)
-      -> project (sum)               [project_zyx]
-      -> cellpose segment            [segment_2d]  (cpdino params from segment_cellpose)
-      -> per-object features         [object_feature_rows, from extract_fov_features]
-      -> per-FOV aggregation         [group_features, from build_fov_feature_matrix]
-      -> variant-prefixed matrix     [fov_feature_matrix]
-      -> decision-tree predict       [predict_good]  (the trained .joblib)
+    preprocessing output channel(s)
+      -> project (sum / max / middle / logstd) [project_zyx]
+      -> segment (cellpose or otsu)   [segment_2d]  (cpdino params from segment_cellpose)
+      -> per-object features          [object_feature_rows, from extract_fov_features]
+      -> per-FOV aggregation          [group_features, from build_fov_feature_matrix]
+      -> named feature table          [extract_features: plain names for one channel,
+                                        <organelle>_vs_<projection>__ prefixed for many]
+      -> verdict                      [FovModel.predict, fov_model.py]
 
-Heavy imports (cellpose, joblib, pandas) are done lazily inside functions so
-importing this module stays cheap.
+The model (thresholding / desirability / trained tree / ...) reads the feature table
+by NAME only -- it never sees which channel produced a feature -- so any model type
+pairs with any preprocessing (see :mod:`shrimpy.fov_selection.fov_model`).
+
+Heavy imports (cellpose, pandas) are done lazily inside functions so importing this
+module stays cheap.
 """
 
 from __future__ import annotations
@@ -21,45 +26,71 @@ import logging
 
 import numpy as np
 
-from shrimpy.fov_selection.build_fov_feature_matrix import group_features
+from shrimpy.fov_selection.build_fov_feature_matrix import (
+    MASK_FEATURE_KEYS,
+    group_features,
+    mask_gap_features,
+)
 from shrimpy.fov_selection.extract_fov_features import object_feature_rows
 
 logger = logging.getLogger(__name__)
 
 
 def project_zyx(zyx: np.ndarray, method: str = "sum") -> np.ndarray:
-    """Z-project a ``(Z, Y, X)`` volume to a 2D ``(Y, X)`` float32 image.
+    """Reduce a ``(Z, Y, X)`` volume to a 2D ``(Y, X)`` float32 image.
 
-    ``method`` is ``'sum'`` or ``'max'`` -- the trained model uses the SUM
-    projection (``*_vs_sum__*`` features).
+    ``method``:
+      ``'sum'``    -- sum over Z (trained model default, ``*_sum__*`` features);
+      ``'max'``    -- max over Z;
+      ``'middle'`` -- the single middle Z slice (``zyx[Z // 2]``);
+      ``'logstd'`` -- per-pixel standard deviation over Z, shifted to non-negative and
+                      ``log1p``-compressed (``log1p(std - std.min())``). Highlights axial
+                      texture / contrast, e.g. for label-free brightfield where a flat sum or
+                      middle slice carries little signal.
+
+    All are channel-agnostic: they operate on any z-stack, so a projection is usable on a
+    deskewed brightfield stack, a phase volume, a virtual-staining channel, etc. -- selected
+    via the projection preprocessing step.
     """
     zyx = np.asarray(zyx)
+    if method == "middle":
+        return np.asarray(zyx[zyx.shape[0] // 2], np.float32)
+    if method == "logstd":
+        std = zyx.astype(np.float32).std(axis=0)
+        return np.log1p(std - std.min()).astype(np.float32)
     reduce = np.max if method == "max" else np.sum
     return reduce(zyx, axis=0).astype(np.float32)
 
 
-def load_cellpose_model(segmentation: dict | None = None):
-    """Load a Cellpose model once (reuse across FOVs).
+def load_segmenter(segmentation: dict | None = None):
+    """Load the segmentation backend once (reused across FOVs); the switchable entry point.
 
-    ``segmentation`` is the config block: ``model_name`` (defaults to the batch
-    script's ``MODEL_NAME``, e.g. ``'cpdino'``) and ``gpu``. This is the
-    switchable-segmentation entry point -- other ``model`` backends (e.g.
-    watershed) would branch here.
+    ``segmentation.model`` selects the backend:
+      ``'cellpose'`` -- a Cellpose model (``model_name``, e.g. ``'cpdino'``; ``gpu``), loaded
+                        here and passed to :func:`segment_2d`.
+      ``'otsu'``     -- stateless Otsu thresholding (returns ``None``; :func:`segment_2d`
+                        thresholds the projection directly, no model / GPU needed).
     """
+    seg = segmentation or {}
+    backend = seg.get("model", "cellpose")
+    if backend == "otsu":
+        return None  # stateless; see _segment_otsu
+    if backend != "cellpose":
+        raise NotImplementedError(
+            f"segmentation.model={backend!r} is not supported; use 'cellpose' or 'otsu'."
+        )
     from cellpose import models
 
     from shrimpy.fov_selection import segment_cellpose as sc
 
-    seg = segmentation or {}
-    backend = seg.get("model", "cellpose")
-    if backend != "cellpose":
-        raise NotImplementedError(
-            f"segmentation.model={backend!r} is not supported yet; only 'cellpose'."
-        )
     name = seg.get("model_name") or getattr(sc, "MODEL_NAME", "cpsam")
     gpu = seg.get("gpu", True)
     logger.info("FOV selection: loading Cellpose model %r (gpu=%s)", name, gpu)
     return models.CellposeModel(gpu=gpu, pretrained_model=name)
+
+
+# Backward-compatible alias (older callers / scripts imported this name).
+load_cellpose_model = load_segmenter
 
 
 def _diameter_for(organelle: str, segmentation: dict | None = None) -> float | None:
@@ -81,18 +112,57 @@ def _diameter_for(organelle: str, segmentation: dict | None = None) -> float | N
     return getattr(sc, "NUCLEI_DIAMETER", None)
 
 
+def _segment_otsu(img2d: np.ndarray, segmentation: dict | None = None) -> np.ndarray:
+    """Otsu-threshold the projection into a cleaned connected-component label mask.
+
+    Threshold by Otsu, optionally morphologically close (``close_radius`` px disk, to bridge
+    gaps between the pieces of a cluster), drop connected components below ``min_size`` px,
+    fill interior holes (``fill_holes``, default True), then label. Suited to a log-std
+    brightfield projection where the foreground is a texture blob rather than crisp objects. A
+    flat / empty projection yields an all-zero mask (no foreground). Params from the
+    ``segmentation`` config block."""
+    from scipy.ndimage import binary_fill_holes
+    from skimage.filters import threshold_otsu
+    from skimage.measure import label as cc_label
+    from skimage.morphology import binary_closing, disk
+
+    seg = segmentation or {}
+    img = np.asarray(img2d, np.float32)
+    finite = img[np.isfinite(img)]
+    if finite.size == 0 or float(finite.min()) == float(finite.max()):
+        return np.zeros(img.shape, np.uint32)  # flat image -> no Otsu split -> no foreground
+    fg = img > threshold_otsu(img)
+    close_radius = int(seg.get("close_radius", 0))
+    if close_radius > 0:
+        fg = binary_closing(fg, disk(close_radius))
+    min_size = int(seg.get("min_size", 0))
+    if min_size > 0:
+        lab = cc_label(fg)
+        sizes = np.bincount(lab.ravel())
+        keep = sizes >= min_size
+        keep[0] = False  # background
+        fg = keep[lab]
+    if seg.get("fill_holes", True):
+        fg = binary_fill_holes(fg)
+    return np.asarray(cc_label(fg), np.uint32)
+
+
 def segment_2d(
     img2d: np.ndarray, model, organelle: str, segmentation: dict | None = None
 ) -> np.ndarray:
-    """Segment one 2D projection with Cellpose; returns a uint32 label mask.
+    """Segment one 2D projection into a uint32 label mask, per ``segmentation.model``.
 
-    Thresholds / min_size / batch_size / per-organelle diameter come from the
-    ``segmentation`` config block, falling back to the batch script's defaults so
-    the online segmentation matches training when unset.
+    ``'cellpose'`` (default) runs the loaded Cellpose ``model`` with thresholds / min_size /
+    batch_size / per-organelle diameter from the ``segmentation`` config block (falling back
+    to the batch script's defaults). ``'otsu'`` ignores ``model`` and thresholds the
+    projection directly (see :func:`_segment_otsu`).
     """
+    seg = segmentation or {}
+    if seg.get("model", "cellpose") == "otsu":
+        return _segment_otsu(img2d, seg)
+
     from shrimpy.fov_selection import segment_cellpose as sc
 
-    seg = segmentation or {}
     kwargs = {
         "flow_threshold": seg.get("flow_threshold", getattr(sc, "FLOW_THRESHOLD", 0.4)),
         "cellprob_threshold": seg.get(
@@ -111,11 +181,10 @@ def segment_2d(
     return np.asarray(masks[0], np.uint32)
 
 
-# Aggregate features derivable from the label mask alone (object count + total
-# coverage), i.e. WITHOUT regionprops shape/intensity props or cKDTree spacing.
-# When the trained model only needs these, the expensive per-object extraction is
-# skipped. Values are computed identically to group_features (see _cheap_features).
-CHEAP_FEATURE_KEYS = frozenset({"object_count", "objects_per_10um2", "coverage_frac"})
+# Aggregate feature derivable from the label mask alone (total coverage), i.e. WITHOUT
+# regionprops shape props or cKDTree spacing. When the model only needs this, the
+# expensive per-object extraction is skipped. Computed identically to group_features.
+CHEAP_FEATURE_KEYS = frozenset({"coverage_frac"})
 
 
 def _parse_needed_features(needed: list[str]) -> dict[tuple[str, str, str], set[str]]:
@@ -140,22 +209,14 @@ def _cheap_features(mask: np.ndarray, px_um: float, keys: set[str]) -> dict[str,
     """Aggregate features for ``keys`` from the mask alone (no regionprops).
 
     Numerically identical to ``group_features`` for the cheap keys. An empty mask
-    yields genuine zeros (``object_count=0``, ``coverage_frac=0``,
-    ``objects_per_10um2=0``): "no objects" is a real measurement, not missing
-    data, so it is reported faithfully for the model to act on -- NOT dropped to
-    NaN, which the median imputer would then fill with a typical FOV's value and
-    make an empty FOV look good.
+    yields a genuine zero (``coverage_frac=0``): "no objects" is a real measurement,
+    not missing data, so it is reported faithfully for the model to act on -- NOT
+    dropped to NaN, which the median imputer would then fill with a typical FOV's
+    value and make an empty FOV look good.
     """
     m = np.asarray(mask)
     h, w = m.shape
-    n = int((np.unique(m) != 0).sum())
     out: dict[str, float] = {}
-    if "object_count" in keys:
-        out["object_count"] = n
-    if "objects_per_10um2" in keys:
-        out["objects_per_10um2"] = (
-            10.0 * n / (w * h * px_um * px_um) if px_um else float("nan")
-        )
     if "coverage_frac" in keys:
         out["coverage_frac"] = float(np.count_nonzero(m) / (w * h))
     return out
@@ -213,12 +274,11 @@ def fov_feature_matrix(
                 projection_type=projection,
             )
             if not rows:
-                # No objects segmented: faithfully report the density features as a
-                # real zero (object_count=0, coverage_frac=0, objects_per_10um2=0) so
-                # the model can act on an empty FOV, instead of dropping the organelle
+                # No objects segmented: faithfully report coverage_frac as a real zero
+                # so the model can act on an empty FOV, instead of dropping the organelle
                 # entirely -> every column NaN -> median-imputed to a typical FOV ->
-                # empty FOV misclassified good. Shape/spatial features are genuinely
-                # undefined with no objects, so they stay absent -> NaN -> imputed.
+                # empty FOV misclassified good. Spatial features are genuinely undefined
+                # with no objects, so they stay absent -> NaN.
                 logger.warning(
                     "FOV selection: no %s objects segmented; density features -> 0, "
                     "shape/spatial features -> NaN",
@@ -228,6 +288,8 @@ def fov_feature_matrix(
                 agg = _cheap_features(masks[organelle], px_um, set(cheap) & CHEAP_FEATURE_KEYS)
             else:
                 agg = group_features(pd.DataFrame(rows))
+                if keys_needed is None or (keys_needed & MASK_FEATURE_KEYS):
+                    agg.update(mask_gap_features(masks[organelle], px_um))
 
         for k, v in agg.items():
             if keys_needed is None or k in keys_needed:
@@ -235,12 +297,96 @@ def fov_feature_matrix(
     return pd.DataFrame([feat])
 
 
-def load_fov_model(path: str):
-    """Load the trained FOV-goodness model dict ``{imputer, tree, features}``."""
-    import joblib
+def flat_feature_matrix(
+    projections: dict[str, np.ndarray],
+    masks: dict[str, np.ndarray],
+    px_um: float,
+    needed: list[str] | None = None,
+):
+    """One-row matrix with PLAIN feature-name columns (``coverage_frac``, ``nn_um_mean``,
+    ...), i.e. WITHOUT the ``<organelle>_<source>_<projection>__`` prefix that
+    :func:`fov_feature_matrix` adds.
 
-    logger.info("FOV selection: loading model %s", path)
-    return joblib.load(path)
+    Feature names are then independent of which preprocessing-output channel was
+    segmented, so a single config model / ranking profile applies no matter what channel
+    (deskewed brightfield, phase, a VS target, ...) produced the mask. Because plain names
+    cannot disambiguate multiple channels, exactly one channel must be present (a non-VS
+    preprocessing emits a single reconstructed channel).
+
+    ``needed`` restricts the computed columns (the config model's feature keys); when all
+    needed keys are cheap (:data:`CHEAP_FEATURE_KEYS`) the per-object extraction is skipped.
+    Values match :func:`fov_feature_matrix` (same ``group_features`` / ``_cheap_features``).
+    """
+    import pandas as pd
+
+    if len(projections) != 1:
+        raise ValueError(
+            "channel-independent (flat) feature naming requires exactly one "
+            f"segmented channel; got {list(projections)}."
+        )
+    ((organelle, proj),) = projections.items()
+    mask = masks[organelle]
+    keys_needed = set(needed) if needed is not None else None
+
+    if keys_needed is not None and keys_needed <= CHEAP_FEATURE_KEYS:
+        agg = _cheap_features(mask, px_um, keys_needed)
+    else:
+        rows = object_feature_rows(
+            mask,
+            proj,
+            px_um,
+            dataset_tag="live",
+            well_row="",
+            well_col="",
+            fov="",
+            timepoint=0,
+            channel=organelle,
+            source="live",
+            projection_type="proj",
+        )
+        if not rows:
+            # No objects: report density features as a real zero (see fov_feature_matrix).
+            logger.warning(
+                "FOV selection: no %s objects segmented; density features -> 0, "
+                "shape/spatial features -> NaN",
+                organelle,
+            )
+            cheap = keys_needed if keys_needed is not None else CHEAP_FEATURE_KEYS
+            agg = _cheap_features(mask, px_um, set(cheap) & CHEAP_FEATURE_KEYS)
+        else:
+            agg = group_features(pd.DataFrame(rows))
+            if keys_needed is None or (keys_needed & MASK_FEATURE_KEYS):
+                agg.update(mask_gap_features(mask, px_um))
+
+    feat = {k: v for k, v in agg.items() if keys_needed is None or k in keys_needed}
+    return pd.DataFrame([feat])
+
+
+def extract_features(
+    projections: dict[str, np.ndarray],
+    masks: dict[str, np.ndarray],
+    px_um: float,
+    projection: str = "sum",
+    needed: list[str] | None = None,
+):
+    """Model-agnostic per-FOV feature table (preprocessing/segmentation -> named features).
+
+    Naming is decided by the number of segmented channels, NOT by the model:
+
+      one channel   -> PLAIN, channel-independent names (``coverage_frac``, ...) via
+                       :func:`flat_feature_matrix`.
+      many channels -> ``<organelle>_vs_<projection>__<feature>`` prefixed names via
+                       :func:`fov_feature_matrix`, so same-named features from different
+                       channels stay distinct.
+
+    Either way the model consumes columns by name (``FovModel.feature_names``); it never
+    sees which channel produced a feature. ``needed`` restricts the computed columns.
+    """
+    if len(projections) == 1:
+        return flat_feature_matrix(projections, masks, px_um, needed=needed)
+    return fov_feature_matrix(
+        projections, masks, px_um, projection, source="vs", needed=needed
+    )
 
 
 def _to_numpy(x) -> np.ndarray:
@@ -250,8 +396,8 @@ def _to_numpy(x) -> np.ndarray:
 
 def decide_fov(
     preprocessor,
-    cellpose,
-    model: dict,
+    segmenter,
+    model,
     bf_zyx: np.ndarray,
     *,
     target_channels: list[str],
@@ -266,9 +412,11 @@ def decide_fov(
     """Run one FOV's good/bad decision end to end.
 
     Reconstructs the input z-stack (``preprocessor``), projects and segments each
-    ``target_channels`` channel, builds the variant-prefixed feature matrix, and
-    predicts with the trained tree. Shared by the streaming worker and tests so
-    the online decision matches training exactly.
+    ``target_channels`` channel, extracts a named feature table, and asks ``model``
+    (any :class:`~shrimpy.fov_selection.fov_model.FovModel`) for the verdict. Feature
+    extraction is model-agnostic (see :func:`extract_features`) and the model reads only
+    feature names, so any model type pairs with any preprocessing. Shared by the streaming
+    worker and tests.
 
     When ``return_artifacts`` is set, also returns a dict with the per-channel 2D
     ``projections`` and label ``masks`` and the 1-row ``features`` DataFrame (used
@@ -282,16 +430,20 @@ def decide_fov(
     ----------
     preprocessor : callable
         ``build_preprocessor(...)`` result; ``(Z, Y, X) -> {channel: ZYX tensor}``.
-    cellpose : CellposeModel
-        Loaded segmentation model (see :func:`load_cellpose_model`).
-    model : dict
-        Trained FOV-goodness model ``{imputer, tree, features}``.
+    segmenter : object | None
+        Loaded segmentation backend from :func:`load_segmenter` -- a CellposeModel, or
+        ``None`` for the (stateless) Otsu backend.
+    model : FovModel
+        Any :class:`~shrimpy.fov_selection.fov_model.FovModel` (thresholding, desirability,
+        trained tree, ...); consumes the extracted features by name.
     bf_zyx : np.ndarray
         Raw input-channel z-stack ``(Z, Y, X)``.
     target_channels : list[str]
-        Reconstructed channels to segment/feature (e.g. ``['nuclei', 'membrane']``).
+        Reconstructed channels to segment/feature (e.g. ``['nuclei', 'membrane']`` or a
+        single ``['brightfield']``).
     projection : str
-        ``'sum'`` (trained default) or ``'max'``.
+        ``'sum'`` (trained default), ``'max'``, ``'middle'`` (middle-slice), or ``'logstd'``
+        (log-normalized per-pixel std over Z).
     px_um : float
         XY pixel size in microns (physical feature units).
     threshold : float
@@ -305,7 +457,9 @@ def decide_fov(
     Returns
     -------
     tuple[float, bool]
-        ``(proba_good, is_good)`` for this FOV.
+        ``(proba, good)`` for this FOV -- ``proba`` is the model score (the ranking key for
+        ``ranking_by_defined_range``); ``good`` is the model's per-FOV verdict (unused by the
+        ranking selection, which is top-K over all FOVs -- see the manager).
     """
     pfx = f"[{label}] " if label else ""
     bf_zyx = np.asarray(bf_zyx)
@@ -334,7 +488,7 @@ def decide_fov(
         proj = project_zyx(vol, projection)
         projections[organelle] = proj
         try:
-            mask = segment_2d(proj, cellpose, organelle, segmentation)
+            mask = segment_2d(proj, segmenter, organelle, segmentation)
         except Exception as exc:
             logger.error("%ssegment %s FAILED: %s", pfx, organelle, exc)
             raise
@@ -342,10 +496,10 @@ def decide_fov(
         n_objects = int((np.unique(mask) != 0).sum())
         logger.info("%ssegment %s ok (%d objects)", pfx, organelle, n_objects)
 
-    matrix = fov_feature_matrix(
-        projections, masks, px_um, projection, source="vs", needed=model.get("features")
+    matrix = extract_features(
+        projections, masks, px_um, projection, needed=model.feature_names
     )
-    proba, good = predict_good(model, matrix, threshold)
+    proba, good = model.predict(matrix, threshold)
     if return_artifacts:
         artifacts = {
             "stacks": stacks,
@@ -355,18 +509,3 @@ def decide_fov(
         }
         return float(proba[0]), bool(good[0]), artifacts
     return float(proba[0]), bool(good[0])
-
-
-def predict_good(model: dict, matrix_df, threshold: float = 0.5):
-    """Predict good/bad from a feature matrix using the trained tree.
-
-    Returns ``(proba, good)`` where ``proba`` is P(good) per row and ``good`` is
-    a list of bools. Missing feature columns are filled with NaN and imputed by
-    the model's median imputer (same as the offline predictor).
-    """
-    features = model["features"]
-    x = matrix_df.reindex(columns=features)
-    x_imputed = model["imputer"].transform(x)
-    proba = model["tree"].predict_proba(x_imputed)[:, 1]
-    good = [bool(p >= threshold) for p in proba]
-    return proba, good

@@ -3,7 +3,7 @@
 Mirrors :class:`shrimpy.dynatrack.manager.DynaTrack`: an acquisition engine
 builds a :class:`FovSelection` from the ``fov_selection`` metadata section and
 interacts with that object only. It turns the pre-scan run (a single-timepoint
-run on ``fov_selection_channel`` over all candidate FOVs) into a per-FOV good/bad verdict:
+run on ``fov_selection_channel`` over all candidate FOVs) into a per-FOV pass/skip verdict:
 
     BF z-stack -> reconstruct (deskew -> phase -> virtual stain)   [preprocessing.py]
                -> project -> segment -> features -> tree predict   [pipeline.py]
@@ -11,7 +11,7 @@ run on ``fov_selection_channel`` over all candidate FOVs) into a per-FOV good/ba
 The decision is streamed: as each pre-scan FOV's z-stack completes in
 ``on_frame_ready`` it is submitted to a worker subprocess (torch/GPU isolation,
 like DynaTrack). ``drain`` is awaited after the pre-scan run, and
-``good_position_names`` selects which FOVs the timelapse run images.
+``passed_position_names`` selects which FOVs the timelapse run images.
 
 Config lives under ``metadata.mantis.fov_selection``. Scale parameters (XY pixel
 size, Z step) are the single source of truth injected into the deskew/phase
@@ -107,21 +107,20 @@ class FovSelection:
         self._segmentation = config.get("segmentation", {}) or {}
         model_cfg = config.get("model", {}) or {}
         self._threshold = float(model_cfg.get("threshold", 0.5))
-        # What the fov_selection_channels are: 'vs' (virtual-stained -> requires a
-        # 'vs' preprocessing step) or 'fluor' (acquired fluorescence -> no VS).
-        self._channels_type = config.get("fov_selection_channels_type", "vs")
-        # Channels the decision is computed on (segmented + fed to the model);
-        # may be raw input channels or preprocessed (VS) channels. Defaults to
-        # the virtual-staining target channels.
+        # top_fov (ranking_by_defined_range): keep only the N highest-proba FOVs, ranked
+        # across the whole pre-scan, instead of thresholding each FOV. None -> threshold mode.
+        top_fov = model_cfg.get("top_fov")
+        self._top_fov = int(top_fov) if top_fov is not None else None
+        # Channels segmented + fed to the model, inferred from the preprocessing: the VS
+        # targets when there is a 'vs' step, else the single reconstructed channel.
+        self._is_vs = "vs" in self._steps
         vs_cfg = config.get("virtual_staining", {}) or {}
-        self._target_channels = list(
-            config.get("fov_selection_channels")
-            or vs_cfg.get("target_channels")
-            or DEFAULT_TARGET_CHANNELS
-        )
+        if self._is_vs:
+            self._target_channels = list(vs_cfg.get("target_channels") or DEFAULT_TARGET_CHANNELS)
+        else:
+            self._target_channels = ["phase" if "phase" in self._steps else "brightfield"]
 
         self._validate_fov_selection_channel(sequence)
-        self._validate_channels_type()
         self._require_segmentation_step()
         self._expected_slices = max(sequence.sizes.get("z", 1), 1)
 
@@ -145,6 +144,12 @@ class FovSelection:
         self._pending: Future | None = None
         self._worker = None  # FovSelectionWorker (subprocess) unless decide_fn set
         self._decide_fn = decide_fn
+
+        # Fail before acquiring if the model asks for a feature the configured preprocessing
+        # cannot produce (a typo would otherwise be read as a silently-missing column). Skipped
+        # when a decide_fn stands in for the pipeline -- it never extracts features.
+        if self._decide_fn is None:
+            self._validate_feature_names(model_cfg)
 
     # -- construction ------------------------------------------------------
 
@@ -186,17 +191,34 @@ class FovSelection:
         """Build the coordinator from the ``fov_selection`` metadata block.
 
         Returns ``None`` when FOV selection is disabled. Raises when it is
-        enabled but no ``model_path`` is configured (fail before acquiring) or
+        enabled but no usable model is configured (fail before acquiring) or
         when the pixel size / z step needed for reconstruction are missing.
         """
         if not meta or not meta.get("enabled", False):
             return None
-        if not (meta.get("model", {}) or {}).get("path"):
+        from shrimpy.fov_selection.fov_model import MODEL_TYPES
+
+        model_cfg = meta.get("model", {}) or {}
+        model_type = model_cfg.get("type")
+        if model_type not in MODEL_TYPES:
             raise ValueError(
-                "FOV selection is enabled but no 'model.path' is configured under "
-                "metadata.mantis.fov_selection. Provide a trained FOV-selection model "
-                "(.joblib), or disable fov_selection. Aborting before acquisition."
+                "FOV selection is enabled but metadata.mantis.fov_selection.model.type "
+                f"must be one of {sorted(MODEL_TYPES)}; got {model_type!r}. Aborting "
+                "before acquisition."
             )
+        if model_type == "classification_tree" and not model_cfg.get("path"):
+            raise ValueError(
+                "fov_selection.model.type='classification_tree' requires a 'path' to a "
+                "trained FOV-selection .joblib. Aborting before acquisition."
+            )
+        if model_type == "ranking_by_defined_range":
+            top_fov = model_cfg.get("top_fov")
+            if top_fov is None or int(top_fov) < 1:
+                raise ValueError(
+                    "fov_selection.model.type='ranking_by_defined_range' selects by pure "
+                    "ranking and requires 'top_fov' (a positive int): the N highest-ranked "
+                    "FOVs pass. Aborting before acquisition."
+                )
         if not pixel_size_um:
             raise ValueError(
                 "FOV selection: pixel size is not set (core.getPixelSizeUm() returned "
@@ -225,31 +247,58 @@ class FovSelection:
                 f"the acquisition channels {names}."
             )
 
-    def _validate_channels_type(self) -> None:
-        """Validate ``fov_selection_channels_type`` and guard the preprocessing steps.
-
-        Only ``'vs'`` (virtual-stained) and ``'fluor'`` (acquired fluorescence)
-        are supported. ``'vs'`` requires a ``'vs'`` step in the preprocessing list
-        (the decision runs on virtual-stained channels); ``'fluor'`` does not.
-        """
-        valid = ("vs", "fluor")
-        if self._channels_type not in valid:
-            raise ValueError(
-                f"fov_selection.fov_selection_channels_type must be one of {valid}; "
-                f"got {self._channels_type!r}."
-            )
-        if self._channels_type == "vs" and "vs" not in self._steps:
-            raise ValueError(
-                "fov_selection_channels_type='vs' requires a 'vs' step in "
-                f"fov_selection.preprocessing; got {self._steps}."
-            )
-
     def _require_segmentation_step(self) -> None:
-        """The trained tree model consumes segmented features -> require the step."""
+        """Features are computed from segmentation masks, so the step is required."""
         if "segmentation" not in self._steps:
             raise ValueError(
-                "fov_selection.preprocessing must include a 'segmentation' step; the "
-                f"trained tree model requires segmented features. Got {self._steps}."
+                "fov_selection.preprocessing must include a 'segmentation' step "
+                f"(features come from segmentation masks). Got {self._steps}."
+            )
+
+    def _producible_feature_names(self) -> set[str]:
+        """Every feature-column name the configured preprocessing/segmentation can emit.
+
+        Naming mirrors :func:`shrimpy.fov_selection.pipeline.extract_features`: with a single
+        segmented channel the columns are the plain feature keys (``coverage_frac``, ...);
+        with several (VS targets) they are ``<organelle>_vs_<projection>__<key>``.
+        """
+        from shrimpy.fov_selection.build_fov_feature_matrix import (
+            FEATURE_NAMES,
+            MASK_FEATURE_KEYS,
+        )
+
+        keys = set(FEATURE_NAMES) | set(MASK_FEATURE_KEYS)
+        if len(self._target_channels) == 1:  # flat_feature_matrix -> plain names
+            return keys
+        return {
+            f"{organelle}_vs_{self._projection}__{key}"
+            for organelle in self._target_channels
+            for key in keys
+        }
+
+    def _validate_feature_names(self, model_cfg: dict) -> None:
+        """Fail before acquiring if the model asks for a feature the pipeline cannot produce.
+
+        Checks the config-defined models (``ranking_by_defined_range`` /
+        ``classification_by_thresholding``), whose feature names are hand-typed: a typo would
+        otherwise surface only as a silently-missing column (NaN) at decision time rather than
+        an error. A trained ``classification_tree``'s names come from training (not the config)
+        and are validated when the worker builds the model, so they are not checked here.
+        """
+        if model_cfg.get("type") not in (
+            "ranking_by_defined_range",
+            "classification_by_thresholding",
+        ):
+            return
+        requested = list(model_cfg.get("features") or {})
+        producible = self._producible_feature_names()
+        unknown = [name for name in requested if name not in producible]
+        if unknown:
+            raise ValueError(
+                "FOV selection: model requests feature name(s) the configured preprocessing "
+                f"cannot produce: {unknown}. Available feature names: {sorted(producible)}. "
+                "Fix the names under fov_selection.model.features (or the preprocessing / "
+                "virtual_staining.target_channels). Aborting before acquisition."
             )
 
     @staticmethod
@@ -259,9 +308,13 @@ class FovSelection:
             return "max"
         if "sum_projection" in steps:
             return "sum"
+        if "middle_slice_projection" in steps:
+            return "middle"
+        if "logstd_projection" in steps:
+            return "logstd"
         raise ValueError(
-            "fov_selection.preprocessing must include a projection step "
-            "('sum_projection' or 'max_projection')."
+            "fov_selection.preprocessing must include a projection step ('sum_projection', "
+            "'max_projection', 'middle_slice_projection', or 'logstd_projection')."
         )
 
     def _recon_config(self) -> dict:
@@ -272,12 +325,16 @@ class FovSelection:
         preprocessing list are relevant to the preprocessor (it ignores
         projection/segmentation).
         """
-        return {
+        recon = {
             "preprocessing": self._steps,
             "deskew": self.config.get("deskew"),
             "phase": self.config.get("phase"),
             "virtual_staining": self.config.get("virtual_staining"),
         }
+        # Non-VS: name the single preprocessor output after our one channel.
+        if not self._is_vs:
+            recon["output_channel"] = self._target_channels[0]
+        return recon
 
     def _inject_scales(self, recon: dict) -> dict:
         """Inject XY pixel size / Z step into the deskew and phase sub-configs.
@@ -318,7 +375,7 @@ class FovSelection:
                 recon=recon,
                 target_channels=self._target_channels,
                 segmentation=self._segmentation,
-                model_path=self.config["model"]["path"],
+                model_cfg=self.config.get("model", {}) or {},
                 projection=self._projection,
                 threshold=self._threshold,
                 px_um=self._pixel_size_um,
@@ -407,11 +464,12 @@ class FovSelection:
         latency = time.monotonic() - started if started is not None else None
         if latency is not None:
             self._decision_latencies.append(latency)
+        # Per-FOV score only: the Passed/Skipped verdict is a ranking (top-K) result over
+        # the whole pre-scan, so it is logged once all FOVs are scored (log_selection_summary).
         logger.info(
-            "FOV selection: %s -> proba=%.3f %s%s",
+            "FOV selection: %s -> score=%.3f%s",
             name,
             proba,
-            "GOOD" if good else "bad",
             f" (acquired->decision {latency:.1f}s)" if latency is not None else "",
         )
 
@@ -433,20 +491,47 @@ class FovSelection:
         """Block until all submitted pre-scan decisions have completed.
 
         Awaited in ``teardown_sequence`` after the pre-scan run finishes, before
-        ``good_position_names`` is read to build the timelapse run.
+        ``passed_position_names`` is read to build the timelapse run.
         """
         self._await_pending(timeout=timeout)
 
-    def is_good(self, name: str) -> bool:
-        """Whether ``name`` was decided good. Unknown/undecided names are bad."""
-        with self._verdicts_lock:
-            verdict = self._verdicts.get(name)
-        return bool(verdict[1]) if verdict is not None else False
+    def is_passed(self, name: str) -> bool:
+        """Whether ``name`` passed FOV selection (see :meth:`passed_position_names`).
+        Unknown/undecided names did not pass."""
+        return name in set(self.passed_position_names())
 
-    def good_position_names(self) -> list[str]:
-        """Names of positions decided good, in decision order."""
+    def passed_position_names(self) -> list[str]:
+        """Names of the FOVs that passed FOV selection (imaged in the timelapse run).
+
+        ``ranking_by_defined_range`` (``model.top_fov`` set): the ``top_fov`` FOVs with the
+        highest score, best first (ties broken by decision order) -- pure ranking, so a
+        passing FOV is only the best available, not necessarily "good". Other model types:
+        every FOV the model decided good (its per-FOV verdict), in decision order.
+        """
         with self._verdicts_lock:
-            return [name for name, (_p, good) in self._verdicts.items() if good]
+            items = list(self._verdicts.items())
+        if self._top_fov is not None:
+            ranked = sorted(items, key=lambda kv: kv[1][0], reverse=True)
+            return [name for name, _verdict in ranked[: self._top_fov]]
+        return [name for name, (_p, good) in items if good]
+
+    def log_selection_summary(self) -> None:
+        """Log every decided FOV as Passed/Skipped by the final selection (call after drain).
+
+        The Passed/Skipped verdict for ``ranking_by_defined_range`` is the top-K ranking
+        outcome, known only once every FOV has been scored -- hence a post-drain summary
+        rather than a per-FOV verdict at decision time.
+        """
+        passed = set(self.passed_position_names())
+        with self._verdicts_lock:
+            items = sorted(self._verdicts.items(), key=lambda kv: kv[1][0], reverse=True)
+        for name, (proba, _good) in items:
+            logger.info(
+                "FOV selection: %s -> score=%.3f %s",
+                name,
+                proba,
+                "Passed" if name in passed else "Skipped",
+            )
 
     @property
     def fov_selection_channel(self) -> str:
