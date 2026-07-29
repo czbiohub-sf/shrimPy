@@ -1,17 +1,25 @@
 """
-FOV Feature Viewer -- a Qt GUI to explore FOV-level features, cluster them, and
-find features/thresholds that separate goodness classes.
+FOV Feature Viewer: a Qt GUI to explore FOV-level features, label FOVs, and tune a
+ranking model, with the selected FOVs shown as image thumbnails.
 
-Layout (two columns):
-  LEFT  column = settings (top) + interactive scatter (bottom), in one wide column.
-  RIGHT column = grid of the selected FOV PNGs (scrollable, with a size slider).
+Tabs
+  Analysis  Explore features. The left column holds the settings (feature axes,
+            dimensionality reduction, color, and filters) above an interactive 2D/3D
+            scatter (PCA/t-SNE/UMAP; click a point or lasso a region to select); the right
+            column shows the selected FOVs as a scrollable PNG grid. Per-feature threshold
+            sliders keep only the FOVs whose value falls in a chosen range.
+  Label     The loaded FOVs grouped into one panel per goodness class (Good/Neutral/Bad
+            and unlabeled). Drag a thumbnail to another panel to relabel that FOV; edits
+            are written back to the CSV only when you press Save.
+  Rank      Tune the DesirabilityModel. The left column shows each feature's value
+            histogram with its desirability curve overlaid, plus a table of the
+            range/direction/shoulder knobs and a Re-rank button; the right column lists the
+            FOVs as thumbnails ordered best-first by the resulting score.
 
-Scatter: 2D pan (toolbar) + scroll-to-zoom; 3D drag-rotate + scroll-to-zoom; Home
-button; Lasso toggle (works in 2D and 3D). Click a point or lasso a region -> the
-right grid updates. Dim reduction (PCA/t-SNE/UMAP) always computes 3 components.
-
-Wiring: each *_fov_feature_matrix.csv is one row per FOV; data.load_matrices resolves
-each row to its composite image under fov_composites/ (by FOV identity) as __png.
+Data wiring
+  Each *_fov_feature_matrix.csv is one row per FOV and must carry a `filename` column.
+  data.load_matrices resolves each row to its PNG in the sibling <stem>[_<channel>]_png/
+  folder next to the CSV (strict filename match) and stores it as __png / __png_<channel>.
 
 Run:  python -m shrimpy.fov_selection.feature_viewer
 """
@@ -249,6 +257,7 @@ QLabel { background:transparent; }
 
 
 def apply_dark(app):
+    """Apply the app-wide dark Fusion palette and stylesheet to the QApplication."""
     app.setStyle("Fusion")
     pal = QtGui.QPalette()
     c = QtGui.QColor
@@ -271,6 +280,7 @@ class _DetailsModel(QtCore.QAbstractTableModel):
     """Virtualized model: renders only visible cells, so resetting is instant."""
 
     def __init__(self):
+        """Initialize the empty table model (no dataframe, rows, or fields yet)."""
         super().__init__()
         self._df = None
         self._rows: list[int] = []
@@ -278,6 +288,7 @@ class _DetailsModel(QtCore.QAbstractTableModel):
         self._colpos: list[int] = []
 
     def set_data(self, df, rows, fields):
+        """Point the model at a new dataframe/rows/columns and reset it in one step."""
         self.beginResetModel()
         self._df = df
         self._rows = rows
@@ -286,12 +297,15 @@ class _DetailsModel(QtCore.QAbstractTableModel):
         self.endResetModel()
 
     def rowCount(self, parent=QtCore.QModelIndex()):
+        """Number of selected FOV rows the model exposes (0 until data is set)."""
         return 0 if (parent.isValid() or self._df is None) else len(self._rows)
 
     def columnCount(self, parent=QtCore.QModelIndex()):
+        """Number of displayed field columns (0 until data is set)."""
         return 0 if (parent.isValid() or self._df is None) else len(self._fields)
 
     def data(self, index, role=QtCore.Qt.DisplayRole):
+        """Cell text for display: floats formatted to 4 sig figs (NaN shown as 'NaN')."""
         if role != QtCore.Qt.DisplayRole or not index.isValid():
             return None
         v = self._df.iat[self._rows[index.row()], self._colpos[index.column()]]
@@ -300,6 +314,7 @@ class _DetailsModel(QtCore.QAbstractTableModel):
         return str(v)
 
     def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
+        """Horizontal header shows the field name; vertical headers are suppressed."""
         if role != QtCore.Qt.DisplayRole:
             return None
         return self._fields[section] if orientation == QtCore.Qt.Horizontal else None
@@ -310,15 +325,18 @@ class _ThumbLabel(QtWidgets.QLabel):
     position as drag payload; the panel it lands on decides the new goodness class."""
 
     def __init__(self, pos: int):
+        """Create a thumbnail label carrying its df position `pos` as drag payload."""
         super().__init__()
         self._pos = pos
         self._press = None
 
     def mousePressEvent(self, e):
+        """Record the left-button press point to detect the start of a drag."""
         if e.button() == QtCore.Qt.LeftButton:
             self._press = e.pos()
 
     def mouseMoveEvent(self, e):
+        """Start a move drag carrying this FOV's df position once the drag threshold is passed."""
         if self._press is None or not (e.buttons() & QtCore.Qt.LeftButton):
             return
         if (
@@ -340,20 +358,24 @@ class _DropPanel(QtWidgets.QWidget):
     """Grid host for one goodness class; accepts thumbnails dropped from any panel."""
 
     def __init__(self, viewer, value):
+        """Create a drop target for goodness class `value`, back-referencing the viewer."""
         super().__init__()
         self._viewer = viewer
         self._value = value  # goodness code this panel represents (NaN for "Nan")
         self.setAcceptDrops(True)
 
     def dragEnterEvent(self, e):
+        """Accept the drag if it carries text (a serialized FOV position)."""
         if e.mimeData().hasText():
             e.acceptProposedAction()
 
     def dragMoveEvent(self, e):
+        """Keep accepting the drag as it moves while it carries text."""
         if e.mimeData().hasText():
             e.acceptProposedAction()
 
     def dropEvent(self, e):
+        """Relabel the dropped FOV to this panel's goodness class; caveat: silently ignores a non-integer payload."""
         try:
             pos = int(e.mimeData().text())
         except (TypeError, ValueError):
@@ -364,6 +386,7 @@ class _DropPanel(QtWidgets.QWidget):
 
 class FeatureViewer(QtWidgets.QMainWindow):
     def __init__(self):
+        """Build the main window: initialize all state, then assemble the Analysis, Label, and Rank tabs."""
         super().__init__()
         self.setWindowTitle("FOV Feature Viewer")
         self.resize(1700, 1000)
@@ -413,7 +436,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
 
     # ------------------------------------------------------------- settings
     @staticmethod
-    def _btn_row(*buttons):
+    def _button_row(*buttons):
         """HBox of natural-width buttons, left-aligned (not stretched)."""
         h = QtWidgets.QHBoxLayout()
         for b in buttons:
@@ -422,7 +445,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         return h
 
     @staticmethod
-    def _as_entry(spin):
+    def _make_plain_entry(spin):
         """Make a spin box behave like a plain typed entry: no arrows, no wheel."""
         spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
         spin.setKeyboardTracking(False)
@@ -430,6 +453,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         return spin
 
     def _build_settings(self):
+        """Build the Analysis-tab settings panel (datasets, thresholds, scatter, reduction, removed-points, labeling) and return its widget."""
         w = QtWidgets.QWidget()
         cols = QtWidgets.QHBoxLayout(w)
         colA = QtWidgets.QVBoxLayout()
@@ -448,7 +472,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         rmds.clicked.connect(self.on_remove_dataset)
         clr = QtWidgets.QPushButton("Clear all")
         clr.clicked.connect(self.on_clear)
-        gv.addLayout(self._btn_row(load, rmds, clr))
+        gv.addLayout(self._button_row(load, rmds, clr))
         self.ds_list = QtWidgets.QListWidget()
         self.ds_list.setMaximumHeight(80)
         gv.addWidget(self.ds_list)
@@ -466,7 +490,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         for s in (self.thr_lo, self.thr_hi):
             s.setDecimals(4)
             s.setRange(-1e12, 1e12)
-            self._as_entry(s)
+            self._make_plain_entry(s)
         hr.addWidget(QtWidgets.QLabel("min"))
         hr.addWidget(self.thr_lo)
         hr.addWidget(QtWidgets.QLabel("max"))
@@ -478,7 +502,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         rmt.clicked.connect(self.on_remove_threshold)
         clt = QtWidgets.QPushButton("Clear")
         clt.clicked.connect(self.on_clear_thresholds)
-        gv.addLayout(self._btn_row(adt, rmt, clt))
+        gv.addLayout(self._button_row(adt, rmt, clt))
         self.thr_list = QtWidgets.QListWidget()
         self.thr_list.setMaximumHeight(90)
         gv.addWidget(self.thr_list)
@@ -521,11 +545,11 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.sp_perp = QtWidgets.QDoubleSpinBox()
         self.sp_perp.setRange(2, 200)
         self.sp_perp.setValue(30)
-        self._as_entry(self.sp_perp)
+        self._make_plain_entry(self.sp_perp)
         self.sp_nn = QtWidgets.QSpinBox()
         self.sp_nn.setRange(2, 200)
         self.sp_nn.setValue(15)
-        self._as_entry(self.sp_nn)
+        self._make_plain_entry(self.sp_nn)
         run = QtWidgets.QPushButton("Run on filtered FOVs")
         run.clicked.connect(self.run_reduction)
         form.addRow("Method", self.cb_method)
@@ -533,7 +557,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.lbl_nn = QtWidgets.QLabel("n_neighbors")  # UMAP only
         form.addRow(self.lbl_perp, self.sp_perp)
         form.addRow(self.lbl_nn, self.sp_nn)
-        form.addRow(self._btn_row(run))
+        form.addRow(self._button_row(run))
         self.cb_method.currentTextChanged.connect(self._update_reduction_params)
         self._update_reduction_params()
         self.reduce_status = QtWidgets.QLabel("not run")
@@ -557,7 +581,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         rs.clicked.connect(self.on_restore_selected)
         ra = QtWidgets.QPushButton("Restore all")
         ra.clicked.connect(self.on_restore_all)
-        gv6.addLayout(self._btn_row(rs, ra))
+        gv6.addLayout(self._button_row(rs, ra))
         self.hidden_count = QtWidgets.QLabel("0 points hidden")
         gv6.addWidget(self.hidden_count)
 
@@ -572,7 +596,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         gv7.addWidget(self.label_value)
         setb = QtWidgets.QPushButton("Set")
         setb.clicked.connect(self.on_set_goodness)
-        gv7.addLayout(self._btn_row(setb))
+        gv7.addLayout(self._button_row(setb))
         self.label_status = QtWidgets.QLabel("lasso a region or click a point, then Set")
         self.label_status.setWordWrap(True)
         gv7.addWidget(self.label_status)
@@ -587,6 +611,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
 
     # --------------------------------------------------------------- center
     def _build_center(self):
+        """Build the interactive matplotlib scatter panel (canvas, toolbar, lasso/remove controls) and wire its mouse events."""
         w = QtWidgets.QWidget()
         v = QtWidgets.QVBoxLayout(w)
         self.fig = Figure(figsize=(7, 6))
@@ -630,6 +655,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
 
     # ---------------------------------------------------------------- right
     def _build_right(self):
+        """Build the Analysis-tab right column (selected-FOV thumbnail grid plus the details table) and return its widget."""
         w = QtWidgets.QWidget()
         w.setMinimumWidth(440)
         v = QtWidgets.QVBoxLayout(w)
@@ -720,6 +746,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         return w
 
     def _on_tab_changed(self, index):
+        """Reflow the Rank or Label tab's lazily-laid-out grids once it becomes visible; caveat: the Label tab is (re)built only the first time it is shown so pending drag edits are not discarded."""
         if index == getattr(self, "_rank_tab_index", -1):
             # built while hidden (viewport width unknown) -> reflow with the real width
             QtCore.QTimer.singleShot(0, self._rank_reflow)
@@ -737,6 +764,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         QtCore.QTimer.singleShot(0, self._reflow_all_label_panels)
 
     def _refresh_label_tab(self):
+        """Rebuild the Label-tab panels from the current (saved) goodness labels, one panel per present class, discarding any pending drag edits."""
         # rebuild the columns from scratch (cheap: placeholders only; thumbnails are
         # decoded lazily for the cells actually visible in each column's viewport).
         while self.label_cols_layout.count():
@@ -832,6 +860,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
 
     @staticmethod
     def _same_class(a, b):
+        """True if two goodness codes name the same class, treating NaN as equal to NaN."""
         if a != a and b != b:  # both NaN -> same "Nan" class
             return True
         return a == b
@@ -851,6 +880,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         return len(GOODNESS_LABEL_ORDER)
 
     def _class_meta(self, val):
+        """Return the (display name, color) for a goodness class, defaulting to a blue for unknown codes."""
         key = self._class_key(val)
         for name, v, color in GOODNESS_LABEL_ORDER:
             if self._class_key(v) == key:
@@ -895,6 +925,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         QtCore.QTimer.singleShot(0, lambda c=info: self._reflow_label_panel(c))
 
     def _update_panel_title(self, info):
+        """Refresh a Label-tab panel's title text with its class name and FOV count."""
         cap = f"  ·  showing first {len(info['items'])}" if info["capped"] else ""
         info["title"].setText(f"{info['name']}   ({info['count']}){cap}")
 
@@ -914,14 +945,14 @@ class FeatureViewer(QtWidgets.QMainWindow):
         target["items"].append(item)
         target["count"] += 1
         self._label_changes[pos] = target_value
-        self._regrid_label_panel(target)  # reparents the moved thumbnail first
-        self._regrid_label_panel(source)
+        self._relayout_label_panel_grid(target)  # reparents the moved thumbnail first
+        self._relayout_label_panel_grid(source)
         self._update_panel_title(source)
         self._update_panel_title(target)
         self._load_visible_label_thumbs(target)
         self._update_label_save_state()
 
-    def _regrid_label_panel(self, info):
+    def _relayout_label_panel_grid(self, info):
         """Re-place all of the panel's thumbnails after its item set changed."""
         grid = info["grid"]
         while grid.count():
@@ -931,6 +962,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
             grid.addWidget(it[0], i // ncols, i % ncols)
 
     def _update_label_save_state(self):
+        """Enable the Save button and show the pending-change count only when edits are outstanding."""
         if not hasattr(self, "label_save_btn"):
             return
         n = len(getattr(self, "_label_changes", {}))
@@ -938,15 +970,16 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.label_save_btn.setText(f"Save ({n})" if n else "Save")
 
     def on_save_labels(self):
+        """Commit pending Label-tab drag edits to the in-memory table and each row's source CSV, then rebuild the panels from the saved labels."""
         if self.df is None or not self._label_changes:
             return
         if "goodness" not in self.df.columns:
             self.df["goodness"] = np.nan
-        gi = self.df.columns.get_loc("goodness")
+        goodness_col_index = self.df.columns.get_loc("goodness")
         for pos, val in self._label_changes.items():  # commit to the in-memory table
-            self.df.iat[pos, gi] = val
+            self.df.iat[pos, goodness_col_index] = val
         saved, matched = self._persist_changes(self._label_changes)
-        n = len(self._label_changes)
+        n_changes = len(self._label_changes)
         self._label_changes = {}
         self._populate_details()
         if self.cb_color.currentText() == "goodness":
@@ -956,7 +989,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self._extra_classes = set()
         self._refresh_label_tab()  # rebuild panels from the now-saved labels
         self.label_info.setText(
-            f"saved {n} change(s) → wrote {matched} row(s) to {saved} CSV(s)"
+            f"saved {n_changes} change(s) → wrote {matched} row(s) to {saved} CSV(s)"
         )
 
     def _persist_changes(self, changes):
@@ -1014,6 +1047,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         QtCore.QTimer.singleShot(0, lambda c=info: self._load_visible_label_thumbs(c))
 
     def _load_visible_label_thumbs(self, info):
+        """Decode and set thumbnails only for a Label panel's cells currently in (or near) its viewport, marking each as loaded."""
         items = info["items"]
         if not items:
             return
@@ -1043,16 +1077,19 @@ class FeatureViewer(QtWidgets.QMainWindow):
             it[2] = True
 
     def _reflow_all_label_panels(self):
+        """Reflow every Label-tab panel to its current width and load the newly-visible thumbnails."""
         for info in self._label_cols:
             self._reflow_label_panel(info)
         self._load_all_label_thumbs()
 
     def _load_all_label_thumbs(self):
+        """Decode the visible thumbnails in every Label-tab panel."""
         for info in self._label_cols:
             self._load_visible_label_thumbs(info)
 
     @staticmethod
     def _make_separator():
+        """Return a thin vertical divider widget used between Label-tab panels."""
         line = QtWidgets.QWidget()
         line.setFixedWidth(2)
         line.setStyleSheet("background:#7a7a7a;")
@@ -1087,6 +1124,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
 
     # =============================================================== load
     def on_load(self):
+        """Prompt for feature CSV(s) via a file dialog and load any the user selects."""
         start = DEFAULT_DIR if Path(DEFAULT_DIR).exists() else str(Path.home())
         files, _ = QtWidgets.QFileDialog.getOpenFileNames(
             self, "Load feature CSV(s)", start, "CSV (*.csv)"
@@ -1096,9 +1134,8 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self._load_files(files)
 
     def _load_files(self, files):
-        """Load feature CSV(s) via the shared composites root (file dialog / env)."""
-        root = getattr(self, "composites_root", None) or D.COMPOSITES_ROOT
-        self._ingest(D.load_matrices(files, composites_root=root), files)
+        """Load feature CSV(s); each row's image comes from sibling PNG folders."""
+        self._ingest(D.load_matrices(files), files)
 
     def _load_paired(self, pairs):
         """Load explicit (csv, png_folder) pairs, each matrix with its own image folder."""
@@ -1119,6 +1156,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self._refresh_label_tab()
 
     def on_remove_dataset(self):
+        """Drop the dataset selected in the list from the combined table and refresh all views; caveat: matches by CSV basename, so two loaded files with the same name are both removed."""
         it = self.ds_list.currentItem()
         if it is None or self.df is None:
             return
@@ -1140,6 +1178,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self._refresh_label_tab()
 
     def on_clear(self):
+        """Reset the viewer to the empty state: drop all data, filters, caches, and clear every view."""
         self.df = None
         self.filt = np.array([], int)
         self.reduced_cols = []
@@ -1158,6 +1197,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
 
     # ---- removed-points (hidden) model ----
     def _reset_hidden(self):
+        """Clear the removed-points mask and history to match the current data length."""
         self.hidden = (
             np.zeros(len(self.df), bool) if self.df is not None else np.array([], bool)
         )
@@ -1166,31 +1206,35 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self.history_list.clear()
         self._update_hidden_count()
 
-    def _effective(self):
+    def _effective_positions(self):
         """Filtered AND not-hidden positions -- the points actually plotted/reduced."""
         if self.df is None or len(self.filt) == 0:
             return np.array([], int)
         return self.filt[~self.hidden[self.filt]]
 
     def _update_hidden_count(self):
+        """Update the label showing how many points are currently removed (hidden)."""
         n = int(self.hidden.sum()) if self.hidden.size else 0
         if hasattr(self, "hidden_count"):
             self.hidden_count.setText(f"{n} points hidden")
 
     def _viewing_reduced(self):
+        """True if any active scatter axis is a dimensionality-reduction component (PCA/TSNE/UMAP)."""
         axes = [self.cb_x.currentText(), self.cb_y.currentText()]
         if self.mode.currentText() == "3D":
             axes.append(self.cb_z.currentText())
         return any(D.REDUCED_RE.match(a) for a in axes if a)
 
     def _after_visibility_change(self):
+        """After points are removed/restored, re-fit the reduced embedding on the survivors if one is shown, otherwise just replot."""
         # if viewing a reduced embedding, always re-fit it on the survivors
-        if self._viewing_reduced() and len(self._effective()) >= 3:
+        if self._viewing_reduced() and len(self._effective_positions()) >= 3:
             self._rerun_current_reduction()
         else:
             self.update_plot()
 
     def _rerun_current_reduction(self):
+        """Detect which reduction (PCA/t-SNE/UMAP) the current axes show and re-run it; caveat: falls back to a plain replot if no axis is a reduced component."""
         import re
 
         for a in (self.cb_x.currentText(), self.cb_y.currentText(), self.cb_z.currentText()):
@@ -1211,37 +1255,40 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self._refresh_panel()
 
     def on_remove_selected(self):
+        """Hide (soft-remove) the explicitly selected FOVs (lasso subset or focused point), recording an undoable history entry; caveat: does nothing on the default 'all visible' set."""
         if self.df is None:
             return
         # remove only an EXPLICIT selection -- a lasso subset, or a highlighted point;
         # never the default "all visible" set
         if self.lasso_sel:
-            pos = [p for p in self.lasso_sel if not self.hidden[p]]
+            positions = [p for p in self.lasso_sel if not self.hidden[p]]
         elif self.focus_pos is not None and not self.hidden[self.focus_pos]:
-            pos = [self.focus_pos]
+            positions = [self.focus_pos]
         else:
-            pos = []
-        if not pos:
+            positions = []
+        if not positions:
             return
-        self.hidden[pos] = True
-        self.remove_history.append(list(pos))
-        self.history_list.addItem(f"#{len(self.remove_history)}: removed {len(pos)} pts")
+        self.hidden[positions] = True
+        self.remove_history.append(list(positions))
+        self.history_list.addItem(f"#{len(self.remove_history)}: removed {len(positions)} pts")
         self._update_hidden_count()
         self._after_visibility_change()  # recompute reduction (if shown) + replot scatter
         self._reset_to_default_view()  # panel/details -> all visible FOVs
 
     def on_restore_selected(self):
+        """Un-hide the FOVs from the history entry selected in the removed-points list."""
         r = self.history_list.currentRow()
         if r < 0 or r >= len(self.remove_history):
             return
-        pos = self.remove_history.pop(r)
+        positions = self.remove_history.pop(r)
         self.history_list.takeItem(r)
-        self.hidden[pos] = False
+        self.hidden[positions] = False
         self._update_hidden_count()
         self._after_visibility_change()
         self._reset_to_default_view()
 
     def on_restore_all(self):
+        """Un-hide every removed FOV and clear the removal history."""
         if self.df is None:
             return
         self.hidden[:] = False
@@ -1259,9 +1306,10 @@ class FeatureViewer(QtWidgets.QMainWindow):
             return [p for p in self.lasso_sel if not self.hidden[p]]
         if self.focus_pos is not None and not self.hidden[self.focus_pos]:
             return [self.focus_pos]
-        return list(self._effective())
+        return list(self._effective_positions())
 
     def on_set_goodness(self):
+        """Apply the chosen goodness label to the targeted FOVs both in memory and on disk, then refresh the details, scatter, and Label tab."""
         if self.df is None:
             self.label_status.setText("no data loaded")
             return
@@ -1269,16 +1317,17 @@ class FeatureViewer(QtWidgets.QMainWindow):
         if not positions:
             self.label_status.setText("nothing selected")
             return
-        raw = self.label_value.currentData()
-        value = float("nan") if raw is None else float(raw)  # "Unlabeled" -> NaN
+        raw_value = self.label_value.currentData()
+        value = float("nan") if raw_value is None else float(raw_value)  # "Unlabeled" -> NaN
         if "goodness" not in self.df.columns:
             self.df["goodness"] = np.nan
-        gi = self.df.columns.get_loc("goodness")
-        self.df.iloc[positions, gi] = value  # update in memory
+        goodness_col_index = self.df.columns.get_loc("goodness")
+        self.df.iloc[positions, goodness_col_index] = value  # update in memory
         saved, matched = self._persist_goodness(positions, value)  # write to disk
-        shown = "NaN" if value != value else str(int(value))
+        display_value = "NaN" if value != value else str(int(value))
         self.label_status.setText(
-            f"set {len(positions)} FOV(s) → {shown}; wrote {matched} row(s) to {saved} CSV(s)"
+            f"set {len(positions)} FOV(s) → {display_value}; "
+            f"wrote {matched} row(s) to {saved} CSV(s)"
         )
         self._populate_details()  # details table shows goodness
         if self.cb_color.currentText() == "goodness":
@@ -1325,6 +1374,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         return saved, matched
 
     def _populate_columns(self):
+        """Repopulate the axis / color / threshold combo boxes from the loaded columns, defaulting axes to the best-covered features; caveat: toggles self._ready off/on so combo updates do not trigger premature replots."""
         self._ready = False
         self._refresh_channel_combos()  # channel toggles reflect the loaded data's channels
         feats = D.feature_columns(self.df) if self.df is not None else []
@@ -1382,11 +1432,13 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.thr_hi.setValue(hi)
 
     def _refresh_thr_list(self):
+        """Rebuild the threshold list widget from the active per-feature keep-ranges."""
         self.thr_list.clear()
         for feat, (lo, hi) in self.thresholds.items():
             self.thr_list.addItem(f"{feat} ∈ [{lo:g}, {hi:g}]")
 
     def on_add_threshold(self):
+        """Add or update the keep-range for the selected feature from the min/max spinboxes and re-filter."""
         feat = self.thr_col.currentText()
         if self.df is None or not feat:
             return
@@ -1395,6 +1447,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.apply_filters()
 
     def on_remove_threshold(self):
+        """Remove the threshold selected in the list and re-filter."""
         r = self.thr_list.currentRow()
         if r < 0:
             return
@@ -1404,11 +1457,13 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.apply_filters()
 
     def on_clear_thresholds(self):
+        """Remove all feature thresholds and re-filter."""
         self.thresholds = {}
         self._refresh_thr_list()
         self.apply_filters()
 
     def apply_filters(self):
+        """Recompute the filtered-FOV set from the active thresholds, reset the lasso, and refresh the scatter and panel."""
         if self.df is None:
             # last dataset removed -> clear the scatter and the FOV panel too
             self.filt = np.array([], int)
@@ -1425,8 +1480,10 @@ class FeatureViewer(QtWidgets.QMainWindow):
         mask = np.ones(len(self.df), bool)
         for feat, (lo, hi) in self.thresholds.items():
             if feat in self.df.columns:
-                v = self.df[feat].to_numpy(float)
-                mask &= (v >= lo) & (v <= hi)  # NaN comparisons are False -> excluded
+                values = self.df[feat].to_numpy(float)
+                mask &= (values >= lo) & (
+                    values <= hi
+                )  # NaN comparisons are False -> excluded
         self.filt = np.where(mask)[0]
         self.lasso_sel = None  # changing the filters resets the lasso filter
         if self.focus_pos is not None and self.focus_pos not in set(self.filt.tolist()):
@@ -1439,14 +1496,14 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self._refresh_panel()
         self._after_visibility_change()
 
-    def _shown(self):
+    def _shown_positions(self):
         """Visible positions shown in the panel: lasso subset if active, else all
         filtered -- always excluding removed (hidden) FOVs. Ordered by `score`
         (descending) when the Rank tab has ranked the FOVs."""
         if self.lasso_sel is not None:
             pos = [p for p in self.lasso_sel if not self.hidden[p]]
         else:
-            pos = list(self._effective())
+            pos = list(self._effective_positions())
         return self._sort_by_score(pos)
 
     def _sort_by_score(self, pos):
@@ -1457,7 +1514,8 @@ class FeatureViewer(QtWidgets.QMainWindow):
         return sorted(pos, key=lambda p: np.inf if np.isnan(s[p]) else -s[p])
 
     def _refresh_panel(self):
-        self.set_selection(self._shown())
+        """Sync the FOV panel and details table to the currently-shown positions."""
+        self.set_selection(self._shown_positions())
 
     # ----- dim reduction -----
     def _update_reduction_params(self, *_):
@@ -1472,45 +1530,51 @@ class FeatureViewer(QtWidgets.QMainWindow):
             w.setVisible(show)
 
     def run_reduction(self):
-        eff = self._effective()
-        if self.df is None or len(eff) < 3:
+        """Fit the selected dimensionality reduction on the visible FOVs' features, store the 3 components as columns, and switch the scatter axes to them; caveat: needs >=3 visible FOVs."""
+        visible_positions = self._effective_positions()
+        if self.df is None or len(visible_positions) < 3:
             self.reduce_status.setText("need >=3 visible FOVs")
             return
         method = self.cb_method.currentText()
-        feats = D.feature_columns(self.df)
-        X = self.df.iloc[eff][feats].to_numpy(float)
-        self.reduce_status.setText(f"running {method} on {len(eff)} FOVs…")
+        feature_cols = D.feature_columns(self.df)
+        feature_matrix = self.df.iloc[visible_positions][feature_cols].to_numpy(float)
+        self.reduce_status.setText(f"running {method} on {len(visible_positions)} FOVs…")
         QtWidgets.QApplication.processEvents()
         try:
-            emb = D.run_reduction(
-                X, method, perplexity=self.sp_perp.value(), n_neighbors=self.sp_nn.value()
+            embedding = D.run_reduction(
+                feature_matrix,
+                method,
+                perplexity=self.sp_perp.value(),
+                n_neighbors=self.sp_nn.value(),
             )
         except Exception as e:  # noqa: BLE001
             self.reduce_status.setText(f"error: {e}")
             return
-        cols = [f"{REDUCE_PREFIX[method]}{i + 1}" for i in range(3)]
-        for c in cols:
+        comp_cols = [f"{REDUCE_PREFIX[method]}{i + 1}" for i in range(3)]
+        for c in comp_cols:
             if c not in self.df.columns:
                 self.df[c] = np.nan
             if c not in self.reduced_cols:
                 self.reduced_cols.append(c)
-        self.df.loc[self.df.index[eff], cols] = emb
-        self.reduce_status.setText(f"{method} done -> axes {', '.join(cols)} available")
+        self.df.loc[self.df.index[visible_positions], comp_cols] = embedding
+        self.reduce_status.setText(f"{method} done -> axes {', '.join(comp_cols)} available")
         self._ready = False
         self._populate_columns()
-        for cb, c in zip((self.cb_x, self.cb_y, self.cb_z), cols):
+        for cb, c in zip((self.cb_x, self.cb_y, self.cb_z), comp_cols):
             cb.setCurrentText(c)
         self._ready = True
         self.update_plot()  # explicit: combos may be unchanged (already on PCA*), so no signal
 
     # =============================================================== plotting
     def _axis_values(self, col):
+        """Values of column `col` for the currently-plotted FOVs, as a float array."""
         return self.df.iloc[self.plot_pos][col].to_numpy(float)
 
     def update_plot(self, *_):
+        """Redraw the scatter for the current axes/color/mode: numeric colors get a colorbar, categorical (and goodness) colors a legend, and the focus ring is re-applied; caveat: no-op until self._ready is set."""
         if not self._ready or self.df is None:
             return
-        self.plot_pos = self._effective()
+        self.plot_pos = self._effective_positions()
         if len(self.plot_pos) == 0:
             self.fig.clear()
             self.canvas.draw_idle()
@@ -1598,6 +1662,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self._highlight_scatter(self.focus_pos)
 
     def _style_axes(self, ax, is3d):
+        """Apply the dark theme colors to the scatter axes, ticks, grid, and (in 3D) panes."""
         self.fig.set_facecolor(MPL_BG)
         ax.set_facecolor(MPL_BG)
         ax.tick_params(colors=MPL_FG, which="both")
@@ -1616,6 +1681,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
             ax.grid(True, color=MPL_GRID, alpha=0.35)
 
     def reset_view(self):
+        """Reset the scatter to its default view (3D: default angles + autoscale; 2D: toolbar Home)."""
         if self.ax is None:
             return
         if self.mode.currentText() == "3D":
@@ -1626,6 +1692,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.canvas.draw_idle()
 
     def _on_scroll(self, event):
+        """Zoom the scatter in/out on scroll, centered on the cursor in 2D and on the axis midpoints in 3D."""
         if self.ax is None or event.inaxes is not self.ax:
             return
         factor = 0.83 if event.button == "up" else 1.2  # up = zoom in
@@ -1650,14 +1717,15 @@ class FeatureViewer(QtWidgets.QMainWindow):
 
     # =============================================================== picking
     def on_pick(self, event):
+        """Handle clicking a scatter point: focus that FOV (or toggle off if re-clicked), cancelling any active lasso first; caveat: ignored while the lasso tool is on."""
         if event.artist is not self.scatter or self.lasso_btn.isChecked():
             return
-        ind = event.ind
-        if ind is None or len(ind) == 0:
+        picked_indices = event.ind
+        if picked_indices is None or len(picked_indices) == 0:
             return
         self._picked = True  # a point was hit -> don't treat this click as "empty"
-        pos = int(self.plot_pos[int(ind[0])])
-        if self.focus_pos == pos:  # click the highlighted point again -> clear highlight
+        position = int(self.plot_pos[int(picked_indices[0])])
+        if self.focus_pos == position:  # click the highlighted point again -> clear highlight
             self._clear_focus()
             return
         # clicking a point cancels the lasso filter -> show ALL visible FOVs + details,
@@ -1666,9 +1734,10 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self.lasso_sel = None
             self._clear_lasso_line()
         self._refresh_panel()
-        self._set_focus(pos, scroll_grid=True)
+        self._set_focus(position, scroll_grid=True)
 
     def toggle_lasso(self, on):
+        """Enable or disable lasso-select mode, disabling 3D rotation while the lasso is on."""
         self.lasso_btn.setText("Lasso ON (drag to select)" if on else "Enable lasso")
         if on and self.ax is not None and hasattr(self.ax, "disable_mouse_rotation"):
             self.ax.disable_mouse_rotation()
@@ -1676,6 +1745,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self.ax.mouse_init()
 
     def _clear_lasso_line(self):
+        """Remove the lasso outline artist from the scatter if one is drawn."""
         if self._lasso_line is not None:
             try:
                 self._lasso_line.remove()
@@ -1685,6 +1755,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self.canvas.draw_idle()
 
     def _lasso_press(self, event):
+        """Begin a lasso outline when lasso mode is on; otherwise treat it as a plain plot click (deferred, to run after any point pick)."""
         if not self.lasso_btn.isChecked():
             # a plain click on the plot: cancel the lasso outline; if it didn't land
             # on a point, also clear the selection + highlight (checked after pick fires)
@@ -1702,6 +1773,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.ax.add_line(self._lasso_line)
 
     def _after_plot_click(self):
+        """Deferred plot-click handler: if no point was hit, clear the lasso/focus and show all FOVs; caveat: reads self._picked set by on_pick, which fires before this."""
         if not self._picked:  # clicked empty space -> cancel lasso + highlight, show all
             self._clear_focus()
             self.lasso_sel = None
@@ -1710,6 +1782,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self._picked = False  # reset for the next click
 
     def _lasso_move(self, event):
+        """Extend the in-progress lasso outline to the current cursor position and redraw."""
         if not self._lasso_xy or event.x is None:
             return
         self._lasso_xy.append((event.x, event.y))
@@ -1718,6 +1791,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.canvas.draw_idle()
 
     def _lasso_release(self, event):
+        """Finish the lasso: select the FOVs whose points fall inside the closed loop (keeping the outline), or clear the filter if the gesture was a click or enclosed nothing."""
         if not self._lasso_xy:
             return
         verts = self._lasso_xy
@@ -1734,7 +1808,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
                     dcoords = self.ax.transData.inverted().transform(arr)
                     self._lasso_line.set_data(dcoords[:, 0], dcoords[:, 1])
                     self._lasso_line.set_transform(self.ax.transData)
-            inside = MplPath(verts).contains_points(self._points_display())
+            inside = MplPath(verts).contains_points(self._display_point_positions())
             chosen = [int(self.plot_pos[i]) for i in np.where(inside)[0]]
             if chosen:
                 self.lasso_sel = chosen  # lasso acts as a filter
@@ -1750,7 +1824,8 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self._refresh_panel()  # -> show all FOVs + details
         self.canvas.draw_idle()
 
-    def _points_display(self):
+    def _display_point_positions(self):
+        """Screen (display) coordinates of every plotted point, for lasso hit-testing (projected first in 3D)."""
         xs, ys = (
             self._axis_values(self.cb_x.currentText()),
             self._axis_values(self.cb_y.currentText()),
@@ -1763,6 +1838,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
 
     # =============================================================== right grid
     def _row_id(self, row):
+        """Human-readable FOV identifier for tooltips: the filename if present, else well/fov/timepoint."""
         fn = row.get("filename", None)
         if isinstance(fn, str) and fn:
             return fn
@@ -1814,6 +1890,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self._rank_rebuild_grid()
 
     def set_selection(self, positions):
+        """Set the selected-FOV set and rebuild the details table and thumbnail grid; caveat: skips the rebuild if the selection is unchanged."""
         positions = list(positions)
         if positions == self.sel_pos:  # unchanged -> skip the rebuild (no freeze on reset)
             return
@@ -1838,6 +1915,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.details_model.set_data(self.df, self._detail_rows, fields)
 
     def _focus_details_row(self, pos):
+        """Select and scroll the details table to the row for FOV `pos`, or clear the selection if it isn't listed."""
         if pos in self._detail_rows:
             r = self._detail_rows.index(pos)
             self.details.selectRow(r)
@@ -1848,24 +1926,26 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self.details.clearSelection()
 
     def _on_details_click(self, row):
+        """Focus the FOV corresponding to the clicked details-table row (scrolling the grid to it)."""
         if 0 <= row < len(self._detail_rows):
             self._set_focus(self._detail_rows[row], scroll_grid=True)
 
     def _load_thumb(self, path, size):
+        """Return a QPixmap thumbnail for `path` scaled to `size`, using and maintaining the LRU cache."""
         key = (path, size)
-        pm = self._thumb_cache.get(key)
-        if pm is not None:  # cache hit -> no disk decode
+        pixmap = self._thumb_cache.get(key)
+        if pixmap is not None:  # cache hit -> no disk decode
             self._thumb_cache.move_to_end(key)
-            return pm
+            return pixmap
         reader = QtGui.QImageReader(path)
         sz = reader.size()
         if sz.isValid() and sz.width() > 0:
             reader.setScaledSize(sz.scaled(size, size, QtCore.Qt.KeepAspectRatio))
-        pm = QtGui.QPixmap.fromImage(reader.read())
-        self._thumb_cache[key] = pm
+        pixmap = QtGui.QPixmap.fromImage(reader.read())
+        self._thumb_cache[key] = pixmap
         if len(self._thumb_cache) > THUMB_CACHE_MAX:
             self._thumb_cache.popitem(last=False)  # evict least-recently-used
-        return pm
+        return pixmap
 
     def _balanced_cap(self, positions, cap):
         """Cap the thumbnails shown, but round-robin across datasets so every loaded
@@ -1893,6 +1973,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         return out
 
     def _rebuild_grid(self):
+        """Rebuild the selected-FOV thumbnail grid with lazily-loaded placeholder tiles (capped and balanced across datasets), then re-apply any focus highlight."""
         # cheap: create placeholder labels only; thumbnails are decoded lazily for
         # the cells actually visible in the viewport (and as the user scrolls).
         while self.grid.count():
@@ -1929,12 +2010,13 @@ class FeatureViewer(QtWidgets.QMainWindow):
             lab.mousePressEvent = lambda e, p=int(pos): self._set_focus(p, scroll_grid=False)
             self._thumb_items.append([lab, png, False, int(pos)])
         self._cur_ncols = 0
-        self._reflow()
+        self._reflow_grid()
         QtCore.QTimer.singleShot(0, self._load_visible_thumbs)  # after layout settles
         if self.focus_pos is not None:  # re-apply highlight
             self._highlight_thumb(self.focus_pos, scroll_grid=False)
 
-    def _reflow(self):
+    def _reflow_grid(self):
+        """Re-lay the selected-FOV thumbnails into as many columns as the viewport width allows; caveat: no-op if the column count is unchanged."""
         if not self._thumb_items:
             return
         size = self.size_slider.value()
@@ -1989,6 +2071,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self._focus_details_row(self.focus_pos)
 
     def _clear_focus(self):
+        """Clear the current FOV highlight: remove the scatter ring, restore the thumbnail border, and clear the details selection."""
         self.focus_pos = None
         if self._focus_marker is not None:
             try:
@@ -2003,12 +2086,14 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.details.clearSelection()  # keep the table (it lists the whole selection)
 
     def _point_coords(self, pos):
+        """Data coordinates of FOV `pos` on the current scatter axes (X/Y, plus Z in 3D)."""
         cols = [self.cb_x.currentText(), self.cb_y.currentText()]
         if self.mode.currentText() == "3D":
             cols.append(self.cb_z.currentText())
         return [float(self.df.iloc[pos][c]) for c in cols]
 
     def _highlight_scatter(self, pos):
+        """Draw the focus ring around FOV `pos` on the scatter; caveat: skipped if the point is not currently plotted or has NaN coordinates."""
         if self._focus_marker is not None:
             try:
                 self._focus_marker.remove()
@@ -2029,6 +2114,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.canvas.draw_idle()
 
     def _highlight_thumb(self, pos, scroll_grid):
+        """Give FOV `pos`'s thumbnail the blue focus border (restoring the previous one), optionally scrolling the grid to it."""
         if self._focus_label is not None:
             self._focus_label.setStyleSheet(getattr(self._focus_label, "_base_qss", THUMB_QSS))
             self._focus_label = None
@@ -2059,17 +2145,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         b_load.clicked.connect(self._on_rank_load)
         b_save = QtWidgets.QPushButton("Save…")
         b_save.clicked.connect(self._on_rank_save)
-        b_fit_g = QtWidgets.QPushButton("Fit to goodness")
-        b_fit_g.setToolTip(
-            "Fit checked features' ranges from the good/bad labels (direction kept)"
-        )
-        b_fit_g.clicked.connect(self._on_rank_fit_goodness)
-        b_fit_d = QtWidgets.QPushButton("Fit to data")
-        b_fit_d.setToolTip(
-            "Fit checked features' ranges from the data distribution (label-agnostic)"
-        )
-        b_fit_d.clicked.connect(self._on_rank_fit_data)
-        for b in (b_load, b_save, b_fit_g, b_fit_d):
+        for b in (b_load, b_save):
             bar.addWidget(b)
         lv.addLayout(bar)
 
@@ -2173,70 +2249,34 @@ class FeatureViewer(QtWidgets.QMainWindow):
 
     # ---- rank tab: knob state ----
     def _rank_feature_list(self):
+        """The feature columns available to rank in the loaded data (empty if none loaded)."""
         return D.feature_columns(self.df) if self.df is not None else []
 
-    _SEED_MIN_LABELS = 3  # per class (good / bad) needed for a label-aware seed
+    def _seed_range(self, f, direction):
+        """Data-derived (lo, hi, soft_left, soft_right) for feature ``f`` at ``direction``:
+        label-agnostic quantiles of all values (target -> [q25, q75]; monotone -> [q05, q95])
+        with IQR-width shoulders."""
+        values = self.df[f].to_numpy(float)
+        finite = values[~np.isnan(values)]
 
-    def _seed_range(self, f, direction, use_labels: bool):
-        """Data-derived (lo, hi, soft_left, soft_right) for feature ``f`` at ``direction``.
-
-        ``use_labels=False`` (Fit to data): label-agnostic quantiles of all values
-        (target -> [q25, q75]; monotone -> [q05, q95]) with IQR-width shoulders.
-
-        ``use_labels=True`` (Fit to goodness): place the profile so GOOD values score high and
-        BAD values score low (NEUTRAL then lands mid on the linear ramp). The DIRECTION is kept
-        as given -- only the range/shoulders are fit:
-          higher : ramp median(bad) -> median(good)   (good are higher)
-          lower  : ramp median(good) -> median(bad)   (good are lower)
-          target : band = good [q25, q75]; each shoulder reaches the bad values on that side
-        Falls back to the label-agnostic fit when a feature has < _SEED_MIN_LABELS good/bad or
-        the labels contradict a monotone direction.
-        """
-        v = self.df[f].to_numpy(float)
-        vv = v[~np.isnan(v)]
-
-        def q(a, p):
+        def quantile(a, p):
+            """The p-quantile of array `a`, or 0.0 if it is empty."""
             return float(np.quantile(a, p)) if len(a) else 0.0
 
-        def fallback():  # label-agnostic quantiles of all values
-            if direction == "target":
-                lo, hi = q(vv, 0.25), q(vv, 0.75)
-            else:
-                lo, hi = q(vv, 0.05), q(vv, 0.95)
-            b = max(hi - lo, 1e-9)
-            return lo, hi, b, b
-
-        if not use_labels:
-            return fallback()
-        good = bad = np.array([])
-        if "goodness" in self.df.columns:
-            g = self.df["goodness"].to_numpy(float)
-            good = v[(g == 1.0) & ~np.isnan(v)]
-            bad = v[(g == -1.0) & ~np.isnan(v)]
-        if good.size < self._SEED_MIN_LABELS or bad.size < self._SEED_MIN_LABELS:
-            return fallback()
-        gmed, bmed = float(np.median(good)), float(np.median(bad))
-        if direction in ("higher", "lower"):
-            lo, hi = (bmed, gmed) if direction == "higher" else (gmed, bmed)
-            if hi <= lo:  # labels contradict this monotone direction
-                return fallback()
-            b = max(hi - lo, 1e-9)
-            return lo, hi, b, b
-        # target: plateau on the good IQR; shoulders fall to 0 at the bad on each side
-        lo, hi = q(good, 0.25), q(good, 0.75)
+        if direction == "target":
+            lo, hi = quantile(finite, 0.25), quantile(finite, 0.75)
+        else:
+            lo, hi = quantile(finite, 0.05), quantile(finite, 0.95)
         band = max(hi - lo, 1e-9)
-        below, above = bad[bad < gmed], bad[bad > gmed]
-        soft_left = (lo - float(np.median(below))) if below.size >= 2 else band
-        soft_right = (float(np.median(above)) - hi) if above.size >= 2 else band
-        return lo, hi, max(soft_left, 1e-9), max(soft_right, 1e-9)
+        return lo, hi, band, band
 
     def _rank_seed_ranges(self):
         """Fresh per-feature knobs: direction from the feature-name default, range/shoulders
-        from :meth:`_seed_range` (label-aware where possible; see there)."""
+        from :meth:`_seed_range` (label-agnostic data quantiles)."""
         ranges = {}
         for f in self._rank_feature_list():
             direction = RANK.DEFAULT_DIRECTION.get(RANK._feature_suffix(f), "target")
-            lo, hi, sl, sr = self._seed_range(f, direction, use_labels=False)
+            lo, hi, sl, sr = self._seed_range(f, direction)
             ranges[f] = {
                 "direction": direction,
                 "shape": "linear",  # curve family; user can switch to sigmoid/gaussian
@@ -2250,7 +2290,8 @@ class FeatureViewer(QtWidgets.QMainWindow):
             }
         return ranges
 
-    def _mk_spin(self, val):
+    def _make_spinbox(self, val):
+        """Build an arrowless, no-wheel float spinbox initialized to `val` (0.0 for None/NaN)."""
         s = QtWidgets.QDoubleSpinBox()
         s.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
         s.setKeyboardTracking(False)
@@ -2262,6 +2303,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         return s
 
     def _rank_populate_table(self):
+        """Rebuild the Rank-tab knob table (one row per feature) from self.rank_ranges, wiring the checkbox/direction/shape/param/weight widgets."""
         tbl = self.rank_table
         tbl.blockSignals(True)
         tbl.setRowCount(0)
@@ -2289,7 +2331,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
             tbl.setCellWidget(i, RCOL_SHAPE, scombo)
             self._rank_fill_params(i, spec)  # shape-dependent parameter columns
             # per-feature weight: how much this feature counts in the weighted score (>= 0)
-            wspin = self._mk_spin(spec.get("weight", 1.0))
+            wspin = self._make_spinbox(spec.get("weight", 1.0))
             wspin.setDecimals(2)
             wspin.setRange(0.0, 1e6)
             wspin.editingFinished.connect(self._rank_refresh_curves)
@@ -2297,11 +2339,11 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self._rank_update_row_enabled(i)
         tbl.blockSignals(False)
 
-    def _mk_param_spin(self, key, value):
+    def _make_param_spinbox(self, key, value):
         """A labeled spin for one interpretable parameter: the param name is the (non-editable)
         prefix, so the column self-describes whatever the row's shape needs. Stores its param
         key on the widget so :meth:`_read_rank_table` knows what it is."""
-        s = self._mk_spin(value)
+        s = self._make_spinbox(value)
         s.setPrefix(f"{RANK_PARAM_LABELS.get(key, key)}  ")
         if key in ("fwhm", "width"):  # strictly positive widths
             s.setRange(1e-9, 1e12)
@@ -2327,7 +2369,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         for idx, col in enumerate(RCOL_PARAMS):
             if idx < len(items):
                 key, value = items[idx]
-                spin = self._mk_param_spin(key, value)
+                spin = self._make_param_spinbox(key, value)
                 spin.editingFinished.connect(self._rank_refresh_curves)
                 tbl.setCellWidget(row, col, spin)
             else:  # unused slot for this shape
@@ -2348,10 +2390,12 @@ class FeatureViewer(QtWidgets.QMainWindow):
         dcombo.setEnabled(not is_bell)
 
     def _rank_row_feature(self, row):
+        """The feature name at table `row`, or None if the row index is out of range."""
         feats = list(self.rank_ranges)
         return feats[row] if 0 <= row < len(feats) else None
 
     def _on_rank_dir_changed(self, row):
+        """Apply a direction change for `row`: store it, rebuild that row's shape-dependent param columns, and redraw the curves."""
         # Direction changes the parameter SET (e.g. linear target range+shoulders <-> onset/
         # ideal ramp), so rebuild this row's param columns from its internal spec, then redraw.
         f = self._rank_row_feature(row)
@@ -2366,6 +2410,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self._rank_refresh_curves()
 
     def _on_rank_shape_changed(self, row):
+        """Apply a shape change for `row`: store it, force target/disable direction for bell shapes, rebuild the param columns from the kept bounds, and redraw."""
         # Shape changes the parameter SET; keep the internal bounds and re-derive the params for
         # the new shape (a linear [lo,hi] becomes a gaussian center/fwhm around the same band).
         f = self._rank_row_feature(row)
@@ -2542,7 +2587,8 @@ class FeatureViewer(QtWidgets.QMainWindow):
                 (hi + spec["soft_right"], 0.0, "soft_right"),
             ]
 
-        def val(x):
+        def desirability_at(x):
+            """The profile's desirability height at value `x` for this feature's spec."""
             return float(
                 FM.DesirabilityModel._desirability(
                     np.array([x]),
@@ -2556,7 +2602,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
                 )[0]
             )
 
-        return [(lo, val(lo), "lo"), (hi, val(hi), "hi")]
+        return [(lo, desirability_at(lo), "lo"), (hi, desirability_at(hi), "hi")]
 
     @staticmethod
     def _sample_profile(spec, lo_x, hi_x, n=240):
@@ -2706,6 +2752,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
 
     # ---- rank tab: drag the profile control points ----
     def _rank_on_press(self, event):
+        """Begin dragging the nearest profile control point (within 10 px) across all rank histograms."""
         if event.x is None:
             return
         best = None  # (meta, point index, pixel distance)
@@ -2720,6 +2767,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self._rank_drag = (best[0], best[1])
 
     def _rank_on_motion(self, event):
+        """While dragging, move the grabbed control point (lo/hi/shoulder), sync the table row, and reshape the overlaid curve."""
         if self._rank_drag is None or event.x is None:
             return
         meta, j = self._rank_drag
@@ -2750,6 +2798,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.rank_canvas.draw_idle()
 
     def _rank_on_release(self, _event):
+        """End any in-progress control-point drag."""
         self._rank_drag = None
 
     def _rank_sync_row(self, feature):
@@ -2790,6 +2839,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         return out
 
     def _rank_rebuild_grid(self):
+        """Clear the Rank-tab thumbnail grid and materialize the first page of score-ordered FOVs."""
         while self.rank_grid.count():
             it = self.rank_grid.takeAt(0)
             if it.widget():
@@ -2857,6 +2907,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self._rank_draw_hists()  # (re)draw the value lines for the current selection
 
     def _rank_reflow(self):
+        """Re-lay the Rank-tab thumbnails into as many columns as the viewport allows; caveat: no-op if the column count is unchanged."""
         if not self._rank_thumb_items:
             return
         size = self.rank_size_slider.value()
@@ -2870,6 +2921,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         QtCore.QTimer.singleShot(0, self._rank_load_visible)
 
     def _rank_load_visible(self, *_):
+        """Decode the visible Rank-tab thumbnails (captioned with rank/score) and, near the bottom, trigger loading the next page."""
         if not self._rank_thumb_items:
             return
         sb = self.rank_scroll.verticalScrollBar()
@@ -2923,32 +2975,8 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self._rank_populate_table()
         self._rerank()
 
-    def _rank_fit(self, use_labels: bool):
-        """Fit the range/shoulders of the CHECKED features (direction kept); unchecked ones are
-        left untouched. use_labels: separate good/bad (Fit to goodness) vs data quantiles."""
-        if self.df is None:
-            self.rank_status.setText("load data first")
-            return
-        self._read_rank_table()  # capture current knobs + which features are checked
-        data_feats = set(self._rank_feature_list())
-        n = 0
-        for f, spec in self.rank_ranges.items():
-            if spec.get("enabled", True) and f in data_feats:
-                lo, hi, sl, sr = self._seed_range(f, spec["direction"], use_labels=use_labels)
-                spec.update(lo=lo, hi=hi, soft_left=sl, soft_right=sr)  # keep direction + on
-                n += 1
-        self._rank_populate_table()
-        self._rerank()
-        how = "goodness labels" if use_labels else "data quantiles"
-        self.rank_status.setText(f"fit {n} checked feature(s) to {how}")
-
-    def _on_rank_fit_goodness(self):
-        self._rank_fit(use_labels=True)
-
-    def _on_rank_fit_data(self):
-        self._rank_fit(use_labels=False)
-
     def _on_rank_save(self):
+        """Save the current desirability model config (checked features only) to a JSON file via a file dialog."""
         if not self.rank_ranges:
             self.rank_status.setText("nothing to save; load data first")
             return
@@ -2970,6 +2998,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         )
 
     def _on_rank_load(self):
+        """Load a desirability profile JSON, merging its (checked) features over the data-seeded (unchecked) ones, then re-rank; caveat: legacy `range`-style profiles are still parsed."""
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self, "Load desirability ranges", str(PROFILE_DIR), "JSON (*.json)"
         )
@@ -2981,9 +3010,9 @@ class FeatureViewer(QtWidgets.QMainWindow):
             cfg = json.loads(Path(path).read_text())
             feats = cfg.get("features", cfg) if isinstance(cfg, dict) else {}
             loaded = {}
-            for f, s in feats.items():
+            for f, feat_cfg in feats.items():
                 # curve_bounds does the shape math; legacy `range` profiles still open.
-                shape, direction, lo, hi, sl, sr, curve_k = _feature_to_internal(s)
+                shape, direction, lo, hi, sl, sr, curve_k = _feature_to_internal(feat_cfg)
                 loaded[f] = {
                     "direction": direction,
                     "shape": shape,
@@ -2992,7 +3021,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
                     "soft_left": sl,
                     "soft_right": sr,
                     "curve_k": curve_k,
-                    "weight": float(s.get("weight", 1.0)),
+                    "weight": float(feat_cfg.get("weight", 1.0)),
                     "enabled": True,  # a feature in the file is one to use
                 }
         except Exception as e:  # noqa: BLE001
@@ -3015,8 +3044,9 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.rank_status.setText(f"loaded {len(loaded)} feature(s) from {Path(path).name}")
 
     def resizeEvent(self, e):
+        """On window resize, reflow all thumbnail grids (Analysis, Label, Rank) to the new width."""
         super().resizeEvent(e)
-        self._reflow()
+        self._reflow_grid()
         self._load_visible_thumbs()
         self._reflow_all_label_panels()
         if hasattr(self, "rank_grid"):
@@ -3025,6 +3055,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
 
 
 def main():
+    """CLI entry point: parse args, launch the dark-themed viewer, and auto-load any CSVs given (paired --csv/--png-folder or positional)."""
     import argparse
 
     ap = argparse.ArgumentParser(description="FOV feature viewer")
@@ -3038,13 +3069,14 @@ def main():
         "--png-folder",
         action="append",
         default=[],
-        help="folder of that matrix's per-FOV PNGs (repeatable; paired with --csv)",
+        help="override folder of that matrix's brightfield PNGs (repeatable; paired with "
+        "--csv). Omit to use the sibling <stem>_png/ folder next to the CSV.",
     )
-    ap.add_argument("csvs", nargs="*", help="[legacy] CSV(s) resolved via --composites-root")
     ap.add_argument(
-        "--composites-root",
-        default=None,
-        help="[legacy] parent folder whose subfolders hold per-FOV images",
+        "csvs",
+        nargs="*",
+        help="feature CSV(s) to auto-load; images come from sibling <stem>[_<channel>]_png/ "
+        "folders next to each CSV",
     )
     args = ap.parse_args()
 
@@ -3057,10 +3089,8 @@ def main():
     app = QtWidgets.QApplication(sys.argv[:1])  # keep argv out of Qt's parser
     apply_dark(app)
     win = FeatureViewer()
-    if args.composites_root:
-        win.composites_root = Path(args.composites_root)
     win.show()
-    if args.csv:  # explicit (csv, png_folder) pairs
+    if args.csv:  # explicit brightfield-folder override per CSV
         folders = args.png_folder or [None] * len(args.csv)
         win._load_paired(
             list(
@@ -3070,7 +3100,7 @@ def main():
                 )
             )
         )
-    elif args.csvs:  # legacy: composites-root + positional csvs
+    elif args.csvs:  # sibling-folder auto-wiring
         win._load_files([str(Path(c)) for c in args.csvs])
     sys.exit(app.exec_())
 

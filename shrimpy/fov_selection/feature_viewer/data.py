@@ -1,19 +1,20 @@
 """
 Qt-free core for the FOV feature viewer: load feature CSVs, wire each FOV row to its
-composite image under fov_composites/, filter, and run 3D dimensionality reduction.
-Kept separate from the GUI so it can be tested headless.
+per-channel PNG(s), filter, and run 3D dimensionality reduction. Kept separate from the
+GUI so it can be tested headless.
 
-Wiring: the feature matrix is now ONE row per FOV (dataset, well_row, well_col, fov,
-timepoint), so each row maps to a single composite PNG. Composite filenames vary by
-historical naming scheme across datasets, so instead of a hardcoded path we index each
-subfolder of COMPOSITES_ROOT and match rows by FOV identity (well_col, fov, timepoint),
-with a filename-stem fallback for OpenCell tiles. Each dataset is auto-assigned the
-subfolder that covers the most of its rows.
+Standard layout (one CSV per dataset, sibling PNG folders next to it):
+
+    <name>_fov_feature_matrix.csv          # one row per FOV; MUST have a `filename` column
+    <name>_fov_feature_matrix_png/         # brightfield image per FOV, named <filename>.png
+    <name>_fov_feature_matrix_mask_png/    # optional mask channel
+    <name>_fov_feature_matrix_fluor_png/   # optional fluorescence channel
+
+Wiring is a strict 1:1 join: the CSV `filename` column equals the PNG stem.
 """
 
 from __future__ import annotations
 
-import os
 import re
 
 from dataclasses import dataclass
@@ -22,59 +23,26 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-# Where the per-FOV composite images live (one subfolder per dataset). Override with
-# the FOV_COMPOSITES_ROOT env var, e.g. to point at bf_midslice_fov_features/ (whose
-# <tag>_midslice_png/ subfolders hold the per-FOV brightfield middle-slice images).
-COMPOSITES_ROOT = Path(
-    os.environ.get(
-        "FOV_COMPOSITES_ROOT",
-        "/hpc/projects/comp.micro/microscope_dev/smart_fov_selection/"
-        "fov_selection_output/fov_features/fov_composites",
-    )
-)
 _IMG_EXT = {".png", ".tif", ".tiff", ".jpg", ".jpeg"}
 
 # Reduced-embedding columns (PCA1, TSNE2, UMAP3, ...) are outputs, not input features.
 REDUCED_RE = re.compile(r"^(PCA|TSNE|UMAP)\d+$")
 
-# Features retired from the pipeline (see build_fov_feature_matrix.FEATURE_NAMES). They
-# are hidden from the viewer even when older matrix CSVs still carry the columns. Matched
-# by suffix -- the token after "__", or the whole name for plain (unprefixed) columns.
-REMOVED_FEATURE_SUFFIXES = frozenset(
-    {
-        "object_count",
-        "objects_per_10um2",
-        "edge_frac",
-        "eccentricity_mean",
-        "solidity_mean",
-        "densest_grid_frac",
-        "occupancy_cv",
-        "clark_evans_r",
-        "central_density_ratio",
-    }
-)
-
-# Columns that are identifiers/metadata, never used as reduction features. Per-variant
-# feature columns (e.g. nuclei_vs_max__object_count) are NOT here -- they ARE the
-# features. Any leftover "*__png" pointer columns are dropped via feature_columns'
-# numeric test and the app's column filters.
+# NUMERIC columns that are identifiers, labels, or model/acquisition outputs, never
+# reduction features. Only numeric non-features need listing here: feature_columns already
+# drops string columns (filename, well_row, dataset) and internal "__"-prefixed columns
+# (__dataset, __png, __src, __png_<channel>). Per-variant feature columns (e.g.
+# nuclei_vs_max__coverage_frac) are the actual features and are NOT listed. These columns
+# stay in the frame as filterable metadata, just kept off the plot axes.
 META_BLACKLIST = {
-    "dataset",
-    "well_row",
-    "well_col",
+    "well_col",  # FOV identity (integer-valued, but an ID)
     "fov",
     "timepoint",
-    "filename",
-    "goodness",
-    "score",
-    "predicted_good_proba",  # model outputs, never ranking/reduction INPUTS
-    "predicted_goodness",
-    "image_width_px",
+    "goodness",  # ground-truth label (from CSV; also editable in the Label tab)
+    "score",  # ranking-model output (produced in the Rank tab, not read from CSV)
+    "image_width_px",  # acquisition metadata
     "image_height_px",
     "pixel_size_um",
-    "__dataset",
-    "__png",
-    "__src",
 }
 
 try:
@@ -87,181 +55,140 @@ except Exception:  # noqa: BLE001
 METHODS = ["PCA", "t-SNE"] + (["UMAP"] if HAS_UMAP else [])
 
 
-def _file_identity_keys(stem: str) -> list:
-    """Best-effort FOV-identity keys parsed from a composite filename stem, spanning
-    the several historical naming schemes:
-
-        B-2-000000_t00   -> ("stem", ...), ("wct", "2", 0, 0)
-        0-1-000000       -> ("stem", ...), ("wct", "1", 0, 0)
-        DENV_0_t0_N44    -> ("stem", ...), ("wct", "DENV", 0, 0)
-        3_000000_t0_N52  -> ("stem", ...), ("wct", "3", 0, 0)
-        <opencell name>  -> ("stem", ...)   (matched by filename)
-
-    "wct" key = (well_col, fov, timepoint); well_row is dropped because it is constant
-    within a dataset and absent from most schemes. A trailing _N<count> annotation is
-    ignored, and timepoint defaults to 0 when absent.
-    """
-    keys = [("stem", stem)]
-    m_t = re.search(r"_t(\d+)", stem)
-    t = int(m_t.group(1)) if m_t else 0
-    core = stem[: m_t.start()] if m_t else stem
-    core = re.sub(r"_N\d+$", "", core)  # drop trailing object-count annotation
-    parts = [p for p in re.split(r"[-_]", core) if p]
-    int_idx = [i for i, p in enumerate(parts) if p.isdigit()]
-    if int_idx:
-        fi = int_idx[-1]
-        well_col = parts[fi - 1] if fi >= 1 else ""
-        keys.append(("wct", str(well_col), int(parts[fi]), t))
-    return keys
+# ============================================================= image wiring
+CHANNELS = ("brightfield", "mask", "fluor")  # FOV thumbnail channels (viewer toggle)
 
 
-def index_composites(folder: Path) -> dict:
-    """Map identity keys -> absolute composite path for one dataset subfolder."""
-    idx: dict = {}
+def _index_by_stem(folder: str | Path) -> dict[str, str]:
+    """Map filename stem -> absolute image path for one PNG folder (sorted -> stable)."""
+    folder = Path(folder)
+    stem_to_path: dict[str, str] = {}
     if not folder.is_dir():
-        return idx
-    for p in sorted(folder.iterdir()):
-        if p.suffix.lower() in _IMG_EXT:
-            for k in _file_identity_keys(p.stem):
-                idx.setdefault(k, str(p))  # sorted() -> stable first-match
-    return idx
-
-
-def _row_identity_keys(row: pd.Series) -> list:
-    """Identity keys for a FOV row, in match-priority order (stem, then well/fov/t)."""
-    keys = []
-    fn = row.get("filename")
-    if isinstance(fn, str) and fn:
-        keys.append(("stem", fn))
-    fov = row.get("fov")
-    if fov is not None and not (isinstance(fov, float) and np.isnan(fov)):
-        t = row.get("timepoint", 0)
-        t = 0 if (t is None or (isinstance(t, float) and np.isnan(t))) else int(t)
-        keys.append(("wct", str(row.get("well_col", "")), int(fov), t))
-    return keys
-
-
-def wire_composites(df: pd.DataFrame, composites_root: Path, cache: dict) -> list[str]:
-    """Resolve each row's composite image. Every subfolder of `composites_root` is
-    indexed once (memoized in `cache`), then this dataset is assigned the subfolder
-    covering the most of its rows; each row picks its first matching key."""
-    root = Path(composites_root)
-    if not root.is_dir():
-        return [""] * len(df)
-    folders = {}
-    for sub in sorted(root.iterdir()):
-        if sub.is_dir():
-            if sub not in cache:
-                cache[sub] = index_composites(sub)
-            folders[sub] = cache[sub]
-    if not folders:
-        return [""] * len(df)
-    row_keys = [_row_identity_keys(df.iloc[i]) for i in range(len(df))]
-    best = max(
-        folders.values(), key=lambda idx: sum(any(k in idx for k in ks) for ks in row_keys)
-    )
-    return [next((best[k] for k in ks if k in best), "") for ks in row_keys]
-
-
-def load_matrices(
-    csv_paths: list[str | Path], composites_root: Path = COMPOSITES_ROOT
-) -> pd.DataFrame:
-    """Concatenate feature CSVs; add __dataset (tag), __src, and __png (composite path).
-
-    Each *_fov_feature_matrix.csv is now one row per FOV, so each row maps to a single
-    composite image. If a sibling `<csv_stem>_png/` folder exists next to the CSV (the
-    convention for the paired matrices, e.g. *_nuclei_seg_instance_fov_matrix_png/ and
-    *_bf_midslice_instance_fov_matrix_png/), __png is resolved directly from that folder
-    by exact filename; otherwise it falls back to `composites_root` matched by FOV
-    identity (see wire_composites). Rows with no match get "" and the viewer shows a
-    placeholder.
-    """
-    frames = []
-    cache: dict = {}
-    for p in csv_paths:
-        p = Path(p)
-        df = pd.read_csv(p)
-        tag = p.name.replace("_fov_feature_matrix.csv", "").replace(".csv", "")
-        df["__dataset"] = tag
-        df["__src"] = str(p)
-        sibling_png = p.with_name(p.stem + "_png")
-        if sibling_png.is_dir():
-            wire_channels(df, p)  # __png + __png_<channel> for each channel folder present
-        else:
-            df["__png"] = wire_composites(df, composites_root, cache)
-        frames.append(df)
-    return pd.concat(frames, ignore_index=True, sort=False)
+        return stem_to_path
+    for image_path in sorted(folder.iterdir()):
+        if image_path.suffix.lower() in _IMG_EXT:
+            stem_to_path.setdefault(image_path.stem, str(image_path))
+    return stem_to_path
 
 
 def wire_folder(df: pd.DataFrame, png_folder: str | Path) -> list[str]:
-    """Resolve each row's image from a folder indexed DIRECTLY (not its subfolders).
+    """Resolve each row's image from one folder by the `filename` column (== PNG stem).
 
-    Matches by the row's `filename` column (exact PNG stem) first, then by FOV identity
-    (well_col, fov, timepoint). Use when a matrix is paired with one explicit image
-    folder (CLI --csv/--png-folder)."""
-    idx = index_composites(Path(png_folder))
-    if not idx:
+    Rows with no `filename` value or no matching file get "" (the viewer shows a
+    placeholder)."""
+    stem_to_path = _index_by_stem(png_folder)
+    if not stem_to_path or "filename" not in df.columns:
         return [""] * len(df)
-    return [
-        next((idx[k] for k in _row_identity_keys(df.iloc[i]) if k in idx), "")
-        for i in range(len(df))
-    ]
-
-
-CHANNELS = ("brightfield", "mask", "fluor")  # FOV thumbnail channels (viewer toggle)
+    return [stem_to_path.get(str(filename), "") for filename in df["filename"]]
 
 
 def _channel_png_folder(csv_path, channel):
     """Sibling PNG folder for a channel: <stem>_png (brightfield) / <stem>_<channel>_png."""
-    p = Path(csv_path)
-    return p.with_name(p.stem + ("_png" if channel == "brightfield" else f"_{channel}_png"))
+    csv_path = Path(csv_path)
+    suffix = "_png" if channel == "brightfield" else f"_{channel}_png"
+    return csv_path.with_name(csv_path.stem + suffix)
 
 
 def wire_channels(df: pd.DataFrame, csv_path, brightfield_folder=None) -> list[str]:
     """Set ``__png_<channel>`` for each channel whose sibling folder exists, and ``__png`` to
     the default (brightfield, else the first present). Returns the channels found. An explicit
     ``brightfield_folder`` (CLI --png-folder) overrides the brightfield sibling."""
-    present = []
-    for ch in CHANNELS:
-        folder = (
-            brightfield_folder
-            if (ch == "brightfield" and brightfield_folder)
-            else _channel_png_folder(csv_path, ch)
-        )
+    found_channels = []
+    for channel in CHANNELS:
+        if channel == "brightfield" and brightfield_folder:
+            folder = brightfield_folder
+        else:
+            folder = _channel_png_folder(csv_path, channel)
         if folder and Path(folder).is_dir():
-            df[f"__png_{ch}"] = wire_folder(df, folder)
-            present.append(ch)
-    if present:
-        default = "brightfield" if "brightfield" in present else present[0]
-        df["__png"] = df[f"__png_{default}"]
-    return present
+            df[f"__png_{channel}"] = wire_folder(df, folder)
+            found_channels.append(channel)
+    if found_channels:
+        if "brightfield" in found_channels:
+            default_channel = "brightfield"
+        else:
+            default_channel = found_channels[0]
+        df["__png"] = df[f"__png_{default_channel}"]
+    return found_channels
+
+
+# ============================================================= loaders
+def _read_matrix(csv_path) -> pd.DataFrame:
+    """Read one feature CSV, stamping the internal __dataset (tag) and __src columns."""
+    csv_path = Path(csv_path)
+    df = pd.read_csv(csv_path)
+    dataset_tag = csv_path.name.replace("_fov_feature_matrix.csv", "").replace(".csv", "")
+    df["__dataset"] = dataset_tag
+    df["__src"] = str(csv_path)
+    return df
+
+
+def _concat_datasets(dataframes: list[pd.DataFrame]) -> pd.DataFrame:
+    """Concatenate per-dataset frames and normalize the image-path columns.
+
+    Datasets can differ in which channels exist (e.g. one has no fluor folder), so
+    concatenation leaves NaN in a ``__png*`` column for datasets that lack that channel.
+    Replace those NaNs with "" so the viewer's ``if png and Path(png).exists()`` guard
+    reads them as 'no image' -- a float NaN would otherwise pass the truthiness check and
+    crash ``Path()``."""
+    df = pd.concat(dataframes, ignore_index=True, sort=False)
+    for col in [c for c in df.columns if c == "__png" or c.startswith("__png_")]:
+        df[col] = df[col].fillna("")
+    return df
+
+
+def load_matrices(csv_paths: list[str | Path]) -> pd.DataFrame:
+    """Concatenate feature CSVs, wiring each row to its per-channel sibling PNG folders.
+
+    Each CSV must carry a `filename` column; images live in sibling folders next to the
+    CSV (see the module docstring / wire_channels). Rows with no matching image get "".
+    """
+    dataframes = []
+    for csv_path in csv_paths:
+        df = _read_matrix(csv_path)
+        if not wire_channels(df, csv_path):
+            df["__png"] = [""] * len(df)
+        dataframes.append(df)
+    return _concat_datasets(dataframes)
 
 
 def load_paired(pairs: list[tuple[str, str]]) -> pd.DataFrame:
-    """Load (csv, png_folder) pairs; each row's __png is resolved from its OWN folder."""
-    frames = []
-    for csv, folder in pairs:
-        p = Path(csv)
-        df = pd.read_csv(p)
-        df["__dataset"] = p.name.replace("_fov_feature_matrix.csv", "").replace(".csv", "")
-        df["__src"] = str(p)
-        if not wire_channels(df, p, brightfield_folder=folder):
+    """Load (csv, png_folder) pairs; each row's brightfield __png comes from the given
+    folder, while mask/fluor are still resolved from sibling folders if present."""
+    dataframes = []
+    for csv_path, brightfield_folder in pairs:
+        df = _read_matrix(csv_path)
+        if not wire_channels(df, csv_path, brightfield_folder=brightfield_folder):
             df["__png"] = [""] * len(df)
-        frames.append(df)
-    return pd.concat(frames, ignore_index=True, sort=False)
+        dataframes.append(df)
+    return _concat_datasets(dataframes)
 
 
+# ============================================================= features / filters
 def feature_columns(df: pd.DataFrame) -> list[str]:
-    """Numeric, non-metadata columns usable as reduction features / plot axes."""
-    cols = []
-    for c in df.columns:
-        if c in META_BLACKLIST or REDUCED_RE.match(c):
-            continue
-        if c.split("__")[-1] in REMOVED_FEATURE_SUFFIXES:  # retired feature; hide it
-            continue
-        if pd.api.types.is_numeric_dtype(df[c]):
-            cols.append(c)
-    return cols
+    """Numeric, non-metadata columns usable as reduction features / plot axes.
+
+    A candidate feature is any numeric column that is not an identifier/label/output
+    (META_BLACKLIST) and not a reduced-embedding output (PCA1, TSNE2, ...). With a single
+    dataset loaded, every candidate is returned -- whatever features that dataset computed.
+    With several datasets loaded together, only features COMPUTED FOR ALL of them are kept:
+    concatenating datasets with different feature sets leaves a column all-NaN for any
+    dataset that never computed it, so a column all-NaN within any one dataset is treated
+    as absent there and dropped from the shared set.
+    """
+    candidates = [
+        col
+        for col in df.columns
+        if not col.startswith("__")  # internal columns (__dataset, __png, ...)
+        and col not in META_BLACKLIST
+        and not REDUCED_RE.match(col)
+        and pd.api.types.is_numeric_dtype(df[col])
+    ]
+    if "__dataset" not in df.columns or df["__dataset"].nunique() <= 1:
+        return candidates
+    computed_in = {
+        dataset: group[candidates].notna().any() for dataset, group in df.groupby("__dataset")
+    }
+    return [col for col in candidates if all(has[col] for has in computed_in.values())]
 
 
 @dataclass
@@ -293,6 +220,7 @@ def apply_filters(df: pd.DataFrame, filters: list[Filter]) -> np.ndarray:
     return np.where(mask)[0]
 
 
+# ============================================================= dimensionality reduction
 def run_reduction(
     X: np.ndarray,
     method: str,
