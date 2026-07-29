@@ -47,6 +47,10 @@ REMOVED_FEATURE_SUFFIXES = frozenset(
         "edge_frac",
         "eccentricity_mean",
         "solidity_mean",
+        "densest_grid_frac",
+        "occupancy_cv",
+        "clark_evans_r",
+        "central_density_ratio",
     }
 )
 
@@ -182,7 +186,7 @@ def load_matrices(
         df["__src"] = str(p)
         sibling_png = p.with_name(p.stem + "_png")
         if sibling_png.is_dir():
-            df["__png"] = wire_folder(df, sibling_png)
+            wire_channels(df, p)  # __png + __png_<channel> for each channel folder present
         else:
             df["__png"] = wire_composites(df, composites_root, cache)
         frames.append(df)
@@ -204,6 +208,35 @@ def wire_folder(df: pd.DataFrame, png_folder: str | Path) -> list[str]:
     ]
 
 
+CHANNELS = ("brightfield", "mask", "fluor")  # FOV thumbnail channels (viewer toggle)
+
+
+def _channel_png_folder(csv_path, channel):
+    """Sibling PNG folder for a channel: <stem>_png (brightfield) / <stem>_<channel>_png."""
+    p = Path(csv_path)
+    return p.with_name(p.stem + ("_png" if channel == "brightfield" else f"_{channel}_png"))
+
+
+def wire_channels(df: pd.DataFrame, csv_path, brightfield_folder=None) -> list[str]:
+    """Set ``__png_<channel>`` for each channel whose sibling folder exists, and ``__png`` to
+    the default (brightfield, else the first present). Returns the channels found. An explicit
+    ``brightfield_folder`` (CLI --png-folder) overrides the brightfield sibling."""
+    present = []
+    for ch in CHANNELS:
+        folder = (
+            brightfield_folder
+            if (ch == "brightfield" and brightfield_folder)
+            else _channel_png_folder(csv_path, ch)
+        )
+        if folder and Path(folder).is_dir():
+            df[f"__png_{ch}"] = wire_folder(df, folder)
+            present.append(ch)
+    if present:
+        default = "brightfield" if "brightfield" in present else present[0]
+        df["__png"] = df[f"__png_{default}"]
+    return present
+
+
 def load_paired(pairs: list[tuple[str, str]]) -> pd.DataFrame:
     """Load (csv, png_folder) pairs; each row's __png is resolved from its OWN folder."""
     frames = []
@@ -212,7 +245,8 @@ def load_paired(pairs: list[tuple[str, str]]) -> pd.DataFrame:
         df = pd.read_csv(p)
         df["__dataset"] = p.name.replace("_fov_feature_matrix.csv", "").replace(".csv", "")
         df["__src"] = str(p)
-        df["__png"] = wire_folder(df, folder) if folder else [""] * len(df)
+        if not wire_channels(df, p, brightfield_folder=folder):
+            df["__png"] = [""] * len(df)
         frames.append(df)
     return pd.concat(frames, ignore_index=True, sort=False)
 

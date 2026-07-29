@@ -58,6 +58,121 @@ PROFILE_DIR = Path(
 REDUCE_PREFIX = {"PCA": "PCA", "t-SNE": "TSNE", "UMAP": "UMAP"}
 MAX_THUMBS = 200  # cap thumbnails rendered at once (refine the selection for more)
 RANK_PAGE = 200  # Rank tab: FOV tiles materialized per page (infinite scroll)
+# Rank-tab knob-table columns. The four param columns are shape-dependent: each holds a
+# prefix-labeled spin for whatever interpretable parameter the row's shape/direction needs
+# (center/fwhm, midpoint/width, onset/ideal, ...), matching the config schema.
+RCOL_FEATURE, RCOL_DIR, RCOL_SHAPE, RCOL_P1, RCOL_P2, RCOL_P3, RCOL_P4, RCOL_WEIGHT = range(8)
+RCOL_PARAMS = (RCOL_P1, RCOL_P2, RCOL_P3, RCOL_P4)
+# Short label shown as each parameter spin's prefix, per interpretable param key.
+RANK_PARAM_LABELS = {
+    "center": "center",
+    "fwhm": "fwhm",
+    "fold": "fold",
+    "midpoint": "midpoint",
+    "width": "width",
+    "half_band_lo": "band lo",
+    "half_band_hi": "band hi",
+    "range_lo": "range lo",
+    "range_hi": "range hi",
+    "soft_left": "shoulder L",
+    "soft_right": "shoulder R",
+    "onset": "onset",
+    "ideal": "ideal",
+}
+
+
+def _legacy_soft(feat, rng):
+    """Legacy shoulder widths from a config feature: `soft` scalar/[l, r], or soft_left/right,
+    defaulting to the band width."""
+    band = max(float(rng[1]) - float(rng[0]), 1e-9)
+    soft = feat.get("soft")
+    if isinstance(soft, (list, tuple)):
+        return float(soft[0]), float(soft[1])
+    base = float(soft) if soft else band
+    return float(feat.get("soft_left", base)), float(feat.get("soft_right", base))
+
+
+def _internal_to_feature(shape, direction, lo, hi, soft_left, soft_right, curve_k, weight):
+    """Internal (lo, hi, ...) bounds -> a config feature dict with the interpretable params.
+    The math is :func:`fov_model.curve_params`; this only packages the result into the config
+    schema (arrays for range / half_band / soft) and drops params the shape ignores."""
+    p = FM.curve_params(shape, direction, lo, hi, soft_left, soft_right, curve_k)
+    feat = {"shape": shape}
+    if shape == "gaussian":
+        feat.update(center=p["center"], fwhm=p["fwhm"])
+    elif shape == "lognormal":
+        feat.update(center=p["center"], fold=p["fold"])
+    elif shape == "sigmoid" and direction == "target":
+        feat.update(half_band=[p["half_band_lo"], p["half_band_hi"]], width=p["width"])
+    elif shape == "sigmoid":
+        feat.update(midpoint=p["midpoint"], width=p["width"], direction=direction)
+    elif direction == "target":  # linear target band
+        feat.update(
+            range=[p["range_lo"], p["range_hi"]], soft=[p["soft_left"], p["soft_right"]]
+        )
+    else:  # linear monotonic ramp
+        feat.update(onset=p["onset"], ideal=p["ideal"])
+    feat["weight"] = weight
+    return feat
+
+
+def _feature_to_internal(feat):
+    """A config feature dict -> internal ``(shape, direction, lo, hi, soft_left, soft_right,
+    curve_k)``. The current interpretable schema is converted via :func:`fov_model.curve_bounds`;
+    legacy ``range``-style profiles are read as internal bounds directly so old files still open."""
+    shape = feat.get("shape", "linear")
+    dir_params = None  # (direction, params) when the current interpretable schema is present
+    if shape == "gaussian" and {"center", "fwhm"} <= feat.keys():
+        dir_params = ("target", {"center": float(feat["center"]), "fwhm": float(feat["fwhm"])})
+    elif shape == "lognormal" and {"center", "fold"} <= feat.keys():
+        dir_params = ("target", {"center": float(feat["center"]), "fold": float(feat["fold"])})
+    elif shape == "sigmoid" and "midpoint" in feat:
+        dir_params = (
+            feat.get("direction", "higher"),
+            {"midpoint": float(feat["midpoint"]), "width": float(feat["width"])},
+        )
+    elif shape == "sigmoid" and "half_band" in feat:
+        hb = feat["half_band"]
+        dir_params = (
+            "target",
+            {
+                "half_band_lo": float(hb[0]),
+                "half_band_hi": float(hb[1]),
+                "width": float(feat["width"]),
+            },
+        )
+    elif shape == "linear" and ("onset" in feat or "ideal" in feat):
+        onset, ideal = float(feat["onset"]), float(feat["ideal"])
+        dir_params = (
+            "higher" if ideal > onset else "lower",
+            {"onset": onset, "ideal": ideal},
+        )
+    elif shape == "linear" and "range" in feat and feat.get("direction", "target") == "target":
+        rng = feat["range"]
+        sl, sr = _legacy_soft(feat, rng)
+        dir_params = (
+            "target",
+            {
+                "range_lo": float(rng[0]),
+                "range_hi": float(rng[1]),
+                "soft_left": sl,
+                "soft_right": sr,
+            },
+        )
+    if dir_params is not None:
+        direction, params = dir_params
+        lo, hi, sl, sr, ck = FM.curve_bounds(shape, direction, params)
+        return shape, direction, lo, hi, sl, sr, ck
+    # Legacy fallback: `range` (or lo/hi) read straight as the internal bounds (e.g. an old
+    # gaussian range = +-1 sigma, a sigmoid range + curve_k, or a linear range + direction).
+    rng = feat.get("range", [feat.get("lo"), feat.get("hi")])
+    lo, hi = float(rng[0]), float(rng[1])
+    direction = feat.get("direction", "target") if shape in ("linear", "sigmoid") else "target"
+    sl, sr = _legacy_soft(feat, rng)
+    curve_k = float(feat.get("curve_k", 0.0)) if shape == "sigmoid" else 0.0
+    return shape, direction, lo, hi, sl, sr, curve_k
+
+
 DETAIL_SKIP = {"__src", "__png", "png", "__dataset"}
 THUMB_CACHE_MAX = 1000  # LRU cap on decoded thumbnails (path,size) -> QPixmap
 # highlight color for the clicked FOV: blue border on the thumbnail (Analysis + Rank
@@ -266,9 +381,10 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self._focus_label = None  # highlighted thumbnail
         self._picked = False  # was a scatter point hit on this click?
         # Rank tab: per-feature desirability knobs for the production DesirabilityModel.
-        # feature -> {"direction","lo","hi","soft","weight"} (the config's model.features).
+        # feature -> {"direction","lo","hi","soft_left","soft_right","weight","enabled"}.
         self.rank_ranges: dict = {}
         self.rank_sort = False  # sort the Analysis FOV panel by `score` (legacy hook)
+        self._channel = "brightfield"  # which FOV image channel the thumbnails display
         self._ready = False
 
         left_col = QtWidgets.QSplitter(QtCore.Qt.Vertical)
@@ -520,6 +636,10 @@ class FeatureViewer(QtWidgets.QMainWindow):
         head = QtWidgets.QHBoxLayout()
         head.addWidget(QtWidgets.QLabel("<b>Selected FOVs</b>"))
         head.addStretch(1)
+        head.addWidget(QtWidgets.QLabel("channel"))
+        self.chan_combo = QtWidgets.QComboBox()  # switch displayed FOV channel
+        self.chan_combo.currentTextChanged.connect(self._set_channel)
+        head.addWidget(self.chan_combo)
         head.addWidget(QtWidgets.QLabel("thumb size"))
         self.size_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self.size_slider.setRange(60, 800)
@@ -1206,6 +1326,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
 
     def _populate_columns(self):
         self._ready = False
+        self._refresh_channel_combos()  # channel toggles reflect the loaded data's channels
         feats = D.feature_columns(self.df) if self.df is not None else []
         axis_opts = feats + self.reduced_cols
         all_cols = [
@@ -1650,6 +1771,48 @@ class FeatureViewer(QtWidgets.QMainWindow):
             f"t{row.get('timepoint', '')}"
         )
 
+    # ---- FOV image channel (brightfield / mask / fluorescence) ----
+    def _refresh_channel_combos(self):
+        """Populate the channel toggles from the channels present in the loaded data and
+        point __png at the active channel."""
+        cols = self.df.columns if self.df is not None else []
+        chans = [c for c in D.CHANNELS if f"__png_{c}" in cols]
+        if self._channel not in chans:
+            self._channel = chans[0] if chans else "brightfield"
+        if self.df is not None and f"__png_{self._channel}" in cols:
+            self.df["__png"] = self.df[f"__png_{self._channel}"]
+        for combo in (
+            getattr(self, "chan_combo", None),
+            getattr(self, "rank_chan_combo", None),
+        ):
+            if combo is None:
+                continue
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItems(chans or ["brightfield"])
+            combo.setCurrentText(self._channel)
+            combo.setEnabled(len(chans) > 1)
+            combo.blockSignals(False)
+
+    def _set_channel(self, ch):
+        """Switch the displayed FOV channel: repoint __png and reload the thumbnail grids."""
+        if not ch or self.df is None or f"__png_{ch}" not in self.df.columns:
+            return
+        self._channel = ch
+        self.df["__png"] = self.df[f"__png_{ch}"]
+        for combo in (
+            getattr(self, "chan_combo", None),
+            getattr(self, "rank_chan_combo", None),
+        ):
+            if combo is not None and combo.currentText() != ch:
+                combo.blockSignals(True)
+                combo.setCurrentText(ch)
+                combo.blockSignals(False)
+        if hasattr(self, "grid"):
+            self._rebuild_grid()
+        if getattr(self, "_rank_order", None):
+            self._rank_rebuild_grid()
+
     def set_selection(self, positions):
         positions = list(positions)
         if positions == self.sel_pos:  # unchanged -> skip the rebuild (no freeze on reset)
@@ -1667,7 +1830,9 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self.details_model.set_data(None, [], [])
             return
         fields = [
-            c for c in self.df.columns if c not in DETAIL_SKIP and not c.endswith("__png")
+            c
+            for c in self.df.columns
+            if c not in DETAIL_SKIP and not c.endswith("__png") and not c.startswith("__png")
         ]
         self._detail_rows = list(self.sel_pos)  # virtualized: no per-row cost
         self.details_model.set_data(self.df, self._detail_rows, fields)
@@ -1894,15 +2059,29 @@ class FeatureViewer(QtWidgets.QMainWindow):
         b_load.clicked.connect(self._on_rank_load)
         b_save = QtWidgets.QPushButton("Save…")
         b_save.clicked.connect(self._on_rank_save)
-        b_reset = QtWidgets.QPushButton("Reset to data")
-        b_reset.clicked.connect(self._on_rank_reset_defaults)
-        for b in (b_load, b_save, b_reset):
+        b_fit_g = QtWidgets.QPushButton("Fit to goodness")
+        b_fit_g.setToolTip(
+            "Fit checked features' ranges from the good/bad labels (direction kept)"
+        )
+        b_fit_g.clicked.connect(self._on_rank_fit_goodness)
+        b_fit_d = QtWidgets.QPushButton("Fit to data")
+        b_fit_d.setToolTip(
+            "Fit checked features' ranges from the data distribution (label-agnostic)"
+        )
+        b_fit_d.clicked.connect(self._on_rank_fit_data)
+        for b in (b_load, b_save, b_fit_g, b_fit_d):
             bar.addWidget(b)
         lv.addLayout(bar)
 
         # top: per-feature histograms with the desirability curve as a dashed overlay
         self.rank_fig = Figure(figsize=(4, 6), facecolor="#3c3c3c")
         self.rank_canvas = FigureCanvas(self.rank_fig)
+        # drag the profile's control points directly on the histograms
+        self._rank_axes: list[dict] = []  # per-subplot: feature, ax2, profile line, roles
+        self._rank_drag = None  # (subplot-meta, control-point index) while dragging
+        self.rank_canvas.mpl_connect("button_press_event", self._rank_on_press)
+        self.rank_canvas.mpl_connect("motion_notify_event", self._rank_on_motion)
+        self.rank_canvas.mpl_connect("button_release_event", self._rank_on_release)
         hist_scroll = QtWidgets.QScrollArea()
         hist_scroll.setWidgetResizable(True)
         hist_scroll.setWidget(self.rank_canvas)
@@ -1911,19 +2090,31 @@ class FeatureViewer(QtWidgets.QMainWindow):
         # bottom: the tunable knobs, one row per feature
         lv.addWidget(
             QtWidgets.QLabel(
-                "direction: higher/lower ramp across [lo, hi]; target = ideal in [lo, hi] "
-                "fading over the shoulder. A missing feature contributes 0."
+                "The parameter columns adapt to each row's shape/direction (the labels update): "
+                "linear -> onset/ideal or range+shoulders; sigmoid -> midpoint/width or band; "
+                "gaussian -> center/fwhm; lognormal -> center/fold. A missing feature scores 0."
             )
         )
-        self.rank_table = QtWidgets.QTableWidget(0, 5)
+        self.rank_table = QtWidgets.QTableWidget(0, 8)
         self.rank_table.setHorizontalHeaderLabels(
-            ["feature", "direction", "range lo", "range hi", "shoulder"]
+            [
+                "✓ feature",
+                "direction",
+                "shape",
+                "param 1",
+                "param 2",
+                "param 3",
+                "param 4",
+                "weight",
+            ]
         )
         self.rank_table.horizontalHeader().setSectionResizeMode(
             0, QtWidgets.QHeaderView.Stretch
         )
         self.rank_table.verticalHeader().setVisible(False)
         self.rank_table.setMaximumHeight(240)
+        # toggling a feature's checkbox updates which features feed the score
+        self.rank_table.itemChanged.connect(self._on_rank_item_changed)
         lv.addWidget(self.rank_table, 2)
 
         act = QtWidgets.QHBoxLayout()
@@ -1943,6 +2134,10 @@ class FeatureViewer(QtWidgets.QMainWindow):
         head = QtWidgets.QHBoxLayout()
         head.addWidget(QtWidgets.QLabel("<b>FOVs ranked by score</b> (best first)"))
         head.addStretch(1)
+        head.addWidget(QtWidgets.QLabel("channel"))
+        self.rank_chan_combo = QtWidgets.QComboBox()  # switch displayed FOV channel
+        self.rank_chan_combo.currentTextChanged.connect(self._set_channel)
+        head.addWidget(self.rank_chan_combo)
         head.addWidget(QtWidgets.QLabel("thumb size"))
         self.rank_size_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self.rank_size_slider.setRange(60, 400)
@@ -1980,28 +2175,78 @@ class FeatureViewer(QtWidgets.QMainWindow):
     def _rank_feature_list(self):
         return D.feature_columns(self.df) if self.df is not None else []
 
+    _SEED_MIN_LABELS = 3  # per class (good / bad) needed for a label-aware seed
+
+    def _seed_range(self, f, direction, use_labels: bool):
+        """Data-derived (lo, hi, soft_left, soft_right) for feature ``f`` at ``direction``.
+
+        ``use_labels=False`` (Fit to data): label-agnostic quantiles of all values
+        (target -> [q25, q75]; monotone -> [q05, q95]) with IQR-width shoulders.
+
+        ``use_labels=True`` (Fit to goodness): place the profile so GOOD values score high and
+        BAD values score low (NEUTRAL then lands mid on the linear ramp). The DIRECTION is kept
+        as given -- only the range/shoulders are fit:
+          higher : ramp median(bad) -> median(good)   (good are higher)
+          lower  : ramp median(good) -> median(bad)   (good are lower)
+          target : band = good [q25, q75]; each shoulder reaches the bad values on that side
+        Falls back to the label-agnostic fit when a feature has < _SEED_MIN_LABELS good/bad or
+        the labels contradict a monotone direction.
+        """
+        v = self.df[f].to_numpy(float)
+        vv = v[~np.isnan(v)]
+
+        def q(a, p):
+            return float(np.quantile(a, p)) if len(a) else 0.0
+
+        def fallback():  # label-agnostic quantiles of all values
+            if direction == "target":
+                lo, hi = q(vv, 0.25), q(vv, 0.75)
+            else:
+                lo, hi = q(vv, 0.05), q(vv, 0.95)
+            b = max(hi - lo, 1e-9)
+            return lo, hi, b, b
+
+        if not use_labels:
+            return fallback()
+        good = bad = np.array([])
+        if "goodness" in self.df.columns:
+            g = self.df["goodness"].to_numpy(float)
+            good = v[(g == 1.0) & ~np.isnan(v)]
+            bad = v[(g == -1.0) & ~np.isnan(v)]
+        if good.size < self._SEED_MIN_LABELS or bad.size < self._SEED_MIN_LABELS:
+            return fallback()
+        gmed, bmed = float(np.median(good)), float(np.median(bad))
+        if direction in ("higher", "lower"):
+            lo, hi = (bmed, gmed) if direction == "higher" else (gmed, bmed)
+            if hi <= lo:  # labels contradict this monotone direction
+                return fallback()
+            b = max(hi - lo, 1e-9)
+            return lo, hi, b, b
+        # target: plateau on the good IQR; shoulders fall to 0 at the bad on each side
+        lo, hi = q(good, 0.25), q(good, 0.75)
+        band = max(hi - lo, 1e-9)
+        below, above = bad[bad < gmed], bad[bad > gmed]
+        soft_left = (lo - float(np.median(below))) if below.size >= 2 else band
+        soft_right = (float(np.median(above)) - hi) if above.size >= 2 else band
+        return lo, hi, max(soft_left, 1e-9), max(soft_right, 1e-9)
+
     def _rank_seed_ranges(self):
-        """Seed per-feature knobs from the data: direction by feature-name default; a target
-        band = [q25, q75] with an IQR shoulder; a monotone range = [q05, q95]."""
+        """Fresh per-feature knobs: direction from the feature-name default, range/shoulders
+        from :meth:`_seed_range` (label-aware where possible; see there)."""
         ranges = {}
         for f in self._rank_feature_list():
-            v = self.df[f].to_numpy(float)
-            v = v[~np.isnan(v)]
-            if v.size:
-                q05, q25, _q50, q75, q95 = np.quantile(v, [0.05, 0.25, 0.5, 0.75, 0.95])
-            else:
-                q05 = q25 = q75 = q95 = 0.0
             direction = RANK.DEFAULT_DIRECTION.get(RANK._feature_suffix(f), "target")
-            if direction == "target":
-                lo, hi = float(q25), float(q75)
-            else:
-                lo, hi = float(q05), float(q95)
+            lo, hi, sl, sr = self._seed_range(f, direction, use_labels=False)
             ranges[f] = {
                 "direction": direction,
+                "shape": "linear",  # curve family; user can switch to sigmoid/gaussian
                 "lo": lo,
                 "hi": hi,
-                "soft": float(max(hi - lo, 1e-9)),
+                "soft_left": sl,  # left/right shoulders are adjustable independently
+                "soft_right": sr,
+                "curve_k": 0.0,  # steepness for sigmoid / lognormal
                 "weight": 1.0,
+                "enabled": True,  # unchecking a feature drops it from the score
             }
         return ranges
 
@@ -2024,32 +2269,119 @@ class FeatureViewer(QtWidgets.QMainWindow):
         tbl.setRowCount(len(feats))
         for i, f in enumerate(feats):
             spec = self.rank_ranges[f]
-            item = QtWidgets.QTableWidgetItem(f)
-            item.setFlags(QtCore.Qt.ItemIsEnabled)
-            tbl.setItem(i, 0, item)
-            combo = QtWidgets.QComboBox()
-            combo.addItems(list(FM.DesirabilityModel.DIRECTIONS))
-            combo.setCurrentText(spec["direction"])
-            combo.currentTextChanged.connect(lambda _t, r=i: self._on_rank_dir_changed(r))
-            tbl.setCellWidget(i, 1, combo)
-            for col, key in ((2, "lo"), (3, "hi"), (4, "soft")):
-                spin = self._mk_spin(spec[key])
-                # committing a value (Enter / focus-out) redraws the desirability curve
-                # for that feature, without changing the axes or re-ranking the FOVs.
-                spin.editingFinished.connect(self._rank_refresh_curves)
-                tbl.setCellWidget(i, col, spin)
-            self._rank_set_soft_enabled(i, spec["direction"] == "target")
+            item = QtWidgets.QTableWidgetItem(
+                f
+            )  # checkbox = include this feature in the score
+            item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
+            item.setCheckState(
+                QtCore.Qt.Checked if spec.get("enabled", True) else QtCore.Qt.Unchecked
+            )
+            tbl.setItem(i, RCOL_FEATURE, item)
+            dcombo = QtWidgets.QComboBox()
+            dcombo.addItems(list(FM.DesirabilityModel.DIRECTIONS))
+            dcombo.setCurrentText(spec["direction"])
+            dcombo.currentTextChanged.connect(lambda _t, r=i: self._on_rank_dir_changed(r))
+            tbl.setCellWidget(i, RCOL_DIR, dcombo)
+            scombo = QtWidgets.QComboBox()  # curve family
+            scombo.addItems(list(FM.DesirabilityModel.SHAPES))
+            scombo.setCurrentText(spec.get("shape", "linear"))
+            scombo.currentTextChanged.connect(lambda _t, r=i: self._on_rank_shape_changed(r))
+            tbl.setCellWidget(i, RCOL_SHAPE, scombo)
+            self._rank_fill_params(i, spec)  # shape-dependent parameter columns
+            # per-feature weight: how much this feature counts in the weighted score (>= 0)
+            wspin = self._mk_spin(spec.get("weight", 1.0))
+            wspin.setDecimals(2)
+            wspin.setRange(0.0, 1e6)
+            wspin.editingFinished.connect(self._rank_refresh_curves)
+            tbl.setCellWidget(i, RCOL_WEIGHT, wspin)
+            self._rank_update_row_enabled(i)
         tbl.blockSignals(False)
 
-    def _rank_set_soft_enabled(self, row, on):
-        w = self.rank_table.cellWidget(row, 4)  # shoulder only matters for a target band
-        if w is not None:
-            w.setEnabled(on)
+    def _mk_param_spin(self, key, value):
+        """A labeled spin for one interpretable parameter: the param name is the (non-editable)
+        prefix, so the column self-describes whatever the row's shape needs. Stores its param
+        key on the widget so :meth:`_read_rank_table` knows what it is."""
+        s = self._mk_spin(value)
+        s.setPrefix(f"{RANK_PARAM_LABELS.get(key, key)}  ")
+        if key in ("fwhm", "width"):  # strictly positive widths
+            s.setRange(1e-9, 1e12)
+        elif key == "fold":  # multiplicative tolerance must exceed 1
+            s.setRange(1.0 + 1e-6, 1e12)
+        s._param_key = key
+        return s
+
+    def _rank_fill_params(self, row, spec):
+        """(Re)build the four parameter columns for ``row`` from its internal spec, showing the
+        interpretable params for the current shape/direction (see fov_model.curve_params)."""
+        tbl = self.rank_table
+        params = FM.curve_params(
+            spec.get("shape", "linear"),
+            spec["direction"],
+            spec["lo"],
+            spec["hi"],
+            spec["soft_left"],
+            spec["soft_right"],
+            spec.get("curve_k", 0.0),
+        )
+        items = list(params.items())
+        for idx, col in enumerate(RCOL_PARAMS):
+            if idx < len(items):
+                key, value = items[idx]
+                spin = self._mk_param_spin(key, value)
+                spin.editingFinished.connect(self._rank_refresh_curves)
+                tbl.setCellWidget(row, col, spin)
+            else:  # unused slot for this shape
+                tbl.removeCellWidget(row, col)
+
+    def _rank_update_row_enabled(self, row):
+        """Direction applies only to linear / sigmoid; gaussian and lognormal are symmetric
+        bells, so force their direction to 'target' and disable the direction combo."""
+        dcombo = self.rank_table.cellWidget(row, RCOL_DIR)
+        shape = self.rank_table.cellWidget(row, RCOL_SHAPE).currentText()
+        if dcombo is None:
+            return
+        is_bell = shape in ("gaussian", "lognormal")
+        if is_bell and dcombo.currentText() != "target":
+            dcombo.blockSignals(True)
+            dcombo.setCurrentText("target")
+            dcombo.blockSignals(False)
+        dcombo.setEnabled(not is_bell)
+
+    def _rank_row_feature(self, row):
+        feats = list(self.rank_ranges)
+        return feats[row] if 0 <= row < len(feats) else None
 
     def _on_rank_dir_changed(self, row):
-        combo = self.rank_table.cellWidget(row, 1)
-        self._rank_set_soft_enabled(row, combo.currentText() == "target")
-        self._rank_refresh_curves()  # direction changes the curve shape -> redraw it
+        # Direction changes the parameter SET (e.g. linear target range+shoulders <-> onset/
+        # ideal ramp), so rebuild this row's param columns from its internal spec, then redraw.
+        f = self._rank_row_feature(row)
+        if f is None:
+            return
+        self.rank_ranges[f]["direction"] = self.rank_table.cellWidget(
+            row, RCOL_DIR
+        ).currentText()
+        self.rank_table.blockSignals(True)
+        self._rank_fill_params(row, self.rank_ranges[f])
+        self.rank_table.blockSignals(False)
+        self._rank_refresh_curves()
+
+    def _on_rank_shape_changed(self, row):
+        # Shape changes the parameter SET; keep the internal bounds and re-derive the params for
+        # the new shape (a linear [lo,hi] becomes a gaussian center/fwhm around the same band).
+        f = self._rank_row_feature(row)
+        if f is None:
+            return
+        self.rank_ranges[f]["shape"] = self.rank_table.cellWidget(
+            row, RCOL_SHAPE
+        ).currentText()
+        self._rank_update_row_enabled(row)  # bells force direction=target / disable the combo
+        self.rank_ranges[f]["direction"] = self.rank_table.cellWidget(
+            row, RCOL_DIR
+        ).currentText()
+        self.rank_table.blockSignals(True)
+        self._rank_fill_params(row, self.rank_ranges[f])
+        self.rank_table.blockSignals(False)
+        self._rank_refresh_curves()
 
     def _rank_refresh_curves(self):
         """Redraw the desirability dashed lines from the current knobs (on Enter / commit /
@@ -2061,32 +2393,84 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self._rank_draw_hists()
 
     def _read_rank_table(self):
-        """Pull the table widgets back into ``self.rank_ranges``."""
+        """Pull the table widgets back into ``self.rank_ranges``. The shape-dependent param
+        spins are converted to the internal (lo, hi, soft, curve_k) bounds via
+        fov_model.curve_bounds; a transient invalid entry (e.g. fold=1 mid-edit) keeps the
+        row's previous values rather than raising."""
         tbl = self.rank_table
         for i, f in enumerate(list(self.rank_ranges)):
-            direction = tbl.cellWidget(i, 1).currentText()
-            lo, hi = tbl.cellWidget(i, 2).value(), tbl.cellWidget(i, 3).value()
-            if hi < lo:
-                lo, hi = hi, lo
-            soft = tbl.cellWidget(i, 4).value()
+            prev = self.rank_ranges[f]
+            direction = tbl.cellWidget(i, RCOL_DIR).currentText()
+            shape = tbl.cellWidget(i, RCOL_SHAPE).currentText()
+            params = {}
+            for col in RCOL_PARAMS:
+                w = tbl.cellWidget(i, col)
+                if w is not None and getattr(w, "_param_key", None) is not None:
+                    params[w._param_key] = w.value()
+            try:
+                lo, hi, sl, sr, curve_k = FM.curve_bounds(shape, direction, params)
+            except (ValueError, KeyError):
+                lo, hi, sl, sr, curve_k = (
+                    prev["lo"],
+                    prev["hi"],
+                    prev["soft_left"],
+                    prev["soft_right"],
+                    prev.get("curve_k", 0.0),
+                )
+            weight = tbl.cellWidget(i, RCOL_WEIGHT).value()
+            item = tbl.item(i, RCOL_FEATURE)
+            enabled = item is None or item.checkState() == QtCore.Qt.Checked
             self.rank_ranges[f] = {
                 "direction": direction,
+                "shape": shape,
                 "lo": lo,
                 "hi": hi,
-                "soft": soft if soft > 0 else max(hi - lo, 1e-9),
-                "weight": 1.0,
+                "soft_left": sl,
+                "soft_right": sr,
+                "curve_k": curve_k,
+                "weight": weight,
+                "enabled": enabled,
             }
 
+    def _rank_reorder_checked_first(self):
+        """Order rank_ranges -- and hence the table rows and histograms -- with CHECKED
+        features first, keeping the relative order within the checked / unchecked groups."""
+        if self.rank_ranges:
+            items = sorted(
+                self.rank_ranges.items(), key=lambda kv: not kv[1].get("enabled", True)
+            )
+            self.rank_ranges = dict(items)
+
+    def _on_rank_item_changed(self, item):
+        """A feature's include-checkbox toggled: move the checked features (their knob row and
+        histogram) to the top, then refresh the profiles (dims the off ones)."""
+        if item.column() != RCOL_FEATURE:
+            return
+        self._read_rank_table()  # capture current knobs + checkbox states
+        self._rank_reorder_checked_first()
+        self._rank_populate_table()  # rebuild rows in the new (checked-first) order
+        self._rank_draw_hists()  # redraw histograms in the same order
+
     def _rank_model_cfg(self):
-        """Build the DesirabilityModel config block from the current knobs."""
+        """DesirabilityModel config from the CHECKED features only (unchecked ones are
+        excluded from the score, giving control over how many features are used).
+
+        Each feature is emitted with the interpretable params for its shape via
+        :func:`_internal_to_feature` (fov_model.curve_params), so the saved profile / config
+        never carries values the shape ignores and matches exactly what the model parses."""
         feats = {
-            f: {
-                "direction": s["direction"],
-                "range": [s["lo"], s["hi"]],
-                "soft": s["soft"],
-                "weight": s.get("weight", 1.0),
-            }
+            f: _internal_to_feature(
+                s.get("shape", "linear"),
+                s["direction"],
+                s["lo"],
+                s["hi"],
+                s["soft_left"],
+                s["soft_right"],
+                s.get("curve_k", 0.0),
+                s.get("weight", 1.0),
+            )
             for f, s in self.rank_ranges.items()
+            if s.get("enabled", True)
         }
         return {"type": "ranking_by_defined_range", "features": feats}
 
@@ -2098,7 +2482,12 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self.rank_status.setText("no features to rank; load data first")
             return
         self._read_rank_table()
-        model = FM.build_fov_model(self._rank_model_cfg())
+        cfg = self._rank_model_cfg()
+        n_used = len(cfg["features"])
+        if n_used == 0:
+            self.rank_status.setText("check at least one feature to score the FOVs")
+            return
+        model = FM.build_fov_model(cfg)
         proba, _good = model.predict(self.df)
         self.df["score"] = np.asarray(proba, float)
         # best-first; NaN scores sink to the end (numpy argsort puts NaN last)
@@ -2106,53 +2495,146 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self._rank_rebuild_grid()
         self._rank_draw_hists()
         s = self.df["score"]
+        acc, npairs = self._rank_pairwise_accuracy(self.df["score"].to_numpy(float))
+        acc_txt = (
+            f" · pairwise acc {acc:.3f} ({npairs} good/neutral/bad pairs)"
+            if acc is not None
+            else " · label FOVs (goodness) to get pairwise accuracy"
+        )
         self.rank_status.setText(
-            f"ranked {len(self.df)} FOV(s) · score in [{s.min():.3f}, {s.max():.3f}]; "
-            "top_fov in the config keeps the highest-scoring FOVs"
+            f"ranked {len(self.df)} FOV(s) with {n_used}/{len(self.rank_ranges)} feature(s) · "
+            f"score in [{s.min():.3f}, {s.max():.3f}]{acc_txt}"
         )
 
+    def _rank_pairwise_accuracy(self, scores):
+        """Fraction of labeled (winner, loser) pairs the scores order correctly, where the
+        order is the goodness relevance bad<neutral<good. Ties in score count 0.5. Returns
+        (accuracy, n_pairs), or (None, 0) if there are no ordered pairs (too few labels)."""
+        if self.df is None or "goodness" not in self.df.columns:
+            return None, 0
+        g = self.df["goodness"].to_numpy(float)
+        keep = np.isin(g, (-1.0, 0.0, 1.0)) & ~np.isnan(scores)
+        r, sc = g[keep], np.asarray(scores)[keep]
+        if r.size < 2:
+            return None, 0
+        rd = r[:, None] - r[None, :]  # relevance of i minus j
+        sd = sc[:, None] - sc[None, :]
+        wins = rd > 0  # pairs where i should rank above j
+        npairs = int(wins.sum())
+        if npairs == 0:
+            return None, 0
+        correct = float((sd[wins] > 0).sum() + 0.5 * (sd[wins] == 0).sum())
+        return correct / npairs, npairs
+
+    @staticmethod
+    def _profile_points(spec):
+        """Draggable anchor points of the profile, as (x, y, role): 'lo'/'hi' move the band
+        edges, 'soft_left'/'soft_right' the shoulder widths. The curve BETWEEN anchors is set
+        by the shape (drawn by sampling); these are just the drag handles. Only the LINEAR
+        target has the two shoulder-base handles; every other shape exposes just lo/hi (placed
+        at the curve's height there)."""
+        lo, hi = spec["lo"], spec["hi"]
+        if spec.get("shape", "linear") == "linear" and spec["direction"] == "target":
+            return [
+                (lo - spec["soft_left"], 0.0, "soft_left"),
+                (lo, 1.0, "lo"),
+                (hi, 1.0, "hi"),
+                (hi + spec["soft_right"], 0.0, "soft_right"),
+            ]
+
+        def val(x):
+            return float(
+                FM.DesirabilityModel._desirability(
+                    np.array([x]),
+                    lo,
+                    hi,
+                    spec["direction"],
+                    spec["soft_left"],
+                    spec["soft_right"],
+                    spec.get("shape", "linear"),
+                    spec.get("curve_k", 0.0),
+                )[0]
+            )
+
+        return [(lo, val(lo), "lo"), (hi, val(hi), "hi")]
+
+    @staticmethod
+    def _sample_profile(spec, lo_x, hi_x, n=240):
+        """(xs, ds) of the desirability curve across [lo_x, hi_x] using the model shape."""
+        xs = np.linspace(lo_x, hi_x, n)
+        ds = FM.DesirabilityModel._desirability(
+            xs,
+            spec["lo"],
+            spec["hi"],
+            spec["direction"],
+            spec["soft_left"],
+            spec["soft_right"],
+            spec.get("shape", "linear"),
+            spec.get("curve_k", 0.0),
+        )
+        return xs, ds
+
     def _rank_draw_hists(self):
-        """One histogram of measured values per feature, with the desirability curve (dashed,
-        right axis) and the [lo, hi] band marked.
+        """One histogram of measured values per feature, with the desirability profile drawn
+        as a dashed line through DRAGGABLE control points (the shoulder / ramp corners).
 
         Axis limits are LOCKED to the full data range of each feature, so the whole
-        histogram is always shown and tuning the target range never rescales the axes.
-        Only redrawn on Re-rank / load (never live while editing the knobs)."""
+        histogram is always shown and tuning the range never rescales the axes."""
         fig = self.rank_fig
         fig.clear()
+        self._rank_axes = []
         feats = list(self.rank_ranges)
         if self.df is None or not feats:
             self.rank_canvas.draw_idle()
             return
         ncol = 2
         nrow = int(np.ceil(len(feats) / ncol))
-        self.rank_canvas.setMinimumHeight(210 * nrow)
+        # give each row a fixed pixel height so the canvas grows (and scrolls) with the
+        # feature count instead of squeezing every histogram into the viewport.
+        row_px = 230
+        self.rank_canvas.setMinimumHeight(row_px * nrow)
         for i, f in enumerate(feats):
             ax = fig.add_subplot(nrow, ncol, i + 1, facecolor="#2b2b2b")
             spec = self.rank_ranges[f]
             v = self.df[f].to_numpy(float)
-            v = v[~np.isnan(v)]
-            if v.size:
-                lo_x, hi_x = float(v.min()), float(v.max())
-                ax.hist(v, bins=30, range=(lo_x, hi_x), color="#9a9a9a", alpha=0.85)
+            finite = ~np.isnan(v)
+            vv = v[finite]
+            if vv.size:
+                lo_x, hi_x = float(vv.min()), float(vv.max())
+                bins = np.linspace(lo_x, hi_x, 31)
+                # total distribution in grey, then each goodness class overlaid as a step
+                ax.hist(vv, bins=bins, color="#9a9a9a", alpha=0.55)
+                if "goodness" in self.df.columns:
+                    gcol = self.df["goodness"].to_numpy(float)
+                    for val, c in ((1.0, "#4caf50"), (0.0, "#ffd24d"), (-1.0, "#e53935")):
+                        cv = v[finite & (gcol == val)]
+                        if cv.size:
+                            ax.hist(cv, bins=bins, histtype="step", color=c, lw=1.3)
             else:
                 lo_x, hi_x = float(spec["lo"]), float(spec["hi"])
             if hi_x <= lo_x:
                 hi_x = lo_x + 1e-9
-            # desirability curve over the FIXED data range (right axis, 0..1)
-            xs = np.linspace(lo_x, hi_x, 200)
-            d = FM.DesirabilityModel._desirability(
-                xs, spec["lo"], spec["hi"], spec["direction"], spec["soft"]
-            )
+            # desirability profile (right axis, 0..1): smooth SAMPLED curve for the chosen
+            # shape + draggable anchor markers. Unchecked features are dimmed.
+            on = spec.get("enabled", True)
+            prof_c = "#ffffff" if on else "#666666"
             ax2 = ax.twinx()
-            ax2.plot(xs, d, "--", color="#ffffff", lw=1.6)
+            xs_c, ds_c = self._sample_profile(spec, lo_x, hi_x)
+            (curve,) = ax2.plot(xs_c, ds_c, "--", color=prof_c, lw=1.6)
+            pts = self._profile_points(spec)
+            (markers,) = ax2.plot(
+                [p[0] for p in pts],
+                [p[1] for p in pts],
+                "o",
+                color=prof_c,
+                ms=7,
+                mfc=prof_c,
+                mec="#2b2b2b",
+            )
             ax2.set_ylim(-0.05, 1.08)
             ax2.tick_params(colors="#ffffff", labelsize=6)
-            # mark the [lo, hi] band only where it falls inside the visible data range
-            for lim in (spec["lo"], spec["hi"]):
-                if lo_x <= lim <= hi_x:
-                    ax.axvline(lim, color="#8fd694", lw=0.8, ls=":")
-            # the clicked FOV's value for this feature (blue vertical dashed line)
+            # the clicked FOV's value for this feature (blue dashed line) + its desirability:
+            # a dot where the line meets the profile, labeled "value -> desirability".
             if self._rank_focus_pos is not None:
                 fv = (
                     float(self.df.iloc[self._rank_focus_pos][f])
@@ -2161,17 +2643,140 @@ class FeatureViewer(QtWidgets.QMainWindow):
                 )
                 if not np.isnan(fv):
                     ax.axvline(fv, color=RANK_CLICK_COLOR, lw=1.6, ls="--")
+                    fd = float(
+                        FM.DesirabilityModel._desirability(
+                            np.array([fv]),
+                            spec["lo"],
+                            spec["hi"],
+                            spec["direction"],
+                            spec["soft_left"],
+                            spec["soft_right"],
+                            spec.get("shape", "linear"),
+                            spec.get("curve_k", 0.0),
+                        )[0]
+                    )
+                    ax2.plot([fv], [fd], "o", color=RANK_CLICK_COLOR, ms=6, zorder=5)
+                    ax2.annotate(
+                        f"{fv:.3g} → {fd:.2f}",
+                        (fv, fd),
+                        textcoords="offset points",
+                        xytext=(4, 4),
+                        color=RANK_CLICK_COLOR,
+                        fontsize=6,
+                    )
             # lock x to the full histogram, independent of the knobs; disable autoscale so
-            # a later artist (moved desirability curve / band line) can never rescale it.
+            # a dragged control point can never rescale it.
             for a in (ax, ax2):
                 a.set_xlim(lo_x, hi_x)
                 a.set_autoscalex_on(False)
-            ax.set_title(f"{f}  ({spec['direction']})", color="#ececec", fontsize=7)
+            # feature label INSIDE the axes (top-left) instead of a title band above it, so
+            # rows can be packed with almost no vertical gap.
+            title = f"{f}  ({spec['direction']})" + ("" if on else "  [off]")
+            ax.text(
+                0.02,
+                0.94,
+                title,
+                transform=ax.transAxes,
+                va="top",
+                ha="left",
+                color="#ececec" if on else "#888888",
+                fontsize=7,
+                bbox=dict(facecolor="#2b2b2b", alpha=0.6, pad=1, lw=0),
+            )
             ax.tick_params(colors="#bbbbbb", labelsize=6)
             for sp in ax.spines.values():
                 sp.set_color("#666")
-        fig.tight_layout(pad=0.6)
+            self._rank_axes.append(
+                {
+                    "feature": f,
+                    "ax": ax,
+                    "ax2": ax2,
+                    "curve": curve,
+                    "markers": markers,
+                    "roles": [p[2] for p in pts],
+                    "xlim": (lo_x, hi_x),
+                }
+            )
+        # Explicit tight margins (fractions of the figure) fill the canvas with almost no
+        # blank border; small hspace packs the rows since the label is inside each axes.
+        fig.subplots_adjust(
+            left=0.08, right=0.94, top=0.995, bottom=0.03, hspace=0.18, wspace=0.28
+        )
         self.rank_canvas.draw_idle()
+
+    # ---- rank tab: drag the profile control points ----
+    def _rank_on_press(self, event):
+        if event.x is None:
+            return
+        best = None  # (meta, point index, pixel distance)
+        for meta in self._rank_axes:
+            xs, ys = meta["markers"].get_data()
+            for j, (x, y) in enumerate(zip(xs, ys)):
+                px, py = meta["ax2"].transData.transform((x, y))
+                dist = np.hypot(px - event.x, py - event.y)
+                if dist <= 10 and (best is None or dist < best[2]):
+                    best = (meta, j, dist)
+        if best is not None:
+            self._rank_drag = (best[0], best[1])
+
+    def _rank_on_motion(self, event):
+        if self._rank_drag is None or event.x is None:
+            return
+        meta, j = self._rank_drag
+        f = meta["feature"]
+        spec = self.rank_ranges[f]
+        lo_x, hi_x = meta["xlim"]
+        # pixel -> this subplot's data x (works even if the cursor drifts to another subplot)
+        xdata, _ = meta["ax2"].transData.inverted().transform((event.x, event.y))
+        x = min(max(float(xdata), lo_x), hi_x)
+        role = meta["roles"][j]
+        lo, hi = spec["lo"], spec["hi"]
+        sl, sr = spec["soft_left"], spec["soft_right"]
+        if role == "lo":
+            lo = min(x, hi)
+        elif role == "hi":
+            hi = max(x, lo)
+        elif role == "soft_left":
+            sl = max(lo - x, 1e-9)
+        elif role == "soft_right":
+            sr = max(x - hi, 1e-9)
+        spec.update(lo=lo, hi=hi, soft_left=sl, soft_right=sr)
+        self._rank_sync_row(f)  # keep the table knobs in sync
+        pts = self._profile_points(spec)
+        meta["markers"].set_data([p[0] for p in pts], [p[1] for p in pts])
+        meta["roles"] = [p[2] for p in pts]
+        xs_c, ds_c = self._sample_profile(spec, lo_x, hi_x)  # reshape the sampled curve
+        meta["curve"].set_data(xs_c, ds_c)
+        self.rank_canvas.draw_idle()
+
+    def _rank_on_release(self, _event):
+        self._rank_drag = None
+
+    def _rank_sync_row(self, feature):
+        """After a drag moved a feature's internal bounds, refresh its parameter spinboxes in
+        place (no signals). The drag keeps the shape/direction fixed, so the param SET is
+        unchanged -- just re-derive and set each param's value."""
+        feats = list(self.rank_ranges)
+        if feature not in feats:
+            return
+        r = feats.index(feature)
+        spec = self.rank_ranges[feature]
+        params = FM.curve_params(
+            spec.get("shape", "linear"),
+            spec["direction"],
+            spec["lo"],
+            spec["hi"],
+            spec["soft_left"],
+            spec["soft_right"],
+            spec.get("curve_k", 0.0),
+        )
+        for col in RCOL_PARAMS:
+            w = self.rank_table.cellWidget(r, col)
+            key = getattr(w, "_param_key", None) if w is not None else None
+            if key is not None and key in params:
+                w.blockSignals(True)
+                w.setValue(float(params[key]))
+                w.blockSignals(False)
 
     # ---- rank tab: right-side thumbnail grid (ordered by score) ----
     def _annotate_pixmap(self, pm, text):
@@ -2222,7 +2827,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
                 self._rank_focus_label = lab
             else:
                 lab.setStyleSheet(lab._base_qss)
-            lab.setToolTip(f"#{rank + 1}  score={score:.3f}\n{self._row_id(row)}")
+            lab.setToolTip(f"#{rank + 1}  score={score:.4f}\n{self._row_id(row)}")
             lab.setText("…")
             lab.mousePressEvent = lambda e, p=int(pos): self._rank_on_click(p)
             self._rank_thumb_items.append([lab, png, False, int(pos), score, rank + 1])
@@ -2285,11 +2890,11 @@ class FeatureViewer(QtWidgets.QMainWindow):
                 pm = self._load_thumb(png, size)
                 if not pm.isNull():
                     lab.setText("")
-                    lab.setPixmap(self._annotate_pixmap(pm, f"#{it[5]}  {it[4]:.2f}"))
+                    lab.setPixmap(self._annotate_pixmap(pm, f"#{it[5]}  {it[4]:.4f}"))
                 else:
                     lab.setText("bad png")
             else:
-                lab.setText(f"#{it[5]}  {it[4]:.2f}\n(no png)")
+                lab.setText(f"#{it[5]}  {it[4]:.4f}\n(no png)")
             it[2] = True
         # infinite scroll: near the bottom and more FOVs remain -> materialize next page
         if (
@@ -2318,13 +2923,30 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self._rank_populate_table()
         self._rerank()
 
-    def _on_rank_reset_defaults(self):
+    def _rank_fit(self, use_labels: bool):
+        """Fit the range/shoulders of the CHECKED features (direction kept); unchecked ones are
+        left untouched. use_labels: separate good/bad (Fit to goodness) vs data quantiles."""
         if self.df is None:
             self.rank_status.setText("load data first")
             return
-        self.rank_ranges = self._rank_seed_ranges()
+        self._read_rank_table()  # capture current knobs + which features are checked
+        data_feats = set(self._rank_feature_list())
+        n = 0
+        for f, spec in self.rank_ranges.items():
+            if spec.get("enabled", True) and f in data_feats:
+                lo, hi, sl, sr = self._seed_range(f, spec["direction"], use_labels=use_labels)
+                spec.update(lo=lo, hi=hi, soft_left=sl, soft_right=sr)  # keep direction + on
+                n += 1
         self._rank_populate_table()
         self._rerank()
+        how = "goodness labels" if use_labels else "data quantiles"
+        self.rank_status.setText(f"fit {n} checked feature(s) to {how}")
+
+    def _on_rank_fit_goodness(self):
+        self._rank_fit(use_labels=True)
+
+    def _on_rank_fit_data(self):
+        self._rank_fit(use_labels=False)
 
     def _on_rank_save(self):
         if not self.rank_ranges:
@@ -2358,25 +2980,39 @@ class FeatureViewer(QtWidgets.QMainWindow):
         try:
             cfg = json.loads(Path(path).read_text())
             feats = cfg.get("features", cfg) if isinstance(cfg, dict) else {}
-            ranges = {}
+            loaded = {}
             for f, s in feats.items():
-                rng = s.get("range", [s.get("lo"), s.get("hi")])
-                lo, hi = float(rng[0]), float(rng[1])
-                ranges[f] = {
-                    "direction": s.get("direction", "target"),
+                # curve_bounds does the shape math; legacy `range` profiles still open.
+                shape, direction, lo, hi, sl, sr, curve_k = _feature_to_internal(s)
+                loaded[f] = {
+                    "direction": direction,
+                    "shape": shape,
                     "lo": lo,
                     "hi": hi,
-                    "soft": float(s.get("soft") or max(hi - lo, 1e-9)),
+                    "soft_left": sl,
+                    "soft_right": sr,
+                    "curve_k": curve_k,
                     "weight": float(s.get("weight", 1.0)),
+                    "enabled": True,  # a feature in the file is one to use
                 }
         except Exception as e:  # noqa: BLE001
             self.rank_status.setText(f"load failed: {e}")
             return
-        self.rank_ranges = ranges
+        # Keep all data features in the table so they can be re-enabled: seed from the data,
+        # leave the ones absent from the file unchecked, and overlay the loaded ones (checked).
+        if self.df is not None and self._rank_feature_list():
+            merged = self._rank_seed_ranges()
+            for spec in merged.values():
+                spec["enabled"] = False
+            merged.update(loaded)
+            self.rank_ranges = merged
+        else:
+            self.rank_ranges = loaded
+        self._rank_reorder_checked_first()  # loaded (checked) features on top
         self._rank_populate_table()
         if self.df is not None:
             self._rerank()
-        self.rank_status.setText(f"loaded ranges from {Path(path).name}")
+        self.rank_status.setText(f"loaded {len(loaded)} feature(s) from {Path(path).name}")
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
