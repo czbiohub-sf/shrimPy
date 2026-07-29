@@ -449,7 +449,12 @@ def curve_params(
             return {"half_band_lo": lo, "half_band_hi": hi, "width": width}
         return {"midpoint": 0.5 * (lo + hi), "width": width}
     if direction == "target":  # linear target band
-        return {"range_lo": lo, "range_hi": hi, "soft_left": soft_left, "soft_right": soft_right}
+        return {
+            "range_lo": lo,
+            "range_hi": hi,
+            "soft_left": soft_left,
+            "soft_right": soft_right,
+        }
     onset, ideal = (lo, hi) if direction == "higher" else (hi, lo)  # linear monotonic ramp
     return {"onset": onset, "ideal": ideal}
 
@@ -466,7 +471,13 @@ def curve_bounds(shape: str, direction: str, params: dict) -> tuple:
     if shape == "sigmoid":
         if direction == "target":
             lo, hi = float(params["half_band_lo"]), float(params["half_band_hi"])
-            return lo, hi, 0.0, 0.0, _SIGMOID_10_90 * (hi - lo) / (float(params["width"]) or 1e-9)
+            return (
+                lo,
+                hi,
+                0.0,
+                0.0,
+                _SIGMOID_10_90 * (hi - lo) / (float(params["width"]) or 1e-9),
+            )
         mid, w = float(params["midpoint"]), float(params["width"])
         return mid - 0.5 * w, mid + 0.5 * w, 0.0, 0.0, _SIGMOID_10_90
     if direction == "target":  # linear target band
@@ -478,4 +489,8 @@ def curve_bounds(shape: str, direction: str, params: dict) -> tuple:
             0.0,
         )
     onset, ideal = float(params["onset"]), float(params["ideal"])  # linear monotonic ramp
-    return (onset, ideal, 0.0, 0.0, 0.0) if direction == "higher" else (ideal, onset, 0.0, 0.0, 0.0)
+    return (
+        (onset, ideal, 0.0, 0.0, 0.0)
+        if direction == "higher"
+        else (ideal, onset, 0.0, 0.0, 0.0)
+    )

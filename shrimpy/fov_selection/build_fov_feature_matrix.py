@@ -72,11 +72,21 @@ GRID_MIN, GRID_MAX = 2, 24
 def _adaptive_grid(n: int) -> int:
     """Grid side G = round(sqrt(n / GRID_LAMBDA)), clamped to [GRID_MIN, GRID_MAX]."""
     return int(np.clip(round(np.sqrt(max(int(n), 1) / GRID_LAMBDA)), GRID_MIN, GRID_MAX))
+
+
 EMPTY_RADIUS_SAMPLES = 40  # NxN test-point grid for the largest-empty-circle feature
 
 # Feature keys that need the label mask itself (not just the per-object centroid table);
 # produced by mask_gap_features(), so they are NOT in FEATURE_NAMES (the group_features set).
-MASK_FEATURE_KEYS = frozenset({"max_gap_um"})
+MASK_FEATURE_KEYS = frozenset({"max_gap_um", "mask_occupancy_entropy"})
+
+# Grid side for mask_occupancy_entropy: the FOV is split into MASK_OCCUPANCY_GRID^2 cells.
+# 8 (64 cells) resolves large-scale voids -- an empty half, an empty center, one clump in a
+# corner -- without being so fine that ordinary gaps between objects read as non-uniformity.
+# Unlike the centroid-based occupancy_entropy this is NOT adapted to the object count: the
+# measurement is over foreground PIXELS, so it is well defined (and meaningful) even when the
+# segmentation yields a single connected blob.
+MASK_OCCUPANCY_GRID = 8
 
 # Columns that identify ONE FOV (-> one output row). Everything else about a FOV is
 # spread across prefixed variant columns.
@@ -106,14 +116,14 @@ FEATURE_NAMES = [
 
 def group_features(g: pd.DataFrame) -> dict:
     n = len(g)
-    W = float(g["image_width_px"].iloc[0])
-    H = float(g["image_height_px"].iloc[0])
+    width = float(g["image_width_px"].iloc[0])
+    height = float(g["image_height_px"].iloc[0])
     px = float(g["pixel_size_um"].iloc[0])
-    cx = g["centroid_x_norm"].to_numpy(float) * W
-    cy = g["centroid_y_norm"].to_numpy(float) * H
+    cx = g["centroid_x_norm"].to_numpy(float) * width
+    cy = g["centroid_y_norm"].to_numpy(float) * height
 
     rec = {
-        "coverage_frac": float(g["area_px"].sum() / (W * H)),
+        "coverage_frac": float(g["area_px"].sum() / (width * height)),
     }
     # Nearest-neighbor spacing in PHYSICAL units (um) so it is invariant to
     # magnification (pixel size); NN distance is a local density measure, so it is
@@ -132,11 +142,13 @@ def group_features(g: pd.DataFrame) -> dict:
     # center, normalized by the half-diagonal. 0 = objects centered on average; -> 1 = the
     # object cloud is clumped toward one side / corner (off-center or partially-covered FOV).
     com = np.array([cx.mean(), cy.mean()])
-    rec["com_offset_norm"] = float(np.hypot(*(com - [W / 2, H / 2])) / (0.5 * np.hypot(W, H)))
+    rec["com_offset_norm"] = float(
+        np.hypot(*(com - [width / 2, height / 2])) / (0.5 * np.hypot(width, height))
+    )
     # --- spatial-distribution features (voids / non-uniformity that local NN misses) ---
     grid = _adaptive_grid(n)  # grid resolution tracks the object count (see _adaptive_grid)
-    gx = np.clip((cx / W * grid).astype(int), 0, grid - 1)
-    gy = np.clip((cy / H * grid).astype(int), 0, grid - 1)
+    gx = np.clip((cx / width * grid).astype(int), 0, grid - 1)
+    gy = np.clip((cy / height * grid).astype(int), 0, grid - 1)
     counts = np.zeros(grid * grid, int)
     np.add.at(counts, gy * grid + gx, 1)
     n_cells = grid * grid
@@ -144,27 +156,74 @@ def group_features(g: pd.DataFrame) -> dict:
     rec["empty_grid_frac"] = float((counts == 0).sum() / n_cells)
     # Occupancy spread across the grid (normalized Shannon entropy): uniform -> 1, concentrated -> 0.
     p = counts[counts > 0] / counts.sum()
-    rec["occupancy_entropy"] = float(-(p * np.log(p)).sum() / np.log(n_cells)) if p.size else np.nan
+    rec["occupancy_entropy"] = (
+        float(-(p * np.log(p)).sum() / np.log(n_cells)) if p.size else np.nan
+    )
     # Largest object-free circle, from the centroids (grid-sampled), normalized by the
     # half-diagonal: the radius of the biggest gap -> large when there is a big empty area.
     s = EMPTY_RADIUS_SAMPLES
-    gxs, gys = np.meshgrid(np.linspace(0, W, s), np.linspace(0, H, s))
-    dmin, _ = cKDTree(np.column_stack([cx, cy])).query(np.column_stack([gxs.ravel(), gys.ravel()]))
-    rec["max_empty_radius_norm"] = float(dmin.max() / (0.5 * np.hypot(W, H)))
+    gxs, gys = np.meshgrid(np.linspace(0, width, s), np.linspace(0, height, s))
+    dmin, _ = cKDTree(np.column_stack([cx, cy])).query(
+        np.column_stack([gxs.ravel(), gys.ravel()])
+    )
+    rec["max_empty_radius_norm"] = float(dmin.max() / (0.5 * np.hypot(width, height)))
     return rec
 
 
+def mask_occupancy_entropy(mask: np.ndarray) -> float:
+    """Normalized Shannon entropy of the foreground-PIXEL distribution over a coarse grid.
+
+    The FOV is split into ``MASK_OCCUPANCY_GRID**2`` cells and the foreground pixels are
+    binned into them; the returned value is ``-sum(p log p) / log(n_cells)`` over the
+    occupied cells, where ``p`` is each cell's share of the total foreground.
+
+        1.0 -> foreground spread evenly across the whole FOV
+        ~0  -> all foreground concentrated in a single cell
+        NaN -> empty mask (no foreground; the distribution is undefined)
+
+    This is the mask-pixel counterpart to :data:`FEATURE_NAMES`' ``occupancy_entropy``,
+    which bins per-object CENTROIDS instead. The centroid version degenerates when the
+    segmentation returns few objects -- one object occupies one cell and scores exactly 0
+    no matter how that object is actually spread over the FOV -- which makes it useless for
+    a foreground-blob segmentation such as Otsu on a log-std projection. Binning pixels
+    removes that dependence on object count entirely.
+
+    Cells differ in area by less than one row/column when the image dimensions are not
+    divisible by the grid side, so a perfectly uniform foreground scores marginally below
+    1.0 (<0.5% at the default grid and typical FOV sizes).
+    """
+    fg = np.asarray(mask) > 0
+    if not fg.any():
+        return float("nan")
+    g = MASK_OCCUPANCY_GRID
+    h, w = fg.shape
+    # Per-axis cell index, then a flat cell id per pixel. int32 keeps the (H, W) index
+    # array to ~4 bytes/px rather than the 8 that default integer broadcasting would use.
+    yi = (np.arange(h, dtype=np.int32) * g) // h
+    xi = (np.arange(w, dtype=np.int32) * g) // w
+    cell = (yi[:, None] * g + xi[None, :]).astype(np.int32)
+    counts = np.bincount(cell[fg], minlength=g * g).astype(float)
+    p = counts[counts > 0] / counts.sum()
+    return float(-(p * np.log(p)).sum() / np.log(g * g))
+
+
 def mask_gap_features(mask: np.ndarray, px_um: float) -> dict:
-    """Spatial feature that needs the mask itself (not just centroids).
+    """Spatial features that need the mask itself (not just centroids).
 
     ``max_gap_um``: radius (um) of the largest object-free region, i.e. the max over
     background pixels of the distance to the nearest foreground pixel (distance transform).
     Large when the FOV has a big empty area such as an empty center. Empty mask -> NaN.
+
+    ``mask_occupancy_entropy``: how evenly the foreground pixels are spread over the FOV
+    (see :func:`mask_occupancy_entropy`). Empty mask -> NaN.
     """
     fg = np.asarray(mask) > 0
     if not fg.any():
-        return {"max_gap_um": float("nan")}
-    return {"max_gap_um": float(distance_transform_edt(~fg).max()) * float(px_um)}
+        return {"max_gap_um": float("nan"), "mask_occupancy_entropy": float("nan")}
+    return {
+        "max_gap_um": float(distance_transform_edt(~fg).max()) * float(px_um),
+        "mask_occupancy_entropy": mask_occupancy_entropy(fg),
+    }
 
 
 def variant_tags(obj: pd.DataFrame) -> dict[str, str]:
@@ -203,7 +262,16 @@ def build(obj: pd.DataFrame, id_keys: list[str], out: Path, tag: str) -> None:
 
     rows = []
     for fov_key, fov_g in obj.groupby(id_keys, sort=False):
-        ids = dict(zip(id_keys, fov_key if isinstance(fov_key, tuple) else (fov_key,)))
+        # strict=True: groupby(id_keys) yields a key tuple of exactly len(id_keys), so a
+        # length mismatch means the grouping and the key list have drifted apart -- better
+        # to raise than to silently drop an identifier column from every output row.
+        ids = dict(
+            zip(
+                id_keys,
+                fov_key if isinstance(fov_key, tuple) else (fov_key,),
+                strict=True,
+            )
+        )
         rec = dict(ids)
         for m in FOV_META:
             rec[m] = fov_g[m].iloc[0]

@@ -69,6 +69,7 @@ metadata:
 
     fov_selection:
       enabled: true
+      calibration_mode: True
 
       # ---- Pre-scan MDASequence ----
       # A complete, valid MDASequence run FIRST over all candidate FOVs. Its
@@ -135,7 +136,7 @@ metadata:
 
       # Acquired channel fed to reconstruction (must be one of prescan_mda.channels).
       fov_selection_channel: "BF - Oblique"
-      
+
       # Ordered preprocessing steps. Available steps:
       #   reconstruction: flatfield, deskew, phase, vs
       #   projection (pick one): sum_projection, max_projection, middle_slice_projection,
@@ -143,17 +144,25 @@ metadata:
       #       texture, e.g. for label-free brightfield)
       #   segmentation
       #
-      # Two validated feature-extraction pipelines (projection + segmentation pair):
+      # Three feature-extraction pipelines (projection + segmentation pair). The projection
+      # and the segmentation block must be switched TOGETHER -- each pairing below is one
+      # choice, not two independent ones.
       #   A) middle-slice deskewed brightfield + Cellpose-DINO  (ACTIVE below): crisp
       #      instance masks; `segmentation.model: cellpose`.
       #   B) log-std deskewed brightfield + Otsu  (ALTERNATIVE below): thresholds a
       #      log-normalized std-over-Z projection into a connected foreground -- no GPU / model,
       #      good for label-free texture. Use `logstd_projection` + `segmentation.model: otsu`.
+      #   C) middle-slice deskewed brightfield + InstanSeg (ALTERNATIVE below): a TorchScript
+      #      checkpoint giving nucleus / cell instance masks; `segmentation.model: instanseg`.
+      #      Pair it with an IMAGE-like projection (middle slice), not the log-std texture map.
       # ---- ACTIVE (pipeline A): middle-slice brightfield + Cellpose-DINO --------------
       preprocessing: ['flatfield', 'deskew', 'middle_slice_projection', 'segmentation']
       # ---- ALTERNATIVE (pipeline B): log-std brightfield + Otsu -----------------------
       # preprocessing: ['flatfield', 'deskew', 'logstd_projection', 'segmentation']
       #   (also switch the `segmentation:` block to the Otsu alternative below)
+      # ---- ALTERNATIVE (pipeline C): middle-slice brightfield + InstanSeg -------------
+      # preprocessing: ['flatfield', 'deskew', 'middle_slice_projection', 'segmentation']
+      #   (also switch the `segmentation:` block to the InstanSeg alternative below)
 
       deskew:
         ls_angle_deg: 30.0
@@ -193,8 +202,8 @@ metadata:
       #       test_time_augmentations: false
       #       tta_type: mean
 
-      # Switchable segmentation (`model`: cellpose | otsu). Cellpose params fall back to the
-      # batch script's training defaults when unset. Pick ONE block.
+      # Switchable segmentation (`model`: cellpose | instanseg | otsu). Cellpose params fall
+      # back to the batch script's training defaults when unset. Pick ONE block.
       # ---- ACTIVE (pipeline A): Cellpose-DINO -----------------------------------------
       segmentation:
         model: cellpose
@@ -217,6 +226,28 @@ metadata:
       #   close_radius: 10     # morphological-closing disk radius in px (0 = skip)
       #   min_size: 8000       # remove foreground components smaller than this (px)
       #   fill_holes: true     # fill interior holes of the foreground
+      # ---- ALTERNATIVE (pipeline C): InstanSeg ----------------------------------------
+      # An InstanSeg TorchScript checkpoint -- either a bioimage.io .zip export (the model-zoo
+      # download: instanseg.pt + rdf.yaml) or a bare .pt. Needs only torch, not the `instanseg`
+      # package. Per FOV the projection is percentile-scaled, resampled to the model's TRAINING
+      # pixel size, run, then the label map is resampled back to the acquisition pixel grid
+      # (nearest, so label ids survive and features stay in acquisition pixel units).
+      #
+      # Resolution matters: InstanSeg has no `diameter` knob like Cellpose -- matching the
+      # pixel size IS how object scale is communicated. A .zip carries this in rdf.yaml and it
+      # is read automatically (0.35 um/px for the zoo models); for a bare .pt you must give
+      # `model_pixel_size_um` or the FOV is fed at native resolution and objects come out the
+      # wrong apparent size.
+      #
+      # NOTE the zoo checkpoints are trained on histology / fluorescence (H&E, IHC, TissueNet),
+      # NOT label-free oblique brightfield -- check the debug PNGs on one FOV before trusting a
+      # whole plate. Pair with `middle_slice_projection` (pipeline C), not `logstd_projection`:
+      # InstanSeg expects an image, not a texture map.
+      # segmentation:
+      #   model: instanseg
+      #   path: E:\2026_07_28_smart_fov_selection_test\instanseg_34532446.zip
+      #   gpu: true
+      #   target: cells         # which output head to keep: nuclei | cells
 
       # FOV-goodness model (pluggable -- see shrimpy/fov_selection/fov_model.py). Pick ONE
       # `model:` block. The model reads features by NAME only, so it is independent of which
@@ -354,6 +385,5 @@ metadata:
 
       # FOV selection decision
       # Debug outputs (off by default):
-      save_prescan: True   # write the pre-scan run to <name>_prescan.ome.zarr
+      save_pre_scan_omezarr: False   # write the pre-scan run to <name>_prescan.ome.zarr
       save_decision: True  # per-FOV masks/features/goodness under <name>_fov_debug/
-

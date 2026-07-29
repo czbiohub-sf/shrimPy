@@ -177,3 +177,81 @@ def test_channels_type_invalid_raises():
         FovSelection.from_metadata(
             meta, SEQUENCE, pixel_size_um=0.1, decide_fn=_good_if_positive
         )
+
+
+# --- debug-summary finalisation ------------------------------------------------------
+# `selected` / `rank` are added post-drain over the finished CSV. These pin the values and,
+# more importantly, that a filesystem failure there cannot escape into teardown_sequence:
+# a debug artifact must never be able to abort an acquisition.
+
+
+class _StubSelection(FovSelection):
+    """Bare FovSelection exposing only what finalize_debug_summary touches."""
+
+    def __init__(self, debug_dir, top_fov, passed):
+        self._debug_dir = debug_dir
+        self._top_fov = top_fov
+        self._passed = passed
+
+    def passed_position_names(self):
+        return self._passed
+
+
+def _summary(tmp_path):
+    import pandas as pd
+
+    (tmp_path / "fov_summary.csv").write_text(
+        pd.DataFrame({"name": ["A", "B", "C", "D"], "proba": [0.1, 0.9, 0.5, 0.5]}).to_csv(
+            index=False
+        )
+    )
+    return tmp_path / "fov_summary.csv"
+
+
+def test_finalize_adds_selected_and_rank_for_a_ranking_model(tmp_path):
+    import pandas as pd
+
+    csv = _summary(tmp_path)
+    _StubSelection(tmp_path, top_fov=2, passed=["B", "C"]).finalize_debug_summary()
+
+    df = pd.read_csv(csv)
+    assert list(df.columns)[:4] == ["name", "proba", "selected", "rank"]
+    assert df.set_index("name")["selected"].to_dict() == {"A": 0, "B": 1, "C": 1, "D": 0}
+    # method='first' -> ties get distinct consecutive ranks, not 3.5/3.5.
+    assert df.set_index("name")["rank"].to_dict() == {"A": 4.0, "B": 1.0, "C": 2.0, "D": 3.0}
+
+
+def test_finalize_leaves_rank_nan_for_non_ranking_models(tmp_path):
+    import pandas as pd
+
+    csv = _summary(tmp_path)
+    _StubSelection(tmp_path, top_fov=None, passed=["B", "D"]).finalize_debug_summary()
+
+    df = pd.read_csv(csv)
+    assert df["rank"].isna().all()  # no ordering exists for a pass/fail model
+    assert df.set_index("name")["selected"].to_dict() == {"A": 0, "B": 1, "C": 0, "D": 1}
+
+
+def test_finalize_is_a_noop_without_a_summary(tmp_path):
+    _StubSelection(tmp_path, top_fov=2, passed=[]).finalize_debug_summary()  # no CSV
+    _StubSelection(None, top_fov=2, passed=[]).finalize_debug_summary()  # save_decision off
+
+
+def test_finalize_falls_back_when_the_csv_is_not_writable(tmp_path):
+    # A spreadsheet app holding fov_summary.csv open must not raise out of
+    # teardown_sequence, and must not silently lose the selection either.
+    import os
+    import stat
+
+    import pandas as pd
+
+    csv = _summary(tmp_path)
+    os.chmod(csv, stat.S_IREAD)
+    try:
+        _StubSelection(tmp_path, top_fov=2, passed=["B", "C"]).finalize_debug_summary()
+    finally:
+        os.chmod(csv, stat.S_IWRITE)
+
+    fallback = tmp_path / "fov_summary_selected.csv"
+    assert fallback.exists(), "selected/rank must survive a locked target"
+    assert set(pd.read_csv(fallback).columns) >= {"selected", "rank"}

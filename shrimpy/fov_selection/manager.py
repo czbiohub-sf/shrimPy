@@ -45,6 +45,27 @@ DEFAULT_TARGET_CHANNELS = ["nuclei", "membrane"]
 PRESCAN_TIMEPOINT = 0
 
 
+def sibling_artifact_paths(data_path: Path | None, run_index: int | None = None) -> list[Path]:
+    """Every path a FOV-selection run may create NEXT TO its output store.
+
+    The pre-scan writes no store of its own, so these are the only on-disk traces a run
+    leaves if it dies before the timelapse starts. Name deduplication has to test them
+    too -- otherwise a crashed pre-scan leaves ``<name>_fov_debug/`` behind while
+    ``<name>.ome.zarr`` is still free, the next run picks the same name, and its worker
+    appends to the dead run's ``fov_summary.csv``.
+    """
+    if data_path is None:
+        return []
+    return [
+        p
+        for p in (
+            FovSelection._debug_dir_for(data_path, run_index),
+            FovSelection._prescan_recon_path_for(data_path, run_index),
+        )
+        if p is not None
+    ]
+
+
 class FovSelection:
     """Coordinates the online, streaming FOV-selection decision for one run.
 
@@ -66,6 +87,12 @@ class FovSelection:
         decisions run on the executor thread instead of the worker subprocess
         (used by tests and custom deciders); ``start`` then skips spawning the
         worker.
+    run_index : int | None
+        Deduplication index the engine appended to the acquisition name when the
+        bare name was already taken (``acq`` -> ``acq_1``). Moved to the end of the
+        sibling artifact names, so they read ``acq_fov_debug_1`` /
+        ``acq_prescan_1.ome.zarr`` rather than burying the index mid-name. See
+        :meth:`_sibling_path`.
     """
 
     def __init__(
@@ -76,6 +103,7 @@ class FovSelection:
         z_step_um: float,
         data_path: Path | None = None,
         decide_fn: Callable[[np.ndarray], tuple[float, bool]] | None = None,
+        run_index: int | None = None,
     ) -> None:
         self.config = config
         self._pixel_size_um = pixel_size_um
@@ -84,14 +112,18 @@ class FovSelection:
         # fov_summary.csv), written by the worker to a sibling directory next to
         # the output store.
         self._save_decision = bool(config.get("save_decision", False))
-        self._debug_dir = self._debug_dir_for(data_path) if self._save_decision else None
+        self._debug_dir = (
+            self._debug_dir_for(data_path, run_index) if self._save_decision else None
+        )
         # When set, the per-step reconstruction OME-Zarr (deskew / phase / vs /
         # projection / mask channels) is written to <name>_prescan.ome.zarr next to
         # the output store -- replacing the raw pre-scan store, so the pre-scan run
         # itself writes nothing to disk. Independent of save_decision.
         self._save_pre_scan_omezarr = bool(config.get("save_pre_scan_omezarr", False))
         self._recon_zarr_path = (
-            self._prescan_recon_path_for(data_path) if self._save_pre_scan_omezarr else None
+            self._prescan_recon_path_for(data_path, run_index)
+            if self._save_pre_scan_omezarr
+            else None
         )
         # Fail fast if reconstruction can't run on a GPU. Default True; set
         # fov_selection.require_gpu: false to allow a (slow) CPU run for debugging.
@@ -116,7 +148,9 @@ class FovSelection:
         self._is_vs = "vs" in self._steps
         vs_cfg = config.get("virtual_staining", {}) or {}
         if self._is_vs:
-            self._target_channels = list(vs_cfg.get("target_channels") or DEFAULT_TARGET_CHANNELS)
+            self._target_channels = list(
+                vs_cfg.get("target_channels") or DEFAULT_TARGET_CHANNELS
+            )
         else:
             self._target_channels = ["phase" if "phase" in self._steps else "brightfield"]
 
@@ -150,34 +184,56 @@ class FovSelection:
         # when a decide_fn stands in for the pipeline -- it never extracts features.
         if self._decide_fn is None:
             self._validate_feature_names(model_cfg)
+            self._validate_segmentation()
 
     # -- construction ------------------------------------------------------
 
     @staticmethod
-    def _debug_dir_for(data_path: Path | None) -> Path | None:
-        """Sibling ``<name>_fov_debug/`` directory next to the output store."""
-        if data_path is None:
-            return None
-        data_path = Path(data_path)
-        name = data_path.name
-        for suffix in (".ome.zarr", ".zarr"):
-            if name.endswith(suffix):
-                name = name[: -len(suffix)]
-                break
-        return data_path.with_name(f"{name}_fov_debug")
+    def _sibling_path(
+        data_path: Path | None, suffix: str, run_index: int | None = None
+    ) -> Path | None:
+        """Sibling artifact path next to the output store: ``<base><suffix>[_<run_index>]``.
 
-    @staticmethod
-    def _prescan_recon_path_for(data_path: Path | None) -> Path | None:
-        """Sibling ``<name>_prescan.ome.zarr`` store next to the output store."""
+        ``run_index`` is the deduplication index the engine appended to the acquisition
+        name when the bare name was taken (``acq`` -> ``acq_1``). It is stripped off the
+        store name and re-appended at the END of the sibling's own name, so a second run
+        of ``acq`` yields ``acq_fov_debug_1`` -- not ``acq_1_fov_debug``, which buries the
+        index mid-name and sorts the two runs' folders apart.
+
+        Passing the index explicitly (rather than pattern-matching a trailing ``_<n>``
+        off the path) keeps a user-supplied name that genuinely ends in a number intact:
+        ``plate_2`` with no collision has ``run_index=None`` and yields
+        ``plate_2_fov_debug``, which cannot collide with the third run of ``plate``
+        (``plate_fov_debug_2``).
+        """
         if data_path is None:
             return None
         data_path = Path(data_path)
         name = data_path.name
-        for suffix in (".ome.zarr", ".zarr"):
-            if name.endswith(suffix):
-                name = name[: -len(suffix)]
+        for ext in (".ome.zarr", ".zarr"):
+            if name.endswith(ext):
+                name = name[: -len(ext)]
                 break
-        return data_path.with_name(f"{name}_prescan.ome.zarr")
+        tail = ""
+        if run_index is not None and name.endswith(f"_{run_index}"):
+            name = name[: -len(f"_{run_index}")]
+            tail = f"_{run_index}"
+        return data_path.with_name(f"{name}{suffix}{tail}")
+
+    @classmethod
+    def _debug_dir_for(
+        cls, data_path: Path | None, run_index: int | None = None
+    ) -> Path | None:
+        """Sibling ``<name>_fov_debug[_<n>]/`` directory next to the output store."""
+        return cls._sibling_path(data_path, "_fov_debug", run_index)
+
+    @classmethod
+    def _prescan_recon_path_for(
+        cls, data_path: Path | None, run_index: int | None = None
+    ) -> Path | None:
+        """Sibling ``<name>_prescan[_<n>].ome.zarr`` store next to the output store."""
+        path = cls._sibling_path(data_path, "_prescan", run_index)
+        return None if path is None else path.with_name(f"{path.name}.ome.zarr")
 
     @classmethod
     def from_metadata(
@@ -187,6 +243,7 @@ class FovSelection:
         pixel_size_um: float,
         data_path: Path | None = None,
         decide_fn: Callable[[np.ndarray], tuple[float, bool]] | None = None,
+        run_index: int | None = None,
     ) -> FovSelection | None:
         """Build the coordinator from the ``fov_selection`` metadata block.
 
@@ -237,6 +294,7 @@ class FovSelection:
             z_step_um=z_step_um,
             data_path=data_path,
             decide_fn=decide_fn,
+            run_index=run_index,
         )
 
     def _validate_fov_selection_channel(self, sequence: MDASequence) -> None:
@@ -299,6 +357,44 @@ class FovSelection:
                 f"cannot produce: {unknown}. Available feature names: {sorted(producible)}. "
                 "Fix the names under fov_selection.model.features (or the preprocessing / "
                 "virtual_staining.target_channels). Aborting before acquisition."
+            )
+
+    def _validate_segmentation(self) -> None:
+        """Fail before acquiring on an unusable ``segmentation`` block.
+
+        The backend is only loaded inside the worker subprocess, which does not start until
+        the pre-scan is already running -- so a typo'd backend name or a missing InstanSeg
+        checkpoint would otherwise surface as a mid-acquisition worker crash. Checked here
+        instead, alongside the model feature names.
+        """
+        from shrimpy.fov_selection.pipeline import INSTANSEG_TARGETS
+
+        backend = self._segmentation.get("model", "cellpose")
+        if backend not in ("cellpose", "instanseg", "otsu"):
+            raise ValueError(
+                f"fov_selection.segmentation.model must be 'cellpose', 'instanseg' or "
+                f"'otsu'; got {backend!r}. Aborting before acquisition."
+            )
+        if backend != "instanseg":
+            return
+
+        path = self._segmentation.get("path")
+        if not path:
+            raise ValueError(
+                "fov_selection.segmentation.model='instanseg' requires a 'path' to the "
+                "InstanSeg checkpoint (a bioimage.io .zip export or a TorchScript .pt). "
+                "Aborting before acquisition."
+            )
+        if not Path(path).exists():
+            raise FileNotFoundError(
+                f"fov_selection.segmentation.path: InstanSeg checkpoint not found: {path}. "
+                "Aborting before acquisition."
+            )
+        target = self._segmentation.get("target", INSTANSEG_TARGETS[0])
+        if target not in INSTANSEG_TARGETS:
+            raise ValueError(
+                f"fov_selection.segmentation.target must be one of "
+                f"{list(INSTANSEG_TARGETS)}; got {target!r}. Aborting before acquisition."
             )
 
     @staticmethod
@@ -532,6 +628,90 @@ class FovSelection:
                 proba,
                 "Passed" if name in passed else "Skipped",
             )
+
+    def finalize_debug_summary(self) -> None:
+        """Add the ``selected`` / ``rank`` columns to ``fov_summary.csv`` (call after drain).
+
+        The worker appends one row per FOV as it is decided (``name, proba, <features>``),
+        but whether a FOV is actually imaged is a whole-run property: for
+        ``ranking_by_defined_range`` it is the top-``top_fov`` cut over every score, which
+        does not exist until the last FOV is scored. So the two decision columns are
+        written here, once, over the finished table:
+
+        ``selected`` : 1 for the FOVs the timelapse images (:meth:`passed_position_names`),
+                       0 otherwise -- for every model type.
+        ``rank``     : 1 = highest score, ties broken by score order. Only meaningful for
+                       ranking models; for the threshold/tree model types selection is a
+                       per-FOV pass/fail with no ordering, so ``rank`` is left NaN.
+
+        A no-op when ``save_decision`` is off or the CSV was never written. Every
+        filesystem step is guarded: this is debug output written at the very end of the
+        pre-scan, and it must not be able to raise out of ``teardown_sequence`` and take
+        the acquisition down with it.
+        """
+        from shrimpy.fov_selection.worker import SUMMARY_CSV_NAME
+
+        if self._debug_dir is None:
+            return
+        summary_path = Path(self._debug_dir) / SUMMARY_CSV_NAME
+        if not summary_path.exists():
+            return
+
+        import pandas as pd
+
+        try:
+            df = pd.read_csv(summary_path)
+        except Exception:
+            logger.exception("FOV selection: could not read %s to finalize", summary_path)
+            return
+        if "name" not in df.columns:
+            logger.warning("FOV selection: %s has no 'name' column; skipping", summary_path)
+            return
+
+        passed = set(self.passed_position_names())
+        df = df.drop(columns=[c for c in ("selected", "rank", "good") if c in df.columns])
+        selected = df["name"].astype(str).isin(passed).astype(int)
+        if self._top_fov is not None:
+            # method='first' so ties resolve to distinct consecutive integers (a dense/average
+            # rank would emit 1.5-style values); NaN scores rank last.
+            rank = df["proba"].rank(ascending=False, method="first")
+        else:
+            rank = pd.Series(np.nan, index=df.index)
+        df.insert(2, "rank", rank)
+        df.insert(2, "selected", selected)
+
+        try:
+            df.to_csv(summary_path, index=False)
+        except OSError as exc:
+            # Typically the file is locked by a spreadsheet app watching the run (Windows
+            # gives PermissionError). Don't lose the columns: write them beside the original
+            # so the selection is still recoverable, and say plainly what happened.
+            fallback = summary_path.with_name(f"{summary_path.stem}_selected.csv")
+            try:
+                df.to_csv(fallback, index=False)
+            except OSError:
+                logger.exception(
+                    "FOV selection: could not write selected/rank to %s or %s; the "
+                    "per-FOV scores in the log are the only record of the selection",
+                    summary_path,
+                    fallback,
+                )
+                return
+            logger.warning(
+                "FOV selection: could not write %s (%s) -- is it open in another program? "
+                "Wrote the selected/rank table to %s instead.",
+                summary_path,
+                exc,
+                fallback,
+            )
+            summary_path = fallback
+
+        logger.info(
+            "FOV selection: wrote selected/rank for %d FOVs (%d selected) to %s",
+            len(df),
+            int(selected.sum()),
+            summary_path,
+        )
 
     @property
     def fov_selection_channel(self) -> str:

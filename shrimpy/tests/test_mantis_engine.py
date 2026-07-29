@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from pymmcore_plus.mda import MDAEngine
 from useq import MDAEvent, MDASequence
 
 from shrimpy.mantis.mantis_engine import (
@@ -20,6 +21,7 @@ from shrimpy.mantis.mantis_engine import (
     MANTIS_XY_STAGE_NAME,
     SLOW_XY_STAGE_SPEED,
     MantisEngine,
+    _format_duration,
     _get_next_acquisition_name,
 )
 
@@ -51,6 +53,21 @@ def _make_sequence(mantis_meta: dict | None = None) -> MDASequence:
 # ---------------------------------------------------------------------------
 # _get_next_acquisition_name() — pure function
 # ---------------------------------------------------------------------------
+
+
+def test_format_duration_scales_units_with_magnitude():
+    # A pre-scan runs from seconds to hours; the unit scales so the number stays readable.
+    assert _format_duration(0) == "0.0s"
+    assert _format_duration(3.71) == "3.7s"
+    assert _format_duration(59.94) == "59.9s"
+    assert _format_duration(60) == "1m 00s"
+    assert _format_duration(432) == "7m 12s"
+    assert _format_duration(3600) == "1h 00m 00s"
+    assert _format_duration(3800) == "1h 03m 20s"
+    # Rounding must not leave a bare 60 in the seconds/minutes slot.
+    assert _format_duration(3599.6) == "1h 00m 00s"
+    # A negative span (clock weirdness) must not render as garbage.
+    assert _format_duration(-5) == "0.0s"
 
 
 def test_next_name_first_acquisition_in_empty_dir(tmp_path):
@@ -465,3 +482,91 @@ def test_teardown_no_mantis_metadata(engine, mock_core):
     with patch("shrimpy.mantis.mantis_engine.MDAEngine.teardown_sequence"):
         engine.teardown_sequence(seq)
     mock_core.setProperty.assert_not_called()
+
+
+def test_teardown_captures_selection_before_debug_writes():
+    """A failing debug write must not cost us the selection.
+
+    Regression: finalize_debug_summary() used to run BEFORE _fov_passed_names was
+    assigned, so a PermissionError on fov_summary.csv (a spreadsheet holding it open)
+    aborted teardown_sequence with the list still empty -- acquire() then skipped the
+    timelapse for "no FOVs passed" even though FOVs had scored and passed.
+    """
+    engine = MantisEngine.__new__(MantisEngine)
+    engine._dynatrack = None
+    engine._fov_passed_names = []
+    core = MagicMock()
+    engine._mmcore_ref = weakref.ref(core)  # `mmcore` is a read-only property
+
+    fov = MagicMock()
+    fov.passed_position_names.return_value = ["p0_0019", "p0_0021", "p0_0016"]
+    fov.finalize_debug_summary.side_effect = PermissionError("fov_summary.csv is locked")
+    engine._fov = fov
+
+    sequence = MDASequence(stage_positions=[{"x": 0, "y": 0}])
+    with patch.object(MDAEngine, "teardown_sequence"), pytest.raises(PermissionError):
+        engine.teardown_sequence(sequence)
+
+    # Even though the debug write blew up, the selection survived.
+    assert engine._fov_passed_names == ["p0_0019", "p0_0021", "p0_0016"]
+
+
+# ---------------------------------------------------------------------------
+# _get_next_acquisition_name() — leftovers from crashed runs
+# ---------------------------------------------------------------------------
+# A run that dies mid-pre-scan writes <name>_fov_debug/ and maybe
+# <name>_prescan.ome.zarr but never <name>.ome.zarr, because the pre-scan run passes
+# output=None. Testing only the store handed the next run the same name, whose worker
+# then appended to the dead run's fov_summary.csv and reused its debug directory.
+
+
+def test_next_name_avoids_a_crashed_prescan_debug_dir(tmp_path):
+    # Store absent, debug dir present -> the name is NOT free.
+    (tmp_path / "acq_fov_debug").mkdir()
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_1"
+
+
+def test_next_name_avoids_a_crashed_prescan_zarr(tmp_path):
+    (tmp_path / "acq_prescan.ome.zarr").mkdir()
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_1"
+
+
+def test_next_name_avoids_indexed_sibling_leftovers(tmp_path):
+    # The real failure: stores acq..acq_3 exist, but a crashed 5th run left
+    # acq_fov_debug_4 and acq_prescan_4. acq_4 looks free by the store alone.
+    for suffix in ("", "_1", "_2", "_3"):
+        (tmp_path / f"acq{suffix}.ome.zarr").mkdir()
+    for suffix in ("", "_1", "_2", "_3", "_4"):
+        (tmp_path / f"acq_fov_debug{suffix}").mkdir()
+    (tmp_path / "acq_prescan_4.ome.zarr").mkdir()
+
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_5"
+
+
+def test_next_name_never_reuses_or_deletes_leftovers(tmp_path):
+    # Freshness is about the NAME existing, not about the run having completed: an
+    # incomplete folder is skipped and left untouched for inspection.
+    debug = tmp_path / "acq_fov_debug"
+    debug.mkdir()
+    (debug / "fov_summary.csv").write_text("name,proba\np0_0000,0.5\n")
+
+    name = _get_next_acquisition_name(tmp_path, "acq")
+
+    assert name == "acq_1"
+    assert (debug / "fov_summary.csv").read_text() == "name,proba\np0_0000,0.5\n"
+
+
+def test_artifact_paths_cover_store_and_siblings(tmp_path):
+    from shrimpy.mantis.mantis_engine import acquisition_artifact_paths
+
+    assert [p.name for p in acquisition_artifact_paths(tmp_path, "acq", None)] == [
+        "acq.ome.zarr",
+        "acq_fov_debug",
+        "acq_prescan.ome.zarr",
+    ]
+    # The dedup index lands at the END of each sibling name, not mid-name.
+    assert [p.name for p in acquisition_artifact_paths(tmp_path, "acq_2", 2)] == [
+        "acq_2.ome.zarr",
+        "acq_fov_debug_2",
+        "acq_prescan_2.ome.zarr",
+    ]

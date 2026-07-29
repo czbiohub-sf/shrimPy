@@ -198,10 +198,17 @@ class _LabelfreePreprocessor:
                 raw_data_shape=self._zyx_shape,
                 **_settings_kwargs(get_deskewed_data_shape, self._deskew_settings),
             )
+            # px_to_scan_ratio is what sets the deskewed X (scan-axis) extent, so log it
+            # with the shape: an unexpected pixel size shows up here as a stretched or
+            # squashed X and is otherwise invisible until someone eyeballs a projection.
             logger.info(
-                "Preprocessing: deskew will reshape %s -> %s",
+                "Preprocessing: deskew will reshape %s -> %s "
+                "(px_to_scan_ratio=%s, pixel_size_um=%s, scan_step_um=%s)",
                 self._zyx_shape,
                 deskewed_shape,
+                getattr(self._deskew_settings, "px_to_scan_ratio", None),
+                getattr(self._deskew_settings, "pixel_size_um", None),
+                getattr(self._deskew_settings, "scan_step_um", None),
             )
             self._zyx_shape = deskewed_shape
 

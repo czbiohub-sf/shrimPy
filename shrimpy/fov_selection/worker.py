@@ -17,14 +17,16 @@ import logging
 import multiprocessing as mp
 import time as _time
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import numpy as np
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
 logger = logging.getLogger(__name__)
+
+# The combined per-FOV debug table (one row per FOV) written under `debug_dir` when
+# `save_decision` is set. Named here because the manager reopens it post-drain to add the
+# selected/rank columns (FovSelection.finalize_debug_summary).
+SUMMARY_CSV_NAME = "fov_summary.csv"
 
 
 class FovSelectionWorker:
@@ -284,10 +286,32 @@ def _worker_loop(
                 )
                 if need_artifacts:
                     proba, good, artifacts = result
+                    # Debug output must NEVER invalidate a decision. These writers touch the
+                    # filesystem, so they fail for reasons that have nothing to do with the
+                    # science -- most commonly fov_summary.csv being locked by a spreadsheet
+                    # app while the run is watched. Letting that propagate would discard an
+                    # already-computed verdict (the FOV is scored NaN/bad) and, if it happens
+                    # to enough FOVs, leave nothing to image. Log and carry on instead.
                     if recon_zarr_path is not None:
-                        _write_reconstruction_zarr(recon_zarr_path, p_idx, name, artifacts)
+                        try:
+                            _write_reconstruction_zarr(recon_zarr_path, p_idx, name, artifacts)
+                        except Exception:
+                            log.exception(
+                                "FOV-selection worker: could not write the pre-scan "
+                                "reconstruction for %s; the decision is unaffected",
+                                name,
+                            )
                     if debug_dir is not None:
-                        _write_decision_artifacts(debug_dir, name, proba, good, artifacts)
+                        try:
+                            _write_decision_artifacts(debug_dir, name, proba, good, artifacts)
+                        except Exception:
+                            log.exception(
+                                "FOV-selection worker: could not write debug artifacts for "
+                                "%s (is %s open in another program?); the decision is "
+                                "unaffected",
+                                name,
+                                Path(debug_dir) / SUMMARY_CSV_NAME,
+                            )
                 else:
                     proba, good = result
                 elapsed = _time.monotonic() - t0
@@ -343,8 +367,10 @@ def _write_decision_artifacts(
     every FOV's images can be browsed together). Per FOV per target channel:
     ``<name>_<ch>_projection.png`` (grayscale, min/max stretched) and
     ``<name>_<ch>_mask.png`` (colorized labels) for quick visual QC without a zarr
-    viewer. One combined ``fov_summary.csv`` gets a row per FOV -- ``name, proba,
-    good`` followed by every feature column -- so all FOVs are viewable at a glance.
+    viewer. One combined ``fov_summary.csv`` gets a row per FOV -- ``name, proba``
+    followed by every feature column -- so all FOVs are viewable at a glance. The
+    ``selected`` / ``rank`` decision columns are added post-drain by the manager
+    (see :meth:`~shrimpy.fov_selection.manager.FovSelection.finalize_debug_summary`).
 
     The full per-step 3D reconstruction is written separately as the pre-scan
     OME-Zarr (see :func:`_write_reconstruction_zarr`, gated by
@@ -472,19 +498,25 @@ def _write_reconstruction_zarr(
 def _append_summary_row(
     debug_dir: Path, name: str, proba: float, good: bool, features
 ) -> None:
-    """Append one FOV's row (name, proba, good, + all features) to fov_summary.csv.
+    """Append one FOV's row (name, proba, + all features) to fov_summary.csv.
 
     Uses pandas concat so FOVs with different feature columns (e.g. no membrane
     objects) still align -- missing columns are filled with NaN.
+
+    The ``selected`` / ``rank`` columns are NOT written here: both are properties of
+    the whole pre-scan (top-K ranking across every FOV), not of one FOV, and are only
+    known after every FOV has been scored. The manager fills them in once, post-drain
+    (:meth:`shrimpy.fov_selection.manager.FovSelection.finalize_debug_summary`). The
+    per-FOV ``good`` flag is deliberately not written -- for a ranking model it is a
+    threshold artifact that has nothing to do with what actually gets imaged.
     """
     import pandas as pd
 
     row = features.copy() if features is not None else pd.DataFrame([{}])
-    row.insert(0, "good", int(bool(good)))
     row.insert(0, "proba", float(proba))
     row.insert(0, "name", name)
 
-    summary_path = debug_dir / "fov_summary.csv"
+    summary_path = debug_dir / SUMMARY_CSV_NAME
     if summary_path.exists():
         row = pd.concat([pd.read_csv(summary_path), row], ignore_index=True)
     row.to_csv(summary_path, index=False)

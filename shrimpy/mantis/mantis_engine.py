@@ -97,6 +97,9 @@ class MantisEngine(MDAEngine):
         # acquire() can build the timelapse run after the pre-scan run returns.
         self._fov_passed_names: list[str] = []
         self._data_path: Path | None = None
+        # Dedup index appended to the acquisition name (None when the bare name was
+        # free); see acquire(). Sibling artifacts append it after their own suffix.
+        self._run_index: int | None = None
 
         # Register event callbacks for logging
         mmc.mda.set_engine(self)
@@ -150,6 +153,27 @@ class MantisEngine(MDAEngine):
         self._xy_stage_device = core.getXYStageDevice()
         logger.debug(f"XY stage device: {self._xy_stage_device}")
 
+        logger.info("Mantis hardware setup completed successfully")
+
+        # Call parent setup so SummaryMetaV1 captures the fully configured
+        # hardware state and the setup event applies the ROI.
+        result = super().setup_sequence(sequence)
+
+        # Read the pixel size only AFTER the setup event has been applied. MM resolves
+        # getPixelSizeUm() from whichever pixel-size config group currently matches the
+        # device property values, so before super().setup_sequence() it reflects leftover
+        # hardware state (whatever the GUI was last left in) rather than the state this
+        # acquisition actually runs with. Reading it early silently produced a different
+        # px_to_scan_ratio between otherwise-identical runs, which changed the deskewed
+        # X extent (the scan axis) and stretched every downstream projection / mask /
+        # physical feature. Same reason _zyx_shape() is deferred to after this point.
+        pixel_size_um = core.getPixelSizeUm()
+        logger.info(
+            "Pixel size: %.5f um/px (config %r)",
+            pixel_size_um,
+            core.getCurrentPixelSizeConfig(),
+        )
+
         # Setup DynaTrack position tracking. The XY pixel size (from the core)
         # and the sequence z_plan step are the single source of truth for all
         # scale parameters; DynaTrack derives and injects them.
@@ -157,7 +181,7 @@ class MantisEngine(MDAEngine):
             microscope_meta.get("dynatrack"),
             sequence,
             data_path=self._data_path,
-            pixel_size_um=core.getPixelSizeUm(),
+            pixel_size_um=pixel_size_um,
         )
         if self._dynatrack is not None:
             self.mmcore.mda.events.frameReady.connect(self._dynatrack.on_frame_ready)
@@ -180,8 +204,9 @@ class MantisEngine(MDAEngine):
         self._fov = FovSelection.from_metadata(
             microscope_meta.get("fov_selection"),
             sequence,
-            pixel_size_um=core.getPixelSizeUm(),
+            pixel_size_um=pixel_size_um,
             data_path=self._data_path,
+            run_index=self._run_index,
         )
         if self._fov is not None:
             self.mmcore.mda.events.frameReady.connect(self._fov.on_frame_ready)
@@ -190,12 +215,6 @@ class MantisEngine(MDAEngine):
                 self._fov.fov_selection_channel,
                 len(sequence.stage_positions),
             )
-
-        logger.info("Mantis hardware setup completed successfully")
-
-        # Call parent setup so SummaryMetaV1 captures the fully configured
-        # hardware state and the setup event applies the ROI.
-        result = super().setup_sequence(sequence)
 
         # DynaTrack runs in a worker subprocess for GPU/torch isolation:
         # torch's OpenMP runtime segfaults when it coexists with the sequenced
@@ -307,7 +326,13 @@ class MantisEngine(MDAEngine):
         # frame buffers are cleared, not the verdicts).
         if self._fov is not None:
             self._fov.drain()
-            self._fov.log_selection_summary()
+            # Capture the selection FIRST, before anything that touches the filesystem.
+            # Ordering matters: this used to run after finalize_debug_summary(), so a
+            # PermissionError writing the debug CSV (a spreadsheet app holding it open)
+            # aborted teardown before _fov_passed_names was ever assigned -- the timelapse
+            # was then skipped for "no FOVs passed" despite a perfectly good selection.
+            # The debug writers are individually guarded now; this ordering makes the
+            # science independent of them regardless.
             self._fov_passed_names = self._fov.passed_position_names()
             logger.info(
                 "FOV selection: %d/%d FOVs passed: %s",
@@ -315,6 +340,8 @@ class MantisEngine(MDAEngine):
                 len(sequence.stage_positions),
                 self._fov_passed_names,
             )
+            self._fov.log_selection_summary()
+            self._fov.finalize_debug_summary()
             self.mmcore.mda.events.frameReady.disconnect(self._fov.on_frame_ready)
             self._fov.shutdown()
             self._fov = None
@@ -536,7 +563,14 @@ class MantisEngine(MDAEngine):
         """
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        name = _get_next_acquisition_name(output_dir, name)
+        # Deduplicate the acquisition name. The index is kept separately so sibling
+        # artifacts (<name>_fov_debug/, <name>_prescan.ome.zarr) can append it at the
+        # END of their own name rather than inheriting it mid-name -- "acq_fov_debug_1",
+        # not "acq_1_fov_debug". Comparing against the base is exact: a user-supplied
+        # name that already ends in _<n> yields run_index None and is left intact.
+        base_name = name
+        name = _get_next_acquisition_name(output_dir, base_name)
+        self._run_index = None if name == base_name else int(name[len(base_name) + 1 :])
 
         if isinstance(mda_config, MDASequence):
             sequence = mda_config
@@ -558,10 +592,25 @@ class MantisEngine(MDAEngine):
             # captured in teardown_sequence), then the timelapse images only
             # those. Sequence building lives in shrimpy/fov_selection/sequences.py.
             prescan_seq = build_prescan_sequence(sequence, fov_cfg)
+            n_candidates = len(prescan_seq.stage_positions)
+            logger.info("Starting FOV-selection pre-scan: %d candidate FOVs", n_candidates)
             # The pre-scan run writes nothing to disk itself: the decision streams
             # via frameReady, and (when save_pre_scan_omezarr is set) the worker
             # writes the per-step reconstruction to <name>_prescan.ome.zarr.
+            #
+            # Time the whole call: teardown_sequence drains the outstanding decisions
+            # before mda.run() returns, so this span covers imaging AND every FOV's
+            # reconstruction/segmentation/scoring -- i.e. the real cost of the pre-scan,
+            # not just the stage-and-camera time.
+            prescan_started = time.monotonic()
             self._run_mda(prescan_seq, None, write_summary=False)
+            prescan_elapsed = time.monotonic() - prescan_started
+            logger.info(
+                "FOV-selection pre-scan finished in %s (%d FOVs, %.1f s/FOV)",
+                _format_duration(prescan_elapsed),
+                n_candidates,
+                prescan_elapsed / n_candidates if n_candidates else float("nan"),
+            )
 
             passed = list(self._fov_passed_names)
             if not passed:
@@ -599,7 +648,7 @@ class MantisEngine(MDAEngine):
                 self.mmcore.mda.events.sequenceStarted.disconnect(_write_summary_metadata)
                 if meta and isinstance(meta, dict):
                     (output / "summary_metadata.json").write_text(
-                        json.dumps(to_builtins(meta))
+                        json.dumps(to_builtins(meta), indent=2, default=str) + "\n"
                     )
 
             self.mmcore.mda.events.sequenceStarted.connect(_write_summary_metadata)
@@ -612,13 +661,57 @@ class MantisEngine(MDAEngine):
         )
 
 
+def _format_duration(seconds: float) -> str:
+    """Human-readable duration, e.g. ``'42.3s'`` / ``'7m 12s'`` / ``'1h 03m 20s'``.
+
+    A pre-scan over a plate runs from seconds to hours, and a bare float of seconds is
+    hard to read at the top of that range -- so the unit scales with the magnitude.
+    """
+    seconds = max(float(seconds), 0.0)
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes, secs = divmod(int(round(seconds)), 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m {secs:02d}s"
+    return f"{minutes}m {secs:02d}s"
+
+
+# Upper bound on the dedup search. Reaching it means something is generating names in a
+# loop rather than a human running experiments; better to fail loudly than spin forever.
+MAX_ACQUISITION_INDEX = 10_000
+
+
+def acquisition_artifact_paths(
+    output_dir: Path, name: str, run_index: int | None
+) -> list[Path]:
+    """Every path an acquisition called ``name`` would write in ``output_dir``.
+
+    The output store plus the FOV-selection siblings (``<base>_fov_debug/``,
+    ``<base>_prescan.ome.zarr``). A name is only free when ALL of these are free.
+    """
+    from shrimpy.fov_selection.manager import sibling_artifact_paths
+
+    data_path = output_dir / f"{name}.ome.zarr"
+    return [data_path, *sibling_artifact_paths(data_path, run_index)]
+
+
 def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
     """Return ``name`` if free, else ``name`` with the next free ``_<idx>`` suffix.
 
     Guards an acquisition from crashing (the zarr writer refuses to overwrite) or
-    silently clobbering a previous experiment: the bare ``name`` is used as-is
-    when ``<name>.ome.zarr`` does not yet exist in ``output_dir``; otherwise a
-    ``_1``, ``_2``, ... suffix is appended until an unused name is found.
+    silently clobbering a previous experiment: the bare ``name`` is used as-is when
+    NOTHING it would write already exists in ``output_dir``; otherwise a ``_1``, ``_2``,
+    ... suffix is appended until a fully unused name is found.
+
+    "Free" deliberately means *no artifact of that name exists*, not *no complete
+    acquisition of that name exists*. Completeness is not knowable and not the point: a
+    run that dies mid-pre-scan writes ``<name>_fov_debug/`` and possibly
+    ``<name>_prescan.ome.zarr`` but never creates ``<name>.ome.zarr`` (the pre-scan run
+    passes ``output=None``). Testing only the store would hand the next run the same
+    name, and its worker would append rows to the dead run's ``fov_summary.csv`` and
+    reuse its debug directory. Leftovers are never reused or cleaned up -- a new name is
+    always allocated, and the incomplete folder is left untouched for inspection.
 
     Parameters
     ----------
@@ -630,14 +723,28 @@ def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
     Returns
     -------
     str
-        A name whose ``<name>.ome.zarr`` does not exist (e.g. ``acq``, ``acq_1``,
-        ``acq_2``, ...).
+        A name none of whose artifacts exist (e.g. ``acq``, ``acq_1``, ``acq_2``, ...).
     """
-    if not (output_dir / f"{name}.ome.zarr").exists():
-        return name
-    idx = 1
-    while True:
-        indexed_name = f"{name}_{idx}"
-        if not (output_dir / f"{indexed_name}.ome.zarr").exists():
-            return indexed_name
-        idx += 1
+    conflicts: list[Path] = []
+    for idx in range(MAX_ACQUISITION_INDEX):
+        run_index = None if idx == 0 else idx
+        candidate = name if run_index is None else f"{name}_{run_index}"
+        taken = [
+            p
+            for p in acquisition_artifact_paths(output_dir, candidate, run_index)
+            if p.exists()
+        ]
+        if not taken:
+            if conflicts:
+                logger.info(
+                    "Acquisition name %r is already in use (found %s); using %r instead",
+                    name,
+                    ", ".join(sorted(p.name for p in conflicts)),
+                    candidate,
+                )
+            return candidate
+        conflicts.extend(taken)
+    raise RuntimeError(
+        f"Could not find a free acquisition name for {name!r} in {output_dir} after "
+        f"{MAX_ACQUISITION_INDEX} attempts."
+    )
