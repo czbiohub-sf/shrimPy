@@ -3112,16 +3112,27 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self._rank_populate_table()
         self._rerank()
 
+    def _csv_dir(self) -> Path | None:
+        """Directory the loaded feature CSV was read from (its ``__src``), or ``None`` when
+        no data is loaded. Used to default the profile Save/Load dialogs next to the CSV."""
+        if self.df is None or "__src" not in self.df.columns or len(self.df) == 0:
+            return None
+        src = self.df["__src"].iloc[0]
+        return Path(src).parent if src else None
+
     def _on_rank_save(self):
         """Save the checked features' desirability config as a YAML mapping ready to drop under fov_selection.model.features in the acquisition config; caveat: writes only the features block (not type/top_fov), and unchecked features are omitted."""
         if not self.rank_ranges:
             self.rank_status.setText("nothing to save; load data first")
             return
         self._read_rank_table()
+        # Default to the loaded CSV's directory so the profile saves next to the data it was
+        # tuned on; fall back to the configured profile dir when no data is loaded.
+        default_dir = self._csv_dir() or PROFILE_DIR
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Save desirability ranges",
-            str(PROFILE_DIR / "desirability_ranges.yaml"),
+            str(Path(default_dir) / "desirability_ranges.yaml"),
             "YAML (*.yaml *.yml)",
         )
         if not path:
