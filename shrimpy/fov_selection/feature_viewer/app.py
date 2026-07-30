@@ -2976,7 +2976,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self._rerank()
 
     def _on_rank_save(self):
-        """Save the current desirability model config (checked features only) to a JSON file via a file dialog."""
+        """Save the checked features' desirability config as a YAML mapping ready to drop under fov_selection.model.features in the acquisition config; caveat: writes only the features block (not type/top_fov), and unchecked features are omitted."""
         if not self.rank_ranges:
             self.rank_status.setText("nothing to save; load data first")
             return
@@ -2984,30 +2984,55 @@ class FeatureViewer(QtWidgets.QMainWindow):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Save desirability ranges",
-            str(PROFILE_DIR / "desirability_ranges.json"),
-            "JSON (*.json)",
+            str(PROFILE_DIR / "desirability_ranges.yaml"),
+            "YAML (*.yaml *.yml)",
         )
         if not path:
             return
-        import json
+        import yaml
 
+        # Match the config's model.features layout: every feature is a block mapping, but the
+        # short numeric lists (range/soft/half_band) stay inline as [lo, hi]. default_flow_style
+        # alone can't do both, so force flow style on lists only via a custom dumper.
+        class _ProfileDumper(yaml.SafeDumper):
+            pass
+
+        _ProfileDumper.add_representer(
+            list,
+            lambda dumper, data: dumper.represent_sequence(
+                "tag:yaml.org,2002:seq", data, flow_style=True
+            ),
+        )
+        features = self._rank_model_cfg()["features"]
+        # sort_keys=False keeps the checked-first feature order and the shape/params/weight order.
+        text = yaml.dump(
+            features,
+            Dumper=_ProfileDumper,
+            sort_keys=False,
+            default_flow_style=False,
+            indent=2,
+        )
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        Path(path).write_text(json.dumps(self._rank_model_cfg(), indent=2))
+        Path(path).write_text(text)
         self.rank_status.setText(
-            f"saved ranges → {Path(path).name} (paste under fov_selection.model in the config)"
+            f"saved {len(features)} feature(s) → {Path(path).name} "
+            "(paste under fov_selection.model.features in the config)"
         )
 
     def _on_rank_load(self):
-        """Load a desirability profile JSON, merging its (checked) features over the data-seeded (unchecked) ones, then re-rank; caveat: legacy `range`-style profiles are still parsed."""
+        """Load a desirability profile (YAML or legacy JSON), merging its (checked) features over the data-seeded (unchecked) ones, then re-rank; caveat: accepts either a bare features mapping or a full model dict, and legacy `range`-style profiles are still parsed."""
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Load desirability ranges", str(PROFILE_DIR), "JSON (*.json)"
+            self,
+            "Load desirability ranges",
+            str(PROFILE_DIR),
+            "profile (*.yaml *.yml *.json)",
         )
         if not path:
             return
-        import json
+        import yaml
 
         try:
-            cfg = json.loads(Path(path).read_text())
+            cfg = yaml.safe_load(Path(path).read_text())  # YAML is a superset of JSON
             feats = cfg.get("features", cfg) if isinstance(cfg, dict) else {}
             loaded = {}
             for f, feat_cfg in feats.items():
