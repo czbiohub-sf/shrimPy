@@ -678,7 +678,14 @@ class MantisEngine(MDAEngine):
         logger.info("FOV-selection calibration: launching the feature viewer on %s", csv_path)
         try:
             subprocess.Popen(
-                [sys.executable, "-m", "shrimpy.fov_selection.feature_viewer", str(csv_path)]
+                [
+                    sys.executable,
+                    "-m",
+                    "shrimpy.fov_selection.feature_viewer",
+                    "--start-tab",
+                    "rank",
+                    str(csv_path),
+                ]
             )
         except Exception:
             logger.exception(

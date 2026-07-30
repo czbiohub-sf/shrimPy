@@ -184,13 +184,11 @@ def _feature_to_internal(feat):
 DETAIL_SKIP = {"__src", "__png", "png", "__dataset"}
 THUMB_CACHE_MAX = 1000  # LRU cap on decoded thumbnails (path,size) -> QPixmap
 
-# Max width of the settings col A (Datasets + Feature thresholds). Kept narrow so the freed
-# horizontal space goes to the scatter controls and, through the splitter, the FOV panel.
-COLA_MAX_WIDTH = 260
 # highlight color for the clicked FOV: blue border on the thumbnail (Analysis + Rank
 # tabs) and the scatter focus ring / Rank histogram value line. Shared so both tabs match.
 FOCUS_COLOR = "#2979ff"
 RANK_CLICK_COLOR = FOCUS_COLOR  # Rank tab: clicked-FOV border + its value line in the hists
+RANK_TITLE_COLOR = "#ffd700"  # gold: the feature-name label on each Rank-tab histogram
 THUMB_QSS = "background:#111; color:#666; border:1px solid #333;"
 THUMB_FOCUS_QSS = f"background:#111; color:#666; border:3px solid {FOCUS_COLOR};"
 
@@ -388,16 +386,45 @@ class _DropPanel(QtWidgets.QWidget):
         e.acceptProposedAction()
 
 
+class _ParamCell(QtWidgets.QWidget):
+    """A Rank-table parameter cell: the param NAME as a small label ABOVE the spin box
+    (outside it) instead of an in-box prefix, so the numbers read clearly. Delegates
+    value / setValue / blockSignals to the inner spin, so :meth:`FeatureViewer._read_rank_table`
+    and :meth:`FeatureViewer._rank_sync_row` can treat the cell exactly like the spin."""
+
+    def __init__(self, key, spin):
+        super().__init__()
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(2, 0, 2, 0)
+        lay.setSpacing(0)
+        label = QtWidgets.QLabel(RANK_PARAM_LABELS.get(key, key))
+        label.setStyleSheet("color:#bbbbbb; font-size:10px;")
+        lay.addWidget(label)
+        lay.addWidget(spin)
+        self._spin = spin
+        self._param_key = key
+
+    def value(self):
+        return self._spin.value()
+
+    def setValue(self, v):
+        self._spin.setValue(v)
+
+    def blockSignals(self, b):
+        self._spin.blockSignals(b)
+        return super().blockSignals(b)
+
+
 class FeatureViewer(QtWidgets.QMainWindow):
     def __init__(self):
         """Build the main window: initialize all state, then assemble the Analysis, Label, and Rank tabs."""
         super().__init__()
         self.setWindowTitle("FOV Feature Viewer")
         # Size to fit the available screen (never larger), so the window does not extend
-        # off-screen on smaller displays; cap at the preferred 1700x1000 and move on-screen.
+        # off-screen on smaller displays; cap at the preferred 1300x1000 and move on-screen.
         screen = QtWidgets.QApplication.primaryScreen()
         avail = screen.availableGeometry() if screen is not None else None
-        w = min(1700, avail.width()) if avail is not None else 1700
+        w = min(1300, avail.width()) if avail is not None else 1300
         h = min(1000, avail.height()) if avail is not None else 1000
         self.resize(w, h)
         if avail is not None:
@@ -423,7 +450,14 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self._ready = False
 
         left_col = QtWidgets.QSplitter(QtCore.Qt.Vertical)
-        left_col.addWidget(self._build_settings())
+        # Wrap the settings panel in a scroll area so the left column can shrink below the
+        # panel's natural width (a horizontal scrollbar appears only when truly too narrow),
+        # keeping the whole window able to fit on a small screen.
+        settings_scroll = QtWidgets.QScrollArea()
+        settings_scroll.setWidgetResizable(True)
+        settings_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        settings_scroll.setWidget(self._build_settings())
+        left_col.addWidget(settings_scroll)
         left_col.addWidget(self._build_center())
         left_col.setStretchFactor(0, 0)
         left_col.setStretchFactor(1, 1)
@@ -471,15 +505,14 @@ class FeatureViewer(QtWidgets.QMainWindow):
         colA = QtWidgets.QVBoxLayout()
         colB = QtWidgets.QVBoxLayout()
         colC = QtWidgets.QVBoxLayout()
-        # colA = sections 1-2 (kept narrow), colB = sections 3-4, colC = sections 5+6.
-        # colA gets no stretch and its group boxes are width-capped below, so the freed
-        # width goes to the scatter (col B controls) and, via the splitter, the FOV panel.
-        for cc, stretch in ((colA, 0), (colB, 4), (colC, 3)):
+        # colA = sections 1-2, colB = sections 3-4, colC = sections 5+6. Stretch factors
+        # (not fixed widths) so all three columns scale PROPORTIONALLY as the settings panel
+        # is resized; colA is given the smallest share so sections 1-2 stay relatively narrow.
+        for cc, stretch in ((colA, 2), (colB, 4), (colC, 4)):
             cols.addLayout(cc, stretch)
 
         # --- 1. datasets (col A) ---
         g = QtWidgets.QGroupBox("1. Datasets")
-        g.setMaximumWidth(COLA_MAX_WIDTH)
         gv = QtWidgets.QVBoxLayout(g)
         load = QtWidgets.QPushButton("Load CSV(s)…")
         load.clicked.connect(self.on_load)
@@ -495,7 +528,6 @@ class FeatureViewer(QtWidgets.QMainWindow):
 
         # --- 2. feature thresholds (col A) ---
         g = QtWidgets.QGroupBox("2. Feature thresholds  (keep in range)")
-        g.setMaximumWidth(COLA_MAX_WIDTH)
         gv = QtWidgets.QVBoxLayout(g)
         self.thr_col = QtWidgets.QComboBox()
         self.thr_col.currentTextChanged.connect(self._on_thr_col)
@@ -663,15 +695,15 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.canvas.mpl_connect("button_release_event", self._lasso_release)
         self.canvas.mpl_connect("scroll_event", self._on_scroll)
         # allow the scatter column to shrink (the Figure's size hint is large by default)
-        self.canvas.setMinimumSize(120, 120)
-        w.setMinimumWidth(150)
+        self.canvas.setMinimumSize(100, 100)
+        w.setMinimumWidth(100)
         return w
 
     # ---------------------------------------------------------------- right
     def _build_right(self):
         """Build the Analysis-tab right column (selected-FOV thumbnail grid plus the details table) and return its widget."""
         w = QtWidgets.QWidget()
-        w.setMinimumWidth(440)
+        w.setMinimumWidth(240)
         v = QtWidgets.QVBoxLayout(w)
         head = QtWidgets.QHBoxLayout()
         head.addWidget(QtWidgets.QLabel("<b>Selected FOVs</b>"))
@@ -732,6 +764,10 @@ class FeatureViewer(QtWidgets.QMainWindow):
             )
         )
         head.addStretch(1)
+        head.addWidget(QtWidgets.QLabel("channel"))
+        self.label_chan_combo = QtWidgets.QComboBox()  # shared channel toggle (all tabs)
+        self.label_chan_combo.currentTextChanged.connect(self._set_channel)
+        head.addWidget(self.label_chan_combo)
         head.addWidget(QtWidgets.QLabel("thumb size"))
         self.label_size_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self.label_size_slider.setRange(60, 400)
@@ -1888,6 +1924,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         for combo in (
             getattr(self, "chan_combo", None),
             getattr(self, "rank_chan_combo", None),
+            getattr(self, "label_chan_combo", None),
         ):
             if combo is None:
                 continue
@@ -1899,7 +1936,9 @@ class FeatureViewer(QtWidgets.QMainWindow):
             combo.blockSignals(False)
 
     def _set_channel(self, ch):
-        """Switch the displayed FOV channel: repoint __png and reload the thumbnail grids."""
+        """Switch the displayed FOV channel EVERYWHERE: repoint __png, sync the channel combo
+        on all three tabs, and reload the Analysis, Rank, and Label thumbnail grids so the
+        choice is unified (changing it on one tab applies to the others)."""
         if not ch or self.df is None or f"__png_{ch}" not in self.df.columns:
             return
         self._channel = ch
@@ -1907,6 +1946,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         for combo in (
             getattr(self, "chan_combo", None),
             getattr(self, "rank_chan_combo", None),
+            getattr(self, "label_chan_combo", None),
         ):
             if combo is not None and combo.currentText() != ch:
                 combo.blockSignals(True)
@@ -1916,6 +1956,24 @@ class FeatureViewer(QtWidgets.QMainWindow):
             self._rebuild_grid()
         if getattr(self, "_rank_order", None):
             self._rank_rebuild_grid()
+        self._relabel_label_channel(ch)
+
+    def _relabel_label_channel(self, ch):
+        """Repoint the Label-tab thumbnails to channel ``ch`` IN PLACE (so pending, unsaved
+        drag edits are preserved -- unlike a full _refresh_label_tab rebuild), then redecode
+        the visible ones."""
+        col = f"__png_{ch}"
+        if not getattr(self, "_label_cols", None) or col not in self.df.columns:
+            return
+        pngs = self.df[col]
+        for info in self._label_cols:
+            for it in info["items"]:
+                pos = it[3]
+                it[1] = pngs.iloc[pos] if 0 <= pos < len(pngs) else ""  # new channel's png
+                it[2] = False  # mark not-loaded so it re-decodes
+                it[0].setPixmap(QtGui.QPixmap())  # drop the old channel's image
+                it[0].setText("…")
+            self._load_visible_label_thumbs(info)
 
     def set_selection(self, positions):
         """Set the selected-FOV set and rebuild the details table and thumbnail grid; caveat: skips the rebuild if the selection is unchanged."""
@@ -2201,7 +2259,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         left = QtWidgets.QWidget()
         lv = QtWidgets.QVBoxLayout(left)
         bar = QtWidgets.QHBoxLayout()
-        bar.addWidget(QtWidgets.QLabel("<b>Desirability ranges</b>"))
+        bar.addWidget(QtWidgets.QLabel("<b>Set score function for each feature</b>"))
         bar.addStretch(1)
         b_load = QtWidgets.QPushButton("Load…")
         b_load.clicked.connect(self._on_rank_load)
@@ -2211,8 +2269,10 @@ class FeatureViewer(QtWidgets.QMainWindow):
             bar.addWidget(b)
         lv.addLayout(bar)
 
-        # top: per-feature histograms with the desirability curve as a dashed overlay
-        self.rank_fig = Figure(figsize=(4, 6), facecolor="#3c3c3c")
+        # top: per-feature histograms with the desirability curve as a dashed overlay.
+        # Kept narrow (small default width + a modest left splitter share below) so the left
+        # tuning panel doesn't crowd out the ranked-FOV grid on the right.
+        self.rank_fig = Figure(figsize=(3, 6), facecolor="#3c3c3c")
         self.rank_canvas = FigureCanvas(self.rank_fig)
         # drag the profile's control points directly on the histograms
         self._rank_axes: list[dict] = []  # per-subplot: feature, ax2, profile line, roles
@@ -2226,13 +2286,9 @@ class FeatureViewer(QtWidgets.QMainWindow):
         lv.addWidget(hist_scroll, 3)
 
         # bottom: the tunable knobs, one row per feature
-        lv.addWidget(
-            QtWidgets.QLabel(
-                "The parameter columns adapt to each row's shape/direction (the labels update): "
-                "linear -> onset/ideal or range+shoulders; sigmoid -> midpoint/width or band; "
-                "gaussian -> center/fwhm; lognormal -> center/fold. A missing feature scores 0."
-            )
-        )
+        table_help = QtWidgets.QLabel("Check a feature to include it in the score.")
+        table_help.setWordWrap(True)
+        lv.addWidget(table_help)
         self.rank_table = QtWidgets.QTableWidget(0, 8)
         self.rank_table.setHorizontalHeaderLabels(
             [
@@ -2246,9 +2302,15 @@ class FeatureViewer(QtWidgets.QMainWindow):
                 "weight",
             ]
         )
-        self.rank_table.horizontalHeader().setSectionResizeMode(
-            0, QtWidgets.QHeaderView.Stretch
-        )
+        hh = self.rank_table.horizontalHeader()
+        # Feature name fits its longest value; direction / shape / weight fit their widgets;
+        # the four parameter-entry columns stretch to take all the remaining width, so the
+        # spin boxes are roomy instead of the feature name hogging the table.
+        hh.setSectionResizeMode(RCOL_FEATURE, QtWidgets.QHeaderView.ResizeToContents)
+        for c in (RCOL_DIR, RCOL_SHAPE, RCOL_WEIGHT):
+            hh.setSectionResizeMode(c, QtWidgets.QHeaderView.ResizeToContents)
+        for c in RCOL_PARAMS:
+            hh.setSectionResizeMode(c, QtWidgets.QHeaderView.Stretch)
         self.rank_table.verticalHeader().setVisible(False)
         self.rank_table.setMaximumHeight(240)
         # toggling a feature's checkbox updates which features feed the score
@@ -2304,9 +2366,9 @@ class FeatureViewer(QtWidgets.QMainWindow):
 
         split.addWidget(left)
         split.addWidget(right)
-        split.setStretchFactor(0, 3)
-        split.setStretchFactor(1, 4)
-        split.setSizes([760, 900])
+        split.setStretchFactor(0, 2)  # narrower tuning panel (histograms + knob table)
+        split.setStretchFactor(1, 5)  # more room for the ranked-FOV grid
+        split.setSizes([560, 1140])
         return split
 
     # ---- rank tab: knob state ----
@@ -2336,19 +2398,29 @@ class FeatureViewer(QtWidgets.QMainWindow):
         """Fresh per-feature knobs: direction from the feature-name default, range/shoulders
         from :meth:`_seed_range` (label-agnostic data quantiles)."""
         ranges = {}
-        for f in self._rank_feature_list():
-            direction = RANK.DEFAULT_DIRECTION.get(RANK._feature_suffix(f), "target")
+        feats = self._rank_feature_list()
+        # Default selection: only coverage_frac is checked (feeds the score); the user enables
+        # the rest as needed. Match by suffix so a prefixed name (nuclei_vs_sum__coverage_frac)
+        # also counts; fall back to the first feature if coverage_frac is absent.
+        default_on = {f for f in feats if RANK._feature_suffix(f) == "coverage_frac"}
+        if not default_on and feats:
+            default_on = {feats[0]}
+        for f in feats:
+            # Default to a gaussian bell: it is symmetric, so the direction is 'target'
+            # (a gaussian's direction combo is forced to 'target' anyway). Seed its center /
+            # fwhm from the target-band quantiles via _seed_range.
+            direction = "target"
             lo, hi, sl, sr = self._seed_range(f, direction)
             ranges[f] = {
                 "direction": direction,
-                "shape": "linear",  # curve family; user can switch to sigmoid/gaussian
+                "shape": "gaussian",  # curve family; user can switch to linear/sigmoid/lognormal
                 "lo": lo,
                 "hi": hi,
                 "soft_left": sl,  # left/right shoulders are adjustable independently
                 "soft_right": sr,
                 "curve_k": 0.0,  # steepness for sigmoid / lognormal
                 "weight": 1.0,
-                "enabled": True,  # unchecking a feature drops it from the score
+                "enabled": f in default_on,  # unchecking a feature drops it from the score
             }
         return ranges
 
@@ -2402,11 +2474,10 @@ class FeatureViewer(QtWidgets.QMainWindow):
         tbl.blockSignals(False)
 
     def _make_param_spinbox(self, key, value):
-        """A labeled spin for one interpretable parameter: the param name is the (non-editable)
-        prefix, so the column self-describes whatever the row's shape needs. Stores its param
-        key on the widget so :meth:`_read_rank_table` knows what it is."""
+        """A spin for one interpretable parameter. The param name is shown OUTSIDE the box (a
+        label above it, added by :class:`_ParamCell`) rather than as an in-box prefix. Stores
+        its param key on the widget so :meth:`_read_rank_table` knows what it is."""
         s = self._make_spinbox(value)
-        s.setPrefix(f"{RANK_PARAM_LABELS.get(key, key)}  ")
         if key in ("fwhm", "width"):  # strictly positive widths
             s.setRange(1e-9, 1e12)
         elif key == "fold":  # multiplicative tolerance must exceed 1
@@ -2433,7 +2504,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
                 key, value = items[idx]
                 spin = self._make_param_spinbox(key, value)
                 spin.editingFinished.connect(self._rank_refresh_curves)
-                tbl.setCellWidget(row, col, spin)
+                tbl.setCellWidget(row, col, _ParamCell(key, spin))  # name label outside the box
             else:  # unused slot for this shape
                 tbl.removeCellWidget(row, col)
 
@@ -2699,7 +2770,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         nrow = int(np.ceil(len(feats) / ncol))
         # give each row a fixed pixel height so the canvas grows (and scrolls) with the
         # feature count instead of squeezing every histogram into the viewport.
-        row_px = 230
+        row_px = 250  # a little taller so the x/y axis labels are not clipped
         self.rank_canvas.setMinimumHeight(row_px * nrow)
         for i, f in enumerate(feats):
             ax = fig.add_subplot(nrow, ncol, i + 1, facecolor="#2b2b2b")
@@ -2777,20 +2848,20 @@ class FeatureViewer(QtWidgets.QMainWindow):
             for a in (ax, ax2):
                 a.set_xlim(lo_x, hi_x)
                 a.set_autoscalex_on(False)
-            # feature label INSIDE the axes (top-left) instead of a title band above it, so
-            # rows can be packed with almost no vertical gap.
+            # feature name as the axes TITLE (above the plot) with a small pad to save space.
+            # Bold + gold so it reads at a glance (dimmed gold when the feature is unchecked).
             title = f"{f}  ({spec['direction']})" + ("" if on else "  [off]")
-            ax.text(
-                0.02,
-                0.94,
+            ax.set_title(
                 title,
-                transform=ax.transAxes,
-                va="top",
-                ha="left",
-                color="#ececec" if on else "#888888",
-                fontsize=7,
-                bbox=dict(facecolor="#2b2b2b", alpha=0.6, pad=1, lw=0),
+                color=RANK_TITLE_COLOR if on else "#8a7a3a",
+                fontsize=8,
+                fontweight="bold",
+                pad=2,
             )
+            # axis labels: feature value (x), FOV count (y, left), desirability (y, right).
+            ax.set_xlabel("value", color="#bbbbbb", fontsize=6, labelpad=1)
+            ax.set_ylabel("count", color="#bbbbbb", fontsize=6, labelpad=1)
+            ax2.set_ylabel("desirability", color="#ffffff", fontsize=6, labelpad=1)
             ax.tick_params(colors="#bbbbbb", labelsize=6)
             for sp in ax.spines.values():
                 sp.set_color("#666")
@@ -2805,10 +2876,11 @@ class FeatureViewer(QtWidgets.QMainWindow):
                     "xlim": (lo_x, hi_x),
                 }
             )
-        # Explicit tight margins (fractions of the figure) fill the canvas with almost no
-        # blank border; small hspace packs the rows since the label is inside each axes.
+        # Margins leave room for the title above each plot and the x/y axis labels (left for
+        # 'count', right for 'desirability', bottom for 'value'); hspace fits each row's title
+        # with a small pad, wspace keeps the y labels off the neighbouring axes.
         fig.subplots_adjust(
-            left=0.08, right=0.94, top=0.995, bottom=0.03, hspace=0.18, wspace=0.28
+            left=0.12, right=0.88, top=0.95, bottom=0.08, hspace=0.5, wspace=0.42
         )
         self.rank_canvas.draw_idle()
 
