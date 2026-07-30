@@ -96,6 +96,9 @@ class MantisEngine(MDAEngine):
         # Good FOV names from the pre-scan run, captured in teardown_sequence so
         # acquire() can build the timelapse run after the pre-scan run returns.
         self._fov_passed_names: list[str] = []
+        # Feature-viewer CSV written by a calibration pre-scan, captured in
+        # teardown_sequence so acquire() can open the viewer on it after the run returns.
+        self._fov_calibration_csv: Path | None = None
         self._data_path: Path | None = None
         # Dedup index appended to the acquisition name (None when the bare name was
         # free); see acquire(). Sibling artifacts append it after their own suffix.
@@ -326,22 +329,40 @@ class MantisEngine(MDAEngine):
         # frame buffers are cleared, not the verdicts).
         if self._fov is not None:
             self._fov.drain()
-            # Capture the selection FIRST, before anything that touches the filesystem.
-            # Ordering matters: this used to run after finalize_debug_summary(), so a
-            # PermissionError writing the debug CSV (a spreadsheet app holding it open)
-            # aborted teardown before _fov_passed_names was ever assigned -- the timelapse
-            # was then skipped for "no FOVs passed" despite a perfectly good selection.
-            # The debug writers are individually guarded now; this ordering makes the
-            # science independent of them regardless.
-            self._fov_passed_names = self._fov.passed_position_names()
-            logger.info(
-                "FOV selection: %d/%d FOVs passed: %s",
-                len(self._fov_passed_names),
-                len(sequence.stage_positions),
-                self._fov_passed_names,
+            # Read calibration mode from the (pre-scan) sequence metadata rather than the
+            # coordinator, so the branch is decided by config alone.
+            calibration_mode = bool(
+                fov_selection_config(sequence).get("calibration_mode", False)
             )
-            self._fov.log_selection_summary()
-            self._fov.finalize_debug_summary()
+            if calibration_mode:
+                # Calibration pre-scan: no selection / no timelapse. Capture the
+                # feature-viewer CSV so acquire() can open the viewer on it.
+                self._fov_calibration_csv = self._fov.calibration_matrix_csv
+                self._fov_passed_names = []
+                logger.info(
+                    "FOV selection calibration: pre-scan complete, %d/%d FOVs scored "
+                    "(all features extracted); feature matrix at %s",
+                    self._fov.num_decided,
+                    len(sequence.stage_positions),
+                    self._fov_calibration_csv,
+                )
+            else:
+                # Capture the selection FIRST, before anything that touches the filesystem.
+                # Ordering matters: this used to run after finalize_debug_summary(), so a
+                # PermissionError writing the debug CSV (a spreadsheet app holding it open)
+                # aborted teardown before _fov_passed_names was ever assigned -- the timelapse
+                # was then skipped for "no FOVs passed" despite a perfectly good selection.
+                # The debug writers are individually guarded now; this ordering makes the
+                # science independent of them regardless.
+                self._fov_passed_names = self._fov.passed_position_names()
+                logger.info(
+                    "FOV selection: %d/%d FOVs passed: %s",
+                    len(self._fov_passed_names),
+                    len(sequence.stage_positions),
+                    self._fov_passed_names,
+                )
+                self._fov.log_selection_summary()
+                self._fov.finalize_debug_summary()
             self.mmcore.mda.events.frameReady.disconnect(self._fov.on_frame_ready)
             self._fov.shutdown()
             self._fov = None
@@ -612,6 +633,19 @@ class MantisEngine(MDAEngine):
                 prescan_elapsed / n_candidates if n_candidates else float("nan"),
             )
 
+            if fov_cfg.get("calibration_mode", False):
+                # Calibration mode stops after the pre-scan: no timelapse is run. Instead
+                # the feature viewer opens on the pre-scan's feature matrix so the user can
+                # pick features, tune the score function, and save a ranking profile to
+                # drive a later standard (pre-scan + timelapse) acquisition.
+                logger.info(
+                    "FOV-selection calibration mode: skipping the timelapse run and "
+                    "opening the feature viewer."
+                )
+                self._launch_feature_viewer(self._fov_calibration_csv)
+                logger.info("Calibration pre-scan completed successfully")
+                return
+
             passed = list(self._fov_passed_names)
             if not passed:
                 logger.warning("FOV selection: no FOVs passed; skipping the timelapse run.")
@@ -620,6 +654,38 @@ class MantisEngine(MDAEngine):
             self._run_mda(timelapse_seq, data_path, write_summary=True)
 
         logger.info("Acquisition completed successfully")
+
+    def _launch_feature_viewer(self, csv_path: Path | None) -> None:
+        """Open the FOV feature viewer on a calibration pre-scan's feature matrix.
+
+        Launched as a detached subprocess (``python -m
+        shrimpy.fov_selection.feature_viewer <csv>``) so its Qt event loop stays clear of
+        the acquisition process. Never raises: the calibration data is already on disk, so a
+        failure to launch is logged with the manual command rather than taking the run down.
+        """
+        if csv_path is None or not Path(csv_path).exists():
+            logger.warning(
+                "FOV-selection calibration: feature matrix %s was not written; open the "
+                "viewer manually once the CSV exists: "
+                "`python -m shrimpy.fov_selection.feature_viewer <csv>`.",
+                csv_path,
+            )
+            return
+        import subprocess
+        import sys
+
+        csv_path = Path(csv_path)
+        logger.info("FOV-selection calibration: launching the feature viewer on %s", csv_path)
+        try:
+            subprocess.Popen(
+                [sys.executable, "-m", "shrimpy.fov_selection.feature_viewer", str(csv_path)]
+            )
+        except Exception:
+            logger.exception(
+                "FOV-selection calibration: could not launch the feature viewer; open it "
+                "manually: `python -m shrimpy.fov_selection.feature_viewer %s`.",
+                csv_path,
+            )
 
     def _run_mda(
         self,
