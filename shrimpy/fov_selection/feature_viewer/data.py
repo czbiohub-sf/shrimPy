@@ -39,6 +39,7 @@ META_BLACKLIST = {
     "fov",
     "timepoint",
     "goodness",  # ground-truth label (from CSV; also editable in the Label tab)
+    "goodness_probability",  # classifier output P(good); a label/output, not a reduction input
     "score",  # ranking-model output (produced in the Rank tab, not read from CSV)
     "image_width_px",  # acquisition metadata
     "image_height_px",

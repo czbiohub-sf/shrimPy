@@ -183,6 +183,10 @@ def _feature_to_internal(feat):
 
 DETAIL_SKIP = {"__src", "__png", "png", "__dataset"}
 THUMB_CACHE_MAX = 1000  # LRU cap on decoded thumbnails (path,size) -> QPixmap
+
+# Max width of the settings col A (Datasets + Feature thresholds). Kept narrow so the freed
+# horizontal space goes to the scatter controls and, through the splitter, the FOV panel.
+COLA_MAX_WIDTH = 260
 # highlight color for the clicked FOV: blue border on the thumbnail (Analysis + Rank
 # tabs) and the scatter focus ring / Rank histogram value line. Shared so both tabs match.
 FOCUS_COLOR = "#2979ff"
@@ -203,7 +207,7 @@ GOODNESS_COLORS = {
     "good (1)": "#4caf50",  # green
     "neutral (0)": "#ffd24d",  # yellow
     "bad (-1)": "#e53935",  # red
-    "unlabeled": "#5b8def",  # blue
+    "unlabeled": "#9e9e9e",  # grey
 }
 # Label tab columns, in fixed reading order. `value` is the on-disk goodness code
 # (None == unlabeled / NaN). A column is shown only if the loaded data has ≥1 FOV in it.
@@ -211,13 +215,13 @@ GOODNESS_LABEL_ORDER = [
     ("Good", 1.0, "#4caf50"),
     ("Neutral", 0.0, "#ffd24d"),
     ("Bad", -1.0, "#e53935"),
-    ("Nan", None, "#5b8def"),
+    ("Nan", None, "#9e9e9e"),
 ]
 
 
 def goodness_color(v) -> str:
     """Semantic color for a `goodness` value: good=green, neutral=yellow, bad=red,
-    unlabeled (NaN/None)=blue. Used for scatter points and FOV thumbnail borders."""
+    unlabeled (NaN/None)=grey. Used for scatter points and FOV thumbnail borders."""
     if v is None or (isinstance(v, float) and np.isnan(v)):
         return GOODNESS_COLORS["unlabeled"]
     return GOODNESS_COLORS.get(
@@ -389,7 +393,15 @@ class FeatureViewer(QtWidgets.QMainWindow):
         """Build the main window: initialize all state, then assemble the Analysis, Label, and Rank tabs."""
         super().__init__()
         self.setWindowTitle("FOV Feature Viewer")
-        self.resize(1700, 1000)
+        # Size to fit the available screen (never larger), so the window does not extend
+        # off-screen on smaller displays; cap at the preferred 1700x1000 and move on-screen.
+        screen = QtWidgets.QApplication.primaryScreen()
+        avail = screen.availableGeometry() if screen is not None else None
+        w = min(1700, avail.width()) if avail is not None else 1700
+        h = min(1000, avail.height()) if avail is not None else 1000
+        self.resize(w, h)
+        if avail is not None:
+            self.move(avail.left(), avail.top())
         self.df: pd.DataFrame | None = None
         self.filt = np.array([], int)
         self.plot_pos = np.array([], int)
@@ -415,14 +427,14 @@ class FeatureViewer(QtWidgets.QMainWindow):
         left_col.addWidget(self._build_center())
         left_col.setStretchFactor(0, 0)
         left_col.setStretchFactor(1, 1)
-        left_col.setSizes([450, 620])  # settings fully visible, scatter below
+        left_col.setSizes([380, 720])  # settings compact on top, scatter gets the rest
 
         main = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         main.addWidget(left_col)
         main.addWidget(self._build_right())
         main.setStretchFactor(0, 0)  # settings+scatter keep their width; FOV grid takes extra
         main.setStretchFactor(1, 1)
-        main.setSizes([820, 980])  # left wide enough to show all 3 settings columns
+        main.setSizes([760, 1040])  # left holds the (now narrower) settings + scatter; FOV panel gets more
 
         # all the existing panels live under an "Analysis" tab; "Label" groups the
         # loaded FOVs into one column per goodness class.
@@ -459,12 +471,15 @@ class FeatureViewer(QtWidgets.QMainWindow):
         colA = QtWidgets.QVBoxLayout()
         colB = QtWidgets.QVBoxLayout()
         colC = QtWidgets.QVBoxLayout()
-        # colA = sections 1-2, colB = sections 3-4, colC = the 5|6 row
-        for cc, stretch in ((colA, 3), (colB, 4), (colC, 4)):
+        # colA = sections 1-2 (kept narrow), colB = sections 3-4, colC = sections 5+6.
+        # colA gets no stretch and its group boxes are width-capped below, so the freed
+        # width goes to the scatter (col B controls) and, via the splitter, the FOV panel.
+        for cc, stretch in ((colA, 0), (colB, 4), (colC, 3)):
             cols.addLayout(cc, stretch)
 
         # --- 1. datasets (col A) ---
         g = QtWidgets.QGroupBox("1. Datasets")
+        g.setMaximumWidth(COLA_MAX_WIDTH)
         gv = QtWidgets.QVBoxLayout(g)
         load = QtWidgets.QPushButton("Load CSV(s)…")
         load.clicked.connect(self.on_load)
@@ -480,6 +495,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
 
         # --- 2. feature thresholds (col A) ---
         g = QtWidgets.QGroupBox("2. Feature thresholds  (keep in range)")
+        g.setMaximumWidth(COLA_MAX_WIDTH)
         gv = QtWidgets.QVBoxLayout(g)
         self.thr_col = QtWidgets.QComboBox()
         self.thr_col.currentTextChanged.connect(self._on_thr_col)
@@ -570,7 +586,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         colB.addWidget(g)
         colB.addStretch(1)
 
-        # --- 5 + 6 sit side by side in one narrower row (col C) ---
+        # --- 5 (removed points) stacked ABOVE 6 (label FOVs) in col C ---
         # --- 5. removed-points history ---
         g6 = QtWidgets.QGroupBox("5. Removed points")
         gv6 = QtWidgets.QVBoxLayout(g6)
@@ -601,10 +617,8 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.label_status.setWordWrap(True)
         gv7.addWidget(self.label_status)
 
-        row67 = QtWidgets.QHBoxLayout()
-        row67.addWidget(g6)
-        row67.addWidget(g7)
-        colC.addLayout(row67)
+        colC.addWidget(g6)  # 5. removed points
+        colC.addWidget(g7)  # 6. label FOVs, stacked directly below section 5
         colC.addStretch(1)
 
         return w
@@ -806,6 +820,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         """A full panel for one class: a plain title above a wrapping, drop-enabled grid
         of draggable thumbnails. `value` is the goodness code this panel assigns."""
         size = self.label_size_slider.value()
+        tw, th = self._tile_dims(size)
         # show every FOV in the class: only placeholders are created up front, and
         # thumbnails are decoded lazily as they scroll into view, so this stays cheap.
         shown = list(positions)
@@ -831,7 +846,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
             row = self.df.iloc[pos]
             png = row.get("__png", "")
             lab = _ThumbLabel(int(pos))
-            lab.setFixedSize(size, size)
+            lab.setFixedSize(tw, th)
             lab.setAlignment(QtCore.Qt.AlignCenter)
             lab.setStyleSheet(THUMB_QSS)
             lab.setCursor(QtCore.Qt.OpenHandCursor)
@@ -1037,8 +1052,9 @@ class FeatureViewer(QtWidgets.QMainWindow):
         if not items:
             return
         size = self.label_size_slider.value()
+        tw, _th = self._tile_dims(size)
         vw = info["scroll"].viewport().width() - 12
-        ncols = max(1, vw // (size + info["grid"].spacing()))
+        ncols = max(1, vw // (tw + info["grid"].spacing()))
         if ncols == info["ncols"]:
             return
         info["ncols"] = ncols
@@ -1055,7 +1071,8 @@ class FeatureViewer(QtWidgets.QMainWindow):
         sb = scroll.verticalScrollBar()
         y0, y1 = sb.value(), sb.value() + scroll.viewport().height()
         size = self.label_size_slider.value()
-        rowh = size + info["grid"].spacing()
+        _tw, th = self._tile_dims(size)
+        rowh = th + info["grid"].spacing()
         ncols = max(1, info["ncols"])
         margin = rowh
         for idx, it in enumerate(items):
@@ -1063,7 +1080,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
             if loaded:
                 continue
             top = (idx // ncols) * rowh
-            if top + size < y0 - margin or top > y1 + margin:
+            if top + th < y0 - margin or top > y1 + margin:
                 continue
             if png and Path(png).exists():
                 pm = self._load_thumb(png, size)
@@ -1376,13 +1393,24 @@ class FeatureViewer(QtWidgets.QMainWindow):
     def _populate_columns(self):
         """Repopulate the axis / color / threshold combo boxes from the loaded columns, defaulting axes to the best-covered features; caveat: toggles self._ready off/on so combo updates do not trigger premature replots."""
         self._ready = False
+        self._img_aspect_cache = None  # recompute the tile aspect from the new data's PNGs
         self._refresh_channel_combos()  # channel toggles reflect the loaded data's channels
         feats = D.feature_columns(self.df) if self.df is not None else []
-        axis_opts = feats + self.reduced_cols
+        cols = list(self.df.columns) if self.df is not None else []
+        # goodness / goodness_probability are labels / model outputs (kept out of the
+        # reduction inputs, feature_columns), but the user still wants them selectable as
+        # plot axes and color -- expose them alongside the features.
+        label_opts = [
+            c for c in ("goodness", "goodness_probability") if c in cols and c not in feats
+        ]
+        axis_opts = feats + self.reduced_cols + label_opts
+        # Color-by options: every non-internal column EXCEPT `filename` -- a unique per-FOV
+        # string, meaningless as a color and pure clutter. goodness / goodness_probability /
+        # dataset / well_col etc. remain available.
         all_cols = [
             c
-            for c in (self.df.columns if self.df is not None else [])
-            if not c.startswith("__") and not c.endswith("__png")
+            for c in cols
+            if not c.startswith("__") and not c.endswith("__png") and c != "filename"
         ]
         # Default axes: prefer features populated across ALL loaded datasets (fewest
         # NaNs). Datasets with different feature sets (concat -> NaN for the columns a
@@ -1930,6 +1958,37 @@ class FeatureViewer(QtWidgets.QMainWindow):
         if 0 <= row < len(self._detail_rows):
             self._set_focus(self._detail_rows[row], scroll_grid=True)
 
+    def _image_aspect(self) -> float:
+        """Representative FOV image aspect ratio (width / height).
+
+        Lets thumbnail tiles match the image shape instead of a fixed square (wide FOVs
+        otherwise get black side-margins). Read once from the first available PNG header and
+        cached; 1.0 (square) when unknown. The cache is cleared on every data change (see
+        :meth:`_refresh_axis_selectors`)."""
+        a = getattr(self, "_img_aspect_cache", None)
+        if a is not None:
+            return a
+        a = 1.0
+        if self.df is not None and "__png" in self.df.columns:
+            for p in self.df["__png"]:
+                if p and Path(p).exists():
+                    sz = QtGui.QImageReader(str(p)).size()
+                    if sz.isValid() and sz.width() > 0 and sz.height() > 0:
+                        a = sz.width() / sz.height()
+                        break
+        self._img_aspect_cache = a
+        return a
+
+    def _tile_dims(self, size: int) -> tuple[int, int]:
+        """(width, height) of a thumbnail tile at scale `size`, matching the image aspect
+        (longer side == ``size``) so wide FOVs render without black side-margins. Mirrors the
+        KeepAspectRatio scaling :meth:`_load_thumb` applies to the pixmap, so the tile fits it
+        exactly."""
+        a = self._image_aspect()
+        if a >= 1.0:
+            return int(size), max(1, int(round(size / a)))
+        return max(1, int(round(size * a))), int(size)
+
     def _load_thumb(self, path, size):
         """Return a QPixmap thumbnail for `path` scaled to `size`, using and maintaining the LRU cache."""
         key = (path, size)
@@ -1993,11 +2052,12 @@ class FeatureViewer(QtWidgets.QMainWindow):
         )
         self.grid_info.setText(f"{len(shown)} FOV(s){extra}")
         size = self.size_slider.value()
+        tw, th = self._tile_dims(size)
         for pos in shown:
             row = self.df.iloc[pos]
             png = row.get("__png", "")
             lab = QtWidgets.QLabel()
-            lab.setFixedSize(size, size)
+            lab.setFixedSize(tw, th)
             lab.setAlignment(QtCore.Qt.AlignCenter)
             # border colored by goodness label (green/yellow/red/blue); stored so the
             # focus highlight can restore it after un-focusing.
@@ -2020,8 +2080,9 @@ class FeatureViewer(QtWidgets.QMainWindow):
         if not self._thumb_items:
             return
         size = self.size_slider.value()
+        tw, _th = self._tile_dims(size)
         vw = self.scroll.viewport().width() - 12
-        ncols = max(1, vw // (size + self.grid.spacing()))
+        ncols = max(1, vw // (tw + self.grid.spacing()))
         if ncols == self._cur_ncols:
             return
         self._cur_ncols = ncols
@@ -2040,16 +2101,17 @@ class FeatureViewer(QtWidgets.QMainWindow):
         sb = self.scroll.verticalScrollBar()
         y0, y1 = sb.value(), sb.value() + self.scroll.viewport().height()
         size = self.size_slider.value()
-        rowh = size + self.grid.spacing()
+        tw, th = self._tile_dims(size)
+        rowh = th + self.grid.spacing()
         vw = self.scroll.viewport().width() - 12
-        ncols = max(1, vw // rowh)
+        ncols = max(1, vw // (tw + self.grid.spacing()))
         margin = rowh  # preload roughly one extra row each way
         for idx, it in enumerate(self._thumb_items):
             lab, png, loaded = it[0], it[1], it[2]
             if loaded:
                 continue
             top = (idx // ncols) * rowh
-            if top + size < y0 - margin or top > y1 + margin:
+            if top + th < y0 - margin or top > y1 + margin:
                 continue
             if png and Path(png).exists():
                 pm = self._load_thumb(png, size)
@@ -2862,13 +2924,14 @@ class FeatureViewer(QtWidgets.QMainWindow):
             return
         target = min(len(order), built + RANK_PAGE)
         size = self.rank_size_slider.value()
+        tw, th = self._tile_dims(size)
         for rank in range(built, target):
             pos = order[rank]
             row = self.df.iloc[pos]
             png = row.get("__png", "")
             score = float(row.get("score", float("nan")))
             lab = QtWidgets.QLabel()
-            lab.setFixedSize(size, size)
+            lab.setFixedSize(tw, th)
             lab.setAlignment(QtCore.Qt.AlignCenter)
             lab.setCursor(QtCore.Qt.PointingHandCursor)
             lab._base_qss = goodness_border_qss(row.get("goodness", np.nan))
@@ -2911,8 +2974,9 @@ class FeatureViewer(QtWidgets.QMainWindow):
         if not self._rank_thumb_items:
             return
         size = self.rank_size_slider.value()
+        tw, _th = self._tile_dims(size)
         vw = self.rank_scroll.viewport().width() - 12
-        ncols = max(1, vw // (size + self.rank_grid.spacing()))
+        ncols = max(1, vw // (tw + self.rank_grid.spacing()))
         if ncols == self._rank_ncols:
             return
         self._rank_ncols = ncols
@@ -2927,16 +2991,17 @@ class FeatureViewer(QtWidgets.QMainWindow):
         sb = self.rank_scroll.verticalScrollBar()
         y0, y1 = sb.value(), sb.value() + self.rank_scroll.viewport().height()
         size = self.rank_size_slider.value()
-        rowh = size + self.rank_grid.spacing()
+        tw, th = self._tile_dims(size)
+        rowh = th + self.rank_grid.spacing()
         vw = self.rank_scroll.viewport().width() - 12
-        ncols = max(1, vw // rowh)
+        ncols = max(1, vw // (tw + self.rank_grid.spacing()))
         margin = rowh
         for idx, it in enumerate(self._rank_thumb_items):
             lab, png, loaded = it[0], it[1], it[2]
             if loaded:
                 continue
             top = (idx // ncols) * rowh
-            if top + size < y0 - margin or top > y1 + margin:
+            if top + th < y0 - margin or top > y1 + margin:
                 continue
             if png and Path(png).exists():
                 pm = self._load_thumb(png, size)
@@ -3103,6 +3168,12 @@ def main():
         help="feature CSV(s) to auto-load; images come from sibling <stem>[_<channel>]_png/ "
         "folders next to each CSV",
     )
+    ap.add_argument(
+        "--start-tab",
+        choices=["analysis", "label", "rank"],
+        default="analysis",
+        help="which tab to open on launch (calibration pre-scans open 'rank')",
+    )
     args = ap.parse_args()
 
     if args.csv and args.png_folder and len(args.csv) != len(args.png_folder):
@@ -3127,6 +3198,13 @@ def main():
         )
     elif args.csvs:  # sibling-folder auto-wiring
         win._load_files([str(Path(c)) for c in args.csvs])
+    # Open the requested tab (after loading, so the Rank tab has data to lay out).
+    tab_index = {
+        "analysis": 0,
+        "label": win._label_tab_index,
+        "rank": win._rank_tab_index,
+    }[args.start_tab]
+    win.tabs.setCurrentIndex(tab_index)
     sys.exit(app.exec_())
 
 
