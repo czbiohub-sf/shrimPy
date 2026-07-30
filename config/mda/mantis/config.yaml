@@ -69,6 +69,13 @@ metadata:
 
     fov_selection:
       enabled: true
+      # Calibration mode: run the PRE-SCAN ONLY (no timelapse), extracting EVERY available
+      # feature (the model.features block below is ignored for extraction), then open the
+      # feature viewer on the pre-scan's feature matrix. Use it when you don't yet know which
+      # features / score function to rank on: explore in the viewer, save a ranking profile
+      # to YAML, paste it into model.features, set calibration_mode: False, and re-run for a
+      # standard acquisition (pre-scan + timelapse on the selected FOVs). save_decision is
+      # forced on in this mode; the feature-matrix CSV + PNG folders land under <name>_fov_debug/.
       calibration_mode: True
 
       # ---- Pre-scan MDASequence ----
@@ -286,8 +293,9 @@ metadata:
       #
       # ---- ACTIVE: ranking by defined range ------------------------------------------
       # 7-feature set (coverage + spacing + spatial-void features). Ranges are starting
-      # values fit to the good/bad labels across the bf-midslice datasets; tune them in the
-      # feature viewer Rank tab (Fit to goodness / drag the profile) and Save over this block.
+      # values seeded from the data quantiles across the bf-midslice datasets; tune them in
+      # the feature viewer Rank tab (drag the profile / edit the knobs), then Save… to a YAML
+      # file and paste its contents in as the `features:` block below.
       # model:
       #   type: ranking_by_defined_range
       #   top_fov: 20                    # keep (pass) the 20 highest-ranked FOVs; required

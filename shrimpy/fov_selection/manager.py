@@ -108,12 +108,22 @@ class FovSelection:
         self.config = config
         self._pixel_size_um = pixel_size_um
         self._z_step_um = z_step_um
+        # Calibration mode: the engine runs the pre-scan ONLY (no timelapse) and opens the
+        # feature viewer on its output. To feed the viewer, the worker extracts EVERY
+        # producible feature (not just the model's) and writes the debug artifacts in the
+        # viewer's standard layout, so save_decision is forced on regardless of config.
+        self._calibration_mode = bool(config.get("calibration_mode", False))
         # Optional lightweight per-FOV debug artifacts (projection/mask PNGs +
         # fov_summary.csv), written by the worker to a sibling directory next to
-        # the output store.
-        self._save_decision = bool(config.get("save_decision", False))
+        # the output store. Always on in calibration mode.
+        self._save_decision = bool(config.get("save_decision", False)) or self._calibration_mode
         self._debug_dir = (
             self._debug_dir_for(data_path, run_index) if self._save_decision else None
+        )
+        # Feature-viewer CSV/PNG-folder stem for calibration output (the viewer derives the
+        # sibling PNG folders from the CSV stem); None outside calibration.
+        self._matrix_stem = (
+            self._matrix_stem_for(data_path) if self._calibration_mode else None
         )
         # When set, the per-step reconstruction OME-Zarr (deskew / phase / vs /
         # projection / mask channels) is written to <name>_prescan.ome.zarr next to
@@ -226,6 +236,22 @@ class FovSelection:
     ) -> Path | None:
         """Sibling ``<name>_fov_debug[_<n>]/`` directory next to the output store."""
         return cls._sibling_path(data_path, "_fov_debug", run_index)
+
+    @staticmethod
+    def _matrix_stem_for(data_path: Path | None) -> str | None:
+        """Feature-viewer CSV / PNG-folder stem, ``<acq>_fov_feature_matrix``.
+
+        Derived from the output store name (``<acq>.ome.zarr`` -> ``<acq>``) so the
+        calibration CSV and its sibling image folders share the stem the viewer expects.
+        """
+        if data_path is None:
+            return None
+        name = Path(data_path).name
+        for ext in (".ome.zarr", ".zarr"):
+            if name.endswith(ext):
+                name = name[: -len(ext)]
+                break
+        return f"{name}_fov_feature_matrix"
 
     @classmethod
     def _prescan_recon_path_for(
@@ -480,6 +506,8 @@ class FovSelection:
                 debug_dir=self._debug_dir,
                 recon_zarr_path=self._recon_zarr_path,
                 require_gpu=self._require_gpu,
+                calibration_mode=self._calibration_mode,
+                matrix_stem=self._matrix_stem,
             )
             self._worker.start()
         self._executor = ThreadPoolExecutor(max_workers=1)
@@ -651,6 +679,10 @@ class FovSelection:
         """
         from shrimpy.fov_selection.worker import SUMMARY_CSV_NAME
 
+        # Calibration writes the feature-viewer CSV (not fov_summary.csv) and applies no
+        # selection at all -- there is no timelapse -- so there is nothing to finalize.
+        if self._calibration_mode:
+            return
         if self._debug_dir is None:
             return
         summary_path = Path(self._debug_dir) / SUMMARY_CSV_NAME
@@ -712,6 +744,20 @@ class FovSelection:
             int(selected.sum()),
             summary_path,
         )
+
+    @property
+    def calibration_mode(self) -> bool:
+        """Whether this is a calibration pre-scan (pre-scan only + feature viewer, all
+        features extracted; see :meth:`__init__`)."""
+        return self._calibration_mode
+
+    @property
+    def calibration_matrix_csv(self) -> Path | None:
+        """Feature-viewer CSV the calibration pre-scan writes (``None`` outside calibration
+        or when no debug directory is set). The engine opens the viewer on this file."""
+        if not self._calibration_mode or self._debug_dir is None or self._matrix_stem is None:
+            return None
+        return Path(self._debug_dir) / f"{self._matrix_stem}.csv"
 
     @property
     def fov_selection_channel(self) -> str:

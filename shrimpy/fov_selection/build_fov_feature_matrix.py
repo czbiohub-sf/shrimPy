@@ -74,11 +74,31 @@ def _adaptive_grid(n: int) -> int:
     return int(np.clip(round(np.sqrt(max(int(n), 1) / GRID_LAMBDA)), GRID_MIN, GRID_MAX))
 
 
+# Angular sectors for angular_uniformity (see group_features). ADAPTIVE like the quadrat
+# grid: the sector count scales with the object count (~ANGULAR_LAMBDA objects per sector on
+# average), clamped to [ANGULAR_BINS_MIN, ANGULAR_BINS_MAX], so the normalized-entropy
+# uniformity is comparable across FOVs of different density (a sparse FOV is not capped below
+# 1 just because it has few objects to fill a fixed number of sectors).
+ANGULAR_LAMBDA = 2.0
+ANGULAR_BINS_MIN, ANGULAR_BINS_MAX = 4, 16
+
+
+def _adaptive_angular_bins(n: int) -> int:
+    """Sector count K = round(n / ANGULAR_LAMBDA), clamped to [ANGULAR_BINS_MIN, ANGULAR_BINS_MAX]."""
+    return int(
+        np.clip(round(max(int(n), 1) / ANGULAR_LAMBDA), ANGULAR_BINS_MIN, ANGULAR_BINS_MAX)
+    )
+
+
 EMPTY_RADIUS_SAMPLES = 40  # NxN test-point grid for the largest-empty-circle feature
 
 # Feature keys that need the label mask itself (not just the per-object centroid table);
 # produced by mask_gap_features(), so they are NOT in FEATURE_NAMES (the group_features set).
-MASK_FEATURE_KEYS = frozenset({"max_gap_um", "mask_occupancy_entropy"})
+MASK_FEATURE_KEYS = frozenset({"max_gap_um", "mask_occupancy_entropy", "edge_frac"})
+
+# Border band for edge_frac: an object counts as "edge" if any of its pixels lie within this
+# fraction of the image WIDTH (left/right bands) or HEIGHT (top/bottom bands) from an edge.
+EDGE_BAND_FRAC = 0.1
 
 # Grid side for mask_occupancy_entropy: the FOV is split into MASK_OCCUPANCY_GRID^2 cells.
 # 8 (64 cells) resolves large-scale voids -- an empty half, an empty center, one clump in a
@@ -110,6 +130,7 @@ FEATURE_NAMES = [
     "com_offset_norm",
     "empty_grid_frac",
     "occupancy_entropy",
+    "angular_uniformity",
     "max_empty_radius_norm",
 ]
 
@@ -159,6 +180,20 @@ def group_features(g: pd.DataFrame) -> dict:
     rec["occupancy_entropy"] = (
         float(-(p * np.log(p)).sum() / np.log(n_cells)) if p.size else np.nan
     )
+    # Angular uniformity: how evenly the object centroids are spread in ANGLE around the FOV
+    # center (angle_i = atan2(cy - H/2, cx - W/2)). Bin the angles into adaptive sectors and
+    # take the normalized Shannon entropy: 1 -> objects surround the center evenly in all
+    # directions (the ideal well-covered FOV the user wants), 0 -> all clustered in one
+    # direction / sector. Complements com_offset_norm (which only sees the mean direction, so
+    # it reads 0 for a symmetric two-sided clump that is still angularly non-uniform).
+    k = _adaptive_angular_bins(n)
+    ang = np.arctan2(cy - height / 2.0, cx - width / 2.0)  # (-pi, pi]
+    abin = np.clip(((ang + np.pi) / (2 * np.pi) * k).astype(int), 0, k - 1)
+    acounts = np.bincount(abin, minlength=k).astype(float)
+    ap = acounts[acounts > 0] / acounts.sum()
+    rec["angular_uniformity"] = (
+        float(-(ap * np.log(ap)).sum() / np.log(k)) if ap.size and k > 1 else np.nan
+    )
     # Largest object-free circle, from the centroids (grid-sampled), normalized by the
     # half-diagonal: the radius of the biggest gap -> large when there is a big empty area.
     s = EMPTY_RADIUS_SAMPLES
@@ -207,6 +242,42 @@ def mask_occupancy_entropy(mask: np.ndarray) -> float:
     return float(-(p * np.log(p)).sum() / np.log(g * g))
 
 
+def edge_object_frac(mask: np.ndarray, band_frac: float = EDGE_BAND_FRAC) -> float:
+    """Fraction of segmented objects touching the image-edge border band.
+
+    An object counts as an "edge" object if ANY of its pixels lie within ``band_frac`` of the
+    image width from the left/right edge OR within ``band_frac`` of the image height from the
+    top/bottom edge -- i.e. it is stuck to (and likely clipped by) the frame boundary. The
+    returned value is ``n_edge_objects / n_objects`` in ``[0, 1]``:
+
+        0.0 -> every object sits comfortably inside the frame
+        1.0 -> every object touches the border band
+        NaN -> empty mask (no objects; the fraction is undefined)
+
+    Operates on the LABEL mask (distinct integer id per object), so arbitrary shapes are
+    handled exactly -- a large object whose centroid is interior still counts if it reaches
+    into the band. The default band is 10% of each dimension (:data:`EDGE_BAND_FRAC`).
+    """
+    m = np.asarray(mask)
+    labels = np.unique(m)
+    labels = labels[labels != 0]
+    if labels.size == 0:
+        return float("nan")
+    h, w = m.shape
+    mx = int(round(band_frac * w))
+    my = int(round(band_frac * h))
+    border = np.zeros(m.shape, bool)
+    if mx > 0:
+        border[:, :mx] = True
+        border[:, w - mx :] = True
+    if my > 0:
+        border[:my, :] = True
+        border[h - my :, :] = True
+    edge_labels = np.unique(m[border])
+    edge_labels = edge_labels[edge_labels != 0]
+    return float(edge_labels.size / labels.size)
+
+
 def mask_gap_features(mask: np.ndarray, px_um: float) -> dict:
     """Spatial features that need the mask itself (not just centroids).
 
@@ -216,13 +287,22 @@ def mask_gap_features(mask: np.ndarray, px_um: float) -> dict:
 
     ``mask_occupancy_entropy``: how evenly the foreground pixels are spread over the FOV
     (see :func:`mask_occupancy_entropy`). Empty mask -> NaN.
+
+    ``edge_frac``: fraction of objects stuck to the image-edge border band (see
+    :func:`edge_object_frac`). Empty mask -> NaN.
     """
-    fg = np.asarray(mask) > 0
+    m = np.asarray(mask)
+    fg = m > 0
     if not fg.any():
-        return {"max_gap_um": float("nan"), "mask_occupancy_entropy": float("nan")}
+        return {
+            "max_gap_um": float("nan"),
+            "mask_occupancy_entropy": float("nan"),
+            "edge_frac": float("nan"),
+        }
     return {
         "max_gap_um": float(distance_transform_edt(~fg).max()) * float(px_um),
         "mask_occupancy_entropy": mask_occupancy_entropy(fg),
+        "edge_frac": edge_object_frac(m),
     }
 
 

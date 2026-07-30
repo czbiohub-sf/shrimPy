@@ -660,6 +660,7 @@ def decide_fov(
     segmentation: dict | None = None,
     return_artifacts: bool = False,
     return_stacks: bool = False,
+    extract_all: bool = False,
     label: str = "",
 ) -> tuple[float, bool] | tuple[float, bool, dict]:
     """Run one FOV's good/bad decision end to end.
@@ -703,6 +704,11 @@ def decide_fov(
         P(good) cutoff.
     segmentation : dict | None
         Segmentation config block (model, thresholds, per-organelle diameters).
+    extract_all : bool
+        Compute EVERY producible feature column instead of only the ones the model reads
+        (``model.feature_names``). Used by the calibration pre-scan, whose whole purpose is
+        to populate the feature viewer with all features so the user can choose which to
+        rank on; the model still runs (its score is ignored by calibration).
     label : str
         FOV/position name, prefixed to per-step logs so preprocessing and
         segmentation success/failure is attributable to a specific FOV.
@@ -749,9 +755,8 @@ def decide_fov(
         n_objects = int((np.unique(mask) != 0).sum())
         logger.info("%ssegment %s ok (%d objects)", pfx, organelle, n_objects)
 
-    matrix = extract_features(
-        projections, masks, px_um, projection, needed=model.feature_names
-    )
+    needed = None if extract_all else model.feature_names
+    matrix = extract_features(projections, masks, px_um, projection, needed=needed)
     proba, good = model.predict(matrix, threshold)
     if return_artifacts:
         artifacts = {

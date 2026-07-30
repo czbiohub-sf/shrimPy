@@ -1,33 +1,35 @@
-# Online FOV-selection demo (M4): TWO sequential runs.
+# Online FOV-selection CALIBRATION demo (ReplayCamera).
 #
-#   RUN 1  pre-scan  a complete, independent MDASequence defined under
-#                    `metadata.mantis.fov_selection.prescan_mda`. It carries its
-#                    own `stage_positions` (all candidate FOVs) and `z_plan`, and
-#                    images only its `fov_selection_channel`. As each FOV's z-stack
-#                    completes it is reconstructed (deskew -> phase -> virtual
-#                    stain), projected, segmented, and scored by the trained tree
-#                    -- streamed via frameReady in a worker subprocess (torch/GPU
-#                    isolation, like DynaTrack). The pre-scan run writes nothing
-#                    itself; when save_pre_scan_omezarr is set the worker writes the
-#                    per-step reconstruction to <name>_prescan.ome.zarr.
-#   RUN 2  timelapse this top-level MDASequence (full channels + z), on the FOVs
-#                    predicted "good" ONLY. Its `stage_positions` are EMPTY here
-#                    and filled at runtime from the good pre-scan FOVs.
+# Runs the NEW FOV-selection pipeline (see config/mda/mantis/config.yaml) in
+# CALIBRATION MODE against the ReplayCamera, so the whole path can be exercised
+# offline without the scope:
 #
-# Defining the pre-scan as its own MDASequence (rather than deriving it from the
-# timelapse sequence) lets it use a different z-plan -- e.g. a single 2D slice for
-# fluorescence-based selection -- independent of the timelapse. Replays the A549
-# store (raw BF + GFP), matching the scope.
+#   PRE-SCAN ONLY.  With `calibration_mode: True` the engine runs just the pre-scan
+#   over all candidate FOVs -- NO timelapse afterwards. For every FOV the BF z-stack
+#   is reconstructed (flatfield -> deskew), projected, segmented, and EVERY available
+#   feature is extracted (the model.features block is ignored for extraction in this
+#   mode). The per-FOV feature matrix + projection/mask PNGs are written in the feature
+#   viewer's standard layout under <name>_fov_debug/, and when the pre-scan finishes the
+#   engine opens the feature viewer on that CSV.
+#
+#   The point: explore the features in the viewer, tune a score function / ranking
+#   profile, Save... it to YAML, paste it into `model.features` below, flip
+#   `calibration_mode: False`, and re-run for a standard (pre-scan + timelapse) run.
+#
+# ReplayCamera specifics preserved from the old demo: the pre-scan uses a WellPlatePlan
+# whose pos_names (B3_0000, ...) map to the source HCS store (well B/3 fov k -> k-th
+# source FOV in B/3), and the channel `config` names must match the store's channels
+# (BF - Oblique, GFP EX488 EM525-45). Point the ReplayCamera at the A549 plate store.
 
 # ---- Timelapse stage_positions (top-level) ----
-# EMPTY: the timelapse images only the FOVs the pre-scan decides are "good". The
-# candidate FOVs are defined under metadata.mantis.fov_selection.prescan_mda.
+# EMPTY: only used when calibration_mode is False, and then filled at runtime from the
+# FOVs the pre-scan selects. Ignored in calibration mode (no timelapse is run).
 stage_positions: []
 
 time_plan:
   prioritize_duration: true
   interval: 1
-  loops: 1            # number of TIMELAPSE timepoints (pre-scan is a separate run; no +1)
+  loops: 1            # number of TIMELAPSE timepoints (only used when calibration off)
 
 z_plan:
   top: 79.95
@@ -43,12 +45,6 @@ channels:
     group: Channel
     exposure: 1.0
 
-# ---- FOV-SELECTION parameters ----
-# Style follows config/mda/mantis/dynatrack_demo.yaml: deskew / phase /
-# virtual_staining blocks live directly under fov_selection; the XY pixel size
-# and Z step are NOT set here -- they are fetched from the Core
-# (core.getPixelSizeUm()) and z_plan.step at runtime and injected into deskew /
-# phase (single source of truth).
 metadata:
   mantis:
     reset_hardware_sequencing_settings:
@@ -61,18 +57,22 @@ metadata:
     fov_selection:
       enabled: true
 
+      # Calibration mode: PRE-SCAN ONLY (no timelapse), extract EVERY feature (model.features
+      # is ignored for extraction), then open the feature viewer on the pre-scan feature
+      # matrix. save_decision is forced on; the CSV + PNG folders land under <name>_fov_debug/.
+      # Set to False for a standard acquisition (pre-scan + timelapse on the selected FOVs).
+      calibration_mode: True
+
       # ---- Pre-scan MDASequence ----
-      # A complete, valid MDASequence run FIRST over all candidate FOVs. Its
-      # stage_positions (a useq WellPlatePlan: select wells + a per-well FOV grid)
-      # are the candidates; useq assigns plate_row/plate_col + slash-free field
-      # names, so the output is a proper HCS OME-Zarr (row/col/fov). Here: wells
-      # B/3, B/4, B/5 with a 7x7 FOV grid = 147 candidates (the full offline
-      # dataset). Offline, the ReplayCamera maps each plate position to the
-      # matching source FOV (well B/3 fov k -> k-th source FOV in B/3, row-major).
-      # For a quick smoke test, drop well_points_plan to rows/columns 1.
+      # A complete, valid MDASequence run FIRST over all candidate FOVs. Its stage_positions
+      # (a useq WellPlatePlan: select wells + a per-well FOV grid) are the candidates; useq
+      # assigns plate_row/plate_col + slash-free field names, so the ReplayCamera can map each
+      # plate position to the matching source FOV. Here: wells B/3, B/4, B/5 with a 7x7 grid
+      # = 147 candidates (the full offline dataset). For a quick smoke test, set
+      # well_points_plan rows/columns to 1 (1 FOV/well -> 3 candidates).
       #
-      # Must be a single timepoint (validated); it images only `fov_selection_channel`.
-      # The z_plan may differ from the timelapse -- e.g. a single 2D slice.
+      # Must be a single timepoint (validated); it images only `fov_selection_channel`. No
+      # `setup` block here -- the ReplayCamera needs no hardware property setup.
       prescan_mda:
         stage_positions:
           a1_center_xy: [0.0, 0.0]
@@ -83,8 +83,8 @@ metadata:
             well_size: [15.6, 15.6]
             well_spacing: [19.0, 19.0]
           selected_wells:
-            - [1, 1, 1]     # rows: B, B, B
-            - [2, 3, 4]     # columns: 3, 4, 5
+            - [1]     # rows: B, B, B
+            - [3]     # columns: 3, 4, 5
           well_points_plan:
             rows: 7           # 7x7 = 49 FOVs/well; B/3,B/4,B/5 -> 147 total
             columns: 7
@@ -103,55 +103,30 @@ metadata:
             group: Channel
             exposure: 1.0
 
-      # Ordered preprocessing steps. Reconstruction steps (flatfield/deskew/
-      # phase/vs) are consumed by the shared preprocessor; sum_projection/
-      # segmentation are consumed by the FOV pipeline. 'flatfield' matches the
-      # production reconstruction (biahub mantis-v2.nf 0-flatfield) so the online
-      # decision runs on the same flat-fielded input as the offline model.
-      # Some algorithms (e.g. DynaCLR) would omit 'segmentation'; the current
-      # tree model requires it.
-      preprocessing: ['flatfield', 'deskew', 'phase', 'vs', 'sum_projection', 'segmentation']
+      # Acquired channel imaged during the pre-scan and fed to reconstruction (must be one
+      # of prescan_mda.channels). The A549 store's brightfield channel.
+      fov_selection_channel: "BF - Oblique"
+
+      # Ordered preprocessing steps. The XY pixel size and Z step are NOT set here -- they
+      # are fetched from the Core (core.getPixelSizeUm()) and z_plan.step at runtime and
+      # injected into deskew (single source of truth).
+      #
+      # ---- ACTIVE (pipeline A): middle-slice brightfield + Cellpose-DINO -------------
+      # Single reconstructed brightfield channel -> plain (unprefixed) feature names, which
+      # is what the ranking model below reads. Needs a GPU + the cpdino weights.
+      preprocessing: ['flatfield', 'deskew', 'middle_slice_projection', 'segmentation']
+      # ---- ALTERNATIVE (pipeline B): log-std brightfield + Otsu ----------------------
+      # No GPU / trained model -- the lightest path for a quick calibration test. Switch the
+      # `segmentation:` block to the Otsu alternative below as well.
+      # preprocessing: ['flatfield', 'deskew', 'logstd_projection', 'segmentation']
 
       deskew:
         ls_angle_deg: 30.0
         keep_overhang: false
         average_n_slices: 3
 
-      phase:
-        transfer_function:
-          wavelength_illumination: 0.450
-          z_padding: 5
-          index_of_refraction_media: 1.4
-          numerical_aperture_detection: 1.35
-          numerical_aperture_illumination: 0.52
-          invert_phase_contrast: false
-        apply_inverse:
-          reconstruction_algorithm: Tikhonov
-          regularization_strength: 0.01
-
-      virtual_staining:
-        ckpt_path: /hpc/projects/organelle_phenotyping/models/VSCyto3D-A549-infection-finetune/4gpu_bf16_bs16_to_ep7/checkpoints/epoch=7-step=832.ckpt
-        target_channels: ['nuclei', 'membrane']
-        sliding_window_step: 1
-        model:
-          class_path: cytoland.engine.VSUNet
-          init_args:
-            architecture: fcmae
-            model_config:
-              in_channels: 1
-              out_channels: 2
-              in_stack_depth: 15
-              encoder_blocks: [3, 3, 9, 3]
-              dims: [96, 192, 384, 768]
-              encoder_drop_path_rate: 0.1
-              stem_kernel_size: [5, 4, 4]
-              decoder_conv_blocks: 2
-              pretraining: false
-            test_time_augmentations: false
-            tta_type: mean
-
-      # Switchable segmentation. Only 'cellpose' is supported now; params fall
-      # back to the batch script's training defaults when unset.
+      # Switchable segmentation (`model`: cellpose | instanseg | otsu). Pick ONE block.
+      # ---- ACTIVE (pipeline A): Cellpose-DINO ----------------------------------------
       segmentation:
         model: cellpose
         model_name: cpdino
@@ -163,28 +138,32 @@ metadata:
         diameters:            # microns; null -> Cellpose auto-scale
           nuclei: null
           membrane: 120.0
+      # ---- ALTERNATIVE (pipeline B): Otsu on the log-std projection ------------------
+      # segmentation:
+      #   model: otsu
+      #   close_radius: 10     # morphological-closing disk radius in px (0 = skip)
+      #   min_size: 8000       # remove foreground components smaller than this (px)
+      #   fill_holes: true     # fill interior holes of the foreground
 
-      # Trained FOV-goodness model. Uses nuclei_vs_sum__coverage_frac +
-      # membrane_vs_sum__objects_per_10um2.
+      # FOV-goodness model. In calibration mode this is NOT used to pick which features to
+      # extract (all are extracted) and no selection is applied, but a valid model block is
+      # still required. The ranking profile below is just a starting point -- replace it with
+      # what you save from the feature viewer's Rank tab, then set calibration_mode: False.
       model:
-        path: /hpc/projects/comp.micro/microscope_dev/smart_fov_selection/fov_selection_output/fov_features/split_analysis/max_accuracy/model_on_three_dataset/final_model_nuclei-vs_membrane-vs.joblib
-        threshold: 0.5
+        type: ranking_by_defined_range
+        top_fov: 20                    # keep the 20 highest-ranked FOVs (used only when calibration off)
+        features:
+          coverage_frac:               # fraction of the FOV covered by objects (gaussian bell)
+            shape: gaussian
+            center: 0.68376
+            fwhm: 0.17561
+            weight: 1.0
+          max_gap_um:                  # largest object-free region radius (um) (gaussian bell)
+            shape: gaussian
+            center: 21.96101
+            fwhm: 7.81154
+            weight: 1.0
 
-      # FOV selection decision
-      # Debug outputs (off by default):
-      save_pre_scan_omezarr: True  # write the per-step reconstruction (deskew/phase/vs/
-                                   # projection/mask channels) to <name>_prescan.ome.zarr
-      save_decision: True  # per-FOV projection/mask PNGs + fov_summary.csv under <name>_fov_debug/
-
-      # Acquired channel fed to reconstruction (must be one of prescan_mda.channels).
-      fov_selection_channel: "BF - Oblique"
-
-      # What the fov_selection_channels are:
-      #   'vs'    -> virtual-stained; requires a 'vs' preprocessing step (checked)
-      #   'fluor' -> acquired fluorescence channels; no VS step needed
-      fov_selection_channels_type: vs
-
-      # Channels the decision is computed on (segmented + fed to the model).
-      # May be raw input channels or preprocessed (VS) channels; here the
-      # virtual-stained nuclei and membrane.
-      fov_selection_channels: ['nuclei', 'membrane']
+      # Debug outputs. save_decision is forced on in calibration mode regardless of this flag.
+      save_pre_scan_omezarr: False   # also write the per-step reconstruction to <name>_prescan.ome.zarr
+      save_decision: True           # feature-matrix CSV + projection/mask PNGs under <name>_fov_debug/

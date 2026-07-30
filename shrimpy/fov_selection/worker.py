@@ -28,6 +28,12 @@ logger = logging.getLogger(__name__)
 # selected/rank columns (FovSelection.finalize_debug_summary).
 SUMMARY_CSV_NAME = "fov_summary.csv"
 
+# Fallback stem for the calibration feature-viewer CSV / PNG folders when the manager did
+# not pass one. The viewer derives the sibling PNG folders from the CSV stem
+# (<stem>_png / <stem>_mask_png -- see feature_viewer/data.py), so the CSV name and the
+# folder names all share this stem.
+DEFAULT_MATRIX_STEM = "fov_feature_matrix"
+
 
 class FovSelectionWorker:
     """Manages a subprocess that runs the FOV-selection decision.
@@ -56,6 +62,13 @@ class FovSelectionWorker:
         Acquired (Z, Y, X) stack shape (for the phase transfer function).
     log_file_path : Path | None
         Log file the subprocess should append to.
+    calibration_mode : bool
+        Extract every producible feature (not just the model's) and write the debug
+        artifacts in the feature viewer's standard layout (see
+        :func:`_write_feature_viewer_artifacts`).
+    matrix_stem : str | None
+        CSV / PNG-folder stem for the calibration feature-viewer output, e.g.
+        ``"<acq>_fov_feature_matrix"``.
     """
 
     def __init__(
@@ -72,6 +85,8 @@ class FovSelectionWorker:
         debug_dir: Path | None = None,
         recon_zarr_path: Path | None = None,
         require_gpu: bool = True,
+        calibration_mode: bool = False,
+        matrix_stem: str | None = None,
     ) -> None:
         self._recon = recon
         self._target_channels = target_channels
@@ -91,6 +106,13 @@ class FovSelectionWorker:
         self._recon_zarr_path = recon_zarr_path
         # Fail fast if the reconstruction can't run on a GPU (fov_selection.require_gpu).
         self._require_gpu = require_gpu
+        # Calibration mode: extract EVERY producible feature (not just the model's) and
+        # write the debug artifacts in the feature viewer's standard layout
+        # (<matrix_stem>.csv with a `filename` column + sibling <matrix_stem>_png/
+        # <matrix_stem>_mask_png/ folders) so the pre-scan output loads straight into the
+        # viewer. matrix_stem is the CSV/folder stem, e.g. "<acq>_fov_feature_matrix".
+        self._calibration_mode = calibration_mode
+        self._matrix_stem = matrix_stem
         self._process: mp.Process | None = None
         self._input_queue: mp.Queue | None = None
         self._output_queue: mp.Queue | None = None
@@ -118,6 +140,8 @@ class FovSelectionWorker:
                 self._debug_dir,
                 self._recon_zarr_path,
                 self._require_gpu,
+                self._calibration_mode,
+                self._matrix_stem,
             ),
             daemon=True,
         )
@@ -182,6 +206,8 @@ def _worker_loop(
     debug_dir: Path | None = None,
     recon_zarr_path: Path | None = None,
     require_gpu: bool = True,
+    calibration_mode: bool = False,
+    matrix_stem: str | None = None,
 ) -> None:
     """Main loop for the FOV-selection worker process."""
     # Mirror DynaTrack's subprocess logging: file handler to the parent's log
@@ -282,6 +308,7 @@ def _worker_loop(
                     segmentation=segmentation,
                     return_artifacts=need_artifacts,
                     return_stacks=recon_zarr_path is not None,
+                    extract_all=calibration_mode,
                     label=name,
                 )
                 if need_artifacts:
@@ -303,7 +330,14 @@ def _worker_loop(
                             )
                     if debug_dir is not None:
                         try:
-                            _write_decision_artifacts(debug_dir, name, proba, good, artifacts)
+                            if calibration_mode:
+                                _write_feature_viewer_artifacts(
+                                    debug_dir, matrix_stem, name, artifacts
+                                )
+                            else:
+                                _write_decision_artifacts(
+                                    debug_dir, name, proba, good, artifacts
+                                )
                         except Exception:
                             log.exception(
                                 "FOV-selection worker: could not write debug artifacts for "
@@ -389,6 +423,80 @@ def _write_decision_artifacts(
         _save_label_png(debug_dir / f"{safe}_{channel}_mask.png", mask)
 
     _append_summary_row(debug_dir, name, proba, good, artifacts.get("features"))
+
+
+def _write_feature_viewer_artifacts(
+    debug_dir: Path,
+    matrix_stem: str | None,
+    name: str,
+    artifacts: dict,
+) -> None:
+    """Persist one FOV's artifacts in the feature viewer's STANDARD layout (calibration).
+
+    Unlike :func:`_write_decision_artifacts` (the flat ``<name>_<ch>_*.png`` + ``proba``
+    layout), this writes exactly what :mod:`shrimpy.fov_selection.feature_viewer.data`
+    loads without any conversion, so a calibration pre-scan drops straight into the viewer::
+
+        <debug_dir>/<stem>.csv            # one row per FOV; carries a `filename` column
+        <debug_dir>/<stem>_png/           # projection (brightfield) PNG per FOV
+        <debug_dir>/<stem>_mask_png/      # segmentation-mask PNG per FOV
+
+    where ``<stem>`` is ``matrix_stem`` (e.g. ``<acq>_fov_feature_matrix``). The CSV
+    ``filename`` column equals each PNG's stem (the sanitized FOV name), which is the strict
+    1:1 join the viewer relies on. Every producible feature column is written (the worker
+    ran with ``extract_all``); the ranking ``proba`` is deliberately omitted so it does not
+    show up as a pseudo-feature axis in the viewer. Runs in the worker subprocess one FOV at
+    a time, so the CSV read/append/write is unsynchronized-safe.
+
+    A single segmented channel is the common (non-VS) calibration case: its projection is
+    the brightfield thumbnail, its mask the mask thumbnail. With several channels (VS), the
+    first is used as brightfield and the second (if any) as the fluor channel, matching the
+    viewer's channel toggles.
+    """
+    from pathlib import Path as _Path
+
+    debug_dir = _Path(debug_dir)
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    stem = matrix_stem or DEFAULT_MATRIX_STEM
+    safe = "".join(c if (c.isalnum() or c in "_-") else "_" for c in str(name)) or "fov"
+
+    # Map segmented channels onto the viewer's brightfield/fluor thumbnail slots (brightfield
+    # is the default toggle); the mask always goes to the mask slot. Folder suffixes mirror
+    # feature_viewer/data.py's _channel_png_folder ("_png" / "_<channel>_png").
+    projections = list((artifacts.get("projections") or {}).items())
+    masks = artifacts.get("masks") or {}
+    for i, (channel, proj) in enumerate(projections):
+        slot = "brightfield" if i == 0 else ("fluor" if i == 1 else channel)
+        folder = debug_dir / (f"{stem}_png" if slot == "brightfield" else f"{stem}_{slot}_png")
+        folder.mkdir(parents=True, exist_ok=True)
+        _save_projection_png(folder / f"{safe}.png", proj)
+        if channel in masks:
+            mask_folder = debug_dir / f"{stem}_mask_png"
+            mask_folder.mkdir(parents=True, exist_ok=True)
+            _save_label_png(mask_folder / f"{safe}.png", masks[channel])
+
+    _append_feature_viewer_row(debug_dir, stem, safe, artifacts.get("features"))
+
+
+def _append_feature_viewer_row(
+    debug_dir: Path, stem: str, filename: str, features
+) -> None:
+    """Append one FOV's row (``filename`` + all feature columns) to ``<stem>.csv``.
+
+    Uses pandas concat so FOVs with different feature columns (e.g. no objects -> only the
+    cheap features) still align, missing columns filled with NaN -- the viewer treats an
+    all-NaN column within a dataset as absent. ``filename`` (== the PNG stem) is inserted
+    first so the viewer's 1:1 CSV-to-image join works.
+    """
+    import pandas as pd
+
+    row = features.copy() if features is not None else pd.DataFrame([{}])
+    row.insert(0, "filename", filename)
+
+    csv_path = debug_dir / f"{stem}.csv"
+    if csv_path.exists():
+        row = pd.concat([pd.read_csv(csv_path), row], ignore_index=True)
+    row.to_csv(csv_path, index=False)
 
 
 def _assemble_debug_channels(artifacts: dict) -> tuple[list[str], np.ndarray | None]:
