@@ -21,6 +21,9 @@ classifiers = [
 
 # list package dependencies here
 dependencies = [
+  # direct dependency so [tool.uv.sources] applies; uv ignores sources declared
+  # for transitive deps, and this arrives transitively via ome-writers
+  "acquire-zarr",
   "click",
   "numpy",
   "ome-writers[acquire-zarr]",
@@ -70,6 +73,11 @@ local_scheme = "no-local-version"
 packages = ["shrimpy"]
 
 [tool.uv.sources]
+# Windows + Python 3.12: patched local build (cb374ea); the wheel is cp312-only,
+# so every other platform/interpreter falls back to the PyPI release.
+acquire-zarr = [
+  { path = "../acquire_zarr_cb374ea/acquire_zarr-0.8.1-cp312-cp312-win_amd64.whl", marker = "sys_platform == 'win32' and python_full_version < '3.13'" },
+]
 pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "dev" }
 ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
 useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "main" }
