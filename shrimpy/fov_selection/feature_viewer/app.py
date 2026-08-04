@@ -468,7 +468,9 @@ class FeatureViewer(QtWidgets.QMainWindow):
         main.addWidget(self._build_right())
         main.setStretchFactor(0, 0)  # settings+scatter keep their width; FOV grid takes extra
         main.setStretchFactor(1, 1)
-        main.setSizes([760, 1040])  # left holds the (now narrower) settings + scatter; FOV panel gets more
+        main.setSizes(
+            [760, 1040]
+        )  # left holds the (now narrower) settings + scatter; FOV panel gets more
 
         # all the existing panels live under an "Analysis" tab; "Label" groups the
         # loaded FOVs into one column per goodness class.
@@ -1630,7 +1632,8 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.reduce_status.setText(f"{method} done -> axes {', '.join(comp_cols)} available")
         self._ready = False
         self._populate_columns()
-        for cb, c in zip((self.cb_x, self.cb_y, self.cb_z), comp_cols):
+        # strict: comp_cols is always 3 long (built from range(3)), matching the 3 combos.
+        for cb, c in zip((self.cb_x, self.cb_y, self.cb_z), comp_cols, strict=True):
             cb.setCurrentText(c)
         self._ready = True
         self.update_plot()  # explicit: combos may be unchanged (already on PCA*), so no signal
@@ -2348,7 +2351,12 @@ class FeatureViewer(QtWidgets.QMainWindow):
         # how the per-feature scores combine into the final score
         act.addWidget(QtWidgets.QLabel("combine"))
         self.rank_agg_combo = QtWidgets.QComboBox()
-        self.rank_agg_combo.addItems(list(FM.DesirabilityModel.AGGREGATIONS))  # sum/product/gaussian
+        self.rank_agg_combo.addItems(
+            list(FM.DesirabilityModel.AGGREGATIONS)
+        )  # sum/product/gaussian
+        # Start on the same rule an unset `aggregation` gets during acquisition, so what you
+        # tune here is what runs.
+        self.rank_agg_combo.setCurrentText(FM.DesirabilityModel.DEFAULT_AGGREGATION)
         self.rank_agg_combo.setToolTip(
             "sum: weighted mean (compensatory)\n"
             "product: weighted geometric mean (one weak feature vetoes)\n"
@@ -2538,7 +2546,9 @@ class FeatureViewer(QtWidgets.QMainWindow):
                 key, value = items[idx]
                 spin = self._make_param_spinbox(key, value)
                 spin.editingFinished.connect(self._rank_refresh_curves)
-                tbl.setCellWidget(row, col, _ParamCell(key, spin))  # name label outside the box
+                tbl.setCellWidget(
+                    row, col, _ParamCell(key, spin)
+                )  # name label outside the box
             else:  # unused slot for this shape
                 tbl.removeCellWidget(row, col)
 
@@ -2684,7 +2694,11 @@ class FeatureViewer(QtWidgets.QMainWindow):
             for f, s in self.rank_ranges.items()
             if s.get("enabled", True)
         }
-        agg = self.rank_agg_combo.currentText() if hasattr(self, "rank_agg_combo") else "sum"
+        agg = (
+            self.rank_agg_combo.currentText()
+            if hasattr(self, "rank_agg_combo")
+            else FM.DesirabilityModel.DEFAULT_AGGREGATION
+        )
         return {"type": "ranking_by_defined_range", "aggregation": agg, "features": feats}
 
     # ---- rank tab: actions ----
@@ -2955,7 +2969,8 @@ class FeatureViewer(QtWidgets.QMainWindow):
         best = None  # (meta, point index, pixel distance)
         for meta in self._rank_axes:
             xs, ys = meta["markers"].get_data()
-            for j, (x, y) in enumerate(zip(xs, ys)):
+            # strict: Line2D.get_data() returns equal-length x/y by construction.
+            for j, (x, y) in enumerate(zip(xs, ys, strict=True)):
                 px, py = meta["ax2"].transData.transform((x, y))
                 dist = np.hypot(px - event.x, py - event.y)
                 if dist <= 10 and (best is None or dist < best[2]):
@@ -3573,9 +3588,12 @@ def main():
         folders = args.png_folder or [None] * len(args.csv)
         win._load_paired(
             list(
+                # strict: ap.error above already rejects mismatched --csv / --png-folder
+                # counts, and the fallback is one None per CSV, so the two are equal here.
                 zip(
                     [str(Path(c)) for c in args.csv],
                     [str(Path(f)) if f else None for f in folders],
+                    strict=True,
                 )
             )
         )

@@ -188,7 +188,9 @@ metadata:
         wavelength_illumination: 0.450       # illumination wavelength, um
         mode: max                            # optional: 'max' (bright objects; default) | 'min'
         midband_fractions: [0.125, 0.25]     # optional: band as a fraction of the cutoff freq
-      save_focus_z_position: True
+      # Per-FOV best-focus-Z debug CSV (detected slice + depth) -> <stem>_best_focus_z.csv
+      # under <name>_fov_debug/. Only written when the projection above is `best_focus_z`.
+      save_best_focus_z_for_debug: True
 
       # phase:
       #   transfer_function:
@@ -226,17 +228,17 @@ metadata:
       # Switchable segmentation (`model`: cellpose | instanseg | otsu). Cellpose params fall
       # back to the batch script's training defaults when unset. Pick ONE block.
       # ---- ACTIVE (pipeline A): Cellpose-DINO -----------------------------------------
-      segmentation:
-        model: cellpose
-        model_name: cpdino
-        gpu: true
-        flow_threshold: 0.4
-        cellprob_threshold: 0.0
-        batch_size: 64
-        min_size: 15
-        diameters:            # microns; null -> Cellpose auto-scale
-          nuclei: null
-          membrane: 120.0
+      # segmentation:
+      #   model: cellpose
+      #   model_name: cpdino
+      #   gpu: true
+      #   flow_threshold: 0.4
+      #   cellprob_threshold: 0.0
+      #   batch_size: 64
+      #   min_size: 15
+      #   diameters:            # microns; null -> Cellpose auto-scale
+      #     nuclei: null
+      #     membrane: 120.0
       # ---- ALTERNATIVE (pipeline B): Otsu on the log-std projection -------------------
       # Otsu threshold -> optional morphological closing (`close_radius` px disk, bridges gaps
       # between the pieces of a cluster) -> drop connected components below `min_size` px ->
@@ -264,11 +266,11 @@ metadata:
       # NOT label-free oblique brightfield -- check the debug PNGs on one FOV before trusting a
       # whole plate. Pair with `middle_slice_projection` (pipeline C), not `logstd_projection`:
       # InstanSeg expects an image, not a texture map.
-      # segmentation:
-      #   model: instanseg
-      #   path: E:\2026_07_28_smart_fov_selection_test\instanseg_34532446.zip
-      #   gpu: true
-      #   target: cells         # which output head to keep: nuclei | cells
+      segmentation:
+        model: instanseg
+        path: E:\2026_07_28_smart_fov_selection_test\instanseg_34532446.zip
+        gpu: true
+        target: cells         # which output head to keep: nuclei | cells
 
       # FOV-goodness model (pluggable -- see shrimpy/fov_selection/fov_model.py). Pick ONE
       # `model:` block. The model reads features by NAME only, so it is independent of which
@@ -313,6 +315,7 @@ metadata:
       # model:
       #   type: ranking_by_defined_range
       #   top_fov: 20                    # keep (pass) the 20 highest-ranked FOVs; required
+      #   aggregation: gaussian          # gaussian | product | sum -- see the ACTIVE block below
       #   features:                      # always specify `shape` explicitly (here: all linear)
       #     coverage_frac:               # fraction of the FOV covered by objects (target band)
       #       shape: linear              # target band: `range` = plateau (d=1), `soft` = shoulders
@@ -381,6 +384,20 @@ metadata:
       model:
         type: ranking_by_defined_range
         top_fov: 20                    # keep (pass) the 20 highest-ranked FOVs; required
+        # How the per-feature desirabilities combine into the one score a FOV is ranked on.
+        # Each feature first maps to a desirability in [0, 1] (its `shape` below); this picks
+        # the combination rule. Default when omitted: gaussian.
+        #   gaussian  joint N-D gaussian density, exp(-0.5 * sum_j w_j * z_j^2) where
+        #             z_j^2 = -2*ln(d_j). STRONGEST VETO: the score falls off fastest as more
+        #             features drift off-target, so a FOV must satisfy every feature at once.
+        #   product   weighted geometric mean, (prod_j d_j^w_j)^(1/sum_j w_j). NON-COMPENSATORY:
+        #             any single feature near 0 pulls the whole score toward 0 -- a gate feature
+        #             acts as a veto -- but it decays more gently than gaussian.
+        #   sum       weighted arithmetic mean, sum_j w_j*d_j / sum_j w_j. COMPENSATORY: a strong
+        #             feature offsets a weak one, so a FOV can rank high on coverage alone while
+        #             another feature sits near 0. Use it only when the features are genuinely
+        #             tradeable against each other.
+        aggregation: gaussian
         features:
           coverage_frac:               # fraction of the FOV covered by objects (gaussian bell)
             shape: gaussian

@@ -21,6 +21,8 @@ from pathlib import Path
 
 import numpy as np
 
+from shrimpy.fov_selection.plate_naming import file_stem_name, zarr_path_name
+
 logger = logging.getLogger(__name__)
 
 # The combined per-FOV debug table (one row per FOV) written under `debug_dir` when
@@ -451,7 +453,7 @@ def _write_decision_artifacts(
 
     debug_dir = _Path(debug_dir)
     debug_dir.mkdir(parents=True, exist_ok=True)
-    safe = "".join(c if (c.isalnum() or c in "_-") else "_" for c in str(name)) or "fov"
+    safe = file_stem_name(name)
 
     from shrimpy.fov_selection.pipeline import save_mask_overlay_png
 
@@ -505,7 +507,7 @@ def _write_feature_viewer_artifacts(
     debug_dir = _Path(debug_dir)
     debug_dir.mkdir(parents=True, exist_ok=True)
     stem = matrix_stem or DEFAULT_MATRIX_STEM
-    safe = "".join(c if (c.isalnum() or c in "_-") else "_" for c in str(name)) or "fov"
+    safe = file_stem_name(name)
 
     from shrimpy.fov_selection.pipeline import save_mask_overlay_png
 
@@ -680,7 +682,7 @@ def _write_reconstruction_zarr(
         )
     try:
         # iohub path parts must be alphanumeric (e.g. "B4_0000" -> "B40000").
-        pos_name = "".join(c for c in str(name) if c.isalnum()) or f"p{p_idx}"
+        pos_name = zarr_path_name(name, f"p{p_idx}")
         pos = store.create_position("0", str(p_idx), pos_name)
         image = pos.create_zeros(
             "0",

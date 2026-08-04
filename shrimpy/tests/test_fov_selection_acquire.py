@@ -313,6 +313,64 @@ def test_explicit_positions_no_grid_pass_through():
     assert ps.sizes["p"] == 2  # the two centers, unexpanded
 
 
+def test_expand_candidate_fovs_inherits_center_properties():
+    # Regression: the per-well coarse-focus target ('ZDrive', 'Position') lives on
+    # the grid CENTER. Dropping it on expansion leaves MantisEngine._engage_autofocus
+    # with no target, so PFS searches around wherever the drive happens to be and
+    # fails as soon as the run crosses a well (plate tilt).
+    cfg = _grid_fov_cfg()
+    cfg["prescan_mda"]["stage_positions"] = [
+        {
+            "x": -6000.0,
+            "y": 13000.0,
+            "properties": [["ZDrive", "Position", 4522.0]],
+            "plate_row": 1,
+            "plate_col": 1,
+        },
+        {
+            "x": 14000.0,
+            "y": 13000.0,
+            "properties": [["ZDrive", "Position", 4573.0]],
+            "plate_row": 1,
+            "plate_col": 2,
+        },
+    ]
+    seq = _sequence(metadata={"mantis": {"fov_selection": cfg}})
+    ps = build_prescan_sequence(seq, fov_selection_config(seq))
+
+    def zdrive(pos):
+        return next(
+            p.property_value
+            for p in pos.properties
+            if (p.device_name, p.property_name) == ("ZDrive", "Position")
+        )
+
+    by_name = {p.name: p for p in ps.stage_positions}
+    assert sorted(by_name) == [f"B2_{g:04d}" for g in range(4)] + [
+        f"B3_{g:04d}" for g in range(4)
+    ]
+    # every FOV of a well inherits that well's coarse focus, and the two wells differ
+    assert {zdrive(by_name[f"B2_{g:04d}"]) for g in range(4)} == {4522.0}
+    assert {zdrive(by_name[f"B3_{g:04d}"]) for g in range(4)} == {4573.0}
+    # integer plate coords are converted to labels so the field-suffixed name
+    # survives MDASequence.replace()'s re-validation of the expanded list.
+    assert (by_name["B2_0000"].plate_row, by_name["B2_0000"].plate_col) == ("B", "2")
+
+    # the property survives into the acquisition events of BOTH runs
+    prescan_event = next(ps.iter_events())
+    assert ("ZDrive", "Position", 4522.0) in [tuple(p) for p in prescan_event.properties]
+
+    good = _filter_good_positions(ps, ["B2_0001", "B3_0002"])
+    assert [(g.name, g.plate_row, g.plate_col, zdrive(g)) for g in good] == [
+        ("0001", "B", "2", 4522.0),
+        ("0002", "B", "3", 4573.0),
+    ]
+    timelapse = build_timelapse_sequence(seq, ps, ["B2_0001", "B3_0002"])
+    assert ("ZDrive", "Position", 4522.0) in [
+        tuple(p) for p in next(timelapse.iter_events()).properties
+    ]
+
+
 def test_expand_candidate_fovs_unit():
     # Direct unit check of the expansion helper: 1 center x 2x2 grid -> 4 FOVs.
     seq = MDASequence(

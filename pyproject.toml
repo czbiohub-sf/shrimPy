@@ -166,6 +166,17 @@ ignore = [
     "N815",  # Variable in class scope should not be mixedCase (Qt uses camelCase)
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# The feature viewer is a single-file Qt app whose conventions the repo-wide `N` rules do not
+# fit (the global ignores above already exempt N802/N815 for the same reason):
+#   N812  module imported under a short uppercase alias (fov_model as FM, data as D, ...) --
+#         renaming is a 30-site same-file churn with no behavioural gain.
+#   N806  local Qt layout variables named colA/colB/colC to mirror the sections they hold.
+#   B008  `parent=QtCore.QModelIndex()` on QAbstractTableModel.rowCount/columnCount -- this
+#         mirrors Qt's own C++ default and is the canonical PyQt signature; QModelIndex() is a
+#         cheap immutable sentinel, not the mutable default B008 targets.
+"shrimpy/fov_selection/feature_viewer/app.py" = ["N812", "N806", "B008"]
+
 [tool.ruff.lint.isort]
 # Match current isort settings
 lines-between-types = 1

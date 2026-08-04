@@ -15,6 +15,8 @@ import copy
 
 from useq import MDASequence, Position, WellPlatePlan
 
+from shrimpy.fov_selection.plate_naming import plate_labels, well_field_name
+
 
 def fov_selection_config(sequence: MDASequence) -> dict:
     """Return the ``metadata.mantis.fov_selection`` block (``{}`` if absent).
@@ -126,12 +128,33 @@ def expand_candidate_fovs(prescan_seq: MDASequence) -> list[Position]:
     useq keeps ``grid_plan`` FOVs on a separate ``g`` axis while the FOV-selection
     pipeline treats each candidate FOV as its own ``stage_position`` (its own
     ``p_idx`` + name -- see ``fov_selection.manager``). This expands each center's
-    grid into distinct positions -- absolute XY from useq's event iterator, ``z``
-    inherited from the center, names ``"{center}_{g:04d}"`` -- so the free-XY grid
-    style is scored and filtered exactly like the ``WellPlatePlan`` style. The
-    expanded positions carry no ``plate_row``/``plate_col`` (there is no plate),
-    so their good FOVs fall through the non-plate branch of
-    :func:`_filter_good_positions` and produce a flat (non-HCS) OME-Zarr.
+    grid into distinct positions -- absolute XY from useq's event iterator, names
+    ``"{center}_{g:04d}"`` -- so the free-XY grid style is scored and filtered
+    exactly like the ``WellPlatePlan`` style.
+
+    Every other field of the center is inherited by its FOVs, in particular ``z``
+    and ``properties``: a center's ``[['ZDrive', 'Position', ...]]`` is the coarse
+    focus target for that well, and ``MantisEngine._engage_autofocus`` reads it off
+    ``event.properties`` to move the Z drive into PFS range before engaging the
+    lock. Dropping it makes PFS search around wherever the drive happens to be,
+    which fails as soon as the run crosses a well (plate tilt) -- see the
+    ``B2 -> B3`` failure in ``docs``/the FOV-selection integration notes.
+
+    ``plate_row``/``plate_col`` are inherited too, so a center placed on a plate
+    yields FOVs that still produce an HCS OME-Zarr -- but integer plate coordinates
+    are converted to their string labels (``1 -> "B"``, ``1 -> "2"``).
+
+    That conversion is forced by where these positions go next. ``Position``'s
+    ``_name_from_plate`` validator rejects a field-suffixed name next to *integer*
+    plate coords and accepts it next to *string* ones. ``WellPlatePlan`` emits the
+    integer pairing anyway (``image_positions`` -> ``Position.__add__``, which
+    builds via ``model_construct`` and so skips validation) and gets away with it
+    because it stays a ``WellPlatePlan`` -- useq iterates it lazily and never
+    re-validates the individual positions. An expanded *list*, by contrast, is
+    handed straight back to ``MDASequence.replace(stage_positions=...)``, which
+    re-validates every element; keeping the integer coords raises there. So the
+    labels are applied here, and :func:`_filter_good_positions` accepts either form
+    for the later timelapse handoff.
     """
     centers = list(prescan_seq.stage_positions)
     grid = MDASequence(stage_positions=centers, grid_plan=prescan_seq.grid_plan)
@@ -139,15 +162,17 @@ def expand_candidate_fovs(prescan_seq: MDASequence) -> list[Position]:
     for event in grid.iter_events():
         p_idx = event.index.get("p", 0)
         g_idx = event.index.get("g", 0)
-        base = centers[p_idx].name or f"p{p_idx}"
-        out.append(
-            Position(
-                x=event.x_pos,
-                y=event.y_pos,
-                z=centers[p_idx].z,
-                name=f"{base}_{g_idx:04d}",
-            )
-        )
+        center = centers[p_idx]
+        base = center.name or f"p{p_idx}"
+        update = {
+            "x": event.x_pos,
+            "y": event.y_pos,
+            "name": f"{base}_{g_idx:04d}",
+        }
+        well = plate_labels(center)
+        if well is not None:
+            update["plate_row"], update["plate_col"] = well
+        out.append(center.model_copy(update=update))
     return out
 
 
@@ -171,15 +196,6 @@ def build_timelapse_sequence(
     return sequence.replace(stage_positions=good_positions, metadata=meta)
 
 
-def _row_index_to_letter(index: int) -> str:
-    """Zero-based row index -> name (A, B, ..., Z, AA, ...), matching useq."""
-    name = ""
-    while index >= 0:
-        name = chr(index % 26 + 65) + name
-        index = index // 26 - 1
-    return name
-
-
 def _filter_good_positions(sequence: MDASequence, good_names: list[str]) -> list:
     """Candidate positions whose name is in ``good_names`` (order preserved).
 
@@ -188,7 +204,7 @@ def _filter_good_positions(sequence: MDASequence, good_names: list[str]) -> list
     produces a proper HCS OME-Zarr for the good FOVs. Two adjustments are made so
     the rebuilt explicit list matches what the ``WellPlatePlan`` path would emit:
 
-    * integer plate coordinates are converted to strings (``1 -> "B"``,
+    * plate coordinates are normalized to their string labels (``1 -> "B"``,
       ``3 -> "4"``) -- useq forbids a field-suffixed name on a standalone position
       with *integer* plate coords, but accepts an explicit name with *string* ones;
     * the useq FOV name (e.g. ``"B4_0000"``) is reduced to the per-well field name
@@ -203,19 +219,13 @@ def _filter_good_positions(sequence: MDASequence, good_names: list[str]) -> list
     for idx, pos in enumerate(sequence.stage_positions):
         if (pos.name or f"p{idx}") not in good:
             continue
-        if isinstance(pos.plate_row, int) and isinstance(pos.plate_col, int):
-            row_letter = _row_index_to_letter(pos.plate_row)
-            col_label = str(pos.plate_col + 1)
-            well_name = f"{row_letter}{col_label}"
-            field_name = pos.name or ""
-            if field_name.startswith(f"{well_name}_"):
-                field_name = field_name[len(well_name) + 1 :]
-            field_name = "".join(c for c in field_name if c.isalnum()) or f"{idx:04d}"
+        well = plate_labels(pos)
+        if well is not None:
             pos = pos.model_copy(
                 update={
-                    "plate_row": row_letter,
-                    "plate_col": col_label,
-                    "name": field_name,
+                    "plate_row": well[0],
+                    "plate_col": well[1],
+                    "name": well_field_name(pos, f"{idx:04d}"),
                 }
             )
         out.append(pos)

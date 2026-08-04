@@ -88,9 +88,11 @@ class ThresholdingModel(FovModel):
 class DesirabilityModel(FovModel):
     """User-defined desirable ranges -> weighted-desirability score (no training).
 
-    Scores each FOV as ``sum_j weight_j * desirability_j(x_j)`` (see :meth:`_desirability`).
-    ``proba`` is that score divided by the total weight (a weighted-mean desirability in
-    ``[0, 1]``) and is used purely as a RANKING score. ``shape`` (linear|sigmoid|gaussian|
+    Turns each feature into a desirability in ``[0, 1]`` (see :meth:`_desirability`), then
+    combines them into one ``proba`` in ``[0, 1]`` per :meth:`_aggregate` -- by default the
+    joint gaussian density (:attr:`DEFAULT_AGGREGATION`), so a single weak feature vetoes the
+    FOV; set ``aggregation`` to ``sum`` for the compensatory weighted mean instead. ``proba``
+    is used purely as a RANKING score. ``shape`` (linear|sigmoid|gaussian|
     lognormal -- see :attr:`SHAPES`) is REQUIRED per feature. Every shape is defined by
     interpretable "where it's best" + "how forgiving" parameters (no raw sigma / steepness):
 
@@ -108,10 +110,11 @@ class DesirabilityModel(FovModel):
 
     Every feature also takes an optional ``weight`` (default 1.0).
 
-    A missing feature contributes 0 desirability regardless of direction -- it adds nothing to
-    the weighted score while still counting in the total weight, so missing features pull the
-    score down (a fully empty FOV scores 0). It is NOT imputed to a raw value of 0 (which for
-    a "lower"-is-better feature would wrongly read as ideal). See :attr:`MISSING_DESIRABILITY`.
+    A missing feature contributes 0 desirability regardless of direction, so missing features
+    pull the score down (under ``sum`` it adds nothing while still counting in the total
+    weight; under ``product``/``gaussian`` it is floored, driving the score very low). It is NOT
+    imputed to a raw value of 0 (which for a "lower"-is-better feature would wrongly read as
+    ideal). See :attr:`MISSING_DESIRABILITY`.
 
     Selection is pure ranking (no threshold): the manager keeps the ``model.top_fov``
     highest-scoring FOVs across the whole pre-scan (see
@@ -166,6 +169,12 @@ class DesirabilityModel(FovModel):
     #   'product'  weighted geometric mean   (NON-compensatory: one near-0 feature tanks it)
     #   'gaussian' joint N-D gaussian density (product of per-feature gaussians; strongest veto)
     AGGREGATIONS = ("sum", "product", "gaussian")
+    # Aggregation used when a profile does not name one. 'gaussian' by default: a FOV is only
+    # good if EVERY feature is acceptable, so one feature falling short should veto the FOV
+    # rather than be averaged away by the others (which is what 'sum' does -- under it a FOV
+    # can rank first on one strong feature while another sits near 0). Set `aggregation`
+    # explicitly in the model config to choose a different combination rule.
+    DEFAULT_AGGREGATION = "gaussian"
     # Floor on a per-feature desirability before a log (product / gaussian modes), so a single
     # 0 (or a missing feature) drives the score very low without producing -inf / exactly 0.
     _DESIRABILITY_FLOOR = 1e-6
@@ -174,7 +183,9 @@ class DesirabilityModel(FovModel):
         feats = model_cfg.get("features") or {}
         if not feats:
             raise ValueError("ranking_by_defined_range model has no 'features'")
-        self._aggregation = str(model_cfg.get("aggregation", "sum")).lower()
+        self._aggregation = str(
+            model_cfg.get("aggregation") or self.DEFAULT_AGGREGATION
+        ).lower()
         if self._aggregation not in self.AGGREGATIONS:
             raise ValueError(
                 f"ranking_by_defined_range 'aggregation' must be one of {self.AGGREGATIONS}; "
@@ -385,7 +396,9 @@ class DesirabilityModel(FovModel):
                 else np.full(n, np.nan)
             )
             rows.append(
-                self._desirability(col, lo, hi, direction, soft_left, soft_right, shape, curve_k)
+                self._desirability(
+                    col, lo, hi, direction, soft_left, soft_right, shape, curve_k
+                )
             )
             weights.append(weight)
         proba = self._aggregate(np.vstack(rows), np.asarray(weights, float))
