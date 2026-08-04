@@ -148,7 +148,9 @@ metadata:
       #   reconstruction: flatfield, deskew, phase, vs
       #   projection (pick one): sum_projection, max_projection, middle_slice_projection,
       #       logstd_projection (per-pixel std over Z, log1p-compressed; highlights axial
-      #       texture, e.g. for label-free brightfield)
+      #       texture, e.g. for label-free brightfield),
+      #       best_focus_z (the single IN-FOCUS Z slice, chosen by waveorder's
+      #       transverse-band focus metric; REQUIRES the `best_focus_z:` block below)
       #   segmentation
       #
       # Three feature-extraction pipelines (projection + segmentation pair). The projection
@@ -163,18 +165,30 @@ metadata:
       #      checkpoint giving nucleus / cell instance masks; `segmentation.model: instanseg`.
       #      Pair it with an IMAGE-like projection (middle slice), not the log-std texture map.
       # ---- ACTIVE (pipeline A): middle-slice brightfield + Cellpose-DINO --------------
-      preprocessing: ['flatfield', 'deskew', 'middle_slice_projection', 'segmentation']
+      # preprocessing: ['flatfield', 'deskew', 'middle_slice_projection', 'segmentation']
       # ---- ALTERNATIVE (pipeline B): log-std brightfield + Otsu -----------------------
       # preprocessing: ['flatfield', 'deskew', 'logstd_projection', 'segmentation']
       #   (also switch the `segmentation:` block to the Otsu alternative below)
       # ---- ALTERNATIVE (pipeline C): middle-slice brightfield + InstanSeg -------------
       # preprocessing: ['flatfield', 'deskew', 'middle_slice_projection', 'segmentation']
       #   (also switch the `segmentation:` block to the InstanSeg alternative below)
+      # ---- ALTERNATIVE (pipeline D): in-focus brightfield slice + a segmenter ----------
+      preprocessing: ['flatfield', 'deskew', 'best_focus_z', 'segmentation']
+      #   (also uncomment the `best_focus_z:` block below; like middle-slice this yields an IMAGE, so
+      #   pair it with an image-like segmenter -- cellpose or instanseg -- not Otsu on texture)
 
       deskew:
         ls_angle_deg: 30.0
         keep_overhang: false
         average_n_slices: 3
+
+      # Example (uncomment together with `best_focus_z` above):
+      best_focus_z:
+        numerical_aperture_detection: 1.35   # detection (objective) NA
+        wavelength_illumination: 0.450       # illumination wavelength, um
+        mode: max                            # optional: 'max' (bright objects; default) | 'min'
+        midband_fractions: [0.125, 0.25]     # optional: band as a fraction of the cutoff freq
+      save_focus_z_position: True
 
       # phase:
       #   transfer_function:

@@ -116,9 +116,17 @@ class FovSelection:
         # Optional lightweight per-FOV debug artifacts (projection/mask PNGs +
         # fov_summary.csv), written by the worker to a sibling directory next to
         # the output store. Always on in calibration mode.
-        self._save_decision = bool(config.get("save_decision", False)) or self._calibration_mode
+        self._save_decision = (
+            bool(config.get("save_decision", False)) or self._calibration_mode
+        )
+        # Optional per-FOV best-focus-Z debug CSV (detected slice + depth), written by the
+        # worker only when the projection is 'best_focus_z'. Independent of save_decision, but
+        # it also needs the sibling debug directory, so it opens one when it is the only thing on.
+        self._save_best_focus_z = bool(config.get("save_best_focus_z_for_debug", False))
         self._debug_dir = (
-            self._debug_dir_for(data_path, run_index) if self._save_decision else None
+            self._debug_dir_for(data_path, run_index)
+            if (self._save_decision or self._save_best_focus_z)
+            else None
         )
         # Feature-viewer CSV/PNG-folder stem for calibration output (the viewer derives the
         # sibling PNG folders from the CSV stem); None outside calibration.
@@ -146,6 +154,11 @@ class FovSelection:
         # segmentation are consumed here / in the pipeline.
         self._steps = list(config.get("preprocessing") or [])
         self._projection = self._projection_from_steps(self._steps)
+        # Optics for the 'best_focus_z' projection (waveorder focus): required only when that
+        # projection is selected; fail before acquiring if it is and they are missing.
+        self._best_focus_z = config.get("best_focus_z") or None
+        if self._projection == "best_focus_z":
+            self._validate_best_focus_z()
         self._segmentation = config.get("segmentation", {}) or {}
         model_cfg = config.get("model", {}) or {}
         self._threshold = float(model_cfg.get("threshold", 0.5))
@@ -346,7 +359,7 @@ class FovSelection:
         segmented channel the columns are the plain feature keys (``coverage_frac``, ...);
         with several (VS targets) they are ``<organelle>_vs_<projection>__<key>``.
         """
-        from shrimpy.fov_selection.build_fov_feature_matrix import (
+        from shrimpy.fov_selection.feature_extraction import (
             FEATURE_NAMES,
             MASK_FEATURE_KEYS,
         )
@@ -393,7 +406,7 @@ class FovSelection:
         checkpoint would otherwise surface as a mid-acquisition worker crash. Checked here
         instead, alongside the model feature names.
         """
-        from shrimpy.fov_selection.pipeline import INSTANSEG_TARGETS
+        from shrimpy.fov_selection.segmentation import INSTANSEG_TARGETS
 
         backend = self._segmentation.get("model", "cellpose")
         if backend not in ("cellpose", "instanseg", "otsu"):
@@ -423,6 +436,25 @@ class FovSelection:
                 f"{list(INSTANSEG_TARGETS)}; got {target!r}. Aborting before acquisition."
             )
 
+    def _validate_best_focus_z(self) -> None:
+        """Fail before acquiring if the 'best_focus_z' projection lacks its optics.
+
+        :func:`shrimpy.fov_selection.pipeline.project_zyx` would otherwise fall back to the
+        middle slice at run time; catching it here makes the misconfiguration explicit.
+        """
+        best_focus_z = self._best_focus_z or {}
+        missing = [
+            k
+            for k in ("numerical_aperture_detection", "wavelength_illumination")
+            if not best_focus_z.get(k)
+        ]
+        if missing:
+            raise ValueError(
+                "fov_selection.preprocessing selects 'best_focus_z', which needs "
+                f"fov_selection.best_focus_z with {missing} (detection NA + illumination wavelength in "
+                "um). Add a 'best_focus_z' block or choose another projection step."
+            )
+
     @staticmethod
     def _projection_from_steps(steps: list[str]) -> str:
         """Derive the projection method from the preprocessing step list."""
@@ -434,9 +466,12 @@ class FovSelection:
             return "middle"
         if "logstd_projection" in steps:
             return "logstd"
+        if "best_focus_z" in steps:
+            return "best_focus_z"
         raise ValueError(
             "fov_selection.preprocessing must include a projection step ('sum_projection', "
-            "'max_projection', 'middle_slice_projection', or 'logstd_projection')."
+            "'max_projection', 'middle_slice_projection', 'logstd_projection', or "
+            "'best_focus_z')."
         )
 
     def _recon_config(self) -> dict:
@@ -508,6 +543,10 @@ class FovSelection:
                 require_gpu=self._require_gpu,
                 calibration_mode=self._calibration_mode,
                 matrix_stem=self._matrix_stem,
+                best_focus_z=self._best_focus_z,
+                z_step_um=self._z_step_um,
+                save_best_focus_z=self._save_best_focus_z,
+                write_debug_artifacts=self._save_decision,
             )
             self._worker.start()
         self._executor = ThreadPoolExecutor(max_workers=1)

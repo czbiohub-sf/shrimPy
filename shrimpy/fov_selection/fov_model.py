@@ -161,10 +161,25 @@ class DesirabilityModel(FovModel):
         s = math.log(fold) * _HWHM_TO_SIGMA
         return center * math.exp(-s), center * math.exp(s)
 
+    # How per-feature desirabilities combine into the FOV score (see :meth:`predict`):
+    #   'sum'      weighted arithmetic mean  (COMPENSATORY: a high feature offsets a low one)
+    #   'product'  weighted geometric mean   (NON-compensatory: one near-0 feature tanks it)
+    #   'gaussian' joint N-D gaussian density (product of per-feature gaussians; strongest veto)
+    AGGREGATIONS = ("sum", "product", "gaussian")
+    # Floor on a per-feature desirability before a log (product / gaussian modes), so a single
+    # 0 (or a missing feature) drives the score very low without producing -inf / exactly 0.
+    _DESIRABILITY_FLOOR = 1e-6
+
     def __init__(self, model_cfg: dict) -> None:
         feats = model_cfg.get("features") or {}
         if not feats:
             raise ValueError("ranking_by_defined_range model has no 'features'")
+        self._aggregation = str(model_cfg.get("aggregation", "sum")).lower()
+        if self._aggregation not in self.AGGREGATIONS:
+            raise ValueError(
+                f"ranking_by_defined_range 'aggregation' must be one of {self.AGGREGATIONS}; "
+                f"got {self._aggregation!r}"
+            )
         # (name, lo, hi, direction, soft_left, soft_right, weight)
         self._specs: list[tuple] = []
         self.feature_names: list[str] = []
@@ -351,7 +366,8 @@ class DesirabilityModel(FovModel):
 
     def predict(self, matrix_df, threshold: float = 0.5):
         n = len(matrix_df)
-        score = np.zeros(n)
+        # Per-feature desirability array (n,) and weight, stacked into D (n_features, n).
+        rows, weights = [], []
         for (
             name,
             lo,
@@ -368,14 +384,40 @@ class DesirabilityModel(FovModel):
                 if name in matrix_df.columns
                 else np.full(n, np.nan)
             )
-            score += weight * self._desirability(
-                col, lo, hi, direction, soft_left, soft_right, shape, curve_k
+            rows.append(
+                self._desirability(col, lo, hi, direction, soft_left, soft_right, shape, curve_k)
             )
-        # Missing features contribute 0 (see MISSING_DESIRABILITY) but keep their weight in
-        # the denominator, so an all-missing (empty) FOV scores 0 and a partially-measured FOV
-        # is penalized in proportion to how much is missing.
-        proba = score / self._total_weight
+            weights.append(weight)
+        proba = self._aggregate(np.vstack(rows), np.asarray(weights, float))
         return proba, [bool(p >= threshold) for p in proba]
+
+    def _aggregate(self, d: np.ndarray, w: np.ndarray) -> np.ndarray:
+        """Combine the per-feature desirabilities ``d`` (n_features, n) with weights ``w`` into
+        one score per FOV, per :attr:`AGGREGATIONS`.
+
+        'sum'      weighted arithmetic mean ``Σ w·d / Σ w`` in [0, 1]. Compensatory: a strong
+                   feature can offset a weak one (a good coverage can mask a starved center).
+        'product'  weighted geometric mean ``(Π d^w)^(1/Σw)`` in [0, 1]. Non-compensatory: any
+                   feature near 0 pulls the whole score toward 0, so gate features act as vetoes.
+        'gaussian' joint N-D gaussian density ``exp(-0.5 Σ w·z²)`` with ``z² = -2 ln d`` (so a
+                   gaussian feature contributes exactly ``((x-center)/sigma)²``). This is the
+                   unnormalized product of the per-feature gaussians; it drops fastest as more
+                   features fall short, the strongest veto of the three.
+
+        Missing features already map to desirability 0 (:attr:`MISSING_DESIRABILITY`); under
+        'sum' they keep their weight in the denominator (proportional penalty), under
+        'product'/'gaussian' they are floored to :attr:`_DESIRABILITY_FLOOR` so one missing
+        feature drives the score very low without making it exactly 0 for every FOV.
+        """
+        total = float(w.sum()) or 1.0
+        if self._aggregation == "sum":
+            return (w[:, None] * d).sum(0) / total
+        dz = np.clip(d, self._DESIRABILITY_FLOOR, 1.0)
+        if self._aggregation == "product":
+            return np.exp((w[:, None] * np.log(dz)).sum(0) / total)  # weighted geometric mean
+        # gaussian: exp(-0.5 Σ w z²), z² = -2 ln d  ->  exp(Σ w ln d) = Π d^w (joint density)
+        z2 = -2.0 * np.log(dz)
+        return np.exp(-0.5 * (w[:, None] * z2).sum(0))
 
 
 class TrainedTreeModel(FovModel):

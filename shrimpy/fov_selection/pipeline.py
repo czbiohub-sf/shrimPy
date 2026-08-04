@@ -1,14 +1,13 @@
 """Online per-FOV FOV-selection pipeline glue.
 
-Runs one FOV's decision in memory, reusing the offline feature code so online
+Runs one FOV's decision in memory, reusing the shared feature/segmentation code so online
 features match training exactly. Feature extraction is decoupled from the model:
 
     preprocessing output channel(s)
       -> project (sum / max / middle / logstd) [project_zyx]
-      -> segment (cellpose / instanseg / otsu) [segment_2d]  (cpdino params from
-                                        segment_cellpose)
-      -> per-object features          [object_feature_rows, from extract_fov_features]
-      -> per-FOV aggregation          [group_features, from build_fov_feature_matrix]
+      -> segment (cellpose / instanseg / otsu) [Segmenter, from segmentation.py]
+      -> per-object features          [FeatureExtractor.object_feature_rows]
+      -> per-FOV aggregation          [FeatureExtractor.group_features]
       -> named feature table          [extract_features: plain names for one channel,
                                         <organelle>_vs_<projection>__ prefixed for many]
       -> verdict                      [FovModel.predict, fov_model.py]
@@ -17,415 +16,163 @@ The model (thresholding / desirability / trained tree / ...) reads the feature t
 by NAME only -- it never sees which channel produced a feature -- so any model type
 pairs with any preprocessing (see :mod:`shrimpy.fov_selection.fov_model`).
 
-Heavy imports (cellpose, torch, pandas) are done lazily inside functions so importing
-this module stays cheap.
+Heavy imports (cellpose, torch, pandas) are done lazily so importing this module stays cheap.
 """
 
 from __future__ import annotations
 
 import logging
 
-from pathlib import Path
-
 import numpy as np
 
-from shrimpy.fov_selection.build_fov_feature_matrix import (
-    MASK_FEATURE_KEYS,
-    group_features,
-    mask_gap_features,
-    mask_occupancy_entropy,
-)
-from shrimpy.fov_selection.extract_fov_features import object_feature_rows
+from shrimpy.fov_selection.feature_extraction import MASK_FEATURE_KEYS, FeatureExtractor
 
 logger = logging.getLogger(__name__)
 
 
-def project_zyx(zyx: np.ndarray, method: str = "sum") -> np.ndarray:
+def save_mask_overlay_png(
+    path,
+    image: np.ndarray,
+    mask: np.ndarray,
+    color: tuple = (255, 0, 255),
+    thickness: int = 2,
+) -> None:
+    """Save a PNG of ``image`` (contrast-stretched grayscale) with the ``mask`` object
+    OUTLINES drawn on top as a bright border (default magenta), so the segmentation is
+    visible without covering the cells it segments.
+
+    The image is 1-99 percentile stretched to 8-bit grayscale (as the plain projection PNG
+    is), converted to RGB, and each object's boundary pixels are painted ``color``.
+    ``thickness`` px wide boundary (dilated for visibility). Shared by the live FOV-selection
+    worker and the offline PNG exporter so both produce identical overlays.
+    """
+    import imageio.v3 as iio
+
+    from skimage.segmentation import find_boundaries
+
+    img = np.asarray(image, np.float32)
+    finite = img[np.isfinite(img)]
+    if finite.size:
+        lo, hi = np.percentile(finite, (1.0, 99.0))
+    else:
+        lo, hi = 0.0, 1.0
+    if hi <= lo:
+        lo, hi = float(img.min()), float(img.max())
+    gray = np.zeros_like(img) if hi <= lo else np.clip((img - lo) / (hi - lo), 0.0, 1.0)
+    rgb = np.repeat((gray * 255).astype(np.uint8)[..., None], 3, axis=2)
+    boundaries = find_boundaries(np.asarray(mask), mode="outer")
+    if thickness > 1 and boundaries.any():
+        from scipy.ndimage import binary_dilation
+
+        boundaries = binary_dilation(boundaries, iterations=int(thickness) - 1)
+    rgb[boundaries] = np.asarray(color, np.uint8)
+    iio.imwrite(path, rgb)
+
+
+def project_zyx(
+    zyx: np.ndarray,
+    method: str = "sum",
+    *,
+    px_um: float | None = None,
+    best_focus_z: dict | None = None,
+    return_index: bool = False,
+) -> np.ndarray:
     """Reduce a ``(Z, Y, X)`` volume to a 2D ``(Y, X)`` float32 image.
 
     ``method``:
-      ``'sum'``    -- sum over Z (trained model default, ``*_sum__*`` features);
-      ``'max'``    -- max over Z;
-      ``'middle'`` -- the single middle Z slice (``zyx[Z // 2]``);
-      ``'logstd'`` -- per-pixel standard deviation over Z, shifted to non-negative and
-                      ``log1p``-compressed (``log1p(std - std.min())``). Highlights axial
-                      texture / contrast, e.g. for label-free brightfield where a flat sum or
-                      middle slice carries little signal.
+      ``'sum'``             -- sum over Z (trained model default, ``*_sum__*`` features);
+      ``'max'``             -- max over Z;
+      ``'middle'``          -- the single middle Z slice (``zyx[Z // 2]``);
+      ``'logstd'``          -- per-pixel standard deviation over Z, shifted to non-negative and
+                               ``log1p``-compressed (``log1p(std - std.min())``). Highlights axial
+                               texture / contrast, e.g. for label-free brightfield where a flat
+                               sum or middle slice carries little signal.
+      ``'best_focus_z'`` -- the single IN-FOCUS Z slice, found by waveorder's transverse-band
+                               focus metric (:func:`waveorder.focus.focus_from_transverse_band`).
+                               Needs ``px_um`` and ``best_focus_z`` optics
+                               (``numerical_aperture_detection`` + ``wavelength_illumination``);
+                               see :func:`_best_focus_z`.
 
     All are channel-agnostic: they operate on any z-stack, so a projection is usable on a
     deskewed brightfield stack, a phase volume, a virtual-staining channel, etc. -- selected
     via the projection preprocessing step.
+
+    When ``return_index`` is set, returns ``(image, z_index)`` where ``z_index`` is the
+    source Z slice the image came from (``best_focus_z`` -> the picked in-focus slice,
+    ``middle`` -> ``Z // 2``) or ``None`` for the reducing projections (sum/max/logstd,
+    which combine all slices and have no single source index).
     """
     zyx = np.asarray(zyx)
     if method == "middle":
-        return np.asarray(zyx[zyx.shape[0] // 2], np.float32)
+        idx = zyx.shape[0] // 2
+        img = np.asarray(zyx[idx], np.float32)
+        return (img, idx) if return_index else img
+    if method == "best_focus_z":
+        img, idx = _best_focus_z(zyx, px_um, best_focus_z)
+        return (img, idx) if return_index else img
     if method == "logstd":
         std = zyx.astype(np.float32).std(axis=0)
-        return np.log1p(std - std.min()).astype(np.float32)
+        img = np.log1p(std - std.min()).astype(np.float32)
+        return (img, None) if return_index else img
     reduce = np.max if method == "max" else np.sum
-    return reduce(zyx, axis=0).astype(np.float32)
+    img = reduce(zyx, axis=0).astype(np.float32)
+    return (img, None) if return_index else img
 
 
-def load_segmenter(segmentation: dict | None = None):
-    """Load the segmentation backend once (reused across FOVs); the switchable entry point.
+def _best_focus_z(
+    zyx: np.ndarray, px_um: float | None, best_focus_z: dict | None
+) -> tuple[np.ndarray, int]:
+    """The single best-focus Z slice, via waveorder's transverse-band focus metric.
 
-    ``segmentation.model`` selects the backend:
-      ``'cellpose'``  -- a Cellpose model (``model_name``, e.g. ``'cpdino'``; ``gpu``), loaded
-                         here and passed to :func:`segment_2d`.
-      ``'instanseg'`` -- an InstanSeg TorchScript checkpoint (``path``; ``gpu``), loaded here
-                         and passed to :func:`segment_2d`. See :func:`_load_instanseg`.
-      ``'otsu'``      -- stateless Otsu thresholding (returns ``None``; :func:`segment_2d`
-                         thresholds the projection directly, no model / GPU needed).
+    :func:`waveorder.focus.focus_from_transverse_band` scores each Z slice by the power in a
+    mid spatial-frequency band (set by the detection NA / wavelength / pixel size) and returns
+    the index of the extreme (in-focus) slice. Requires ``px_um`` (object-space pixel size, um)
+    plus ``best_focus_z`` optics -- ``numerical_aperture_detection`` and ``wavelength_illumination``
+    (um, matching ``px_um``); optional ``mode`` ('max'|'min') and ``midband_fractions``.
+
+    Two distinct failure modes, handled differently:
+      * MISSING optics (``px_um`` / NA / wavelength) -> :class:`ValueError` (abort). The focus
+        metric is meaningless without them, so we refuse rather than silently mis-project.
+      * optics present but NO confident in-focus slice -> fall back to the middle slice with a
+        warning (a legitimately flat/empty stack should not crash the scan).
     """
-    seg = segmentation or {}
-    backend = seg.get("model", "cellpose")
-    if backend == "otsu":
-        return None  # stateless; see _segment_otsu
-    if backend == "instanseg":
-        return _load_instanseg(seg)
-    if backend != "cellpose":
-        raise NotImplementedError(
-            f"segmentation.model={backend!r} is not supported; use 'cellpose', "
-            "'instanseg' or 'otsu'."
+    zyx = np.asarray(zyx, np.float32)
+    mid = zyx.shape[0] // 2
+    best_focus_z = best_focus_z or {}
+    na_det = best_focus_z.get("numerical_aperture_detection")
+    lambda_ill = best_focus_z.get("wavelength_illumination")
+    missing = [
+        name
+        for name, val in (
+            ("px_um", px_um),
+            ("best_focus_z.numerical_aperture_detection", na_det),
+            ("best_focus_z.wavelength_illumination", lambda_ill),
         )
-    from cellpose import models
-
-    from shrimpy.fov_selection import segment_cellpose as sc
-
-    name = seg.get("model_name") or getattr(sc, "MODEL_NAME", "cpsam")
-    gpu = seg.get("gpu", True)
-    logger.info("FOV selection: loading Cellpose model %r (gpu=%s)", name, gpu)
-    return models.CellposeModel(gpu=gpu, pretrained_model=name)
-
-
-# --- InstanSeg ---------------------------------------------------------------------------
-# InstanSeg ships as a TorchScript module, so the backend needs only torch -- not the
-# `instanseg` package. Two checkpoint layouts are accepted:
-#   * a bioimage.io .zip export (what the model zoo hands you): `instanseg.pt` plus an
-#     `rdf.yaml` whose input axis `scale` records the pixel size the model was trained at.
-#   * a bare `.pt` TorchScript file, in which case the training pixel size is unknown and
-#     must be given as `segmentation.model_pixel_size_um` for rescaling to happen.
-
-# The model's two output heads, in channel order (rdf.yaml outputs[0] channel_names).
-INSTANSEG_TARGETS = ("nuclei", "cells")
-
-# Forward kwargs the TorchScript module accepts, with the type TorchScript demands. Passing a
-# Python int where the schema says float (or vice versa) is a hard error, so values from YAML
-# are coerced here rather than trusted.
-INSTANSEG_FORWARD_ARGS = {
-    "min_size": int,
-    "mask_threshold": float,
-    "peak_distance": int,
-    "seed_threshold": float,
-    "overlap_threshold": float,
-    "mean_threshold": float,
-    "fg_threshold": float,
-    "window_size": int,
-    "cleanup_fragments": bool,
-    "resolve_cell_and_nucleus": bool,
-    "tta": bool,
-}
-
-# rdf.yaml preprocessing for this model: per-image percentile scaling over the spatial axes.
-INSTANSEG_PERCENTILES = (0.1, 99.9)
-INSTANSEG_EPS = 1e-6
-
-# The model requires at least this many pixels per spatial axis (rdf.yaml inputs[0] axes
-# size.min); rescaling to the model pixel size must not shrink a FOV below it.
-INSTANSEG_MIN_SIZE_PX = 32
-
-
-class _InstansegModel:
-    """A loaded InstanSeg TorchScript module plus the metadata segmentation needs.
-
-    ``pixel_size_um`` is the resolution the network was trained at (from ``rdf.yaml``, or
-    ``segmentation.model_pixel_size_um``). :func:`_segment_instanseg` resamples each FOV to
-    it before inference -- InstanSeg has no ``diameter`` knob like Cellpose, so matching the
-    resolution IS how object scale is communicated. ``None`` disables rescaling.
-    """
-
-    def __init__(self, module, pixel_size_um: float | None, device: str) -> None:
-        self.module = module
-        self.pixel_size_um = pixel_size_um
-        self.device = device
-
-
-def _load_instanseg(seg: dict) -> _InstansegModel:
-    """Load an InstanSeg TorchScript checkpoint from a bioimage.io ``.zip`` or a ``.pt``.
-
-    Config keys (under ``fov_selection.segmentation``):
-      ``path``                 -- REQUIRED; the ``.zip`` package or bare ``.pt``.
-      ``gpu``                  -- default True; falls back to CPU with a warning if no CUDA.
-      ``model_pixel_size_um``  -- overrides / supplies the training pixel size. Required for a
-                                  bare ``.pt`` if you want rescaling; read from ``rdf.yaml``
-                                  automatically for a ``.zip``.
-    """
-    import torch
-
-    path_str = seg.get("path")
-    if not path_str:
+        if not val
+    ]
+    if missing:
         raise ValueError(
-            "segmentation.model='instanseg' requires a 'path' to the InstanSeg "
-            "checkpoint (a bioimage.io .zip export or a TorchScript .pt)."
+            "best_focus_z projection requires " + ", ".join(missing) + " (detection NA + "
+            "illumination wavelength in um, matching the pixel size); aborting rather than "
+            "silently using the middle slice."
         )
-    path = Path(path_str)
-    if not path.exists():
-        raise FileNotFoundError(f"InstanSeg checkpoint not found: {path}")
 
-    rdf_pixel_size: float | None = None
-    if path.suffix.lower() == ".zip":
-        import io
-        import zipfile
+    from waveorder.focus import focus_from_transverse_band
 
-        import yaml
-
-        with zipfile.ZipFile(path) as zf:
-            names = zf.namelist()
-            weights = next((n for n in names if n.endswith(".pt")), None)
-            if weights is None:
-                raise ValueError(f"No TorchScript .pt inside the InstanSeg package {path}")
-            # Load straight from memory -- no temp-file extraction of a ~150 MB blob.
-            buffer = io.BytesIO(zf.read(weights))
-            if "rdf.yaml" in names:
-                rdf_pixel_size = _instanseg_rdf_pixel_size(yaml.safe_load(zf.read("rdf.yaml")))
-        source = buffer
-    else:
-        source = str(path)
-
-    gpu = seg.get("gpu", True)
-    device = "cuda" if (gpu and torch.cuda.is_available()) else "cpu"
-    if gpu and device == "cpu":
-        logger.warning("FOV selection: InstanSeg requested gpu=True but CUDA is unavailable")
-
-    module = torch.jit.load(source, map_location=device)
-    module.eval()
-
-    pixel_size = seg.get("model_pixel_size_um", rdf_pixel_size)
-    pixel_size = float(pixel_size) if pixel_size else None
-    logger.info(
-        "FOV selection: loaded InstanSeg %s (device=%s, target=%r, model pixel size=%s um)",
-        path.name,
-        device,
-        seg.get("target", INSTANSEG_TARGETS[0]),
-        pixel_size if pixel_size else "unknown -- no rescaling",
+    idx = focus_from_transverse_band(
+        zyx,
+        NA_det=float(na_det),
+        lambda_ill=float(lambda_ill),
+        pixel_size=float(px_um),
+        mode=best_focus_z.get("mode", "max"),
+        midband_fractions=tuple(best_focus_z.get("midband_fractions", (0.125, 0.25))),
     )
-    if pixel_size is None:
-        logger.warning(
-            "FOV selection: InstanSeg training pixel size is unknown (no rdf.yaml and no "
-            "segmentation.model_pixel_size_um), so the FOV is fed at its native resolution. "
-            "If the acquisition pixel size differs from the model's, objects will be the "
-            "wrong apparent size and the segmentation will be poor."
-        )
-    return _InstansegModel(module, pixel_size, device)
-
-
-def _instanseg_rdf_pixel_size(rdf: dict) -> float | None:
-    """Pixel size (um/px) the model was trained at, from a bioimage.io ``rdf.yaml``.
-
-    Reads the ``scale`` of the first spatial input axis, requiring its ``unit`` to be
-    micrometer so a model described in other units is not silently misread as um.
-    """
-    try:
-        axes = rdf["inputs"][0]["axes"]
-    except (KeyError, IndexError, TypeError):
-        return None
-    for axis in axes:
-        if not isinstance(axis, dict) or axis.get("id") not in ("y", "x"):
-            continue
-        scale, unit = axis.get("scale"), axis.get("unit")
-        if scale and unit in ("micrometer", "um", "µm"):
-            return float(scale)
-        if scale:
-            logger.warning(
-                "FOV selection: InstanSeg rdf.yaml axis %r has scale %s in unit %r (not "
-                "micrometer); ignoring it for rescaling",
-                axis.get("id"),
-                scale,
-                unit,
-            )
-            return None
-    return None
-
-
-def _segment_instanseg(
-    img2d: np.ndarray,
-    model: _InstansegModel,
-    segmentation: dict | None = None,
-    px_um: float | None = None,
-) -> np.ndarray:
-    """Segment one 2D projection with InstanSeg into a uint32 label mask.
-
-    Steps, mirroring the model's documented bioimage.io pipeline:
-
-    1. Percentile-scale the projection to ~[0, 1] (``scale_range``, 0.1-99.9 by default,
-       overridable via ``segmentation.percentiles``). InstanSeg is trained on scaled input,
-       and our projections (log-std, phase, raw brightfield) have wildly different native
-       ranges, so this is what makes one checkpoint work across them.
-    2. Resample to the model's training pixel size (see :class:`_InstansegModel`), bilinear.
-       Skipped when either pixel size is unknown.
-    3. Run the network, selecting a single output head via ``target_segmentation`` so only
-       the requested one is decoded (``segmentation.target``: ``'nuclei'`` or ``'cells'``).
-    4. Resample the label map back to the original pixel grid with NEAREST interpolation, so
-       label ids survive and downstream features stay in the acquisition's pixel units
-       (``coverage_frac``, ``max_gap_um`` are computed against the original ``px_um``).
-
-    A single channel is fed as-is: the architecture is channel-invariant, so replicating the
-    projection to the checkpoint's nominal 3 channels is unnecessary.
-    """
-    import torch
-
-    seg = segmentation or {}
-    target = seg.get("target", INSTANSEG_TARGETS[0])
-    if target not in INSTANSEG_TARGETS:
-        raise ValueError(
-            f"segmentation.target must be one of {list(INSTANSEG_TARGETS)}; got {target!r}"
-        )
-
-    img = np.asarray(img2d, np.float32)
-    orig_h, orig_w = img.shape
-
-    lo_pct, hi_pct = seg.get("percentiles", INSTANSEG_PERCENTILES)
-    lo, hi = np.percentile(img, (float(lo_pct), float(hi_pct)))
-    # np.percentile returns float64, which would promote the whole image and then hit the
-    # TorchScript module as a DoubleTensor against float weights -- cast back explicitly.
-    img = ((img - lo) / (hi - lo + INSTANSEG_EPS)).astype(np.float32)
-
-    x = torch.from_numpy(img)[None, None].to(model.device)
-
-    # Rescale to the model's resolution; this is InstanSeg's equivalent of Cellpose's
-    # `diameter`. Clamped so a small FOV never drops under the network's minimum input.
-    scale = (px_um / model.pixel_size_um) if (px_um and model.pixel_size_um) else 1.0
-    if not np.isclose(scale, 1.0):
-        new_h = max(int(round(orig_h * scale)), INSTANSEG_MIN_SIZE_PX)
-        new_w = max(int(round(orig_w * scale)), INSTANSEG_MIN_SIZE_PX)
-        x = torch.nn.functional.interpolate(
-            x, size=(new_h, new_w), mode="bilinear", align_corners=False
-        )
-        logger.debug(
-            "InstanSeg: rescaled %s -> %s (%.4f -> %.4f um/px)",
-            (orig_h, orig_w),
-            (new_h, new_w),
-            px_um,
-            model.pixel_size_um,
-        )
-
-    selector = torch.tensor(
-        [1 if t == target else 0 for t in INSTANSEG_TARGETS], device=model.device
-    )
-    kwargs = {
-        name: cast(seg[name])
-        for name, cast in INSTANSEG_FORWARD_ARGS.items()
-        if seg.get(name) is not None
-    }
-    with torch.no_grad():
-        out = model.module(x, target_segmentation=selector, **kwargs)
-
-    # (1, 1, H, W) -- one head selected above. Nearest-neighbour back to the original grid
-    # so label ids are preserved (any smooth interpolation would invent nonexistent ids).
-    if out.shape[-2:] != (orig_h, orig_w):
-        out = torch.nn.functional.interpolate(out, size=(orig_h, orig_w), mode="nearest")
-    return np.asarray(out[0, 0].cpu().numpy(), np.uint32)
-
-
-# Backward-compatible alias (older callers / scripts imported this name).
-load_cellpose_model = load_segmenter
-
-
-def _diameter_for(organelle: str, segmentation: dict | None = None) -> float | None:
-    """Per-organelle Cellpose diameter (microns); ``None`` means auto-scale.
-
-    Prefers an explicit ``segmentation.diameters[organelle]`` from config; falls
-    back to the batch script's membrane-hint policy (membrane gets an explicit
-    diameter, nuclei auto-scale).
-    """
-    diameters = (segmentation or {}).get("diameters") or {}
-    if organelle in diameters:
-        return diameters[organelle]
-
-    from shrimpy.fov_selection import segment_cellpose as sc
-
-    hint = getattr(sc, "MEMBRANE_HINT", "membrane")
-    if hint in organelle.lower():
-        return getattr(sc, "MEMBRANE_DIAMETER", 120.0)
-    return getattr(sc, "NUCLEI_DIAMETER", None)
-
-
-def _segment_otsu(img2d: np.ndarray, segmentation: dict | None = None) -> np.ndarray:
-    """Otsu-threshold the projection into a cleaned connected-component label mask.
-
-    Threshold by Otsu, optionally morphologically close (``close_radius`` px disk, to bridge
-    gaps between the pieces of a cluster), drop connected components below ``min_size`` px,
-    fill interior holes (``fill_holes``, default True), then label. Suited to a log-std
-    brightfield projection where the foreground is a texture blob rather than crisp objects. A
-    flat / empty projection yields an all-zero mask (no foreground). Params from the
-    ``segmentation`` config block."""
-    from scipy.ndimage import binary_fill_holes
-    from skimage.filters import threshold_otsu
-    from skimage.measure import label as cc_label
-    from skimage.morphology import binary_closing, disk
-
-    seg = segmentation or {}
-    img = np.asarray(img2d, np.float32)
-    finite = img[np.isfinite(img)]
-    if finite.size == 0 or float(finite.min()) == float(finite.max()):
-        return np.zeros(img.shape, np.uint32)  # flat image -> no Otsu split -> no foreground
-    fg = img > threshold_otsu(img)
-    close_radius = int(seg.get("close_radius", 0))
-    if close_radius > 0:
-        fg = binary_closing(fg, disk(close_radius))
-    min_size = int(seg.get("min_size", 0))
-    if min_size > 0:
-        lab = cc_label(fg)
-        sizes = np.bincount(lab.ravel())
-        keep = sizes >= min_size
-        keep[0] = False  # background
-        fg = keep[lab]
-    if seg.get("fill_holes", True):
-        fg = binary_fill_holes(fg)
-    return np.asarray(cc_label(fg), np.uint32)
-
-
-def segment_2d(
-    img2d: np.ndarray,
-    model,
-    organelle: str,
-    segmentation: dict | None = None,
-    px_um: float | None = None,
-) -> np.ndarray:
-    """Segment one 2D projection into a uint32 label mask, per ``segmentation.model``.
-
-    ``'cellpose'`` (default) runs the loaded Cellpose ``model`` with thresholds / min_size /
-    batch_size / per-organelle diameter from the ``segmentation`` config block (falling back
-    to the batch script's defaults). ``'instanseg'`` runs the loaded TorchScript module (see
-    :func:`_segment_instanseg`), which needs ``px_um`` to resample the FOV to the model's
-    training resolution. ``'otsu'`` ignores ``model`` and thresholds the projection directly
-    (see :func:`_segment_otsu`).
-    """
-    seg = segmentation or {}
-    backend = seg.get("model", "cellpose")
-    if backend == "otsu":
-        return _segment_otsu(img2d, seg)
-    if backend == "instanseg":
-        return _segment_instanseg(img2d, model, seg, px_um)
-
-    from shrimpy.fov_selection import segment_cellpose as sc
-
-    kwargs = {
-        "flow_threshold": seg.get("flow_threshold", getattr(sc, "FLOW_THRESHOLD", 0.4)),
-        "cellprob_threshold": seg.get(
-            "cellprob_threshold", getattr(sc, "CELLPROB_THRESHOLD", 0.0)
-        ),
-        "batch_size": seg.get("batch_size", getattr(sc, "BATCH_SIZE", 64)),
-        "min_size": seg.get("min_size", getattr(sc, "MIN_SIZE", 15)),
-        "normalize": True,
-    }
-    diam = _diameter_for(organelle, seg)
-    if diam is not None:
-        kwargs["diameter"] = diam
-    # eval returns (masks, flows, styles); masks is a list of 2D masks (one per
-    # input image). We pass a single image, so take masks[0].
-    masks = model.eval([np.asarray(img2d, np.float32).copy()], **kwargs)[0]
-    return np.asarray(masks[0], np.uint32)
+    if idx is None:  # no confident focus (e.g. threshold_FWHM) -> middle slice
+        logger.warning("best_focus_z: no confident in-focus slice found; using z=%d.", mid)
+        idx = mid
+    idx = int(idx)
+    logger.info("best_focus_z: in-focus slice z=%d of %d", idx, zyx.shape[0])
+    return np.asarray(zyx[idx], np.float32), idx
 
 
 # Aggregate features derivable from the label mask alone (total coverage, foreground-pixel
@@ -471,7 +218,7 @@ def _cheap_features(mask: np.ndarray, px_um: float, keys: set[str]) -> dict[str,
     if "coverage_frac" in keys:
         out["coverage_frac"] = float(np.count_nonzero(m) / (w * h))
     if "mask_occupancy_entropy" in keys:
-        out["mask_occupancy_entropy"] = mask_occupancy_entropy(m)
+        out["mask_occupancy_entropy"] = FeatureExtractor.mask_occupancy_entropy(m)
     return out
 
 
@@ -513,7 +260,7 @@ def fov_feature_matrix(
         if keys_needed is not None and keys_needed <= CHEAP_FEATURE_KEYS:
             agg = _cheap_features(masks[organelle], px_um, keys_needed)
         else:
-            rows = object_feature_rows(
+            rows = FeatureExtractor.object_feature_rows(
                 masks[organelle],
                 proj,
                 px_um,
@@ -540,9 +287,9 @@ def fov_feature_matrix(
                 cheap = keys_needed if keys_needed is not None else CHEAP_FEATURE_KEYS
                 agg = _cheap_features(masks[organelle], px_um, set(cheap) & CHEAP_FEATURE_KEYS)
             else:
-                agg = group_features(pd.DataFrame(rows))
+                agg = FeatureExtractor.group_features(pd.DataFrame(rows))
                 if keys_needed is None or (keys_needed & MASK_FEATURE_KEYS):
-                    agg.update(mask_gap_features(masks[organelle], px_um))
+                    agg.update(FeatureExtractor.mask_gap_features(masks[organelle], px_um))
 
         for k, v in agg.items():
             if keys_needed is None or k in keys_needed:
@@ -584,7 +331,7 @@ def flat_feature_matrix(
     if keys_needed is not None and keys_needed <= CHEAP_FEATURE_KEYS:
         agg = _cheap_features(mask, px_um, keys_needed)
     else:
-        rows = object_feature_rows(
+        rows = FeatureExtractor.object_feature_rows(
             mask,
             proj,
             px_um,
@@ -607,9 +354,9 @@ def flat_feature_matrix(
             cheap = keys_needed if keys_needed is not None else CHEAP_FEATURE_KEYS
             agg = _cheap_features(mask, px_um, set(cheap) & CHEAP_FEATURE_KEYS)
         else:
-            agg = group_features(pd.DataFrame(rows))
+            agg = FeatureExtractor.group_features(pd.DataFrame(rows))
             if keys_needed is None or (keys_needed & MASK_FEATURE_KEYS):
-                agg.update(mask_gap_features(mask, px_um))
+                agg.update(FeatureExtractor.mask_gap_features(mask, px_um))
 
     feat = {k: v for k, v in agg.items() if keys_needed is None or k in keys_needed}
     return pd.DataFrame([feat])
@@ -657,7 +404,7 @@ def decide_fov(
     projection: str = "sum",
     px_um: float,
     threshold: float = 0.5,
-    segmentation: dict | None = None,
+    best_focus_z: dict | None = None,
     return_artifacts: bool = False,
     return_stacks: bool = False,
     extract_all: bool = False,
@@ -684,9 +431,10 @@ def decide_fov(
     ----------
     preprocessor : callable
         ``build_preprocessor(...)`` result; ``(Z, Y, X) -> {channel: ZYX tensor}``.
-    segmenter : object | None
-        Loaded segmentation backend from :func:`load_segmenter` -- a CellposeModel, or
-        ``None`` for the (stateless) Otsu backend.
+    segmenter : Segmenter
+        Loaded segmentation backend from
+        :func:`shrimpy.fov_selection.segmentation.build_segmenter` (Cellpose / InstanSeg /
+        Otsu); it carries its own config, so the segmentation block is not re-passed here.
     model : FovModel
         Any :class:`~shrimpy.fov_selection.fov_model.FovModel` (thresholding, desirability,
         trained tree, ...); consumes the extracted features by name.
@@ -696,14 +444,17 @@ def decide_fov(
         Reconstructed channels to segment/feature (e.g. ``['nuclei', 'membrane']`` or a
         single ``['brightfield']``).
     projection : str
-        ``'sum'`` (trained default), ``'max'``, ``'middle'`` (middle-slice), or ``'logstd'``
-        (log-normalized per-pixel std over Z).
+        ``'sum'`` (trained default), ``'max'``, ``'middle'`` (middle-slice), ``'logstd'``
+        (log-normalized per-pixel std over Z), or ``'best_focus_z'`` (the in-focus slice
+        picked by waveorder; needs ``best_focus_z`` optics -- see :func:`project_zyx`).
     px_um : float
-        XY pixel size in microns (physical feature units).
+        XY pixel size in microns (physical feature units; also the focus pixel size).
     threshold : float
         P(good) cutoff.
-    segmentation : dict | None
-        Segmentation config block (model, thresholds, per-organelle diameters).
+    best_focus_z : dict | None
+        Optics for the ``'best_focus_z'`` projection: ``numerical_aperture_detection`` and
+        ``wavelength_illumination`` (um), optional ``mode`` / ``midband_fractions``. Ignored by
+        the other projection methods.
     extract_all : bool
         Compute EVERY producible feature column instead of only the ones the model reads
         (``model.feature_names``). Used by the calibration pre-scan, whose whole purpose is
@@ -740,14 +491,21 @@ def decide_fov(
 
     projections: dict[str, np.ndarray] = {}
     masks: dict[str, np.ndarray] = {}
+    # For the 'best_focus_z' projection, remember which Z slice each channel was
+    # projected from (and the stack depth) so the worker can log it for debugging.
+    best_focus_index: dict[str, dict[str, int]] = {}
     for organelle in target_channels:
         vol = _to_numpy(channels[organelle])
         if return_stacks:
             stacks[organelle] = vol
-        proj = project_zyx(vol, projection)
+        proj, z_idx = project_zyx(
+            vol, projection, px_um=px_um, best_focus_z=best_focus_z, return_index=True
+        )
+        if z_idx is not None:
+            best_focus_index[organelle] = {"slice": int(z_idx), "n_slices": int(vol.shape[0])}
         projections[organelle] = proj
         try:
-            mask = segment_2d(proj, segmenter, organelle, segmentation, px_um=px_um)
+            mask = segmenter.segment(proj, organelle, px_um=px_um)
         except Exception as exc:
             logger.error("%ssegment %s FAILED: %s", pfx, organelle, exc)
             raise
@@ -764,6 +522,7 @@ def decide_fov(
             "projections": projections,
             "masks": masks,
             "features": matrix,
+            "best_focus_index": best_focus_index,
         }
         return float(proba[0]), bool(good[0]), artifacts
     return float(proba[0]), bool(good[0])

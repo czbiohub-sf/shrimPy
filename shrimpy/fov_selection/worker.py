@@ -87,6 +87,10 @@ class FovSelectionWorker:
         require_gpu: bool = True,
         calibration_mode: bool = False,
         matrix_stem: str | None = None,
+        best_focus_z: dict | None = None,
+        z_step_um: float = 1.0,
+        save_best_focus_z: bool = False,
+        write_debug_artifacts: bool = True,
     ) -> None:
         self._recon = recon
         self._target_channels = target_channels
@@ -113,6 +117,18 @@ class FovSelectionWorker:
         # viewer. matrix_stem is the CSV/folder stem, e.g. "<acq>_fov_feature_matrix".
         self._calibration_mode = calibration_mode
         self._matrix_stem = matrix_stem
+        # Optics for the 'best_focus_z' projection (numerical_aperture_detection,
+        # wavelength_illumination, ...); None for the other projection methods.
+        self._best_focus_z = best_focus_z
+        # Acquisition Z step (um), used to turn the best-focus slice index into a depth.
+        self._z_step_um = z_step_um
+        # When set (fov_selection.save_best_focus_z_for_debug) and the projection is
+        # 'best_focus_z', append the detected slice / depth per FOV to a debug CSV.
+        self._save_best_focus_z = save_best_focus_z
+        # Write the standard PNG/feature debug artifacts (save_decision / calibration).
+        # Kept separate so save_best_focus_z_for_debug can add its CSV without also
+        # forcing the projection/mask PNGs when only the focus CSV was requested.
+        self._write_debug_artifacts = write_debug_artifacts
         self._process: mp.Process | None = None
         self._input_queue: mp.Queue | None = None
         self._output_queue: mp.Queue | None = None
@@ -142,6 +158,10 @@ class FovSelectionWorker:
                 self._require_gpu,
                 self._calibration_mode,
                 self._matrix_stem,
+                self._best_focus_z,
+                self._z_step_um,
+                self._save_best_focus_z,
+                self._write_debug_artifacts,
             ),
             daemon=True,
         )
@@ -208,6 +228,10 @@ def _worker_loop(
     require_gpu: bool = True,
     calibration_mode: bool = False,
     matrix_stem: str | None = None,
+    best_focus_z: dict | None = None,
+    z_step_um: float = 1.0,
+    save_best_focus_z: bool = False,
+    write_debug_artifacts: bool = True,
 ) -> None:
     """Main loop for the FOV-selection worker process."""
     # Mirror DynaTrack's subprocess logging: file handler to the parent's log
@@ -233,6 +257,7 @@ def _worker_loop(
     try:
         from shrimpy.fov_selection import fov_model as fov_model_lib
         from shrimpy.fov_selection import pipeline
+        from shrimpy.fov_selection.segmentation import build_segmenter
         from shrimpy.preprocessing import build_preprocessor
 
         log.info("FOV-selection worker: initializing for shape %s...", zyx_shape)
@@ -251,7 +276,7 @@ def _worker_loop(
                 "fov_selection.reconstruction produced no preprocessor; a "
                 "'deskew'/'phase'/'vs' pipeline is required to make nuclei/membrane."
             )
-        segmenter = pipeline.load_segmenter(segmentation)
+        segmenter = build_segmenter(segmentation)
         # Pluggable FOV model built from the config (trained .joblib via 'path', or a
         # hand-tuned 'type'); decide_fov calls model.predict, agnostic to the type.
         model = fov_model_lib.build_fov_model(model_cfg)
@@ -305,7 +330,7 @@ def _worker_loop(
                     projection=projection,
                     px_um=px_um,
                     threshold=threshold,
-                    segmentation=segmentation,
+                    best_focus_z=best_focus_z,
                     return_artifacts=need_artifacts,
                     return_stacks=recon_zarr_path is not None,
                     extract_all=calibration_mode,
@@ -328,7 +353,18 @@ def _worker_loop(
                                 "reconstruction for %s; the decision is unaffected",
                                 name,
                             )
-                    if debug_dir is not None:
+                    if debug_dir is not None and save_best_focus_z:
+                        try:
+                            _append_best_focus_z_row(
+                                debug_dir, matrix_stem, name, z_step_um, artifacts
+                            )
+                        except Exception:
+                            log.exception(
+                                "FOV-selection worker: could not write the best-focus-Z "
+                                "debug CSV for %s; the decision is unaffected",
+                                name,
+                            )
+                    if debug_dir is not None and write_debug_artifacts:
                         try:
                             if calibration_mode:
                                 _write_feature_viewer_artifacts(
@@ -417,10 +453,21 @@ def _write_decision_artifacts(
     debug_dir.mkdir(parents=True, exist_ok=True)
     safe = "".join(c if (c.isalnum() or c in "_-") else "_" for c in str(name)) or "fov"
 
-    for channel, proj in (artifacts.get("projections") or {}).items():
+    from shrimpy.fov_selection.pipeline import save_mask_overlay_png
+
+    projections = artifacts.get("projections") or {}
+    masks = artifacts.get("masks") or {}
+    for channel, proj in projections.items():
         _save_projection_png(debug_dir / f"{safe}_{channel}_projection.png", proj)
-    for channel, mask in (artifacts.get("masks") or {}).items():
-        _save_label_png(debug_dir / f"{safe}_{channel}_mask.png", mask)
+    for channel, mask in masks.items():
+        # the mask PNG is the segmentation OUTLINE (magenta) over the projection it segments,
+        # so the cells stay visible. Fall back to a colorized label map if the projection is
+        # somehow missing for this channel.
+        mask_path = debug_dir / f"{safe}_{channel}_mask.png"
+        if channel in projections:
+            save_mask_overlay_png(mask_path, projections[channel], mask)
+        else:
+            _save_label_png(mask_path, mask)
 
     _append_summary_row(debug_dir, name, proba, good, artifacts.get("features"))
 
@@ -460,6 +507,8 @@ def _write_feature_viewer_artifacts(
     stem = matrix_stem or DEFAULT_MATRIX_STEM
     safe = "".join(c if (c.isalnum() or c in "_-") else "_" for c in str(name)) or "fov"
 
+    from shrimpy.fov_selection.pipeline import save_mask_overlay_png
+
     # Map segmented channels onto the viewer's brightfield/fluor thumbnail slots (brightfield
     # is the default toggle); the mask always goes to the mask slot. Folder suffixes mirror
     # feature_viewer/data.py's _channel_png_folder ("_png" / "_<channel>_png").
@@ -473,14 +522,13 @@ def _write_feature_viewer_artifacts(
         if channel in masks:
             mask_folder = debug_dir / f"{stem}_mask_png"
             mask_folder.mkdir(parents=True, exist_ok=True)
-            _save_label_png(mask_folder / f"{safe}.png", masks[channel])
+            # magenta segmentation outline over the projection (cells stay visible)
+            save_mask_overlay_png(mask_folder / f"{safe}.png", proj, masks[channel])
 
     _append_feature_viewer_row(debug_dir, stem, safe, artifacts.get("features"))
 
 
-def _append_feature_viewer_row(
-    debug_dir: Path, stem: str, filename: str, features
-) -> None:
+def _append_feature_viewer_row(debug_dir: Path, stem: str, filename: str, features) -> None:
     """Append one FOV's row (``filename`` + all feature columns) to ``<stem>.csv``.
 
     Uses pandas concat so FOVs with different feature columns (e.g. no objects -> only the
@@ -494,6 +542,54 @@ def _append_feature_viewer_row(
     row.insert(0, "filename", filename)
 
     csv_path = debug_dir / f"{stem}.csv"
+    if csv_path.exists():
+        row = pd.concat([pd.read_csv(csv_path), row], ignore_index=True)
+    row.to_csv(csv_path, index=False)
+
+
+def _append_best_focus_z_row(
+    debug_dir: Path,
+    stem: str | None,
+    name: str,
+    z_step_um: float,
+    artifacts: dict,
+) -> None:
+    """Append the detected best-focus Z slice(s) for one FOV to a debug CSV.
+
+    Written only when ``fov_selection.save_best_focus_z_for_debug`` is set and the
+    projection is ``best_focus_z``. One row per FOV per segmented channel::
+
+        fov, channel, best_focus_slice, n_slices, z_step_um, best_focus_z_um
+
+    ``best_focus_slice`` is the 0-based Z index picked by the focus finder and
+    ``best_focus_z_um = best_focus_slice * z_step_um`` its depth from the first slice
+    (exact when no deskew is applied; the acquisition Z step otherwise only approximates
+    the reconstructed axial spacing). Written to ``<stem>_best_focus_z.csv`` (or
+    ``best_focus_z.csv`` when there is no stem). Runs one FOV at a time in the worker
+    subprocess, so the read/append/write is unsynchronized-safe.
+    """
+    import pandas as pd
+
+    index = artifacts.get("best_focus_index") or {}
+    if not index:
+        return
+
+    rows = [
+        {
+            "fov": name,
+            "channel": channel,
+            "best_focus_slice": info["slice"],
+            "n_slices": info["n_slices"],
+            "z_step_um": z_step_um,
+            "best_focus_z_um": info["slice"] * z_step_um,
+        }
+        for channel, info in index.items()
+    ]
+    row = pd.DataFrame(rows)
+
+    Path(debug_dir).mkdir(parents=True, exist_ok=True)
+    fname = f"{stem}_best_focus_z.csv" if stem else "best_focus_z.csv"
+    csv_path = Path(debug_dir) / fname
     if csv_path.exists():
         row = pd.concat([pd.read_csv(csv_path), row], ignore_index=True)
     row.to_csv(csv_path, index=False)

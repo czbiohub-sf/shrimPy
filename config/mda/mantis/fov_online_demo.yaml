@@ -109,41 +109,77 @@ metadata:
 
       # Ordered preprocessing steps. The XY pixel size and Z step are NOT set here -- they
       # are fetched from the Core (core.getPixelSizeUm()) and z_plan.step at runtime and
-      # injected into deskew (single source of truth).
+      # injected into deskew (single source of truth). Available steps:
+      #   reconstruction: flatfield, deskew, phase, vs
+      #   projection (pick one): sum_projection, max_projection, middle_slice_projection,
+      #       logstd_projection (per-pixel std over Z, log1p-compressed; label-free texture),
+      #       best_focus_z (the single IN-FOCUS Z slice, chosen by waveorder's transverse-band
+      #       focus metric; REQUIRES the `best_focus_z:` block below)
+      #   segmentation
       #
+      # Each pipeline pairs a projection with a segmentation block -- switch them TOGETHER.
       # ---- ACTIVE (pipeline A): middle-slice brightfield + Cellpose-DINO -------------
       # Single reconstructed brightfield channel -> plain (unprefixed) feature names, which
       # is what the ranking model below reads. Needs a GPU + the cpdino weights.
-      preprocessing: ['flatfield', 'deskew', 'middle_slice_projection', 'segmentation']
+      # preprocessing: ['flatfield', 'deskew', 'middle_slice_projection', 'segmentation']
       # ---- ALTERNATIVE (pipeline B): log-std brightfield + Otsu ----------------------
       # No GPU / trained model -- the lightest path for a quick calibration test. Switch the
       # `segmentation:` block to the Otsu alternative below as well.
       # preprocessing: ['flatfield', 'deskew', 'logstd_projection', 'segmentation']
+      # ---- ALTERNATIVE (pipeline C): middle-slice brightfield + InstanSeg ------------
+      # Switch the `segmentation:` block to the InstanSeg alternative below as well.
+      # preprocessing: ['flatfield', 'deskew', 'middle_slice_projection', 'segmentation']
+      # ---- ALTERNATIVE (pipeline D): in-focus brightfield slice + a segmenter --------
+      # Uncomment the `best_focus_z:` block below; like middle-slice this yields an IMAGE, so
+      # pair it with an image-like segmenter (cellpose or instanseg), not Otsu on texture.
+      preprocessing: ['flatfield', 'deskew', 'best_focus_z', 'segmentation']
 
       deskew:
         ls_angle_deg: 30.0
         keep_overhang: false
         average_n_slices: 3
 
+      # Optics for the `best_focus_z` step (waveorder's transverse-band focus finder): keeps the
+      # single in-focus Z slice. REQUIRED only when that projection is selected; the run ABORTS
+      # before acquiring if it is chosen and these are missing. Units are microns and must match
+      # the acquisition pixel size. If the optics ARE given but a FOV has no confident focus, it
+      # falls back to that FOV's middle slice. `mode`/`midband_fractions` are optional.
+      best_focus_z:
+        numerical_aperture_detection: 1.35   # detection (objective) NA
+        wavelength_illumination: 0.450       # illumination wavelength, um
+        mode: max                            # optional: 'max' (bright objects; default) | 'min'
+        midband_fractions: [0.125, 0.25]     # optional: band as a fraction of the cutoff freq
+      save_best_focus_z_for_debug: True
+      
       # Switchable segmentation (`model`: cellpose | instanseg | otsu). Pick ONE block.
       # ---- ACTIVE (pipeline A): Cellpose-DINO ----------------------------------------
-      segmentation:
-        model: cellpose
-        model_name: cpdino
-        gpu: true
-        flow_threshold: 0.4
-        cellprob_threshold: 0.0
-        batch_size: 64
-        min_size: 15
-        diameters:            # microns; null -> Cellpose auto-scale
-          nuclei: null
-          membrane: 120.0
+      # segmentation:
+      #   model: cellpose
+      #   model_name: cpdino
+      #   gpu: true
+      #   flow_threshold: 0.4
+      #   cellprob_threshold: 0.0
+      #   batch_size: 64
+      #   min_size: 15
+      #   diameters:            # microns; null -> Cellpose auto-scale
+      #     nuclei: null
+      #     membrane: 120.0
       # ---- ALTERNATIVE (pipeline B): Otsu on the log-std projection ------------------
       # segmentation:
       #   model: otsu
       #   close_radius: 10     # morphological-closing disk radius in px (0 = skip)
       #   min_size: 8000       # remove foreground components smaller than this (px)
       #   fill_holes: true     # fill interior holes of the foreground
+      # ---- ALTERNATIVE (pipeline C): InstanSeg --------------------------------------
+      # A TorchScript checkpoint (bioimage.io .zip or bare .pt); needs only torch, not the
+      # `instanseg` package. The FOV is resampled to the model's TRAINING pixel size (read from
+      # the .zip's rdf.yaml, or set model_pixel_size_um for a bare .pt) -- so no `diameter` knob.
+      # Pair with an image-like projection (middle slice / best_focus_z), not the log-std map.
+      segmentation:
+        model: instanseg
+        path: /hpc/projects/comp.micro/microscope_dev/smart_fov_selection/models/instanseg_34532446.zip
+        gpu: true
+        target: cells         # which output head to keep: nuclei | cells
 
       # FOV-goodness model. In calibration mode this is NOT used to pick which features to
       # extract (all are extracted) and no selection is applied, but a valid model block is
