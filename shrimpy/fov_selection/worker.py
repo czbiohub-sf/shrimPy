@@ -435,13 +435,22 @@ def _write_decision_artifacts(
 ) -> None:
     """Persist one FOV's lightweight decision artifacts (save_decision).
 
-    Layout: all files live directly in ``<debug_dir>/`` (no per-FOV subfolders, so
-    every FOV's images can be browsed together). Per FOV per target channel:
-    ``<name>_<ch>_projection.png`` (grayscale, min/max stretched) and
-    ``<name>_<ch>_mask.png`` (colorized labels) for quick visual QC without a zarr
-    viewer. One combined ``fov_summary.csv`` gets a row per FOV -- ``name, proba``
-    followed by every feature column -- so all FOVs are viewable at a glance. The
-    ``selected`` / ``rank`` decision columns are added post-drain by the manager
+    Layout: the images are split into one folder per kind, exactly as the calibration
+    layout does (:func:`_write_feature_viewer_artifacts`), so the projections and the
+    mask overlays can be flipped through separately instead of interleaving in one
+    directory::
+
+        <debug_dir>/projection_png/<name>.png   # grayscale, min/max stretched
+        <debug_dir>/mask_png/<name>.png         # magenta segmentation outline over it
+        <debug_dir>/fov_summary.csv             # one row per FOV
+
+    One ``<fov>.png`` per folder, with the channel carried by the FOLDER name rather
+    than the filename (see :func:`_debug_png_folder`), so a multi-channel (VS) run adds
+    ``projection_<ch>_png`` / ``mask_<ch>_png`` beside them instead of colliding.
+
+    The combined ``fov_summary.csv`` gets a row per FOV -- ``name, proba`` followed by
+    every feature column -- so all FOVs are viewable at a glance. The ``selected`` /
+    ``position`` / ``rank`` decision columns are added post-drain by the manager
     (see :meth:`~shrimpy.fov_selection.manager.FovSelection.finalize_debug_summary`).
 
     The full per-step 3D reconstruction is written separately as the pre-scan
@@ -459,19 +468,38 @@ def _write_decision_artifacts(
 
     projections = artifacts.get("projections") or {}
     masks = artifacts.get("masks") or {}
+    # Stable channel order over projections + masks: each channel must resolve to its own
+    # folder, otherwise two channels would both write <safe>.png into the same one.
+    channels = list(dict.fromkeys([*projections, *masks]))
     for channel, proj in projections.items():
-        _save_projection_png(debug_dir / f"{safe}_{channel}_projection.png", proj)
+        folder = _debug_png_folder(debug_dir, "projection", channel, channels)
+        _save_projection_png(folder / f"{safe}.png", proj)
     for channel, mask in masks.items():
         # the mask PNG is the segmentation OUTLINE (magenta) over the projection it segments,
         # so the cells stay visible. Fall back to a colorized label map if the projection is
         # somehow missing for this channel.
-        mask_path = debug_dir / f"{safe}_{channel}_mask.png"
+        mask_path = _debug_png_folder(debug_dir, "mask", channel, channels) / f"{safe}.png"
         if channel in projections:
             save_mask_overlay_png(mask_path, projections[channel], mask)
         else:
             _save_label_png(mask_path, mask)
 
     _append_summary_row(debug_dir, name, proba, good, artifacts.get("features"))
+
+
+def _debug_png_folder(debug_dir: Path, kind: str, channel: str, channels: list[str]) -> Path:
+    """The (created) folder a decision-mode debug PNG of ``kind`` goes in.
+
+    ``<debug_dir>/<kind>_png`` for the first channel and ``<kind>_<channel>_png`` for any
+    after it -- the same rule the calibration layout uses (channel in the FOLDER name, a bare
+    ``<fov>.png`` inside). The common single-channel case therefore yields just
+    ``projection_png/`` + ``mask_png/``, while a multi-channel (VS) run keeps each channel in
+    its own folder.
+    """
+    first = channels[0] if channels else channel
+    folder = debug_dir / (f"{kind}_png" if channel == first else f"{kind}_{channel}_png")
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
 
 
 def _write_feature_viewer_artifacts(
@@ -482,9 +510,11 @@ def _write_feature_viewer_artifacts(
 ) -> None:
     """Persist one FOV's artifacts in the feature viewer's STANDARD layout (calibration).
 
-    Unlike :func:`_write_decision_artifacts` (the flat ``<name>_<ch>_*.png`` + ``proba``
-    layout), this writes exactly what :mod:`shrimpy.fov_selection.feature_viewer.data`
-    loads without any conversion, so a calibration pre-scan drops straight into the viewer::
+    :func:`_write_decision_artifacts` splits its PNGs into per-kind folders the same way,
+    but names them for browsing (``projection_png`` / ``mask_png``) and writes ``proba``.
+    This one uses the ``<stem>``-prefixed folder names and the ``filename`` join column that
+    :mod:`shrimpy.fov_selection.feature_viewer.data` requires, so a calibration pre-scan
+    drops straight into the viewer with no conversion::
 
         <debug_dir>/<stem>.csv            # one row per FOV; carries a `filename` column
         <debug_dir>/<stem>_png/           # projection (brightfield) PNG per FOV
@@ -709,9 +739,9 @@ def _append_summary_row(
     Uses pandas concat so FOVs with different feature columns (e.g. no membrane
     objects) still align -- missing columns are filled with NaN.
 
-    The ``selected`` / ``rank`` columns are NOT written here: both are properties of
-    the whole pre-scan (top-K ranking across every FOV), not of one FOV, and are only
-    known after every FOV has been scored. The manager fills them in once, post-drain
+    The ``selected`` / ``position`` / ``rank`` columns are NOT written here: they are
+    properties of the whole pre-scan (a per-position top-K ranking), not of one FOV, and
+    are only known after every FOV has been scored. The manager fills them in once, post-drain
     (:meth:`shrimpy.fov_selection.manager.FovSelection.finalize_debug_summary`). The
     per-FOV ``good`` flag is deliberately not written -- for a ranking model it is a
     threshold artifact that has nothing to do with what actually gets imaged.

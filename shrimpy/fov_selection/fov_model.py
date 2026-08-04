@@ -88,11 +88,13 @@ class ThresholdingModel(FovModel):
 class DesirabilityModel(FovModel):
     """User-defined desirable ranges -> weighted-desirability score (no training).
 
-    Turns each feature into a desirability in ``[0, 1]`` (see :meth:`_desirability`), then
-    combines them into one ``proba`` in ``[0, 1]`` per :meth:`_aggregate` -- by default the
-    joint gaussian density (:attr:`DEFAULT_AGGREGATION`), so a single weak feature vetoes the
-    FOV; set ``aggregation`` to ``sum`` for the compensatory weighted mean instead. ``proba``
-    is used purely as a RANKING score. ``shape`` (linear|sigmoid|gaussian|
+    Produces one ``proba`` in ``[0, 1]`` per FOV, used purely as a RANKING score. By default
+    (:attr:`DEFAULT_AGGREGATION`) that score is a single N-dimensional gaussian evaluated over
+    all N features at once -- each feature contributing one axis, with its own centre and sigma
+    -- so a single weak feature vetoes the FOV. The other two ``aggregation`` modes instead
+    reduce each feature to a scalar desirability (:meth:`_desirability`) and combine those:
+    ``sum`` (compensatory weighted mean) or ``product`` (weighted geometric mean). See
+    :meth:`_aggregate`. ``shape`` (linear|sigmoid|gaussian|
     lognormal -- see :attr:`SHAPES`) is REQUIRED per feature. Every shape is defined by
     interpretable "where it's best" + "how forgiving" parameters (no raw sigma / steepness):
 
@@ -139,6 +141,67 @@ class DesirabilityModel(FovModel):
     # down (penalizing sparse/empty FOVs) rather than being ignored.
     MISSING_DESIRABILITY = 0.0
 
+    # Squared normalized distance assigned to a feature that could not be measured (NaN), under
+    # the 'gaussian' aggregation. Real distances there are exact and unbounded, so an
+    # unmeasurable feature needs its own explicit penalty rather than sharing a saturation cap
+    # with genuinely-terrible values: 10 sigma. A feature measured FURTHER off-target than this
+    # therefore counts as worse than one that could not be measured -- deliberate, since a
+    # 15-sigma coverage is positive evidence of a bad FOV while a NaN is only absent evidence.
+    MISSING_Z2 = 100.0
+
+    @classmethod
+    def _squared_distance(
+        cls,
+        values,
+        lo: float,
+        hi: float,
+        direction: str,
+        soft_left: float,
+        soft_right: float,
+        shape: str = "linear",
+        curve_k: float = 0.0,
+    ) -> np.ndarray:
+        """Per-value squared normalized distance from the ideal -- the ``z²`` of one axis of the
+        joint gaussian score (see :meth:`_aggregate`).
+
+        Computed from the curve's own parameters, NOT recovered from the scalar desirability.
+        Inverting ``d`` (``z² = -2 ln d``) saturates as soon as ``d`` hits its floor, which caps
+        every distance at ~5.26 sigma and makes all badly-off-target FOVs score identically;
+        going direct keeps the score discriminating at any distance.
+
+        ``gaussian``  ``|(x - center)/sigma|^beta`` -- the Mahalanobis distance of the bell
+                      (``beta = 2`` gives the textbook ``z²``).
+        ``lognormal`` the same in ``log(x)``; ``x <= 0`` is outside the support -> missing.
+        ``linear`` /  no scale parameter exists for these, so the equivalent distance is derived
+        ``sigmoid``   from the desirability and capped at :attr:`MISSING_Z2`.
+
+        A missing (NaN) value gets :attr:`MISSING_Z2`.
+        """
+        v = np.asarray(values, float)
+        out = np.full(v.shape, cls.MISSING_Z2)
+        m = ~np.isnan(v)
+        x = v[m]
+        span = (hi - lo) or 1e-9
+        beta = curve_k if curve_k > 0 else 2.0
+        if shape == "gaussian":
+            c, s = 0.5 * (lo + hi), max(0.5 * span, 1e-9)
+            out[m] = np.abs((x - c) / s) ** beta
+        elif shape == "lognormal":
+            lo_p, hi_p = max(lo, 1e-12), max(hi, 1e-12)
+            if hi_p <= lo_p:
+                hi_p = lo_p * (1.0 + 1e-6)
+            mu = 0.5 * (np.log(lo_p) + np.log(hi_p))
+            s = max(0.5 * np.log(hi_p / lo_p), 1e-9)
+            z2 = np.full(x.shape, cls.MISSING_Z2)  # x <= 0 is off the support
+            pos = x > 0
+            z2[pos] = np.abs((np.log(x[pos]) - mu) / s) ** beta
+            out[m] = z2
+        else:
+            d = cls._desirability(x, lo, hi, direction, soft_left, soft_right, shape, curve_k)
+            with np.errstate(divide="ignore"):
+                out[m] = np.minimum(-2.0 * np.log(np.clip(d, 0.0, 1.0)), cls.MISSING_Z2)
+        return out
+
     @staticmethod
     def _gaussian_bounds(center: float, fwhm: float, name: str = "") -> tuple[float, float]:
         """Convert an interpretable gaussian (``center`` peak + ``fwhm`` width at half max) to
@@ -164,10 +227,14 @@ class DesirabilityModel(FovModel):
         s = math.log(fold) * _HWHM_TO_SIGMA
         return center * math.exp(-s), center * math.exp(s)
 
-    # How per-feature desirabilities combine into the FOV score (see :meth:`predict`):
-    #   'sum'      weighted arithmetic mean  (COMPENSATORY: a high feature offsets a low one)
-    #   'product'  weighted geometric mean   (NON-compensatory: one near-0 feature tanks it)
-    #   'gaussian' joint N-D gaussian density (product of per-feature gaussians; strongest veto)
+    # How the features become the one FOV score (see :meth:`_aggregate`):
+    #   'sum'      weighted arithmetic mean of the per-feature desirabilities
+    #              (COMPENSATORY: a high feature offsets a low one)
+    #   'product'  weighted geometric mean of them
+    #              (NON-compensatory: one near-0 feature tanks it)
+    #   'gaussian' NOT a combination of per-feature scores: ONE N-dimensional gaussian over all
+    #              N features at once, from each feature's exact distance (strongest veto; the
+    #              default -- see DEFAULT_AGGREGATION)
     AGGREGATIONS = ("sum", "product", "gaussian")
     # Aggregation used when a profile does not name one. 'gaussian' by default: a FOV is only
     # good if EVERY feature is acceptable, so one feature falling short should veto the FOV
@@ -377,8 +444,11 @@ class DesirabilityModel(FovModel):
 
     def predict(self, matrix_df, threshold: float = 0.5):
         n = len(matrix_df)
-        # Per-feature desirability array (n,) and weight, stacked into D (n_features, n).
-        rows, weights = [], []
+        # Per-feature desirability array (n,) and weight, stacked into D (n_features, n). The
+        # 'gaussian' aggregation is a single joint gaussian rather than a combination of the
+        # per-feature scores, so it needs each feature's exact squared distance instead.
+        joint_gaussian = self._aggregation == "gaussian"
+        rows, dists, weights = [], [], []
         for (
             name,
             lo,
@@ -395,42 +465,60 @@ class DesirabilityModel(FovModel):
                 if name in matrix_df.columns
                 else np.full(n, np.nan)
             )
-            rows.append(
-                self._desirability(
-                    col, lo, hi, direction, soft_left, soft_right, shape, curve_k
-                )
-            )
+            args = (col, lo, hi, direction, soft_left, soft_right, shape, curve_k)
+            rows.append(self._desirability(*args))
+            if joint_gaussian:
+                dists.append(self._squared_distance(*args))
             weights.append(weight)
-        proba = self._aggregate(np.vstack(rows), np.asarray(weights, float))
+        proba = self._aggregate(
+            np.vstack(rows),
+            np.asarray(weights, float),
+            np.vstack(dists) if joint_gaussian else None,
+        )
         return proba, [bool(p >= threshold) for p in proba]
 
-    def _aggregate(self, d: np.ndarray, w: np.ndarray) -> np.ndarray:
-        """Combine the per-feature desirabilities ``d`` (n_features, n) with weights ``w`` into
-        one score per FOV, per :attr:`AGGREGATIONS`.
+    def _aggregate(
+        self, d: np.ndarray, w: np.ndarray, z2: np.ndarray | None = None
+    ) -> np.ndarray:
+        """One score per FOV, per :attr:`AGGREGATIONS`.
+
+        ``d`` and ``z2`` are both ``(n_features, n)``. The first two modes COMBINE the
+        per-feature desirabilities ``d``; the third does not -- it evaluates a single joint
+        distribution over the raw distances ``z2``.
 
         'sum'      weighted arithmetic mean ``Σ w·d / Σ w`` in [0, 1]. Compensatory: a strong
                    feature can offset a weak one (a good coverage can mask a starved center).
         'product'  weighted geometric mean ``(Π d^w)^(1/Σw)`` in [0, 1]. Non-compensatory: any
                    feature near 0 pulls the whole score toward 0, so gate features act as vetoes.
-        'gaussian' joint N-D gaussian density ``exp(-0.5 Σ w·z²)`` with ``z² = -2 ln d`` (so a
-                   gaussian feature contributes exactly ``((x-center)/sigma)²``). This is the
-                   unnormalized product of the per-feature gaussians; it drops fastest as more
-                   features fall short, the strongest veto of the three.
+        'gaussian' ONE N-dimensional gaussian over all N features at once, not a combination of
+                   N per-feature scores: ``exp(-0.5 · Σ w·z² / Σw)`` with each ``z²`` the exact
+                   squared distance of that feature's own curve (:meth:`_squared_distance`), i.e.
+                   a gaussian with diagonal covariance whose axes are the features' sigmas. It
+                   drops fastest as more features fall short -- the strongest veto of the three.
 
-        Missing features already map to desirability 0 (:attr:`MISSING_DESIRABILITY`); under
-        'sum' they keep their weight in the denominator (proportional penalty), under
-        'product'/'gaussian' they are floored to :attr:`_DESIRABILITY_FLOOR` so one missing
-        feature drives the score very low without making it exactly 0 for every FOV.
+                   Two consequences of evaluating the joint density directly rather than
+                   inverting ``d``: distances stay exact instead of saturating at the
+                   desirability floor (~5.26 sigma), so badly-off-target FOVs are still ranked
+                   against each other; and a missing feature gets the explicit
+                   :attr:`MISSING_Z2` penalty. Dividing by ``Σw`` makes it the geometric mean of
+                   the per-axis gaussians rather than their raw product -- a monotonic rescale,
+                   so ranking is untouched, but scores stay comparable when the feature count
+                   changes and cannot underflow to a tie.
+
+        Missing features map to desirability 0 (:attr:`MISSING_DESIRABILITY`); under 'sum' they
+        keep their weight in the denominator (proportional penalty), under 'product' they are
+        floored to :attr:`_DESIRABILITY_FLOOR` so one missing feature drives the score very low
+        without making it exactly 0 for every FOV.
         """
         total = float(w.sum()) or 1.0
         if self._aggregation == "sum":
             return (w[:, None] * d).sum(0) / total
-        dz = np.clip(d, self._DESIRABILITY_FLOOR, 1.0)
         if self._aggregation == "product":
+            dz = np.clip(d, self._DESIRABILITY_FLOOR, 1.0)
             return np.exp((w[:, None] * np.log(dz)).sum(0) / total)  # weighted geometric mean
-        # gaussian: exp(-0.5 Σ w z²), z² = -2 ln d  ->  exp(Σ w ln d) = Π d^w (joint density)
-        z2 = -2.0 * np.log(dz)
-        return np.exp(-0.5 * (w[:, None] * z2).sum(0))
+        if z2 is None:  # pragma: no cover - predict always supplies it for this mode
+            raise ValueError("the 'gaussian' aggregation requires per-feature z² distances")
+        return np.exp(-0.5 * (w[:, None] * z2).sum(0) / total)
 
 
 class TrainedTreeModel(FovModel):

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import re
 import threading
 import time
 
@@ -31,12 +32,18 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from shrimpy.fov_selection.plate_naming import plate_labels
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from useq import MDAEvent, MDASequence
 
 logger = logging.getLogger(__name__)
+
+# Trailing per-well/per-center field index in an expanded FOV name ("site0_0003" -> "site0").
+# Anchored and 4-digit so it only strips a real field suffix (see _build_fov_groups).
+_FOV_FIELD_SUFFIX = re.compile(r"_\d{4}$")
 
 # Channels the decision needs (segmented + fed to the model).
 DEFAULT_TARGET_CHANNELS = ["nuclei", "membrane"]
@@ -162,10 +169,13 @@ class FovSelection:
         self._segmentation = config.get("segmentation", {}) or {}
         model_cfg = config.get("model", {}) or {}
         self._threshold = float(model_cfg.get("threshold", 0.5))
-        # top_fov (ranking_by_defined_range): keep only the N highest-proba FOVs, ranked
-        # across the whole pre-scan, instead of thresholding each FOV. None -> threshold mode.
+        # top_fov (ranking_by_defined_range): keep the N highest-proba FOVs PER POSITION (per
+        # well / per grid center -- see _build_fov_groups), instead of thresholding each FOV.
+        # None -> threshold mode.
         top_fov = model_cfg.get("top_fov")
         self._top_fov = int(top_fov) if top_fov is not None else None
+        # FOV name -> the position it belongs to, so top_fov is applied within each position.
+        self._fov_group = self._build_fov_groups(sequence)
         # Channels segmented + fed to the model, inferred from the preprocessing: the VS
         # targets when there is a 'vs' step, else the single reconstructed channel.
         self._is_vs = "vs" in self._steps
@@ -313,7 +323,8 @@ class FovSelection:
                 raise ValueError(
                     "fov_selection.model.type='ranking_by_defined_range' selects by pure "
                     "ranking and requires 'top_fov' (a positive int): the N highest-ranked "
-                    "FOVs pass. Aborting before acquisition."
+                    "FOVs OF EACH POSITION (well / grid center) pass. Aborting before "
+                    "acquisition."
                 )
         if not pixel_size_um:
             raise ValueError(
@@ -335,6 +346,33 @@ class FovSelection:
             decide_fn=decide_fn,
             run_index=run_index,
         )
+
+    @staticmethod
+    def _build_fov_groups(sequence: MDASequence) -> dict[str, str]:
+        """Map each candidate FOV name -> the *position* it belongs to.
+
+        ``top_fov`` is a per-position quota, so the FOVs of one well / one grid center have to
+        be identifiable as a group. Both candidate styles name a FOV ``"{position}_{field}"``
+        (see :func:`shrimpy.fov_selection.sequences.expand_candidate_fovs`), but they carry the
+        position differently:
+
+        * on a plate (``WellPlatePlan``, or centers with ``plate_row``/``plate_col``) the well
+          IS the position, and it is available structurally -- ``"B2_0007" -> "B2"``;
+        * off a plate the only record of the grid center is the name prefix, so a trailing
+          ``_<4-digit field>`` is stripped -- ``"site0_0003" -> "site0"``. The 4-digit shape is
+          matched exactly so a position whose own name contains an underscore and no field
+          suffix (explicit ``stage_positions`` with no ``grid_plan``) stays whole and simply
+          forms a group of one.
+        """
+        groups: dict[str, str] = {}
+        for idx, pos in enumerate(sequence.stage_positions):
+            name = pos.name or f"p{idx}"
+            well = plate_labels(pos)
+            if well is not None:
+                groups[name] = f"{well[0]}{well[1]}"
+            else:
+                groups[name] = _FOV_FIELD_SUFFIX.sub("", name) or name
+        return groups
 
     def _validate_fov_selection_channel(self, sequence: MDASequence) -> None:
         names = [ch.config for ch in sequence.channels]
@@ -627,8 +665,8 @@ class FovSelection:
         latency = time.monotonic() - started if started is not None else None
         if latency is not None:
             self._decision_latencies.append(latency)
-        # Per-FOV score only: the Passed/Skipped verdict is a ranking (top-K) result over
-        # the whole pre-scan, so it is logged once all FOVs are scored (log_selection_summary).
+        # Per-FOV score only: the Passed/Skipped verdict is a per-position top-K ranking result,
+        # so it needs every FOV of a position scored first (see log_selection_summary).
         logger.info(
             "FOV selection: %s -> score=%.3f%s",
             name,
@@ -666,24 +704,37 @@ class FovSelection:
     def passed_position_names(self) -> list[str]:
         """Names of the FOVs that passed FOV selection (imaged in the timelapse run).
 
-        ``ranking_by_defined_range`` (``model.top_fov`` set): the ``top_fov`` FOVs with the
-        highest score, best first (ties broken by decision order) -- pure ranking, so a
-        passing FOV is only the best available, not necessarily "good". Other model types:
-        every FOV the model decided good (its per-FOV verdict), in decision order.
+        ``ranking_by_defined_range`` (``model.top_fov`` set): the ``top_fov`` highest-scoring
+        FOVs **of each position** -- the quota is per well / per grid center, not across the
+        whole pre-scan, so every position contributes its own best FOVs and a dense well cannot
+        crowd out a sparser one. With ``top_fov: 3`` and 4 positions you get up to 12 FOVs.
+        Ordering is still globally best-first (ties broken by decision order); ranking is pure,
+        so a passing FOV is only the best available in its position, not necessarily "good".
+
+        Other model types: every FOV the model decided good (its per-FOV verdict), in decision
+        order -- a per-FOV pass/fail, so ``top_fov`` does not apply.
         """
         with self._verdicts_lock:
             items = list(self._verdicts.items())
-        if self._top_fov is not None:
-            ranked = sorted(items, key=lambda kv: kv[1][0], reverse=True)
-            return [name for name, _verdict in ranked[: self._top_fov]]
-        return [name for name, (_p, good) in items if good]
+        if self._top_fov is None:
+            return [name for name, (_p, good) in items if good]
+        ranked = sorted(items, key=lambda kv: kv[1][0], reverse=True)
+        kept: list[str] = []
+        per_position: dict[str, int] = {}
+        for name, _verdict in ranked:
+            position = self._fov_group.get(name, name)
+            if per_position.get(position, 0) >= self._top_fov:
+                continue
+            per_position[position] = per_position.get(position, 0) + 1
+            kept.append(name)
+        return kept
 
     def log_selection_summary(self) -> None:
         """Log every decided FOV as Passed/Skipped by the final selection (call after drain).
 
-        The Passed/Skipped verdict for ``ranking_by_defined_range`` is the top-K ranking
-        outcome, known only once every FOV has been scored -- hence a post-drain summary
-        rather than a per-FOV verdict at decision time.
+        The Passed/Skipped verdict for ``ranking_by_defined_range`` is the per-position top-K
+        ranking outcome, known only once every FOV has been scored -- hence a post-drain
+        summary rather than a per-FOV verdict at decision time.
         """
         passed = set(self.passed_position_names())
         with self._verdicts_lock:
@@ -707,7 +758,10 @@ class FovSelection:
 
         ``selected`` : 1 for the FOVs the timelapse images (:meth:`passed_position_names`),
                        0 otherwise -- for every model type.
-        ``rank``     : 1 = highest score, ties broken by score order. Only meaningful for
+        ``position`` : the well / grid center the FOV belongs to (:meth:`_build_fov_groups`) --
+                       the group ``rank`` and the ``top_fov`` quota are computed within.
+        ``rank``     : 1 = highest score WITHIN its position, ties broken by score order (so
+                       ``selected`` is exactly ``rank <= top_fov``). Only meaningful for
                        ranking models; for the threshold/tree model types selection is a
                        per-FOV pass/fail with no ordering, so ``rank`` is left NaN.
 
@@ -740,15 +794,22 @@ class FovSelection:
             return
 
         passed = set(self.passed_position_names())
-        df = df.drop(columns=[c for c in ("selected", "rank", "good") if c in df.columns])
-        selected = df["name"].astype(str).isin(passed).astype(int)
+        df = df.drop(
+            columns=[c for c in ("selected", "rank", "position", "good") if c in df.columns]
+        )
+        names = df["name"].astype(str)
+        selected = names.isin(passed).astype(int)
+        position = names.map(lambda n: self._fov_group.get(n, n))
         if self._top_fov is not None:
-            # method='first' so ties resolve to distinct consecutive integers (a dense/average
-            # rank would emit 1.5-style values); NaN scores rank last.
-            rank = df["proba"].rank(ascending=False, method="first")
+            # Rank WITHIN each position, matching the per-position top_fov quota, so that
+            # `selected == (rank <= top_fov)` holds inside every position. method='first' so
+            # ties resolve to distinct consecutive integers (a dense/average rank would emit
+            # 1.5-style values); NaN scores rank last.
+            rank = df.groupby(position)["proba"].rank(ascending=False, method="first")
         else:
             rank = pd.Series(np.nan, index=df.index)
         df.insert(2, "rank", rank)
+        df.insert(2, "position", position)
         df.insert(2, "selected", selected)
 
         try:

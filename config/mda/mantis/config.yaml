@@ -297,10 +297,11 @@ metadata:
       #       (could not be measured, e.g. too few objects) contributes 0 desirability
       #       regardless of direction, so it is penalized and never read as ideal; a FOV with
       #       every feature missing scores 0.
-      #       Selection is pure ranking: `top_fov: N` (required) keeps the N FOVs with the
-      #       highest weighted-mean desirability across the whole pre-scan -- no threshold,
-      #       no good/bad label. The top FOVs "pass" selection (they may be only mediocre;
-      #       by design, taking the best N beats keeping nothing). No training / no file.
+      #       Selection is pure ranking: `top_fov: N` (required) keeps the N highest-scoring
+      #       FOVs OF EACH POSITION (well / grid center) -- a per-position quota, not N across
+      #       the whole pre-scan -- with no threshold and no good/bad label. The top FOVs
+      #       "pass" selection (they may be only mediocre; by design, taking the best N per
+      #       position beats keeping nothing). No training / no file.
       #   classification_by_thresholding          hard QC box: keep a FOV iff every feature
       #       is inside its [lo, hi] `range` (AND of all features). No training.
       #   classification_tree                     a trained model saved to a .joblib; give
@@ -314,7 +315,8 @@ metadata:
       # file and paste its contents in as the `features:` block below.
       # model:
       #   type: ranking_by_defined_range
-      #   top_fov: 20                    # keep (pass) the 20 highest-ranked FOVs; required
+      #   top_fov: 3                     # per position: keep the 3 best FOVs of each well /
+      #                                  # grid center; required
       #   aggregation: gaussian          # gaussian | product | sum -- see the ACTIVE block below
       #   features:                      # always specify `shape` explicitly (here: all linear)
       #     coverage_frac:               # fraction of the FOV covered by objects (target band)
@@ -383,13 +385,26 @@ metadata:
       # its +-1 sigma gaussian ranges expressed as center + fwhm.)
       model:
         type: ranking_by_defined_range
-        top_fov: 20                    # keep (pass) the 20 highest-ranked FOVs; required
-        # How the per-feature desirabilities combine into the one score a FOV is ranked on.
-        # Each feature first maps to a desirability in [0, 1] (its `shape` below); this picks
-        # the combination rule. Default when omitted: gaussian.
-        #   gaussian  joint N-D gaussian density, exp(-0.5 * sum_j w_j * z_j^2) where
-        #             z_j^2 = -2*ln(d_j). STRONGEST VETO: the score falls off fastest as more
-        #             features drift off-target, so a FOV must satisfy every feature at once.
+        # PER POSITION quota: keep the N highest-ranked FOVs of EACH well / grid center
+        # (not N across the whole pre-scan), so every position contributes its own best FOVs
+        # and a dense well cannot crowd out a sparser one. Required. With 4 positions below,
+        # top_fov: 3 selects up to 12 FOVs. The debug CSV's `position` column shows the
+        # grouping and `rank` is within it.
+        top_fov: 3
+        # How the features become the one score a FOV is ranked on. Default when omitted:
+        # gaussian.
+        #   gaussian  ONE N-dimensional gaussian over all N features at once (N = the number of
+        #             features below) -- NOT a combination of N per-feature scores. Each feature
+        #             is one axis with its own center and sigma (sigma = fwhm/2.3548), so
+        #             score = exp(-0.5 * sum_j w_j * z_j^2 / sum_j w_j) with
+        #             z_j = (x_j - center_j)/sigma_j. STRONGEST VETO: the score falls off
+        #             fastest as more features drift off-target, so a FOV must satisfy every
+        #             feature at once. Distances are exact and unbounded, so FOVs far off-target
+        #             are still ranked against each other; a feature that could not be measured
+        #             at all counts as 10 sigma (DesirabilityModel.MISSING_Z2).
+        #             `linear`/`sigmoid` features have no sigma, so under this mode their
+        #             distance is derived from the desirability and capped at that same 10 sigma
+        #             -- prefer `gaussian`/`lognormal` shapes here.
         #   product   weighted geometric mean, (prod_j d_j^w_j)^(1/sum_j w_j). NON-COMPENSATORY:
         #             any single feature near 0 pulls the whole score toward 0 -- a gate feature
         #             acts as a veto -- but it decays more gently than gaussian.
