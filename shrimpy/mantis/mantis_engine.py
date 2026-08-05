@@ -651,9 +651,63 @@ class MantisEngine(MDAEngine):
                 logger.warning("FOV selection: no FOVs passed; skipping the timelapse run.")
                 return
             timelapse_seq = build_timelapse_sequence(sequence, prescan_seq, passed)
+            self._save_selected_fov_config(timelapse_seq, output_dir)
             self._run_mda(timelapse_seq, data_path, write_summary=True)
 
         logger.info("Acquisition completed successfully")
+
+    def _save_selected_fov_config(self, timelapse_seq: MDASequence, output_dir: Path) -> None:
+        """Record the acquisition config with the SELECTED FOVs filled into ``stage_positions``.
+
+        The config an FOV-selection experiment starts from leaves ``stage_positions`` empty --
+        the candidates live under ``fov_selection.prescan_mda`` and the real positions are only
+        known after the pre-scan. This writes the same sequence with that gap filled: one entry
+        per selected FOV carrying its absolute ``x``/``y``, the well's ``ZDrive`` coarse focus,
+        and its ``plate_row``/``plate_col``.
+
+        Saved as ``config_<experiment folder>.yaml`` in the experiment folder, beside the
+        hand-written ``config.yaml`` it mirrors. A purely descriptive record of what the run
+        chose -- nothing reads it back. Because the name follows the FOLDER rather than the
+        acquisition, a second acquisition in the same folder would land on it; the
+        deduplication index is appended (``config_<folder>_1.yaml``) when the engine had to
+        bump the acquisition name, so an existing record is not silently replaced.
+
+        ``exclude_defaults`` keeps the file close to the hand-written config rather than
+        expanding every useq default. The ``setup.action`` type discriminator is restored by
+        hand -- pydantic drops it as a default, and without it the emitted YAML would not be
+        valid against the ``Action`` union even for inspection.
+
+        Never raises -- this is a record written next to the data, and a failure to write it
+        must not take the acquisition down between the pre-scan and the timelapse.
+        """
+        import yaml
+
+        stem = f"config_{output_dir.name}"
+        if self._run_index is not None:
+            stem = f"{stem}_{self._run_index}"
+        path = output_dir / f"{stem}.yaml"
+        try:
+            data = timelapse_seq.model_dump(mode="json", exclude_defaults=True)
+            setup = data.get("setup")
+            if isinstance(setup, dict) and isinstance(setup.get("action"), dict):
+                setup["action"].setdefault("type", timelapse_seq.setup.action.type)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                yaml.safe_dump(data, sort_keys=False, default_flow_style=False),
+                encoding="utf-8",
+            )
+        except Exception:
+            logger.exception(
+                "FOV selection: could not write the selected-FOV config to %s; the "
+                "acquisition is unaffected",
+                path,
+            )
+            return
+        logger.info(
+            "FOV selection: wrote the acquisition config with %d selected FOVs to %s",
+            len(timelapse_seq.stage_positions),
+            path,
+        )
 
     def _launch_feature_viewer(self, csv_path: Path | None) -> None:
         """Open the FOV feature viewer on a calibration pre-scan's feature matrix.

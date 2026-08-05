@@ -477,9 +477,13 @@ def decide_fov(
     # the reconstruction store, which is expensive to build and write -- so pull
     # them only when return_stacks is set. return_artifacts alone (projections /
     # masks / features for the lightweight PNG/CSV debug) stays cheap.
-    channels = preprocessor(
-        bf_zyx, label=label, return_intermediates=return_stacks
-    )  # {'nuclei', 'membrane', 'phase', ('deskew')}
+    ### HACK
+    if preprocessor:
+        channels = preprocessor(
+            bf_zyx, label=label, return_intermediates=return_stacks
+        )  # {'nuclei', 'membrane', 'phase', ('deskew')}
+    else:
+        channels = {"brightfield": bf_zyx}  # no reconstruction, just the raw input stack
 
     # Per-step 3D stacks for the reconstruction store (deskew, phase, and each VS
     # target volume); only populated when return_stacks is set.

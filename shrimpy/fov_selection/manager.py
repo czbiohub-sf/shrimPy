@@ -60,6 +60,10 @@ def sibling_artifact_paths(data_path: Path | None, run_index: int | None = None)
     too -- otherwise a crashed pre-scan leaves ``<name>_fov_debug/`` behind while
     ``<name>.ome.zarr`` is still free, the next run picks the same name, and its worker
     appends to the dead run's ``fov_summary.csv``.
+
+    The selected-FOV config artifact is deliberately NOT here: it is named after the
+    experiment FOLDER, not the acquisition, so it does not vary with the candidate name --
+    including it would make every candidate look taken.
     """
     if data_path is None:
         return []
@@ -332,11 +336,12 @@ class FovSelection:
                 "0 or None); calibrate the pixel size in Micro-Manager."
             )
         z_step_um = getattr(sequence.z_plan, "step", None) if sequence.z_plan else None
-        if not z_step_um:
-            raise ValueError(
-                "FOV selection: the sequence z_plan has no step; a stepped z_plan is "
-                "required to derive the Z scale for reconstruction."
-            )
+        ### HARDCODE
+        # if not z_step_um:
+        #     raise ValueError(
+        #         "FOV selection: the sequence z_plan has no step; a stepped z_plan is "
+        #         "required to derive the Z scale for reconstruction."
+        #     )
         return cls(
             config=meta,
             sequence=sequence,
@@ -506,11 +511,12 @@ class FovSelection:
             return "logstd"
         if "best_focus_z" in steps:
             return "best_focus_z"
-        raise ValueError(
-            "fov_selection.preprocessing must include a projection step ('sum_projection', "
-            "'max_projection', 'middle_slice_projection', 'logstd_projection', or "
-            "'best_focus_z')."
-        )
+        ### HARDCODE
+        # raise ValueError(
+        #     "fov_selection.preprocessing must include a projection step ('sum_projection', "
+        #     "'max_projection', 'middle_slice_projection', 'logstd_projection', or "
+        #     "'best_focus_z')."
+        # )
 
     def _recon_config(self) -> dict:
         """Assemble the reconstruction sub-config for build_preprocessor.

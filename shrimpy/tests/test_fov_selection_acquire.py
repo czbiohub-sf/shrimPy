@@ -385,3 +385,101 @@ def test_expand_candidate_fovs_unit():
         (90.0, -90.0),
         (-90.0, -90.0),
     }
+
+
+# ---------------------------------------------------------------------------
+# selected-FOV config artifact
+# ---------------------------------------------------------------------------
+
+
+def test_selected_fov_config_fills_stage_positions_and_reloads(tmp_path):
+    # The starting config has stage_positions: []; the saved record must carry one entry per
+    # SELECTED FOV (absolute XY + the well's ZDrive coarse focus + plate coords), named after
+    # the experiment folder.
+    from shrimpy.mantis.mantis_engine import MantisEngine
+
+    cfg = _grid_fov_cfg()
+    cfg["prescan_mda"]["stage_positions"] = [
+        {
+            "x": -6000.0,
+            "y": 13000.0,
+            "properties": [["ZDrive", "Position", 4522.0]],
+            "plate_row": 1,
+            "plate_col": 1,
+        },
+    ]
+    seq = _sequence(metadata={"mantis": {"fov_selection": cfg}})
+    prescan = build_prescan_sequence(seq, fov_selection_config(seq))
+    assert not seq.stage_positions  # the starting config really is empty
+
+    timelapse = build_timelapse_sequence(seq, prescan, ["B2_0001", "B2_0003"])
+
+    class _Engine:
+        _run_index = None
+        _save_selected_fov_config = MantisEngine._save_selected_fov_config
+
+    experiment_dir = tmp_path / "2026_08_04_my_experiment"
+    experiment_dir.mkdir()
+    _Engine()._save_selected_fov_config(timelapse, experiment_dir)
+
+    # named after the experiment FOLDER, beside the config.yaml it mirrors
+    artifact = experiment_dir / "config_2026_08_04_my_experiment.yaml"
+    assert artifact.exists()
+
+    written = MDASequence.from_file(artifact)  # a valid sequence, though nothing reloads it
+    assert [(p.x, p.y) for p in written.stage_positions] == [
+        (p.x, p.y) for p in timelapse.stage_positions
+    ]
+    assert len(written.stage_positions) == 2  # the two selected FOVs, not the 4 candidates
+    # the per-well coarse focus is recorded alongside each position
+    assert all(
+        ("ZDrive", "Position", 4522.0) in [tuple(t) for t in p.properties]
+        for p in written.stage_positions
+    )
+    assert written == timelapse
+
+
+def test_selected_fov_config_appends_the_dedup_index(tmp_path):
+    # A second acquisition in the same folder must not silently replace the first record --
+    # the folder name alone does not distinguish them.
+    from shrimpy.mantis.mantis_engine import MantisEngine
+
+    seq = _sequence(metadata={"mantis": {"fov_selection": _grid_fov_cfg()}})
+    prescan = build_prescan_sequence(seq, fov_selection_config(seq))
+    timelapse = build_timelapse_sequence(seq, prescan, ["site0_0001"])
+
+    experiment_dir = tmp_path / "expt"
+    experiment_dir.mkdir()
+
+    class _Engine:
+        _run_index = None
+        _save_selected_fov_config = MantisEngine._save_selected_fov_config
+
+    first = _Engine()
+    first._save_selected_fov_config(timelapse, experiment_dir)
+    second = _Engine()
+    second._run_index = 1
+    second._save_selected_fov_config(timelapse, experiment_dir)
+
+    assert (experiment_dir / "config_expt.yaml").exists()
+    assert (experiment_dir / "config_expt_1.yaml").exists()
+
+
+def test_selected_fov_config_never_raises(tmp_path):
+    # Written between the pre-scan and the timelapse: a filesystem failure must be logged,
+    # not propagated.
+    from shrimpy.mantis.mantis_engine import MantisEngine
+
+    seq = _sequence(metadata={"mantis": {"fov_selection": _grid_fov_cfg()}})
+    prescan = build_prescan_sequence(seq, fov_selection_config(seq))
+    timelapse = build_timelapse_sequence(seq, prescan, ["site0_0001"])
+
+    class _Engine:
+        _run_index = None
+        _save_selected_fov_config = MantisEngine._save_selected_fov_config
+
+    experiment_dir = tmp_path / "expt"
+    experiment_dir.mkdir()
+    # a directory where the file should go -> write_text raises, must be swallowed
+    (experiment_dir / "config_expt.yaml").mkdir()
+    _Engine()._save_selected_fov_config(timelapse, experiment_dir)
