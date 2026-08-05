@@ -92,8 +92,9 @@ def _channel_png_folder(csv_path, channel):
 
 def wire_channels(df: pd.DataFrame, csv_path, brightfield_folder=None) -> list[str]:
     """Set ``__png_<channel>`` for each channel whose sibling folder exists, and ``__png`` to
-    the default (brightfield, else the first present). Returns the channels found. An explicit
-    ``brightfield_folder`` (CLI --png-folder) overrides the brightfield sibling."""
+    the default (the mask-overlay channel if present, else brightfield, else the first present).
+    Returns the channels found. An explicit ``brightfield_folder`` (CLI --png-folder) overrides
+    the brightfield sibling."""
     found_channels = []
     for channel in CHANNELS:
         if channel == "brightfield" and brightfield_folder:
@@ -104,7 +105,11 @@ def wire_channels(df: pd.DataFrame, csv_path, brightfield_folder=None) -> list[s
             df[f"__png_{channel}"] = wire_folder(df, folder)
             found_channels.append(channel)
     if found_channels:
-        if "brightfield" in found_channels:
+        # Prefer the segmentation-overlay ("mask") channel as the default view so the mask is
+        # visible on load; fall back to brightfield, then whatever is present.
+        if "mask" in found_channels:
+            default_channel = "mask"
+        elif "brightfield" in found_channels:
             default_channel = "brightfield"
         else:
             default_channel = found_channels[0]

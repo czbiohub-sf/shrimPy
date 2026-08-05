@@ -65,7 +65,6 @@ PROFILE_DIR = Path(
 )
 REDUCE_PREFIX = {"PCA": "PCA", "t-SNE": "TSNE", "UMAP": "UMAP"}
 MAX_THUMBS = 200  # cap thumbnails rendered at once (refine the selection for more)
-RANK_PAGE = 200  # Rank tab: FOV tiles materialized per page (infinite scroll)
 # Rank-tab knob-table columns. The four param columns are shape-dependent: each holds a
 # prefix-labeled spin for whatever interpretable parameter the row's shape/direction needs
 # (center/fwhm, midpoint/width, onset/ideal, ...), matching the config schema.
@@ -420,12 +419,13 @@ class FeatureViewer(QtWidgets.QMainWindow):
         """Build the main window: initialize all state, then assemble the Analysis, Label, and Rank tabs."""
         super().__init__()
         self.setWindowTitle("FOV Feature Viewer")
-        # Size to fit the available screen (never larger), so the window does not extend
-        # off-screen on smaller displays; cap at the preferred 1300x1000 and move on-screen.
+        # Size to fill the available screen (never larger), so the Analysis-tab settings
+        # panel shows all its sections completely; on smaller displays the window still
+        # fits on-screen. Cap at a large preferred size and move on-screen.
         screen = QtWidgets.QApplication.primaryScreen()
         avail = screen.availableGeometry() if screen is not None else None
-        w = min(1300, avail.width()) if avail is not None else 1300
-        h = min(1000, avail.height()) if avail is not None else 1000
+        w = min(1900, avail.width()) if avail is not None else 1900
+        h = min(1200, avail.height()) if avail is not None else 1200
         self.resize(w, h)
         if avail is not None:
             self.move(avail.left(), avail.top())
@@ -446,7 +446,9 @@ class FeatureViewer(QtWidgets.QMainWindow):
         # feature -> {"direction","lo","hi","soft_left","soft_right","weight","enabled"}.
         self.rank_ranges: dict = {}
         self.rank_sort = False  # sort the Analysis FOV panel by `score` (legacy hook)
-        self._channel = "brightfield"  # which FOV image channel the thumbnails display
+        # which FOV image channel the thumbnails display; default to the mask overlay so the
+        # segmentation is visible on load (falls back to brightfield/first when absent).
+        self._channel = "mask"
         self._ready = False
 
         left_col = QtWidgets.QSplitter(QtCore.Qt.Vertical)
@@ -461,7 +463,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
         left_col.addWidget(self._build_center())
         left_col.setStretchFactor(0, 0)
         left_col.setStretchFactor(1, 1)
-        left_col.setSizes([380, 720])  # settings compact on top, scatter gets the rest
+        left_col.setSizes([540, 660])  # settings tall enough to show all sections; scatter gets the rest
 
         main = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         main.addWidget(left_col)
@@ -469,8 +471,8 @@ class FeatureViewer(QtWidgets.QMainWindow):
         main.setStretchFactor(0, 0)  # settings+scatter keep their width; FOV grid takes extra
         main.setStretchFactor(1, 1)
         main.setSizes(
-            [760, 1040]
-        )  # left holds the (now narrower) settings + scatter; FOV panel gets more
+            [1120, 780]
+        )  # left holds settings (all 3 columns) + scatter; FOV panel gets the rest
 
         # all the existing panels live under an "Analysis" tab; "Label" groups the
         # loaded FOVs into one column per goodness class.
@@ -1927,7 +1929,11 @@ class FeatureViewer(QtWidgets.QMainWindow):
         cols = self.df.columns if self.df is not None else []
         chans = [c for c in D.CHANNELS if f"__png_{c}" in cols]
         if self._channel not in chans:
-            self._channel = chans[0] if chans else "brightfield"
+            # default to the mask overlay when present, else the first available channel
+            if "mask" in chans:
+                self._channel = "mask"
+            else:
+                self._channel = chans[0] if chans else "brightfield"
         if self.df is not None and f"__png_{self._channel}" in cols:
             self.df["__png"] = self.df[f"__png_{self._channel}"]
         for combo in (
@@ -2394,13 +2400,18 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self.rank_scroll.setWidgetResizable(True)
         self.rank_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.rank_grid_host = QtWidgets.QWidget()
-        self.rank_grid = QtWidgets.QGridLayout(self.rank_grid_host)
-        self.rank_grid.setSpacing(4)
-        self.rank_grid.setAlignment(QtCore.Qt.AlignTop)
+        # The ranked FOVs are grouped into one section per well (a header + a wrapping grid),
+        # stacked vertically; scrolling flows through the well sections in order.
+        self.rank_sections_layout = QtWidgets.QVBoxLayout(self.rank_grid_host)
+        self.rank_sections_layout.setSpacing(4)
+        self.rank_sections_layout.setContentsMargins(0, 0, 0, 0)
+        self.rank_sections_layout.setAlignment(QtCore.Qt.AlignTop)
         self.rank_scroll.setWidget(self.rank_grid_host)
         self.rank_scroll.verticalScrollBar().valueChanged.connect(self._rank_load_visible)
         rv.addWidget(self.rank_scroll, 1)
-        self._rank_thumb_items: list[list] = []  # [label, png, loaded, pos, score, rank]
+        # flat list of all tiles [label, png, loaded, pos, score, caption] for lazy decode
+        self._rank_thumb_items: list[list] = []
+        self._rank_sections: list[dict] = []  # per-well: {"grid": QGridLayout, "items": [...]}
         self._rank_ncols = 0
         self._rank_order: list[int] = []
         self._rank_focus_pos = None  # df position of the clicked FOV (blue highlight)
@@ -3051,35 +3062,79 @@ class FeatureViewer(QtWidgets.QMainWindow):
         return out
 
     def _rank_rebuild_grid(self):
-        """Clear the Rank-tab thumbnail grid and materialize the first page of score-ordered FOVs."""
-        while self.rank_grid.count():
-            it = self.rank_grid.takeAt(0)
+        """Rebuild the Rank-tab FOV grid as one section per WELL: a header + a wrapping grid of
+        that well's FOVs ordered best-first by score, with the wells laid out in plate order and
+        stacked vertically (scrolling flows through the sections). Thumbnails decode lazily."""
+        while self.rank_sections_layout.count():
+            it = self.rank_sections_layout.takeAt(0)
             if it.widget():
                 it.widget().deleteLater()
+        self._rank_sections = []
         self._rank_thumb_items = []
         self._rank_ncols = 0
-        self._rank_focus_label = None  # tiles are recreated; re-applied by _rank_grow
+        self._rank_focus_label = None  # tiles are recreated below; re-applied per section
         if self.df is None or not self._rank_order:
             self.rank_grid_info.setText("no FOVs")
             return
-        self._rank_grow(reset=True)  # first page; more pages load as the user scrolls
 
-    def _rank_grow(self, reset: bool = False):
-        """Create placeholder tiles for the next page of ranked FOVs (infinite scroll):
-        ALL FOVs are shown, but tiles are materialized RANK_PAGE at a time as the user
-        scrolls toward the bottom. Thumbnails within a page still decode lazily."""
-        order = self._rank_order
-        built = len(self._rank_thumb_items)
-        if not reset and built >= len(order):
-            return
-        target = min(len(order), built + RANK_PAGE)
+        df = self.df
+        # Group the globally score-sorted positions by well; iterating _rank_order keeps each
+        # well's FOVs in best-first score order. Wells are then shown in plate order (row, col).
+        per_well: dict = {}
+        have_well = "well_row" in df.columns and "well_col" in df.columns
+        if have_well:
+            wr = df.columns.get_loc("well_row")
+            wc = df.columns.get_loc("well_col")
+            for pos in self._rank_order:
+                per_well.setdefault((df.iat[pos, wr], df.iat[pos, wc]), []).append(pos)
+
+            def _well_sort_key(k):
+                row, col = k
+                try:
+                    return (str(row), 0, int(col))
+                except (TypeError, ValueError):
+                    return (str(row), 1, str(col))
+
+            wells = sorted(per_well, key=_well_sort_key)
+        else:  # no well identity (e.g. OpenCell) -> a single "All FOVs" section
+            per_well[None] = list(self._rank_order)
+            wells = [None]
+
         size = self.rank_size_slider.value()
         tw, th = self._tile_dims(size)
-        for rank in range(built, target):
-            pos = order[rank]
+        for key in wells:
+            self._rank_add_section(key, per_well[key], tw, th)
+        self.rank_grid_info.setText(
+            f"{len(self._rank_order)} FOV(s) in {len(wells)} well(s), best-first per well"
+        )
+        self._rank_ncols = 0  # force a reflow into the current column count
+        self._rank_reflow()
+        QtCore.QTimer.singleShot(0, self._rank_load_visible)
+
+    def _rank_add_section(self, key, positions: list[int], tw: int, th: int) -> None:
+        """Append one well section: a header label (acts as the divider) above a grid of the
+        well's FOV tiles, in best-first score order. Tiles are placeholders; thumbnails decode
+        lazily in :meth:`_rank_load_visible`."""
+        title = "All FOVs" if key is None else f"Well {key[0]}/{key[1]}"
+        header = QtWidgets.QLabel(f"{title}   ({len(positions)} FOV(s))")
+        header.setStyleSheet(
+            f"font-weight:700; color:{RANK_TITLE_COLOR}; background:#333; "
+            "padding:4px 6px; border-radius:4px; margin-top:6px;"
+        )
+        self.rank_sections_layout.addWidget(header)
+        grid_host = QtWidgets.QWidget()
+        grid = QtWidgets.QGridLayout(grid_host)
+        grid.setSpacing(4)
+        grid.setContentsMargins(0, 0, 0, 4)
+        grid.setAlignment(QtCore.Qt.AlignTop)
+        self.rank_sections_layout.addWidget(grid_host)
+
+        items = []
+        for rank_in_well, pos in enumerate(positions, start=1):
             row = self.df.iloc[pos]
             png = row.get("__png", "")
             score = float(row.get("score", float("nan")))
+            caption = f"#{rank_in_well}  {score:.4f}"
             lab = QtWidgets.QLabel()
             lab.setFixedSize(tw, th)
             lab.setAlignment(QtCore.Qt.AlignCenter)
@@ -3090,16 +3145,13 @@ class FeatureViewer(QtWidgets.QMainWindow):
                 self._rank_focus_label = lab
             else:
                 lab.setStyleSheet(lab._base_qss)
-            lab.setToolTip(f"#{rank + 1}  score={score:.4f}\n{self._row_id(row)}")
+            lab.setToolTip(f"{caption}  (well rank)\n{self._row_id(row)}")
             lab.setText("…")
             lab.mousePressEvent = lambda e, p=int(pos): self._rank_on_click(p)
-            self._rank_thumb_items.append([lab, png, False, int(pos), score, rank + 1])
-        loaded = len(self._rank_thumb_items)
-        more = "  · scroll for more" if loaded < len(order) else ""
-        self.rank_grid_info.setText(f"{loaded} of {len(order)} FOV(s) loaded{more}")
-        self._rank_ncols = 0  # force re-place of all current tiles
-        self._rank_reflow()
-        QtCore.QTimer.singleShot(0, self._rank_load_visible)
+            item = [lab, png, False, int(pos), score, caption]
+            items.append(item)
+            self._rank_thumb_items.append(item)
+        self._rank_sections.append({"grid": grid, "items": items})
 
     def _rank_on_click(self, pos: int):
         """Select a FOV: blue border on its tile + a vertical line at its value in each
@@ -3120,55 +3172,44 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self._rank_draw_hists()  # (re)draw the value lines for the current selection
 
     def _rank_reflow(self):
-        """Re-lay the Rank-tab thumbnails into as many columns as the viewport allows; caveat: no-op if the column count is unchanged."""
-        if not self._rank_thumb_items:
+        """Re-lay each well section's thumbnails into as many columns as the viewport allows;
+        caveat: no-op if the column count is unchanged."""
+        if not self._rank_sections:
             return
         size = self.rank_size_slider.value()
         tw, _th = self._tile_dims(size)
         vw = self.rank_scroll.viewport().width() - 12
-        ncols = max(1, vw // (tw + self.rank_grid.spacing()))
+        ncols = max(1, vw // (tw + 4))
         if ncols == self._rank_ncols:
             return
         self._rank_ncols = ncols
-        for i, item in enumerate(self._rank_thumb_items):
-            self.rank_grid.addWidget(item[0], i // ncols, i % ncols)
+        for sec in self._rank_sections:
+            grid = sec["grid"]
+            for i, item in enumerate(sec["items"]):
+                grid.addWidget(item[0], i // ncols, i % ncols)
         QtCore.QTimer.singleShot(0, self._rank_load_visible)
 
     def _rank_load_visible(self, *_):
-        """Decode the visible Rank-tab thumbnails (captioned with rank/score) and, near the bottom, trigger loading the next page."""
+        """Decode the thumbnails currently visible in the scroll viewport (captioned with the
+        per-well rank + score). Visibility is taken from each tile's clipped visible region, so
+        it works regardless of the variable-height well sections above it."""
         if not self._rank_thumb_items:
             return
-        sb = self.rank_scroll.verticalScrollBar()
-        y0, y1 = sb.value(), sb.value() + self.rank_scroll.viewport().height()
         size = self.rank_size_slider.value()
-        tw, th = self._tile_dims(size)
-        rowh = th + self.rank_grid.spacing()
-        vw = self.rank_scroll.viewport().width() - 12
-        ncols = max(1, vw // (tw + self.rank_grid.spacing()))
-        margin = rowh
-        for idx, it in enumerate(self._rank_thumb_items):
-            lab, png, loaded = it[0], it[1], it[2]
-            if loaded:
-                continue
-            top = (idx // ncols) * rowh
-            if top + th < y0 - margin or top > y1 + margin:
+        for it in self._rank_thumb_items:
+            lab, png, loaded, caption = it[0], it[1], it[2], it[5]
+            if loaded or lab.visibleRegion().isEmpty():  # skip loaded / offscreen tiles
                 continue
             if png and Path(png).exists():
                 pm = self._load_thumb(png, size)
                 if not pm.isNull():
                     lab.setText("")
-                    lab.setPixmap(self._annotate_pixmap(pm, f"#{it[5]}  {it[4]:.4f}"))
+                    lab.setPixmap(self._annotate_pixmap(pm, caption))
                 else:
                     lab.setText("bad png")
             else:
-                lab.setText(f"#{it[5]}  {it[4]:.4f}\n(no png)")
+                lab.setText(f"{caption}\n(no png)")
             it[2] = True
-        # infinite scroll: near the bottom and more FOVs remain -> materialize next page
-        if (
-            len(self._rank_thumb_items) < len(self._rank_order)
-            and sb.value() >= sb.maximum() - 2 * rowh
-        ):
-            QtCore.QTimer.singleShot(0, self._rank_grow)
 
     # =============================================================== score-map tab
     def _build_score_map_tab(self):
