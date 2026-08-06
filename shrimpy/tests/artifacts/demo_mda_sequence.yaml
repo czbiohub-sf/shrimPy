@@ -1,87 +1,91 @@
-# Setup
-setup:
-  roi: [225, 880, 1600, 256]
-  properties:
-    - ['Core', 'Focus', 'Z']
-    - ['Camera', 'OnCameraCCDXSize', '2048']
-    - ['Camera', 'OnCameraCCDYSize', '2048']
-    - ['Camera', 'PixelType', '16bit']
-    - ['XY', 'Velocity', '10000']
-    - ['Z', 'UseSequences', 'Yes']
+# Test input: demo acquisition config, kept independent of config/mda/mantis/demo.yaml
+# Validated by shrimpy.config.ShrimpyConfig
 
-# Define stage positions
-stage_positions:
-  a1_center_xy: [0, 0]
-  plate:
-    columns: 6
-    name: 24-well
-    rows: 4
-    well_size:
-    - 15.6
-    - 15.6
-    well_spacing:
-    - 19.0
-    - 19.0
-  selected_wells:
-  - [0] # rows
-  - [0, 1] # columns
-  well_points_plan:
-    rows: 2
-    columns: 2
-    fov_height: 180.0
-    fov_width: 180.0
-    overlap:
-    - -10.0
-    - -10.0
+# Multi-dimensional acquisition sequence (useq.MDASequence)
+mda:
+  # Hardware setup applied once, before the sequence starts
+  setup:
+    roi: [225, 880, 1600, 256]
+    properties:
+      - ['Core', 'Focus', 'Z']
+      - ['Camera', 'OnCameraCCDXSize', '2048']
+      - ['Camera', 'OnCameraCCDYSize', '2048']
+      - ['Camera', 'PixelType', '16bit']
+      - ['XY', 'Velocity', '10000']
+      - ['Z', 'UseSequences', 'Yes']
 
-# Define time plan
-time_plan:
-  prioritize_duration: true
-  interval: 1.0
-  loops: 3.0
+  # Define stage positions
+  stage_positions:
+    a1_center_xy: [0, 0]
+    plate:
+      columns: 6
+      name: 24-well
+      rows: 4
+      well_size:
+        - 15.6
+        - 15.6
+      well_spacing:
+        - 19.0
+        - 19.0
+    selected_wells:
+      - [0] # rows
+      - [0, 1] # columns
+    well_points_plan:
+      rows: 2
+      columns: 2
+      fov_height: 180.0
+      fov_width: 180.0
+      overlap:
+        - -10.0
+        - -10.0
 
-# Define z plan
-z_plan:
-  top: 89
-  bottom: -89
-  step: 15 # coarser sampling for demo
-  go_up: true
+  # Define time plan
+  time_plan:
+    prioritize_duration: true
+    interval: 1.0
+    loops: 3.0
 
-# Define channels
-channels:
-- config: DAPI
-  group: Channel
-  exposure: 10.0
-  do_stack: true
-  z_offset: 0.0
-  acquire_every: 1
-  camera: null
-- config: FITC
-  group: Channel
-  exposure: 3.0
-  do_stack: true
-  z_offset: 0.0
-  acquire_every: 1
-  camera: null
+  # Define z plan
+  z_plan:
+    top: 89
+    bottom: -89
+    step: 15 # coarser sampling for demo
+    go_up: true
 
-# Define axis order
-axis_order:
-- t
-- p
-- c
-- z
+  # Define channels
+  channels:
+    - config: DAPI
+      group: Channel
+      exposure: 10.0
+      do_stack: true
+      z_offset: 0.0
+      acquire_every: 1
+      camera: null
+    - config: FITC
+      group: Channel
+      exposure: 3.0
+      do_stack: true
+      z_offset: 0.0
+      acquire_every: 1
+      camera: null
 
-autofocus_plan: null
-keep_shutter_open_across: []
+  # Define axis order
+  axis_order:
+    - t
+    - p
+    - c
+    - z
 
-# Define metadata per microscope
-metadata:
-  pymmcore_widgets:
-    version: 0.10.2.dev23+g22b8c0aff.d20260106
-  mantis:
-    reset_hardware_sequencing_settings:
-      - ['Z', 'UseSequences', 'No']
-    autofocus:
-      enabled: true
-      method: demo-PFS
-      stage: Z
+  autofocus_plan: null
+  keep_shutter_open_across: []
+
+# Continuous autofocus settings
+autofocus:
+  enabled: true
+  method: demo-PFS
+  stage: Z
+
+# Mantis-specific hardware settings
+mantis:
+  reset_hardware_sequencing_settings:
+    - ['Z', 'UseSequences', 'No']

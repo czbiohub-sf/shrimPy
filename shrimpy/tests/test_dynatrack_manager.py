@@ -30,7 +30,7 @@ from shrimpy.mantis.mantis_engine import MantisEngine
 @pytest.fixture
 def engine(mock_core: MagicMock) -> MantisEngine:
     """Create a MantisEngine wired to the mock CMMCorePlus."""
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.__init__", return_value=None):
+    with patch("shrimpy.base_engine.MDAEngine.__init__", return_value=None):
         eng = MantisEngine(mock_core)
     eng._mmcore_ref = weakref.ref(mock_core)
     return eng
@@ -327,7 +327,7 @@ class TestMantisEngineWiring:
             z_plan={"top": 1.0, "bottom": -1.0, "step": 0.5},
             stage_positions=[{"x": 10, "y": 20, "z": 5}, {"x": 30, "y": 40, "z": 15}],
             metadata={
-                "mantis": {
+                "shrimpy": {
                     "dynatrack": {
                         "enabled": True,
                         "input_channel": "BF",
@@ -337,7 +337,7 @@ class TestMantisEngineWiring:
             },
         )
         with (
-            patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"),
+            patch("shrimpy.base_engine.MDAEngine.setup_sequence"),
             patch.object(DynaTrack, "start"),
         ):
             engine.setup_sequence(seq)
@@ -349,17 +349,25 @@ class TestMantisEngineWiring:
         )
 
     def test_setup_sequence_without_dynatrack(self, engine):
-        seq = MDASequence(stage_positions=[{"x": 10, "y": 20}], metadata={"mantis": {}})
-        with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"):
+        seq = MDASequence(stage_positions=[{"x": 10, "y": 20}], metadata={"shrimpy": {}})
+        with patch("shrimpy.base_engine.MDAEngine.setup_sequence"):
             engine.setup_sequence(seq)
         assert engine._dynatrack is None
 
     def test_setup_sequence_dynatrack_disabled(self, engine):
         seq = MDASequence(
             stage_positions=[{"x": 10, "y": 20}],
-            metadata={"mantis": {"dynatrack": {"enabled": False}}},
+            metadata={
+                "shrimpy": {
+                    "dynatrack": {
+                        "enabled": False,
+                        "input_channel": "BF",
+                        "tracking_channel": "BF",
+                    }
+                }
+            },
         )
-        with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"):
+        with patch("shrimpy.base_engine.MDAEngine.setup_sequence"):
             engine.setup_sequence(seq)
         assert engine._dynatrack is None
 
@@ -367,8 +375,8 @@ class TestMantisEngineWiring:
         dt = _make_dynatrack(_sequence(), PositionUpdater())
         engine._dynatrack = dt
 
-        with patch("shrimpy.mantis.mantis_engine.MDAEngine.teardown_sequence"):
-            engine.teardown_sequence(MDASequence(metadata={"mantis": {}}))
+        with patch("shrimpy.base_engine.MDAEngine.teardown_sequence"):
+            engine.teardown_sequence(MDASequence(metadata={"shrimpy": {}}))
 
         assert engine._dynatrack is None
         mock_core.mda.events.frameReady.disconnect.assert_called_once_with(dt.on_frame_ready)
@@ -426,9 +434,7 @@ class TestBackpressure:
         ]
         frame = np.zeros((64, 64), dtype=np.uint16)
 
-        with patch(
-            "shrimpy.mantis.mantis_engine.MDAEngine.event_iterator", return_value=iter(events)
-        ):
+        with patch("shrimpy.base_engine.MDAEngine.event_iterator", return_value=iter(events)):
             for event in engine.event_iterator(events):
                 t_idx = event.index.get("t", 0)
                 p_idx = event.index.get("p", 0)
@@ -481,9 +487,7 @@ class TestBackpressure:
         ]
         frame = np.zeros((64, 64), dtype=np.uint16)
 
-        with patch(
-            "shrimpy.mantis.mantis_engine.MDAEngine.event_iterator", return_value=iter(events)
-        ):
+        with patch("shrimpy.base_engine.MDAEngine.event_iterator", return_value=iter(events)):
             for event in engine.event_iterator(events):
                 dt.on_frame_ready(frame, event)
 
@@ -506,11 +510,11 @@ class TestBackpressure:
 
 
 class TestDynaTrackIntegration:
-    def test_positions_shift_across_acquisitions(self, demo_core, mantis_metadata):
+    def test_positions_shift_across_acquisitions(self, demo_core, shrimpy_metadata):
         """End-to-end: a mock updater shifts position by (+1, +1, +0.5) per call.
 
-        The engine builds the DynaTrack coordinator from metadata; here we
-        patch from_metadata to return an in-process coordinator with a
+        The engine builds the DynaTrack coordinator from the validated config;
+        here we patch from_config to return an in-process coordinator with a
         shifting updater so no worker subprocess is spawned.
         """
         MantisEngine(demo_core)  # registers the engine with demo_core.mda
@@ -525,7 +529,7 @@ class TestDynaTrackIntegration:
 
         # Disable autofocus: demo-PFS fails ~50% of the time, which would
         # randomly drop frames and make the per-(t, p) assertions below flaky.
-        mantis_metadata["autofocus"]["enabled"] = False
+        shrimpy_metadata["autofocus"]["enabled"] = False
         # Include a channel so events carry a c-axis: on_frame_ready buffers the
         # configured input_channel ("DAPI"), which never matches on a
         # channel-less sequence. Mirrors a real acquisition, which always has
@@ -534,10 +538,10 @@ class TestDynaTrackIntegration:
             channels=[{"config": "DAPI", "group": "Channel", "exposure": 1.0}],
             stage_positions=[{"x": 100, "y": 200, "z": 50}, {"x": 300, "y": 400, "z": 60}],
             time_plan={"interval": 0, "loops": 3},
-            metadata={"mantis": mantis_metadata},
+            metadata={"shrimpy": shrimpy_metadata},
         )
 
-        def _fake_from_metadata(meta, sequence, data_path=None, pixel_size_um=None):
+        def _fake_from_config(config, sequence, data_path=None, pixel_size_um=None):
             config = DynaTrackConfig(input_channel="DAPI", tracking_channel="DAPI")
             return DynaTrack(config, sequence, updater=ShiftUpdater())
 
@@ -550,7 +554,7 @@ class TestDynaTrackIntegration:
             x, y = demo_core.getXYPosition()
             xy_positions.append((t, p, x, y))
 
-        with patch.object(DynaTrack, "from_metadata", staticmethod(_fake_from_metadata)):
+        with patch.object(DynaTrack, "from_config", staticmethod(_fake_from_config)):
             demo_core.mda.run(seq)
 
         # Group by (t, p) and take the first frame's position for each

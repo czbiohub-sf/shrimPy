@@ -35,16 +35,16 @@ def engine(mock_core: MagicMock) -> MantisEngine:
     Patches the parent MDAEngine.__init__ so we don't need a real core for
     the super().__init__() call, then manually sets mmcore.
     """
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.__init__", return_value=None):
+    with patch("shrimpy.base_engine.MDAEngine.__init__", return_value=None):
         eng = MantisEngine(mock_core)
     # Manually assign the core weakref since we bypassed super().__init__
     eng._mmcore_ref = weakref.ref(mock_core)
     return eng
 
 
-def _make_sequence(mantis_meta: dict | None = None) -> MDASequence:
-    """Helper to create an MDASequence with optional mantis metadata."""
-    metadata = {"mantis": mantis_meta} if mantis_meta else {}
+def _make_sequence(shrimpy_meta: dict | None = None) -> MDASequence:
+    """Helper to create an MDASequence with optional shrimPy config sections."""
+    metadata = {"shrimpy": shrimpy_meta} if shrimpy_meta else {}
     return MDASequence(metadata=metadata)
 
 
@@ -101,7 +101,7 @@ def test_init_default_attributes(engine):
 
 def test_init_registers_engine_and_callbacks(mock_core):
     # Verify that __init__ wires up the engine and event callbacks
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.__init__", return_value=None):
+    with patch("shrimpy.base_engine.MDAEngine.__init__", return_value=None):
         MantisEngine(mock_core)
 
     mock_core.mda.set_engine.assert_called_once()
@@ -115,10 +115,10 @@ def test_init_registers_engine_and_callbacks(mock_core):
 # ---------------------------------------------------------------------------
 
 
-def test_setup_sequence_no_mantis_metadata(engine):
+def test_setup_sequence_no_shrimpy_metadata(engine):
     # Should not raise when metadata is empty
     seq = _make_sequence()
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"):
+    with patch("shrimpy.base_engine.MDAEngine.setup_sequence"):
         engine.setup_sequence(seq)
     assert engine._use_autofocus is False
 
@@ -127,7 +127,7 @@ def test_setup_sequence_autofocus_enabled(engine, mock_core):
     # Autofocus metadata with enabled=True should configure the engine
     af = {"enabled": True, "stage": "ZDrive", "method": "PFS"}
     seq = _make_sequence({"autofocus": af})
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"):
+    with patch("shrimpy.base_engine.MDAEngine.setup_sequence"):
         engine.setup_sequence(seq)
 
     assert engine._use_autofocus is True
@@ -141,7 +141,7 @@ def test_setup_sequence_autofocus_disabled(engine, mock_core):
     # Autofocus explicitly disabled → _use_autofocus stays False
     af = {"enabled": False, "stage": "ZDrive", "method": "PFS"}
     seq = _make_sequence({"autofocus": af})
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"):
+    with patch("shrimpy.base_engine.MDAEngine.setup_sequence"):
         engine.setup_sequence(seq)
     assert engine._use_autofocus is False
     mock_core.setAutoFocusDevice.assert_not_called()
@@ -424,7 +424,7 @@ def test_setup_event_autofocus_success_does_not_raise(engine, mock_core):
     engine._autofocus_fail_at_index = []
 
     event = MDAEvent()
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_event"):
+    with patch("shrimpy.base_engine.MDAEngine.setup_event"):
         engine.setup_event(event)  # should not raise
 
 
@@ -437,29 +437,31 @@ def test_teardown_applies_reset_hardware_sequencing_settings(engine, mock_core):
     # Sequence with reset_hardware_sequencing_settings → applies each setting
     seq = MDASequence(
         metadata={
-            "mantis": {
-                "reset_hardware_sequencing_settings": [
-                    ["Z", "UseSequences", "No"],
-                ],
+            "shrimpy": {
+                "mantis": {
+                    "reset_hardware_sequencing_settings": [
+                        ["Z", "UseSequences", "No"],
+                    ],
+                }
             }
         }
     )
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.teardown_sequence"):
+    with patch("shrimpy.base_engine.MDAEngine.teardown_sequence"):
         engine.teardown_sequence(seq)
     mock_core.setProperty.assert_called_once_with("Z", "UseSequences", "No")
 
 
 def test_teardown_no_reset_settings(engine, mock_core):
     # Sequence without reset_hardware_sequencing_settings → no setProperty calls
-    seq = MDASequence(metadata={"mantis": {}})
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.teardown_sequence"):
+    seq = MDASequence(metadata={"shrimpy": {"mantis": {}}})
+    with patch("shrimpy.base_engine.MDAEngine.teardown_sequence"):
         engine.teardown_sequence(seq)
     mock_core.setProperty.assert_not_called()
 
 
-def test_teardown_no_mantis_metadata(engine, mock_core):
-    # Sequence with no mantis metadata at all → no setProperty calls
+def test_teardown_no_shrimpy_metadata(engine, mock_core):
+    # Sequence with no shrimPy metadata at all → no setProperty calls
     seq = MDASequence()
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.teardown_sequence"):
+    with patch("shrimpy.base_engine.MDAEngine.teardown_sequence"):
         engine.teardown_sequence(seq)
     mock_core.setProperty.assert_not_called()

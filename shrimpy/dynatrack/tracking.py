@@ -126,14 +126,14 @@ class DynaTrackConfig(BaseModel):
     The XY pixel size and Z step used to convert pixel shifts to microns are
     not config fields: they are derived at acquisition start from
     ``core.getPixelSizeUm()`` and the sequence's ``z_plan.step`` and injected
-    where needed (see :meth:`shrimpy.dynatrack.manager.DynaTrack.from_metadata`),
+    where needed (see :meth:`shrimpy.dynatrack.manager.DynaTrack.from_config`),
     which also feeds ``deskew``/``phase`` their pixel/step parameters. This
     keeps a single source of truth and avoids config drift.
 
     Parameters
     ----------
     enabled : bool
-        Master switch read from acquisition metadata; engines only build a
+        Master switch read from the ``dynatrack`` config section; engines only build a
         :class:`~shrimpy.dynatrack.manager.DynaTrack` coordinator when True.
     input_channel : str
         Required. Name of the acquisition channel (e.g. ``"BF"``) whose frames
@@ -209,7 +209,7 @@ class DynaTrackConfig(BaseModel):
     shift_log_path : str | Path | None
         Path to a CSV file for incremental shift logging. Each computed
         shift is appended immediately after calculation. Typically set
-        automatically by ``DynaTrack.from_metadata`` to
+        automatically by ``DynaTrack.from_config`` to
         ``<zarr_store>/dynatrack_log.csv``.
     """
 

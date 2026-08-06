@@ -1,218 +1,221 @@
-# Intended to work with MMConfig_demo_ReplayCamera.cfg
+# DynaTrack demo, intended to work with MMConfig_demo_ReplayCamera.cfg
+# Validated by shrimpy.config.ShrimpyConfig
 
-# Setup
-setup:
-  properties:
-    - ['XY', 'Velocity', '10000']
-    - ['PiezoZ', 'UseSequences', 'Yes']
-
-stage_positions:
-  - x: 0
-    y: 0
-    name: "Pos0"
+# Multi-dimensional acquisition sequence (useq.MDASequence)
+mda:
+  # Hardware setup applied once, before the sequence starts
+  setup:
     properties:
-      - ['ObjectiveZ', 'Position', '0']
+      - ['XY', 'Velocity', '10000']
+      - ['PiezoZ', 'UseSequences', 'Yes']
 
-# Define time plan
-time_plan:
-  prioritize_duration: true
-  interval: 15
-  loops: 3
+  stage_positions:
+    - x: 0
+      y: 0
+      name: "Pos0"
+      properties:
+        - ['ObjectiveZ', 'Position', '0']
 
-# Define z plan
-z_plan:
-  top: 10
-  bottom: -10
-  step: 0.174
-  go_up: true
+  # Define time plan
+  time_plan:
+    prioritize_duration: true
+    interval: 15
+    loops: 3
 
-# Define channels
-channels:
-- config: BF
-  group: Channel
-  exposure: 10.0
-  do_stack: true
-  z_offset: 0.0
-  acquire_every: 1
-  camera: null
-# - config: GFP
-#   group: Channel
-#   exposure: 10.0
-#   do_stack: true
-#   z_offset: 0.0
-#   acquire_every: 1
-#   camera: null
+  # Define z plan
+  z_plan:
+    top: 10
+    bottom: -10
+    step: 0.174
+    go_up: true
 
-# Define axis order
-axis_order:
-- t
-- p
-- c
-- z
+  # Define channels
+  channels:
+    - config: BF
+      group: Channel
+      exposure: 10.0
+      do_stack: true
+      z_offset: 0.0
+      acquire_every: 1
+      camera: null
+    # - config: GFP
+    #   group: Channel
+    #   exposure: 10.0
+    #   do_stack: true
+    #   z_offset: 0.0
+    #   acquire_every: 1
+    #   camera: null
 
-autofocus_plan: null
-keep_shutter_open_across: []
+  # Define axis order
+  axis_order:
+    - t
+    - p
+    - c
+    - z
 
-# Define metadata per microscope
-metadata:
-  pymmcore_widgets:
-    version: 0.10.2.dev23+g22b8c0aff.d20260106
-  mantis:
-    reset_hardware_sequencing_settings:
-      - ['PiezoZ', 'UseSequences', 'No']
-    autofocus:
-      enabled: false
-      method: demo-PFS
-      stage: ObjectiveZ
-    dynatrack:
-      # DynaTrack keeps a moving structure centred across timepoints: each stack
-      # of the `input_channel` is buffered, optionally transformed by the
-      # `preprocessing` pipeline, and a drift is estimated on `tracking_channel`
-      # with `tracking_method`. The drift is bounded (`shift`) and subtracted
-      # from the stage position so the next visit re-centres the structure.
-      enabled: true    # master switch; the engine builds DynaTrack only when true
-      debug: true      # write preprocessed stacks (dynatrack_debug.zarr), a shift
-                       # log (dynatrack_log.csv) and centre PNGs next to the data
+  autofocus_plan: null
+  keep_shutter_open_across: []
 
-      # Acquisition channel whose frames are fed to the tracker; must match a
-      # `config:` name in `channels:` above. This is the channel that is
-      # buffered and preprocessed.
-      input_channel: BF
+# Continuous autofocus settings
+autofocus:
+  enabled: false
+  method: demo-PFS
+  stage: ObjectiveZ
 
-      # Transforms applied to each buffered stack before shift estimation, in
-      # order. Steps: 'deskew' (light-sheet -> real space), 'phase' (label-free
-      # phase reconstruction), 'vs' (virtual staining; requires 'phase' first).
-      # Omit / use [] to track on the raw frames. `tracking_channel` must name
-      # the representation this pipeline produces (see below).
-      #   ['deskew','phase','vs']  label-free -> virtual-stained nuclei/membrane
-      #   ['deskew','phase']       label-free phase of the input channel
-      #   ['deskew']               deskewed fluorescence (e.g. GFP)
-      #   []                       raw frames of the input channel
-      preprocessing: ['deskew', 'phase', 'vs']
+# Mantis-specific hardware settings
+mantis:
+  reset_hardware_sequencing_settings:
+    - ['PiezoZ', 'UseSequences', 'No']
 
-      # Channel the shift is estimated on. Should either match input_channel
-      # or be one of the virtual_staining.target_channels.
-      tracking_channel: 'nuclei'
-      # tracking_channel: GFP    # preprocessing ['deskew']: deskewed GFP channel
-      # tracking_channel: BF     # preprocessing ['deskew','phase']: deskewed + phase-reconstructed BF channel
+# DynaTrack keeps a moving structure centred across timepoints: each stack
+# of the `input_channel` is buffered, optionally transformed by the
+# `preprocessing` pipeline, and a drift is estimated on `tracking_channel`
+# with `tracking_method`. The drift is bounded (`shift`) and subtracted
+# from the stage position so the next visit re-centres the structure.
+dynatrack:
+  enabled: true    # master switch; the engine builds DynaTrack only when true
+  debug: true      # write preprocessed stacks (dynatrack_debug.zarr), a shift
+                   # log (dynatrack_log.csv) and centre PNGs next to the data
 
-      # Shift-estimation algorithm: 'pcc' (phase cross-correlation),
-      # 'intensity_center_of_mass' (intensity-weighted centroid vs ROI centre
-      #   in deskew space; no threshold, no reference stack),
-      # 'roi_center_pcc' (cross-correlate against a Gaussian blob centred on
-      #   the ROI centre in deskew space; no reference stack),
-      # 'multiotsu_center_of_mass' (multi-Otsu threshold -> centroid), or
-      # 'multiotsu_pcc' (multi-Otsu threshold -> PCC on the binary masks).
-      # Note: center-of-mass uses the reference only as a fixed target
-      # centroid, so it does NOT need re-anchoring (set reference_update_interval: 0).
-      # The ROI-centre methods ('intensity_center_of_mass', 'roi_center_pcc')
-      # are referenceless and correct from the first timepoint.
-      tracking_method: 'pcc'
-      # tracking_method: 'intensity_center_of_mass'
-      # tracking_method: 'roi_center_pcc'
-      # tracking_method: 'multiotsu_center_of_mass'
-      # tracking_method: 'multiotsu_pcc'
+  # Acquisition channel whose frames are fed to the tracker; must match a
+  # `config:` name in `mda.channels:` above. This is the channel that is
+  # buffered and preprocessed.
+  input_channel: BF
 
-      tracking_interval: 1   # estimate a correction every N timepoints (1 = every)
+  # Transforms applied to each buffered stack before shift estimation, in
+  # order. Steps: 'deskew' (light-sheet -> real space), 'phase' (label-free
+  # phase reconstruction), 'vs' (virtual staining; requires 'phase' first).
+  # Omit / use [] to track on the raw frames. `tracking_channel` must name
+  # the representation this pipeline produces (see below).
+  #   ['deskew','phase','vs']  label-free -> virtual-stained nuclei/membrane
+  #   ['deskew','phase']       label-free phase of the input channel
+  #   ['deskew']               deskewed fluorescence (e.g. GFP)
+  #   []                       raw frames of the input channel
+  preprocessing: ['deskew', 'phase', 'vs']
 
-      # Re-anchor the reference every N timepoints (0 = never; keep the fixed
-      # t=0 reference). On a re-anchor timepoint the current stack becomes the
-      # new reference and no correction is applied. Use for long timelapses
-      # where the sample changes enough that matching a stale reference fails.
-      reference_update_interval: 0
+  # Channel the shift is estimated on. Should either match input_channel
+  # or be one of the virtual_staining.target_channels.
+  tracking_channel: 'nuclei'
+  # tracking_channel: GFP    # preprocessing ['deskew']: deskewed GFP channel
+  # tracking_channel: BF     # preprocessing ['deskew','phase']: deskewed + phase-reconstructed BF channel
 
-      # Shift search range, per-axis bounds, and scaling applied to the estimate.
-      shift:
-        maximum: 1.0          # max translation (normalised by axis size) for PCC FFT padding
-        # Per-axis (min, max) in microns: shifts below min are zeroed (deadband),
-        # shifts above max are clipped.
-        limits:
-          z: [0.5, 2.0]
-          y: [2.0, 10.0]
-          x: [2.0, 10.0]
-        # dampening: [1.0, 1.0, 1.0]   # (z, y, x) multiplicative factors on the shift
+  # Shift-estimation algorithm: 'pcc' (phase cross-correlation),
+  # 'intensity_center_of_mass' (intensity-weighted centroid vs ROI centre
+  #   in deskew space; no threshold, no reference stack),
+  # 'roi_center_pcc' (cross-correlate against a Gaussian blob centred on
+  #   the ROI centre in deskew space; no reference stack),
+  # 'multiotsu_center_of_mass' (multi-Otsu threshold -> centroid), or
+  # 'multiotsu_pcc' (multi-Otsu threshold -> PCC on the binary masks).
+  # Note: center-of-mass uses the reference only as a fixed target
+  # centroid, so it does NOT need re-anchoring (set reference_update_interval: 0).
+  # The ROI-centre methods ('intensity_center_of_mass', 'roi_center_pcc')
+  # are referenceless and correct from the first timepoint.
+  tracking_method: 'pcc'
+  # tracking_method: 'intensity_center_of_mass'
+  # tracking_method: 'roi_center_pcc'
+  # tracking_method: 'multiotsu_center_of_mass'
+  # tracking_method: 'multiotsu_pcc'
 
-      # Segmentation params for the multiotsu_* methods.
-      segmentation:
-        otsu_sigma: 5.0       # Gaussian blur sigma before thresholding
-        otsu_component: 1     # which multi-Otsu threshold: 0 = lower, 1 = upper (brightest); use 0 for gfp and 1 for bf
+  tracking_interval: 1   # estimate a correction every N timepoints (1 = every)
 
-      # Params for the referenceless ROI-centre methods (intensity_center_of_mass, roi_center_pcc).
-      roi_center:
-        blob_sigma: 10.0      # Gaussian blob sigma (px) for the 'roi_center_pcc' template; ~structure radius
-        # background_percentile: 80   # 'intensity_center_of_mass': subtract this intensity percentile (0-100) as a background floor; null = raw
-        # blur_sigma: 0.0             # 'intensity_center_of_mass': blur before centroid; 0 = off
+  # Re-anchor the reference every N timepoints (0 = never; keep the fixed
+  # t=0 reference). On a re-anchor timepoint the current stack becomes the
+  # new reference and no correction is applied. Use for long timelapses
+  # where the sample changes enough that matching a stale reference fails.
+  reference_update_interval: 0
 
-      # Proper 90-deg rotation (det +1) mapping deskewed-image axes to stage
-      # axes; image-X is inverted relative to stage-Y. Validated on-microscope:
-      # both in-plane axes converge to the deadband (a pure swap, det -1, drove
-      # one axis to diverge). Setup-specific -- recalibrate per scope orientation.
-      image_to_stage_matrix_xyz:
-        - [0.0, 1.0, 0.0]
-        - [-1.0, 0.0, 0.0]
-        - [0.0, 0.0, -1.0]
-      # Stage that receives Z corrections: Z is written to this device's
-      # `Position` property instead of the event's z_pos (which usually drives
-      # the fast scan piezo). Set null to correct via z_pos.
-      z_device: ObjectiveZ
+  # Shift search range, per-axis bounds, and scaling applied to the estimate.
+  shift:
+    maximum: 1.0          # max translation (normalised by axis size) for PCC FFT padding
+    # Per-axis (min, max) in microns: shifts below min are zeroed (deadband),
+    # shifts above max are clipped.
+    limits:
+      z: [0.5, 2.0]
+      y: [2.0, 10.0]
+      x: [2.0, 10.0]
+    # dampening: [1.0, 1.0, 1.0]   # (z, y, x) multiplicative factors on the shift
 
-      # NOTE: the XY pixel size and Z step are NOT set here. They are derived at
-      # runtime from core.getPixelSizeUm() and z_plan.step (single source of
-      # truth) and injected into deskew (pixel_size_um / scan_step_um) and phase
-      # (transfer_function.yx_pixel_size / z_pixel_size), and used to convert
-      # pixel shifts to microns. Setting them here would be config drift.
-      deskew:
-        ls_angle_deg: 30.0
-        keep_overhang: false
-        average_n_slices: 3
+  # Segmentation params for the multiotsu_* methods.
+  segmentation:
+    otsu_sigma: 5.0       # Gaussian blur sigma before thresholding
+    otsu_component: 1     # which multi-Otsu threshold: 0 = lower, 1 = upper (brightest); use 0 for gfp and 1 for bf
 
-      # Waveorder phase reconstruction parameters, validated as a
-      # waveorder.api.phase.Settings (PhaseSettings). DynaTrack always does
-      # 3-D phase on an in-memory array, so no input_channel_names or
-      # reconstruction_dimension is needed. yx_pixel_size / z_pixel_size are
-      # injected from the core pixel size and z_plan.step (see the note above).
-      phase:
-        transfer_function:
-          wavelength_illumination: 0.450
-          z_padding: 5
-          index_of_refraction_media: 1.4
-          numerical_aperture_detection: 1.35
-          numerical_aperture_illumination: 0.52
-          invert_phase_contrast: false
-        apply_inverse:
-          reconstruction_algorithm: Tikhonov
-          regularization_strength: 0.01
+  # Params for the referenceless ROI-centre methods (intensity_center_of_mass, roi_center_pcc).
+  roi_center:
+    blob_sigma: 10.0      # Gaussian blob sigma (px) for the 'roi_center_pcc' template; ~structure radius
+    # background_percentile: 80   # 'intensity_center_of_mass': subtract this intensity percentile (0-100) as a background floor; null = raw
+    # blur_sigma: 0.0             # 'intensity_center_of_mass': blur before centroid; 0 = off
 
-      # Cytoland (VisCy) virtual staining model parameters. The `model` block is
-      # validated against cytoland.engine.VSUNet's signature (same machinery as
-      # `viscy predict`), so unknown keys error early.
-      virtual_staining:
-        # Output channels and sliding-window step are derived from the config
-        # (as in biahub): one predicted channel per name in `target_channels`,
-        # emitted under that bare name (e.g. tracking_channel: 'nuclei').
-        ckpt_path: C:\\Users\\labelfree\\Documents\\epoch=64-step=24960.ckpt
-        target_channels: ['nuclei', 'membrane']
-        sliding_window_step: 1
-        model:
-          class_path: cytoland.engine.VSUNet
-          init_args:
-            architecture: fcmae
-            model_config:
-              in_channels: 1
-              out_channels: 2
-              in_stack_depth: 21
-              encoder_blocks: [3, 3, 9, 3]
-              dims: [96, 192, 384, 768]
-              encoder_drop_path_rate: 0.0
-              stem_kernel_size: [7, 4, 4]
-              decoder_conv_blocks: 2
-              pretraining: false
-              head_conv: true
-              head_conv_expansion_ratio: 4
-              head_conv_pool: false
-            # DynaTrack tracks on the raw reconstructed volume: input
-            # normalization and test-time augmentation are NOT applied. Enabling
-            # test_time_augmentations here only logs a warning (kept false to
-            # reflect the actual behavior).
-            test_time_augmentations: false
-            tta_type: median
+  # Proper 90-deg rotation (det +1) mapping deskewed-image axes to stage
+  # axes; image-X is inverted relative to stage-Y. Validated on-microscope:
+  # both in-plane axes converge to the deadband (a pure swap, det -1, drove
+  # one axis to diverge). Setup-specific -- recalibrate per scope orientation.
+  image_to_stage_matrix_xyz:
+    - [0.0, 1.0, 0.0]
+    - [-1.0, 0.0, 0.0]
+    - [0.0, 0.0, -1.0]
+  # Stage that receives Z corrections: Z is written to this device's
+  # `Position` property instead of the event's z_pos (which usually drives
+  # the fast scan piezo). Set null to correct via z_pos.
+  z_device: ObjectiveZ
+
+  # NOTE: the XY pixel size and Z step are NOT set here. They are derived at
+  # runtime from core.getPixelSizeUm() and mda.z_plan.step (single source of
+  # truth) and injected into deskew (pixel_size_um / scan_step_um) and phase
+  # (transfer_function.yx_pixel_size / z_pixel_size), and used to convert
+  # pixel shifts to microns. Setting them here would be config drift.
+  deskew:
+    ls_angle_deg: 30.0
+    keep_overhang: false
+    average_n_slices: 3
+
+  # Waveorder phase reconstruction parameters, validated as a
+  # waveorder.api.phase.Settings (PhaseSettings). DynaTrack always does
+  # 3-D phase on an in-memory array, so no input_channel_names or
+  # reconstruction_dimension is needed. yx_pixel_size / z_pixel_size are
+  # injected from the core pixel size and mda.z_plan.step (see the note above).
+  phase:
+    transfer_function:
+      wavelength_illumination: 0.450
+      z_padding: 5
+      index_of_refraction_media: 1.4
+      numerical_aperture_detection: 1.35
+      numerical_aperture_illumination: 0.52
+      invert_phase_contrast: false
+    apply_inverse:
+      reconstruction_algorithm: Tikhonov
+      regularization_strength: 0.01
+
+  # Cytoland (VisCy) virtual staining model parameters. The `model` block is
+  # validated against cytoland.engine.VSUNet's signature (same machinery as
+  # `viscy predict`), so unknown keys error early.
+  virtual_staining:
+    # Output channels and sliding-window step are derived from the config
+    # (as in biahub): one predicted channel per name in `target_channels`,
+    # emitted under that bare name (e.g. tracking_channel: 'nuclei').
+    ckpt_path: C:\\Users\\labelfree\\Documents\\epoch=64-step=24960.ckpt
+    target_channels: ['nuclei', 'membrane']
+    sliding_window_step: 1
+    model:
+      class_path: cytoland.engine.VSUNet
+      init_args:
+        architecture: fcmae
+        model_config:
+          in_channels: 1
+          out_channels: 2
+          in_stack_depth: 21
+          encoder_blocks: [3, 3, 9, 3]
+          dims: [96, 192, 384, 768]
+          encoder_drop_path_rate: 0.0
+          stem_kernel_size: [7, 4, 4]
+          decoder_conv_blocks: 2
+          pretraining: false
+          head_conv: true
+          head_conv_expansion_ratio: 4
+          head_conv_pool: false
+        # DynaTrack tracks on the raw reconstructed volume: input
+        # normalization and test-time augmentation are NOT applied. Enabling
+        # test_time_augmentations here only logs a warning (kept false to
+        # reflect the actual behavior).
+        test_time_augmentations: false
+        tta_type: median

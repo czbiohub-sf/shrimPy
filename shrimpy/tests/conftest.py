@@ -70,28 +70,31 @@ def demo_core() -> CMMCorePlus:
 
 
 @pytest.fixture
-def mantis_metadata() -> dict:
-    """Mantis-specific metadata for integration tests, to be used with MMConfig_demo.cfg.
+def shrimpy_metadata() -> dict:
+    """shrimPy config sections for integration tests, for use with MMConfig_demo.cfg.
 
-    Returns a fresh dict each test can safely modify (e.g. disable autofocus)
-    without affecting other tests. Hardcoded so that changes to demo.yaml
-    don't break tests.
+    These are the non-``mda`` sections of a :class:`~shrimpy.config.ShrimpyConfig`
+    as they are carried in ``MDASequence.metadata['shrimpy']``. Returns a fresh
+    dict each test can safely modify (e.g. disable autofocus) without affecting
+    other tests. Hardcoded so that changes to demo.yaml don't break tests.
 
     Usage::
 
         seq = MDASequence(
             channels=[...],
             time_plan={...},
-            metadata={"mantis": mantis_metadata},
+            metadata={"shrimpy": shrimpy_metadata},
         )
     """
     return {
-        "reset_hardware_sequencing_settings": [
-            ["Z", "UseSequences", "No"],
-        ],
         "autofocus": {
             "enabled": True,
             "method": "demo-PFS",
             "stage": "Z",
+        },
+        "mantis": {
+            "reset_hardware_sequencing_settings": [
+                ["Z", "UseSequences", "No"],
+            ],
         },
     }

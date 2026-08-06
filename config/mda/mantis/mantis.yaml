@@ -1,95 +1,99 @@
-# Setup
-setup:
-  roi: [190, 880, 1600, 256]
-  channel:
-    config: Right
-    group: Imaging Path
-  properties:
-    - ['Prime BSI Express', 'ReadoutRate', '100MHz 16bit']
-    - ['Prime BSI Express', 'Gain', '1-HDR']
-    - ['Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter']
-    - ['TS2_TTL1-8', 'Sequence', 'Off']
-    - ['TS2_TTL1-8', 'Blanking', 'On']
-    - ['TS2_DAC03', 'Sequence', 'On']
+# Mantis acquisition on the light-sheet arm
+# Validated by shrimpy.config.ShrimpyConfig
 
-# Define stage positions
-stage_positions:
-  a1_center_xy: [0, 0]
-  plate:
-    columns: 6
-    name: 24-well
-    rows: 4
-    well_size:
-    - 15.6
-    - 15.6
-    well_spacing:
-    - 19.0
-    - 19.0
-  selected_wells:
-  - [0] # rows
-  - [0, 1] # columns
-  well_points_plan:
-    rows: 2
-    columns: 2
-    fov_height: 180.0
-    fov_width: 180.0
-    overlap:
-    - -10.0
-    - -10.0
+# Multi-dimensional acquisition sequence (useq.MDASequence)
+mda:
+  # Hardware setup applied once, before the sequence starts
+  setup:
+    roi: [190, 880, 1600, 256]
+    channel:
+      config: Right
+      group: Imaging Path
+    properties:
+      - ['Prime BSI Express', 'ReadoutRate', '100MHz 16bit']
+      - ['Prime BSI Express', 'Gain', '1-HDR']
+      - ['Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter']
+      - ['TS2_TTL1-8', 'Sequence', 'Off']
+      - ['TS2_TTL1-8', 'Blanking', 'On']
+      - ['TS2_DAC03', 'Sequence', 'On']
 
-# Define time plan
-time_plan:
-  prioritize_duration: true
-  interval: "00:10:00"
-  duration: "18:00:00"
-  # interval: 8
-  # duration: 10.0
+  # Define stage positions
+  stage_positions:
+    a1_center_xy: [0, 0]
+    plate:
+      columns: 6
+      name: 24-well
+      rows: 4
+      well_size:
+        - 15.6
+        - 15.6
+      well_spacing:
+        - 19.0
+        - 19.0
+    selected_wells:
+      - [0] # rows
+      - [0, 1] # columns
+    well_points_plan:
+      rows: 2
+      columns: 2
+      fov_height: 180.0
+      fov_width: 180.0
+      overlap:
+        - -10.0
+        - -10.0
 
-# Define z plan
-z_plan:
-  top: 90
-  bottom: -90
-  step: 0.15
-  go_up: true
+  # Define time plan
+  time_plan:
+    prioritize_duration: true
+    interval: "00:10:00"
+    duration: "18:00:00"
+    # interval: 8
+    # duration: 10.0
 
-# Define channels
-channels:
-- config: BF - Oblique
-  group: Channels - Right
-  exposure: 10.0
-  do_stack: true
-  z_offset: 0.0
-  acquire_every: 1
-  camera: null
-- config: GFP EX488 EM525-45
-  group: Channels - Right
-  exposure: 20.0
-  do_stack: true
-  z_offset: 0.0
-  acquire_every: 1
-  camera: null
+  # Define z plan
+  z_plan:
+    top: 90
+    bottom: -90
+    step: 0.15
+    go_up: true
 
-# Define axis order
-axis_order:
-- t
-- p
-- c
-- z
+  # Define channels
+  channels:
+    - config: BF - Oblique
+      group: Channels - Right
+      exposure: 10.0
+      do_stack: true
+      z_offset: 0.0
+      acquire_every: 1
+      camera: null
+    - config: GFP EX488 EM525-45
+      group: Channels - Right
+      exposure: 20.0
+      do_stack: true
+      z_offset: 0.0
+      acquire_every: 1
+      camera: null
 
-autofocus_plan: null
-keep_shutter_open_across: []
+  # Define axis order
+  axis_order:
+    - t
+    - p
+    - c
+    - z
 
-# Define metadata per microscope
-metadata:
-  pymmcore_widgets:
-    version: 0.10.2.dev23+g22b8c0aff.d20260106
-  mantis:
-    reset_hardware_sequencing_settings:
-      - ['TS2_TTL1-8', 'Blanking', 'Off']
-      - ['TS2_DAC03', 'Sequence', 'Off']
-      - ['XYStage:XY:31', 'MotorSpeedX-S(mm/s)', '5.75']
-      - ['XYStage:XY:31', 'MotorSpeedY-S(mm/s)', '5.75']
-    autofocus:
-      enabled: false
-      method: PFS
-      stage: ZDrive
+  autofocus_plan: null
+  keep_shutter_open_across: []
+
+# Continuous autofocus settings
+autofocus:
+  enabled: false
+  method: PFS
+  stage: ZDrive
+
+# Mantis-specific hardware settings
+mantis:
+  reset_hardware_sequencing_settings:
+    - ['TS2_TTL1-8', 'Blanking', 'Off']
+    - ['TS2_DAC03', 'Sequence', 'Off']
+    - ['XYStage:XY:31', 'MotorSpeedX-S(mm/s)', '5.75']
+    - ['XYStage:XY:31', 'MotorSpeedY-S(mm/s)', '5.75']

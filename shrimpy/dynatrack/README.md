@@ -98,27 +98,31 @@ timepoint.
 
 ## Configuration
 
-DynaTrack is configured under the microscope's metadata section — e.g.
-`metadata.mantis.dynatrack` — mapping directly onto
-[`DynaTrackConfig`](tracking.py) fields. `enabled`, `input_channel`, and
+DynaTrack is configured in the top-level `dynatrack` section of a shrimPy
+acquisition config (see [`shrimpy/config.py`](../config.py)), mapping directly
+onto [`DynaTrackConfig`](tracking.py) fields. `enabled`, `input_channel`, and
 `z_device` sit alongside the tracking parameters:
 
 The XY pixel size and Z step are **not** config fields — they are derived at
-runtime from `core.getPixelSizeUm()` and `z_plan.step` (single source of truth)
+runtime from `core.getPixelSizeUm()` and `mda.z_plan.step` (single source of truth)
 and injected into `deskew` / `phase` and the px→µm conversion.
 
 ```yaml
-metadata:
-  mantis:
-    dynatrack:
-      enabled: true
-      input_channel: BF        # required; acquisition channel name fed to the tracker
-      z_device: ObjectiveZ     # Z written to this device's Position property
-      tracking_channel: BF     # required; channel the shift is estimated on
-      tracking_method: pcc
-      tracking_interval: 1
-      # ... preprocessing, deskew, phase, virtual_staining, etc.
+mda:
+  # ... channels, z_plan, stage_positions, ...
+
+dynatrack:
+  enabled: true
+  input_channel: BF        # required; acquisition channel name fed to the tracker
+  z_device: ObjectiveZ     # Z written to this device's Position property
+  tracking_channel: BF     # required; channel the shift is estimated on
+  tracking_method: pcc
+  tracking_interval: 1
+  # ... preprocessing, deskew, phase, virtual_staining, etc.
 ```
+
+The section is validated even when `enabled: false`, so `input_channel` and
+`tracking_channel` must be present; omit the whole section to disable tracking.
 
 See [`config/mda/mantis/dynatrack_demo.yaml`](../../config/mda/mantis/dynatrack_demo.yaml)
 for a fully commented example.
@@ -136,11 +140,13 @@ for a fully commented example.
 ## Integrating with a new engine
 
 ```python
+from shrimpy.config import ShrimpyConfig
 from shrimpy.dynatrack import DynaTrack
 
 # in setup_sequence, before hardware setup:
-self._dynatrack = DynaTrack.from_metadata(
-    microscope_meta.get("dynatrack"), sequence, data_path=self._data_path
+config = ShrimpyConfig.from_sequence(sequence)
+self._dynatrack = DynaTrack.from_config(
+    config.dynatrack, sequence, data_path=self._data_path, pixel_size_um=core.getPixelSizeUm()
 )
 if self._dynatrack is not None:
     core.mda.events.frameReady.connect(self._dynatrack.on_frame_ready)
@@ -160,7 +166,7 @@ core.mda.events.frameReady.disconnect(self._dynatrack.on_frame_ready)
 self._dynatrack.shutdown()
 ```
 
-`from_metadata` returns `None` when tracking is disabled or the sequence has no
+`from_config` returns `None` when tracking is disabled or the sequence has no
 stage positions, so the engine only wires up the callbacks when tracking is
 active. To run a **custom tracker** (or drive tracking in-process for tests),
 construct the coordinator directly with your own `PositionUpdater`:

@@ -30,7 +30,10 @@ def acquire():
     "--mda-config",
     type=click.Path(exists=True, path_type=Path),
     required=True,
-    help="Path to MDA sequence configuration YAML file",
+    help=(
+        "Path to a shrimPy acquisition configuration YAML file "
+        "(sections: mda, autofocus, mantis, dynatrack)"
+    ),
 )
 @click.option(
     "-o",
@@ -79,7 +82,7 @@ def mantis(
 
         shrimpy acquire mantis \\
             --mm-config /path/to/mantis.cfg \\
-            --mda-config /path/to/sequence.yaml \\
+            --mda-config /path/to/config.yaml \\
             --output-dir ./data \\
             --name my_experiment
     """
