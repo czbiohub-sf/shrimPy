@@ -9,6 +9,7 @@ from pathlib import Path
 import click
 
 from shrimpy._logging import configure_logging
+from shrimpy.cli.options import mda_config, mm_config, name, output_dir
 
 logger = logging.getLogger(__name__)
 
@@ -20,34 +21,10 @@ def acquire():
 
 
 @acquire.command()
-@click.option(
-    "--mm-config",
-    type=click.Path(exists=True, path_type=Path),
-    required=True,
-    help="Path to Micro-Manager configuration file",
-)
-@click.option(
-    "--mda-config",
-    type=click.Path(exists=True, path_type=Path),
-    required=True,
-    help=(
-        "Path to the acquisition configuration YAML file (an MDASequence, with "
-        "the microscope settings under 'metadata')"
-    ),
-)
-@click.option(
-    "-o",
-    "--output-dir",
-    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
-    required=True,
-    help="Output directory where acquisition data and logs will be saved (must exist)",
-)
-@click.option(
-    "-n",
-    "--name",
-    default="mantis_acquisition",
-    help="Name of the acquisition (used for log files and output)",
-)
+@mm_config
+@mda_config
+@output_dir
+@name
 @click.option(
     "--unicore",
     is_flag=True,
@@ -148,6 +125,46 @@ def mantis(
             logger.info("Acquisition done; viewer window left open until closed.")
             feeder.join()
             feeder.cleanup()
+
+
+@acquire.command()
+@mm_config
+@mda_config
+@output_dir
+@name
+def dragonfly(mm_config: Path, mda_config: Path, output_dir: Path, name: str):
+    """Run Dragonfly microscope acquisition.
+
+    Example:
+
+        shrimpy acquire dragonfly \\
+            --mm-config /path/to/dragonfly.cfg \\
+            --mda-config /path/to/sequence.yaml \\
+            --output-dir ./data \\
+            --name my_experiment
+    """
+    # Import before configure_logging: pymmcore-plus calls configure_logging() at module
+    # level, which clears all handlers on the "pymmcore-plus" logger. Importing first
+    # ensures that call happens before fileConfig() attaches the shrimpy file handler.
+    from pymmcore_plus import CMMCorePlus
+
+    from shrimpy.engines.dragonfly_engine import DragonflyEngine
+
+    config_file = Path(__file__).parent.parent.parent / "config" / "logging.ini"
+    log_file = configure_logging(config_file, output_dir, name)
+    if config_file.exists():
+        logger.info(f"Logging configured for acquisition: {name}")
+        logger.info(f"Log file: {log_file}")
+    else:
+        logger.warning(f"Logging config not found at {config_file}, using defaults")
+
+    core = CMMCorePlus()
+
+    logger.info(f"Loading Micro-Manager configuration from {mm_config}")
+    core.loadSystemConfiguration(mm_config)
+
+    engine = DragonflyEngine(core)
+    engine.acquire(output_dir=output_dir, name=name, mda_config=mda_config)
 
 
 @acquire.command()
