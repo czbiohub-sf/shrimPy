@@ -13,9 +13,9 @@ from pymmcore_plus.core._sequencing import SequencedEvent
 from pymmcore_plus.metadata import SummaryMetaV1
 from useq import MDAEvent, MDASequence
 
-from shrimpy.base_engine import BaseEngine
 from shrimpy.config import ShrimpyMetadata
 from shrimpy.dynatrack import DynaTrack
+from shrimpy.engines.base_engine import BaseEngine
 
 # Get the logger instance (will be configured by the CLI entry point)
 logger = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ def _find_shrimpy_log_file() -> Path | None:
 class MantisEngine(BaseEngine):
     """Custom MDA engine for the Mantis microscope.
 
-    This engine extends :class:`~shrimpy.base_engine.BaseEngine` with
+    This engine extends :class:`~shrimpy.engines.base_engine.BaseEngine` with
     mantis-specific hardware setup and configuration, including:
     - Acquisition timeouts tuned for hardware-sequenced acquisition
     - Nikon PFS continuous autofocus
@@ -204,7 +204,7 @@ class MantisEngine(BaseEngine):
     def engage_autofocus(self, event: MDAEvent) -> bool:
         """Engage Nikon PFS continuous autofocus for ``event``.
 
-        Called by :meth:`~shrimpy.base_engine.BaseEngine._engage_autofocus`
+        Called by :meth:`~shrimpy.engines.base_engine.BaseEngine._engage_autofocus`
         when autofocus is enabled with a method other than ``demo-PFS``. The
         acquisition of events for which this returns False is skipped.
         """

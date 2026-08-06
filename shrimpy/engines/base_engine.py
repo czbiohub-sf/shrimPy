@@ -21,7 +21,7 @@ Microscope-specific engines subclass it and override the pieces that differ:
 - ``setup_sequence`` / ``setup_event`` / ``teardown_sequence`` — call
   ``super()`` and add microscope-specific hardware setup around it.
 
-See :mod:`shrimpy.mantis.mantis_engine` for the reference implementation.
+See :mod:`shrimpy.engines.mantis_engine` for the reference implementation.
 """
 
 from __future__ import annotations

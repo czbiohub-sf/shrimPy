@@ -18,11 +18,13 @@ from pymmcore_plus.core._sequencing import SequencedEvent
 from pymmcore_plus.mda import SkipEvent
 from useq import MDAEvent, MDASequence
 
-from shrimpy.base_engine import (
+from shrimpy.engines.base_engine import (
     DEMO_PFS_METHOD,
     BaseEngine,
     _get_next_acquisition_name,
 )
+from shrimpy.engines.dragonfly_engine import DragonflyEngine
+from shrimpy.engines.isim_engine import ISIMEngine
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -36,7 +38,7 @@ def engine(mock_core: MagicMock) -> BaseEngine:
     Patches the parent MDAEngine.__init__ so we don't need a real core for
     the super().__init__() call, then manually sets mmcore.
     """
-    with patch("shrimpy.base_engine.MDAEngine.__init__", return_value=None):
+    with patch("shrimpy.engines.base_engine.MDAEngine.__init__", return_value=None):
         eng = BaseEngine(mock_core)
     # Manually assign the core weakref since we bypassed super().__init__
     eng._mmcore_ref = weakref.ref(mock_core)
@@ -116,7 +118,7 @@ def test_init_kwargs_override_defaults(mock_core):
 
 def test_init_registers_engine_and_callbacks(mock_core):
     # Verify that __init__ wires up the engine and event callbacks
-    with patch("shrimpy.base_engine.MDAEngine.__init__", return_value=None):
+    with patch("shrimpy.engines.base_engine.MDAEngine.__init__", return_value=None):
         BaseEngine(mock_core)
 
     mock_core.mda.set_engine.assert_called_once()
@@ -131,26 +133,26 @@ def test_init_registers_engine_and_callbacks(mock_core):
 
 
 def test_property_changed_logged(engine, caplog):
-    with caplog.at_level("DEBUG", logger="shrimpy.base_engine"):
+    with caplog.at_level("DEBUG", logger="shrimpy.engines.base_engine"):
         engine._on_property_changed("Camera", "Exposure", "10.0")
     assert "Camera.Exposure = 10.0" in caplog.text
 
 
 def test_property_changed_ignores_pfs_status(engine, caplog):
     # Noisy PFS properties are filtered out of the log
-    with caplog.at_level("DEBUG", logger="shrimpy.base_engine"):
+    with caplog.at_level("DEBUG", logger="shrimpy.engines.base_engine"):
         engine._on_property_changed("TIPFSStatus", "PFS Status", "0000001100001010")
     assert caplog.text == ""
 
 
 def test_roi_set_logged(engine, caplog):
-    with caplog.at_level("DEBUG", logger="shrimpy.base_engine"):
+    with caplog.at_level("DEBUG", logger="shrimpy.engines.base_engine"):
         engine._on_roi_set("Camera", 0, 0, 2048, 512)
     assert "x=0, y=0, width=2048, height=512" in caplog.text
 
 
 def test_xy_stage_position_changed_logged(engine, caplog):
-    with caplog.at_level("DEBUG", logger="shrimpy.base_engine"):
+    with caplog.at_level("DEBUG", logger="shrimpy.engines.base_engine"):
         engine._on_xy_stage_position_changed("XYStage", 100.0, -50.0)
     assert "x=100.00, y=-50.00" in caplog.text
 
@@ -163,7 +165,7 @@ def test_xy_stage_position_changed_logged(engine, caplog):
 def test_setup_sequence_no_shrimpy_metadata(engine):
     # Should not raise when metadata is empty
     seq = _make_sequence()
-    with patch("shrimpy.base_engine.MDAEngine.setup_sequence"):
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence"):
         engine.setup_sequence(seq)
     assert engine._use_autofocus is False
 
@@ -172,7 +174,7 @@ def test_setup_sequence_autofocus_enabled(engine, mock_core):
     # Autofocus metadata with enabled=True should configure the engine
     af = {"enabled": True, "stage": "ZDrive", "method": "PFS"}
     seq = _make_sequence({"autofocus": af})
-    with patch("shrimpy.base_engine.MDAEngine.setup_sequence"):
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence"):
         engine.setup_sequence(seq)
 
     assert engine._use_autofocus is True
@@ -186,7 +188,7 @@ def test_setup_sequence_autofocus_disabled(engine, mock_core):
     # Autofocus explicitly disabled → _use_autofocus stays False
     af = {"enabled": False, "stage": "ZDrive", "method": "PFS"}
     seq = _make_sequence({"autofocus": af})
-    with patch("shrimpy.base_engine.MDAEngine.setup_sequence"):
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence"):
         engine.setup_sequence(seq)
     assert engine._use_autofocus is False
     mock_core.setAutoFocusDevice.assert_not_called()
@@ -196,7 +198,7 @@ def test_setup_sequence_demo_pfs_not_set_as_device(engine, mock_core):
     # demo-PFS is simulated in software → never passed to setAutoFocusDevice
     af = {"enabled": True, "stage": "Z", "method": DEMO_PFS_METHOD}
     seq = _make_sequence({"autofocus": af})
-    with patch("shrimpy.base_engine.MDAEngine.setup_sequence"):
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence"):
         engine.setup_sequence(seq)
     assert engine._use_autofocus is True
     mock_core.setAutoFocusDevice.assert_not_called()
@@ -204,7 +206,7 @@ def test_setup_sequence_demo_pfs_not_set_as_device(engine, mock_core):
 
 def test_setup_sequence_stores_xy_stage_device(engine, mock_core):
     seq = _make_sequence()
-    with patch("shrimpy.base_engine.MDAEngine.setup_sequence"):
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence"):
         engine.setup_sequence(seq)
     assert engine._xy_stage_device == mock_core.getXYStageDevice.return_value
 
@@ -213,7 +215,7 @@ def test_setup_sequence_returns_parent_summary_metadata(engine):
     # The parent's SummaryMetaV1 is passed through unchanged
     sentinel = object()
     seq = _make_sequence()
-    with patch("shrimpy.base_engine.MDAEngine.setup_sequence", return_value=sentinel):
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence", return_value=sentinel):
         assert engine.setup_sequence(seq) is sentinel
 
 
@@ -383,7 +385,7 @@ def test_setup_event_autofocus_success_does_not_raise(engine, mock_core):
     engine._autofocus_fail_at_index = []
 
     event = MDAEvent()
-    with patch("shrimpy.base_engine.MDAEngine.setup_event") as mock_parent:
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_event") as mock_parent:
         engine.setup_event(event)  # should not raise
     mock_parent.assert_called_once_with(event)
 
@@ -393,7 +395,7 @@ def test_setup_event_waits_for_xy_stage(engine, mock_core):
     engine._xy_stage_device = "XYStage"
     # Set by MDAEngine.__init__, which the fixture bypasses
     engine.force_set_xy_position = False
-    with patch("shrimpy.base_engine.MDAEngine.setup_event"):
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_event"):
         engine.setup_event(MDAEvent(x_pos=10.0, y_pos=20.0))
     mock_core.waitForDevice.assert_any_call("XYStage")
 
@@ -409,7 +411,7 @@ def test_set_event_properties_skips_z_on_autofocus_stage(engine):
     engine._autofocus_stage = "ZDrive"
     properties = [("ZDrive", Keyword.Position, 10.0), ("Camera", "Exposure", 5.0)]
 
-    with patch("shrimpy.base_engine.MDAEngine._set_event_properties") as mock_parent:
+    with patch("shrimpy.engines.base_engine.MDAEngine._set_event_properties") as mock_parent:
         engine._set_event_properties(properties)
 
     assert mock_parent.call_args_list == [(([("Camera", "Exposure", 5.0)],),)]
@@ -421,7 +423,7 @@ def test_set_event_properties_sets_z_when_autofocus_disabled(engine):
     engine._autofocus_stage = "ZDrive"
     properties = [("ZDrive", Keyword.Position, 10.0)]
 
-    with patch("shrimpy.base_engine.MDAEngine._set_event_properties") as mock_parent:
+    with patch("shrimpy.engines.base_engine.MDAEngine._set_event_properties") as mock_parent:
         engine._set_event_properties(properties)
 
     mock_parent.assert_called_once_with([("ZDrive", Keyword.Position, 10.0)])
@@ -433,7 +435,7 @@ def test_set_event_properties_sets_z_on_other_stages(engine):
     engine._autofocus_stage = "ZDrive"
     properties = [("AP Galvo", Keyword.Position, 3.0)]
 
-    with patch("shrimpy.base_engine.MDAEngine._set_event_properties") as mock_parent:
+    with patch("shrimpy.engines.base_engine.MDAEngine._set_event_properties") as mock_parent:
         engine._set_event_properties(properties)
 
     mock_parent.assert_called_once_with([("AP Galvo", Keyword.Position, 3.0)])
@@ -453,7 +455,7 @@ def test_teardown_applies_reset_hardware_sequencing_settings(engine, mock_core):
             ],
         }
     )
-    with patch("shrimpy.base_engine.MDAEngine.teardown_sequence"):
+    with patch("shrimpy.engines.base_engine.MDAEngine.teardown_sequence"):
         engine.teardown_sequence(seq)
     mock_core.setProperty.assert_called_once_with("Z", "UseSequences", "No")
 
@@ -461,7 +463,7 @@ def test_teardown_applies_reset_hardware_sequencing_settings(engine, mock_core):
 def test_teardown_no_reset_settings(engine, mock_core):
     # Sequence without reset_hardware_sequencing_settings → no setProperty calls
     seq = MDASequence(metadata={})
-    with patch("shrimpy.base_engine.MDAEngine.teardown_sequence"):
+    with patch("shrimpy.engines.base_engine.MDAEngine.teardown_sequence"):
         engine.teardown_sequence(seq)
     mock_core.setProperty.assert_not_called()
 
@@ -469,6 +471,29 @@ def test_teardown_no_reset_settings(engine, mock_core):
 def test_teardown_no_shrimpy_metadata(engine, mock_core):
     # Sequence with no metadata at all → no setProperty calls
     seq = MDASequence()
-    with patch("shrimpy.base_engine.MDAEngine.teardown_sequence"):
+    with patch("shrimpy.engines.base_engine.MDAEngine.teardown_sequence"):
         engine.teardown_sequence(seq)
     mock_core.setProperty.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Placeholder microscope engines
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("engine_cls", [ISIMEngine, DragonflyEngine])
+def test_placeholder_engines_inherit_shared_behavior(engine_cls, mock_core):
+    # The iSIM / Dragonfly skeletons are BaseEngine subclasses that inherit the
+    # shared defaults; they acquire with autofocus disabled or with demo-PFS.
+    with patch("shrimpy.engines.base_engine.MDAEngine.__init__", return_value=None):
+        eng = engine_cls(mock_core)
+    eng._mmcore_ref = weakref.ref(mock_core)
+
+    assert isinstance(eng, BaseEngine)
+    assert eng._engage_demo_pfs(event=MDAEvent(), fail_at_index=[]) is True
+
+    # No hardware autofocus routine yet
+    eng._use_autofocus = True
+    eng._autofocus_method = "PFS"
+    with pytest.raises(NotImplementedError, match="engage_autofocus"):
+        eng._engage_autofocus(MDAEvent())

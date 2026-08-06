@@ -16,8 +16,8 @@ import pytest
 
 from useq import MDAEvent
 
-from shrimpy.base_engine import BaseEngine
-from shrimpy.mantis.mantis_engine import (
+from shrimpy.engines.base_engine import BaseEngine
+from shrimpy.engines.mantis_engine import (
     FAST_XY_STAGE_SPEED,
     MANTIS_XY_STAGE_NAME,
     SLOW_XY_STAGE_SPEED,
@@ -36,7 +36,7 @@ def engine(mock_core: MagicMock) -> MantisEngine:
     Patches the parent MDAEngine.__init__ so we don't need a real core for
     the super().__init__() call, then manually sets mmcore.
     """
-    with patch("shrimpy.base_engine.MDAEngine.__init__", return_value=None):
+    with patch("shrimpy.engines.base_engine.MDAEngine.__init__", return_value=None):
         eng = MantisEngine(mock_core)
     # Manually assign the core weakref since we bypassed super().__init__
     eng._mmcore_ref = weakref.ref(mock_core)
@@ -189,7 +189,7 @@ def test_pfs_already_locked_after_fullfocus(engine, mock_core):
     # fullFocus succeeds and focus is locked → immediate success
     mock_core.isContinuousFocusLocked.return_value = True
 
-    with patch("shrimpy.mantis.mantis_engine.time.sleep"):
+    with patch("shrimpy.engines.mantis_engine.time.sleep"):
         assert engine._engage_nikon_pfs("ZDrive", 100.0) is True
 
     mock_core.fullFocus.assert_called_once()
@@ -201,7 +201,7 @@ def test_pfs_locks_on_first_z_offset(engine, mock_core):
     # fullFocus fails, but first z_offset (0) succeeds
     mock_core.isContinuousFocusLocked.side_effect = [False, True]
 
-    with patch("shrimpy.mantis.mantis_engine.time.sleep"):
+    with patch("shrimpy.engines.mantis_engine.time.sleep"):
         assert engine._engage_nikon_pfs("ZDrive", 100.0) is True
 
     # Should have set position to 100 + 0 = 100
@@ -212,7 +212,7 @@ def test_pfs_locks_on_later_z_offset(engine, mock_core):
     # fullFocus fails, first two offsets fail, third (offset=10) succeeds
     mock_core.isContinuousFocusLocked.side_effect = [False, False, False, True]
 
-    with patch("shrimpy.mantis.mantis_engine.time.sleep"):
+    with patch("shrimpy.engines.mantis_engine.time.sleep"):
         assert engine._engage_nikon_pfs("ZDrive", 100.0) is True
 
     # Offsets are [0, -10, 10, ...]; third is 10 → position = 110
@@ -223,7 +223,7 @@ def test_pfs_all_offsets_fail(engine, mock_core):
     # fullFocus fails, none of the 7 z_offsets succeed
     mock_core.isContinuousFocusLocked.return_value = False
 
-    with patch("shrimpy.mantis.mantis_engine.time.sleep"):
+    with patch("shrimpy.engines.mantis_engine.time.sleep"):
         assert engine._engage_nikon_pfs("ZDrive", 100.0) is False
 
     # Z stage should be returned to the original position
