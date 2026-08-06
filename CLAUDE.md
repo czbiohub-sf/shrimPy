@@ -63,46 +63,62 @@ shrimpy acquire mantis \
 ### Microscope Module Structure
 ```
 shrimpy/
+├── base_engine.py       # BaseEngine: MDAEngine subclass shared by all microscopes
+├── config.py            # pydantic validation of the shrimPy metadata sections
+│
 ├── mantis/              # Label-free + Light-sheet microscope (fully implemented)
-│   ├── mantis_engine.py              # MDAEngine subclass (~455 lines)
-│   ├── mantis_acquisition_widget.py  # Qt GUI (~815 lines)
+│   ├── mantis_engine.py              # BaseEngine subclass
+│   ├── mantis_acquisition_widget.py  # Qt GUI (deprecated, ~815 lines)
 │   ├── mantis_logger.py              # Logging configuration
 │   ├── launch_mantis_gui.py          # GUI entry point
 │   └── archive/                      # Historical implementations (pycromanager, old pymmcore-plus)
 │
 ├── isim/                # iSIM microscope (placeholder for future implementation)
 ├── viewer/              # Data visualization (placeholder)
-├── cli/                 # Command-line interface (in transition, currently empty)
+├── cli/                 # Command-line interface
 └── tests/               # Unit tests
 ```
 
 ### Key Design Patterns
 
 #### 1. Engine Abstraction Pattern
-Each microscope implements a custom `MDAEngine` subclass:
+`shrimpy/base_engine.py` holds `BaseEngine`, the `MDAEngine` subclass shared by
+every microscope. It owns the behavior that does not vary by platform:
+
+- hardware-sequencing defaults (`use_hardware_sequencing=True`,
+  `force_set_xy_position=False`) and registration with `mmc.mda`
+- debug logging of property changes, ROI changes, and XY stage moves
+- autofocus handling: reads `metadata.autofocus`, dispatches to the simulated
+  `demo-PFS` method or to the microscope's `engage_autofocus()`, and skips the
+  event (`SkipEvent`) when autofocus is enabled but did not engage
+- Z positions are not written to the autofocus stage while autofocus is engaged
+  (`_set_event_properties`)
+- resetting `metadata.reset_hardware_sequencing_settings` in `teardown_sequence`
+- `acquire()`: runs the sequence and writes OME-Zarr to `<name>_<idx>.ome.zarr`
+
+Each microscope subclasses it and overrides only what differs:
 ```python
-class MantisEngine(MDAEngine):
+class MantisEngine(BaseEngine):
+    def __init__(mmc, *args, **kwargs):
+        # Microscope-specific defaults (e.g. acquisition timeouts), then super()
+
+    def engage_autofocus(event: MDAEvent) -> bool:
+        # Required hook — BaseEngine raises NotImplementedError.
+        # Mantis: Nikon PFS with z-offset retries; returns False if it never locks
+
     def setup_sequence(sequence: MDASequence) -> SummaryMetaV1:
-        # Configure hardware before acquisition starts
-        # - Set ROI, focus device, initialization settings
-        # - Configure hardware sequencing
-        # - Setup autofocus parameters
+        # DynaTrack setup around super().setup_sequence()
 
     def setup_event(event: MDAEvent):
-        # Prepare for each acquisition event
-        # - Configure TriggerScope if using hardware sequencing
-
-    def _set_event_xy_position(event: MDAEvent):
-        # Custom XY positioning with intelligent stage movement
+        # XY stage speed modulation, then super().setup_event()
         # - Variable speed (2.0 mm/s short, 5.75 mm/s long distances)
-        # - Post-movement autofocus engagement with retry logic
-        # - Stage settlement waiting
 ```
 
 To add a new microscope:
 1. Create `shrimpy/<microscope_name>/` directory
-2. Subclass `MDAEngine` in `<microscope_name>_engine.py`
-3. Override `setup_sequence()`, `setup_event()`, and positioning methods as needed
+2. Subclass `BaseEngine` in `<microscope_name>_engine.py`
+3. Implement `engage_autofocus()`; override `setup_sequence()`, `setup_event()`,
+   and positioning methods as needed, always calling `super()`
 4. Define microscope-specific metadata schema
 5. Create Qt widget for GUI (optional)
 
@@ -231,7 +247,9 @@ This project uses [uv](https://docs.astral.sh/uv/) for dependency management and
 - Ignore: `scripts/`, `**/archive/` (configured in pyproject.toml)
 - Run with: `make test` or `pytest . --disable-pytest-warnings`
 
-Current tests focus on logging infrastructure. Add tests for new microscope engines in `shrimpy/tests/test_<microscope>_*.py`.
+Shared engine behavior is tested in `shrimpy/tests/test_base_engine.py`; keep
+microscope-specific tests in `shrimpy/tests/test_<microscope>_*.py` and add
+tests for new microscope engines there.
 
 ## Current Development Focus
 
@@ -242,7 +260,7 @@ Current tests focus on logging infrastructure. Add tests for new microscope engi
 - Maintaining GUI-first approach with programmatic API
 
 **What's stable:**
-- Mantis acquisition engine (MantisEngine)
+- Shared acquisition engine (`BaseEngine`) and the Mantis engine (`MantisEngine`)
 - GUI-based acquisition workflow
 - Logging infrastructure
 - Configuration via YAML + metadata
@@ -262,8 +280,9 @@ Current tests focus on logging infrastructure. Add tests for new microscope engi
 
 ### Extending to New Microscopes
 When adding iSIM or other microscopes:
-1. Study `shrimpy/mantis/mantis_engine.py` as the reference implementation
-2. Override only the methods that differ from default MDAEngine behavior
+1. Study `shrimpy/base_engine.py` for the shared behavior and
+   `shrimpy/mantis/mantis_engine.py` as the reference subclass
+2. Override only the methods that differ from `BaseEngine` behavior
 3. Document microscope-specific metadata schema in docstrings
 4. Create separate logger instance following mantis_logger pattern
 5. Keep archived code in `archive/` subdirectory for reference

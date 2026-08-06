@@ -30,7 +30,7 @@ from shrimpy.mantis.mantis_engine import MantisEngine
 @pytest.fixture
 def engine(mock_core: MagicMock) -> MantisEngine:
     """Create a MantisEngine wired to the mock CMMCorePlus."""
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.__init__", return_value=None):
+    with patch("shrimpy.base_engine.MDAEngine.__init__", return_value=None):
         eng = MantisEngine(mock_core)
     eng._mmcore_ref = weakref.ref(mock_core)
     return eng
@@ -335,7 +335,7 @@ class TestMantisEngineWiring:
             },
         )
         with (
-            patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"),
+            patch("shrimpy.base_engine.MDAEngine.setup_sequence"),
             patch.object(DynaTrack, "start"),
         ):
             engine.setup_sequence(seq)
@@ -348,7 +348,7 @@ class TestMantisEngineWiring:
 
     def test_setup_sequence_without_dynatrack(self, engine):
         seq = MDASequence(stage_positions=[{"x": 10, "y": 20}], metadata={})
-        with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"):
+        with patch("shrimpy.base_engine.MDAEngine.setup_sequence"):
             engine.setup_sequence(seq)
         assert engine._dynatrack is None
 
@@ -363,7 +363,7 @@ class TestMantisEngineWiring:
                 }
             },
         )
-        with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"):
+        with patch("shrimpy.base_engine.MDAEngine.setup_sequence"):
             engine.setup_sequence(seq)
         assert engine._dynatrack is None
 
@@ -371,7 +371,7 @@ class TestMantisEngineWiring:
         dt = _make_dynatrack(_sequence(), PositionUpdater())
         engine._dynatrack = dt
 
-        with patch("shrimpy.mantis.mantis_engine.MDAEngine.teardown_sequence"):
+        with patch("shrimpy.base_engine.MDAEngine.teardown_sequence"):
             engine.teardown_sequence(MDASequence(metadata={}))
 
         assert engine._dynatrack is None
@@ -430,9 +430,7 @@ class TestBackpressure:
         ]
         frame = np.zeros((64, 64), dtype=np.uint16)
 
-        with patch(
-            "shrimpy.mantis.mantis_engine.MDAEngine.event_iterator", return_value=iter(events)
-        ):
+        with patch("shrimpy.base_engine.MDAEngine.event_iterator", return_value=iter(events)):
             for event in engine.event_iterator(events):
                 t_idx = event.index.get("t", 0)
                 p_idx = event.index.get("p", 0)
@@ -485,9 +483,7 @@ class TestBackpressure:
         ]
         frame = np.zeros((64, 64), dtype=np.uint16)
 
-        with patch(
-            "shrimpy.mantis.mantis_engine.MDAEngine.event_iterator", return_value=iter(events)
-        ):
+        with patch("shrimpy.base_engine.MDAEngine.event_iterator", return_value=iter(events)):
             for event in engine.event_iterator(events):
                 dt.on_frame_ready(frame, event)
 

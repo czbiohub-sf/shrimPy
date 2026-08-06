@@ -1,45 +1,30 @@
 from __future__ import annotations
 
-import json
 import logging
-import os
 import time
 
 from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
-import psutil
 
-from ome_writers import (
-    AcquisitionSettings,
-)
 from pymmcore_plus.core import CMMCorePlus
-from pymmcore_plus.core._constants import Keyword
 from pymmcore_plus.core._sequencing import SequencedEvent
-from pymmcore_plus.mda import MDAEngine, SkipEvent
 from pymmcore_plus.metadata import SummaryMetaV1
-from pymmcore_plus.metadata.serialize import to_builtins
 from useq import MDAEvent, MDASequence
 
-from shrimpy.config import ShrimpyMetadata, load_config
+from shrimpy.base_engine import BaseEngine
+from shrimpy.config import ShrimpyMetadata
 from shrimpy.dynatrack import DynaTrack
 
 # Get the logger instance (will be configured by the CLI entry point)
 logger = logging.getLogger(__name__)
 
 MANTIS_XY_STAGE_NAME = "XYStage:XY:31"
-DEMO_PFS_METHOD = "demo-PFS"
 SLOW_XY_STAGE_SPEED = 2.0  # in mm/s, used for short moves to maintain autofocus lock
 FAST_XY_STAGE_SPEED = 5.75  # in mm/s, used for long moves
 NEGLIGIBLE_XY_DISTANCE = 1  # in um, moves below this are ignored
 SHORT_XY_DISTANCE = 2000  # in um, threshold between slow and fast speed
-
-_PROC = psutil.Process(os.getpid())
-
-
-def _rss_gb() -> float:
-    return _PROC.memory_info().rss / (1024**3)
 
 
 def _find_shrimpy_log_file() -> Path | None:
@@ -50,16 +35,15 @@ def _find_shrimpy_log_file() -> Path | None:
     return None
 
 
-class MantisEngine(MDAEngine):
+class MantisEngine(BaseEngine):
     """Custom MDA engine for the Mantis microscope.
 
-    This engine extends the default MDAEngine to handle mantis-specific
-    hardware setup and configuration, including:
-    - TriggerScope sequencing configuration
-    - ROI setup
-    - Axial Piezo (AP Galvo) focus control
-    - TTL blanking
-    - Autofocus after XY stage movements
+    This engine extends :class:`~shrimpy.base_engine.BaseEngine` with
+    mantis-specific hardware setup and configuration, including:
+    - Acquisition timeouts tuned for hardware-sequenced acquisition
+    - Nikon PFS continuous autofocus
+    - XY stage speed modulation
+    - DynaTrack position tracking
     """
 
     def __init__(self, mmc: CMMCorePlus, *args, **kwargs):
@@ -70,8 +54,6 @@ class MantisEngine(MDAEngine):
         mmc : CMMCorePlus
             The Micro-Manager core instance
         """
-        kwargs.setdefault("use_hardware_sequencing", True)
-        kwargs.setdefault("force_set_xy_position", False)
         # Set acquisition timeout to guard against stalling due to dropped frames
         # or missed trigger pulses
         kwargs.setdefault("timeout_base", 10.0)
@@ -79,38 +61,8 @@ class MantisEngine(MDAEngine):
         kwargs.setdefault("timeout_first_frame", None)
         kwargs.setdefault("timeout_action", "warn")
         super().__init__(mmc, *args, **kwargs)
-        self._use_autofocus = False
-        self._autofocus_success = False
-        self._autofocus_stage = None
-        self._autofocus_method = None
-        self._autofocus_fail_at_index = None
-        self._xy_stage_device = None
         self._xy_stage_speed = None
         self._dynatrack: DynaTrack | None = None
-        self._data_path: Path | None = None
-
-        # Register event callbacks for logging
-        mmc.mda.set_engine(self)
-        mmc.events.propertyChanged.connect(self._on_property_changed)
-        mmc.events.roiSet.connect(self._on_roi_set)
-        mmc.events.XYStagePositionChanged.connect(self._on_xy_stage_position_changed)
-
-    def _on_property_changed(self, device: str, property_name: str, value: str) -> None:
-        """Log property changes at debug level."""
-        # Ignore select property changes
-        if property_name in ("PFS Status", "PFS in Range", "FocusMaintenance"):
-            return
-        logger.debug(f"Property changed: {device}.{property_name} = {value}")
-
-    def _on_roi_set(self, camera: str, x: int, y: int, width: int, height: int) -> None:
-        """Log ROI changes at debug level."""
-        logger.debug(
-            f"Setting ROI on {camera} to x={x}, y={y}, width={width}, height={height}"
-        )
-
-    def _on_xy_stage_position_changed(self, device: str, x: float, y: float) -> None:
-        """Log stage position changes at debug level."""
-        logger.debug(f"XY stage position changed: device={device}, x={x:.2f}, y={y:.2f}")
 
     def setup_sequence(self, sequence: MDASequence) -> SummaryMetaV1 | None:
         """Setup mantis-specific hardware before the sequence starts.
@@ -119,30 +71,19 @@ class MantisEngine(MDAEngine):
         validated by :class:`~shrimpy.config.ShrimpyMetadata`; missing sections
         fall back to their defaults (autofocus and DynaTrack disabled).
         """
-        logger.info("Setting up Mantis-specific hardware for acquisition sequence")
+        # Configure the shared hardware settings (autofocus, XY stage) and call
+        # the parent setup so SummaryMetaV1 captures the fully configured
+        # hardware state and the setup event applies the ROI.
+        result = super().setup_sequence(sequence)
 
         core = self.mmcore
         meta = ShrimpyMetadata.from_sequence(sequence)
 
-        # Set autofocus settings
-        autofocus = meta.autofocus
-        if autofocus.enabled:
-            self._use_autofocus = True
-            self._autofocus_stage = autofocus.stage
-            self._autofocus_method = autofocus.method
-            logger.info(f"Enabling autofocus with method: {self._autofocus_method}")
-            if not self._autofocus_method == DEMO_PFS_METHOD:
-                core.setAutoFocusDevice(self._autofocus_method)
-        else:
-            logger.info("Autofocus is disabled for this acquisition")
-
-        # Store XY stage device name
-        self._xy_stage_device = core.getXYStageDevice()
-        logger.debug(f"XY stage device: {self._xy_stage_device}")
-
         # Setup DynaTrack position tracking. The XY pixel size (from the core)
         # and the sequence z_plan step are the single source of truth for all
-        # scale parameters; DynaTrack derives and injects them.
+        # scale parameters; DynaTrack derives and injects them. Built after the
+        # parent setup so the pixel size and any grid-plan FOV sizes reflect the
+        # state the setup event leaves the hardware in.
         self._dynatrack = DynaTrack.from_config(
             meta.dynatrack,
             sequence,
@@ -150,7 +91,7 @@ class MantisEngine(MDAEngine):
             pixel_size_um=core.getPixelSizeUm(),
         )
         if self._dynatrack is not None:
-            self.mmcore.mda.events.frameReady.connect(self._dynatrack.on_frame_ready)
+            core.mda.events.frameReady.connect(self._dynatrack.on_frame_ready)
             cfg = self._dynatrack.config
             preprocessing = cfg.preprocessing or ["none"]
             logger.info(
@@ -162,23 +103,16 @@ class MantisEngine(MDAEngine):
                 f"reference_update_interval={cfg.reference_update_interval}"
             )
 
-        logger.info("Mantis hardware setup completed successfully")
-
-        # Call parent setup so SummaryMetaV1 captures the fully configured
-        # hardware state and the setup event applies the ROI.
-        result = super().setup_sequence(sequence)
-
-        # DynaTrack runs in a worker subprocess for GPU/torch isolation:
-        # torch's OpenMP runtime segfaults when it coexists with the sequenced
-        # camera readout in the acquisition process. The worker is started after
-        # the setup event has applied the ROI, so getImageHeight/Width reflects
-        # the actual acquired frame size (also used to build the preprocessor,
-        # when configured, inside the worker).
-        if self._dynatrack is not None:
+            # DynaTrack runs in a worker subprocess for GPU/torch isolation:
+            # torch's OpenMP runtime segfaults when it coexists with the sequenced
+            # camera readout in the acquisition process. The worker is started after
+            # the setup event has applied the ROI, so getImageHeight/Width reflects
+            # the actual acquired frame size (also used to build the preprocessor,
+            # when configured, inside the worker).
             zyx_shape = (
                 max(sequence.sizes.get("z", 1), 1),
-                self.mmcore.getImageHeight(),
-                self.mmcore.getImageWidth(),
+                core.getImageHeight(),
+                core.getImageWidth(),
             )
             self._dynatrack.start(zyx_shape=zyx_shape, log_file_path=_find_shrimpy_log_file())
 
@@ -211,37 +145,13 @@ class MantisEngine(MDAEngine):
 
     def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event."""
-        # Set XY stage position and engage autofocus
-        # Note: this command will not move the stage if the target position is the same
-        # as the last commanded position and force_set_xy_position is False.
         # TODO: debug resetting xy stage speed
         # self._adjust_xy_stage_speed(event)
-        self._set_event_xy_position(event)
-        # _set_event_xy_position does not wait for the stage to reach the target position
-        if self._xy_stage_device:
-            self.mmcore.waitForDevice(self._xy_stage_device)
 
-        # Engage autofocus
-        self._engage_autofocus(event)
-
-        # Skip acquisition if autofocus failed
-        if self._use_autofocus and not self._autofocus_success:
-            num_frames = len(event.events) if isinstance(event, SequencedEvent) else 1
-            raise SkipEvent(num_frames=num_frames, reason="autofocus failed")
-
-        # DEBUG:
-        free_capacity = self.mmcore.getBufferFreeCapacity()
-        total_capacity = self.mmcore.getBufferTotalCapacity()
-        logger.debug(f"Circular buffer capacity: {free_capacity} / {total_capacity} frames")
-        logger.debug(
-            f"MantisEngine[mem]: setup_event rss={_rss_gb():.2f} GB "
-            f"mm_buf_used={total_capacity - free_capacity}/{total_capacity}"
-        )
-
-        # Call parent setup_event
+        # Move the XY stage, engage autofocus, and prepare the shared hardware
         super().setup_event(event)
 
-    def teardown_sequence(self, sequence):
+    def teardown_sequence(self, sequence: MDASequence) -> None:
         # DynaTrack: disconnect callback and shutdown
         if self._dynatrack is not None:
             self.mmcore.mda.events.frameReady.disconnect(self._dynatrack.on_frame_ready)
@@ -249,36 +159,6 @@ class MantisEngine(MDAEngine):
             self._dynatrack = None
 
         super().teardown_sequence(sequence)
-
-        core = self.mmcore
-        meta = ShrimpyMetadata.from_sequence(sequence)
-
-        if reset_hardware_sequencing_settings := meta.reset_hardware_sequencing_settings:
-            logger.info(
-                f"Resetting {len(reset_hardware_sequencing_settings)} hardware sequencing settings"
-            )
-            for setting in reset_hardware_sequencing_settings:
-                logger.debug(f"  Setting {setting[0]}.{setting[1]} = {setting[2]}")
-                core.setProperty(setting[0], setting[1], setting[2])
-        else:
-            logger.debug("No reset hardware sequencing settings specified")
-
-    def _set_event_properties(self, properties: Iterable[tuple]) -> None:
-        """Set properties for the current event."""
-        for device, prop, value in properties:
-            if (
-                prop == Keyword.Position
-                and device == self._autofocus_stage
-                and self._use_autofocus
-            ):
-                # Skip setting Z position if autofocus is enabled to avoid
-                # disengaging autofocus lock; autofocus algorithm will set Z
-                # position independently
-                logger.debug(
-                    "Skipping Z set on autofocus stage: %s.%s = %s", device, prop, value
-                )
-                continue
-            super()._set_event_properties([(device, prop, value)])
 
     def _adjust_xy_stage_speed(self, event: MDAEvent) -> None:
         """Modulate XY stage speed based on distance to target position.
@@ -321,84 +201,36 @@ class MantisEngine(MDAEngine):
         self._xy_stage_speed = speed
         logger.debug(f"Set stage speed to {speed} mm/s")
 
-    def _engage_autofocus(self, event: MDAEvent) -> None:
-        if not self._use_autofocus:
-            logger.debug("Autofocus is disabled.")
-            return
+    def engage_autofocus(self, event: MDAEvent) -> bool:
+        """Engage Nikon PFS continuous autofocus for ``event``.
 
-        if self._autofocus_method == DEMO_PFS_METHOD:
-            self._engage_demo_pfs(
-                event=event,
-                success_rate=0.5,
-                fail_at_index=self._autofocus_fail_at_index,
-            )
-        else:
-            z_position = None
-            if event.properties:
-                for dev, prop, value in event.properties:
-                    if dev == self._autofocus_stage and prop == "Position":
-                        z_position = value
-                        break
-            if z_position is None:
-                z_position = self.mmcore.getPosition(self._autofocus_stage)
-            self._engage_nikon_pfs(self._autofocus_stage, z_position)
+        Called by :meth:`~shrimpy.base_engine.BaseEngine._engage_autofocus`
+        when autofocus is enabled with a method other than ``demo-PFS``. The
+        acquisition of events for which this returns False is skipped.
+        """
+        z_position = self._get_autofocus_z_position(event)
+        return self._engage_nikon_pfs(self._autofocus_stage, z_position)
 
-    def _engage_demo_pfs(
-        self,
-        event: MDAEvent | None = None,
-        success_rate: float = 0.9,
-        fail_at_index: list[dict] | None = None,
-    ):
-        """Engage demo PFS continuous autofocus.
-
-        If ``fail_at_index`` is provided, autofocus deterministically fails
-        when the event index matches any entry in the list. Otherwise, success
-        is random based on ``success_rate``.
+    def _engage_nikon_pfs(self, z_stage_name: str, z_position: float) -> bool:
+        """
+        Attempt to engage Nikon PFS continuous autofocus. This function will log a
+        message and continue if continuous autofocus is already engaged. Otherwise,
+        it will attempt to engage autofocus, moving the z stage by amounts given in
+        `z_offsets`, if necessary.
 
         Parameters
         ----------
-        event : MDAEvent | None
-            The current MDA event (used for deterministic failure matching).
-        success_rate : float
-            The probability of success for the demo PFS call. Only used when
-            ``fail_at_index`` is not provided.
-        fail_at_index : list[dict] | None
-            List of index dicts to fail at, e.g. ``[{"p": 0}, {"t": 1, "p": 2}]``.
-            Each dict is matched against the event index — if all keys in the
-            dict match the event index, autofocus fails at that event.
-        """
-        if fail_at_index is not None and event is not None:
-            # For SequencedEvents, use the first sub-event's index
-            event_index = (
-                event.events[0].index if isinstance(event, SequencedEvent) else event.index
-            )
-            self._autofocus_success = not any(
-                all(event_index.get(k) == v for k, v in idx.items()) for idx in fail_at_index
-            )
-        else:
-            self._autofocus_success = np.random.random() < success_rate
+        z_stage_name : str
+            The name of the z stage device which will be moved to help engage autofocus.
+        z_position : float
+            The target position at which autofocus will be engaged.
 
-        if self._autofocus_success:
-            logger.debug(f"{DEMO_PFS_METHOD} call succeeded")
-        else:
-            logger.debug(f"{DEMO_PFS_METHOD} call failed")
-
-    def _engage_nikon_pfs(self, z_stage_name: str, z_position: float):
-        """
-                Attempt to engage Nikon PFS continuous autofocus. This function will log a
-                message and continue if continuous autofocus is already engaged. Otherwise,
-                it will attempt to engage autofocus, moving the z stage by amounts given in
-                `z_offsets`, if necessary.
-        `
-                Parameters`
-                ----------
-                z_stage_name : str
-                    The name of the z stage device which will be moved to help engage autofocus.
-                z_position : float
-                    The target position at which autofocus will be engaged.
+        Returns
+        -------
+        bool
+            True if continuous autofocus is engaged.
         """
         core = self.mmcore
-        self._autofocus_success = False
         z_offsets = [0, -10, 10, -20, 20, -30, 30]  # in um
 
         # Turn on autofocus if it has been turned off. This call has no effect is
@@ -414,9 +246,8 @@ class MantisEngine(MDAEngine):
 
         # Check if autofocus is already engaged
         if core.isContinuousFocusLocked():
-            self._autofocus_success = True
             logger.debug("Continuous autofocus is already engaged")
-            return
+            return True
 
         for z_offset in z_offsets:
             core.setPosition(z_stage_name, z_position + z_offset)
@@ -427,93 +258,14 @@ class MantisEngine(MDAEngine):
             time.sleep(1)  # Wait for autofocus to engage
 
             if core.isContinuousFocusLocked():
-                self._autofocus_success = True
                 logger.debug(f"Continuous autofocus engaged with Z offset of {z_offset} um")
-                break
+                return True
             else:
                 logger.debug(f"Autofocus call failed with Z offset of {z_offset} um")
 
-        if not self._autofocus_success:
-            # return z stage to original position if autofocus attempts failed
-            core.setPosition(z_stage_name, z_position)
-            core.waitForDevice(z_stage_name)
+        # return z stage to original position if autofocus attempts failed
+        core.setPosition(z_stage_name, z_position)
+        core.waitForDevice(z_stage_name)
 
-            logger.error(f"Autofocus call failed after {len(z_offsets)} attempts")
-
-    def acquire(
-        self,
-        output_dir: str | Path,
-        name: str,
-        mda_config: MDASequence | str | Path,
-    ) -> None:
-        """Run a Mantis microscope acquisition.
-
-        Parameters
-        ----------
-        output_dir : str | Path
-            Directory where acquisition data will be saved.
-        name : str
-            Base acquisition name; an index suffix will be appended automatically.
-        mda_config : MDASequence | str | Path
-            An MDASequence object or path to an acquisition configuration YAML
-            file (an MDASequence with the microscope settings under
-            ``metadata``; see :mod:`shrimpy.config`).
-        """
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        name = _get_next_acquisition_name(output_dir, name)
-
-        if isinstance(mda_config, MDASequence):
-            sequence = mda_config
-        else:
-            logger.info(f"Loading acquisition config from {mda_config}")
-            # Validates the shrimPy metadata sections before any hardware setup
-            sequence = load_config(mda_config)
-
-        data_path = output_dir / f"{name}.ome.zarr"
-        self._data_path = data_path
-
-        # Write summary metadata after the zarr store is created
-        # TODO: remove once ome-writers supports root-level metadata natively
-        def _write_summary_metadata(_seq: MDASequence, meta: object) -> None:
-            self.mmcore.mda.events.sequenceStarted.disconnect(_write_summary_metadata)
-            if meta and isinstance(meta, dict):
-                meta_path = data_path / "summary_metadata.json"
-                meta_path.write_text(json.dumps(to_builtins(meta)))
-
-        self.mmcore.mda.events.sequenceStarted.connect(_write_summary_metadata)
-
-        logger.info(f"Starting acquisition: {name}")
-        self.mmcore.mda.run(
-            sequence,
-            output=AcquisitionSettings(
-                root_path=data_path, compression="blosc-zstd", format="acquire-zarr"
-            ),
-            dimension_overrides={"z": {"chunk_size": min(512, sequence.sizes["z"])}},
-            overwrite=False,
-        )
-        logger.info("Acquisition completed successfully")
-
-
-def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
-    """Get next available acquisition name with incremented index.
-
-    Parameters
-    ----------
-    output_dir : Path
-        Output directory where acquisitions are saved.
-    name : str
-        Base acquisition name.
-
-    Returns
-    -------
-    str
-        Acquisition name with index (e.g., "acq_1", "acq_2", etc.).
-    """
-    idx = 1
-    while True:
-        indexed_name = f"{name}_{idx}"
-        data_path = output_dir / f"{indexed_name}.ome.zarr"
-        if not data_path.exists():
-            return indexed_name
-        idx += 1
+        logger.error(f"Autofocus call failed after {len(z_offsets)} attempts")
+        return False
