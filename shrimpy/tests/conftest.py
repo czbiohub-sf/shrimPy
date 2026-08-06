@@ -70,19 +70,20 @@ def demo_core() -> CMMCorePlus:
 
 
 @pytest.fixture
-def mantis_metadata() -> dict:
-    """Mantis-specific metadata for integration tests, to be used with MMConfig_demo.cfg.
+def shrimpy_metadata() -> dict:
+    """shrimPy acquisition metadata for integration tests, for MMConfig_demo.cfg.
 
-    Returns a fresh dict each test can safely modify (e.g. disable autofocus)
-    without affecting other tests. Hardcoded so that changes to demo.yaml
-    don't break tests.
+    The microscope settings as they are folded into ``MDASequence.metadata``
+    (see :class:`shrimpy.config.ShrimpyMetadata`). Returns a fresh dict each
+    test can safely modify (e.g. disable autofocus) without affecting other
+    tests. Hardcoded so that changes to demo.yaml don't break tests.
 
     Usage::
 
         seq = MDASequence(
             channels=[...],
             time_plan={...},
-            metadata={"mantis": mantis_metadata},
+            metadata=shrimpy_metadata,
         )
     """
     return {
