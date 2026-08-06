@@ -42,10 +42,9 @@ def engine(mock_core: MagicMock) -> MantisEngine:
     return eng
 
 
-def _make_sequence(mantis_meta: dict | None = None) -> MDASequence:
-    """Helper to create an MDASequence with optional mantis metadata."""
-    metadata = {"mantis": mantis_meta} if mantis_meta else {}
-    return MDASequence(metadata=metadata)
+def _make_sequence(shrimpy_meta: dict | None = None) -> MDASequence:
+    """Helper to create an MDASequence with optional shrimPy metadata sections."""
+    return MDASequence(metadata=shrimpy_meta or {})
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +114,7 @@ def test_init_registers_engine_and_callbacks(mock_core):
 # ---------------------------------------------------------------------------
 
 
-def test_setup_sequence_no_mantis_metadata(engine):
+def test_setup_sequence_no_shrimpy_metadata(engine):
     # Should not raise when metadata is empty
     seq = _make_sequence()
     with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"):
@@ -437,11 +436,9 @@ def test_teardown_applies_reset_hardware_sequencing_settings(engine, mock_core):
     # Sequence with reset_hardware_sequencing_settings → applies each setting
     seq = MDASequence(
         metadata={
-            "mantis": {
-                "reset_hardware_sequencing_settings": [
-                    ["Z", "UseSequences", "No"],
-                ],
-            }
+            "reset_hardware_sequencing_settings": [
+                ["Z", "UseSequences", "No"],
+            ],
         }
     )
     with patch("shrimpy.mantis.mantis_engine.MDAEngine.teardown_sequence"):
@@ -451,14 +448,14 @@ def test_teardown_applies_reset_hardware_sequencing_settings(engine, mock_core):
 
 def test_teardown_no_reset_settings(engine, mock_core):
     # Sequence without reset_hardware_sequencing_settings → no setProperty calls
-    seq = MDASequence(metadata={"mantis": {}})
+    seq = MDASequence(metadata={})
     with patch("shrimpy.mantis.mantis_engine.MDAEngine.teardown_sequence"):
         engine.teardown_sequence(seq)
     mock_core.setProperty.assert_not_called()
 
 
-def test_teardown_no_mantis_metadata(engine, mock_core):
-    # Sequence with no mantis metadata at all → no setProperty calls
+def test_teardown_no_shrimpy_metadata(engine, mock_core):
+    # Sequence with no metadata at all → no setProperty calls
     seq = MDASequence()
     with patch("shrimpy.mantis.mantis_engine.MDAEngine.teardown_sequence"):
         engine.teardown_sequence(seq)

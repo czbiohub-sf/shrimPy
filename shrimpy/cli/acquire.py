@@ -30,7 +30,10 @@ def acquire():
     "--mda-config",
     type=click.Path(exists=True, path_type=Path),
     required=True,
-    help="Path to MDA sequence configuration YAML file",
+    help=(
+        "Path to the acquisition configuration YAML file (an MDASequence, with "
+        "the microscope settings under 'metadata')"
+    ),
 )
 @click.option(
     "-o",

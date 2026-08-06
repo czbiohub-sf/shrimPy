@@ -1,7 +1,7 @@
 """DynaTrack — sample tracking and dynamic stage-position updating.
 
 Microscope-agnostic: an acquisition engine builds a :class:`DynaTrack`
-coordinator from its ``dynatrack`` metadata section and interacts with that
+coordinator from the ``metadata.dynatrack`` config section and interacts with that
 object only. The position-update infrastructure (:class:`PositionStore`,
 :class:`PositionUpdater`, :class:`PositionUpdateManager`) is an
 implementation detail of this package, exposed for tests and for writing

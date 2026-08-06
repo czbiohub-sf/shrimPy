@@ -79,17 +79,14 @@ axis_order:
 autofocus_plan: null
 keep_shutter_open_across: []
 
-# Define metadata per microscope
+# Microscope settings
 metadata:
-  pymmcore_widgets:
-    version: 0.10.2.dev23+g22b8c0aff.d20260106
-  mantis:
-    reset_hardware_sequencing_settings:
-      - ['TS2_TTL1-8', 'Blanking', 'Off']
-      - ['TS2_DAC03', 'Sequence', 'Off']
-      - ['XYStage:XY:31', 'MotorSpeedX-S(mm/s)', '5.75']
-      - ['XYStage:XY:31', 'MotorSpeedY-S(mm/s)', '5.75']
-    autofocus:
-      enabled: false
-      method: PFS
-      stage: ZDrive
+  reset_hardware_sequencing_settings:
+    - ['TS2_TTL1-8', 'Blanking', 'Off']
+    - ['TS2_DAC03', 'Sequence', 'Off']
+    - ['XYStage:XY:31', 'MotorSpeedX-S(mm/s)', '5.75']
+    - ['XYStage:XY:31', 'MotorSpeedY-S(mm/s)', '5.75']
+  autofocus:
+    enabled: false
+    method: PFS
+    stage: ZDrive
