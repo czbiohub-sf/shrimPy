@@ -1,7 +1,9 @@
-"""Unit tests for MantisEngine and helper functions.
+"""Unit tests for the mantis-specific parts of MantisEngine.
 
-Tests use a mock CMMCorePlus to isolate MantisEngine logic from real
-hardware and the parent MDAEngine.
+Behavior shared with the other microscope engines (autofocus dispatch, demo
+PFS, event skipping, hardware reset, ...) is tested in ``test_base_engine.py``.
+Tests here use a mock CMMCorePlus to isolate MantisEngine from real hardware
+and the parent MDAEngine.
 """
 
 from __future__ import annotations
@@ -12,15 +14,14 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from useq import MDAEvent, MDASequence
+from useq import MDAEvent
 
-from shrimpy.mantis.mantis_engine import (
-    DEMO_PFS_METHOD,
+from shrimpy.engines.base_engine import BaseEngine
+from shrimpy.engines.mantis_engine import (
     FAST_XY_STAGE_SPEED,
     MANTIS_XY_STAGE_NAME,
     SLOW_XY_STAGE_SPEED,
     MantisEngine,
-    _get_next_acquisition_name,
 )
 
 # ---------------------------------------------------------------------------
@@ -35,52 +36,11 @@ def engine(mock_core: MagicMock) -> MantisEngine:
     Patches the parent MDAEngine.__init__ so we don't need a real core for
     the super().__init__() call, then manually sets mmcore.
     """
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.__init__", return_value=None):
+    with patch("shrimpy.engines.base_engine.MDAEngine.__init__", return_value=None):
         eng = MantisEngine(mock_core)
     # Manually assign the core weakref since we bypassed super().__init__
     eng._mmcore_ref = weakref.ref(mock_core)
     return eng
-
-
-def _make_sequence(shrimpy_meta: dict | None = None) -> MDASequence:
-    """Helper to create an MDASequence with optional shrimPy metadata sections."""
-    return MDASequence(metadata=shrimpy_meta or {})
-
-
-# ---------------------------------------------------------------------------
-# _get_next_acquisition_name() — pure function
-# ---------------------------------------------------------------------------
-
-
-def test_next_name_first_acquisition_in_empty_dir(tmp_path):
-    # Empty directory → index starts at 1
-    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_1"
-
-
-def test_next_name_skips_existing_index(tmp_path):
-    # acq_1.ome.zarr already exists → should return acq_2
-    (tmp_path / "acq_1.ome.zarr").mkdir()
-    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"
-
-
-def test_next_name_skips_multiple_existing(tmp_path):
-    # acq_1 through acq_3 exist → should return acq_4
-    for i in range(1, 4):
-        (tmp_path / f"acq_{i}.ome.zarr").mkdir()
-    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_4"
-
-
-def test_next_name_different_base_names_dont_collide(tmp_path):
-    # "experiment_1.ome.zarr" exists, but asking for "acq" → acq_1
-    (tmp_path / "experiment_1.ome.zarr").mkdir()
-    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_1"
-
-
-def test_next_name_gap_in_indices(tmp_path):
-    # acq_1 exists, acq_2 missing, acq_3 exists → returns acq_2
-    (tmp_path / "acq_1.ome.zarr").mkdir()
-    (tmp_path / "acq_3.ome.zarr").mkdir()
-    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"
 
 
 # ---------------------------------------------------------------------------
@@ -88,62 +48,32 @@ def test_next_name_gap_in_indices(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def test_engine_derives_from_base_engine():
+    assert issubclass(MantisEngine, BaseEngine)
+
+
 def test_init_default_attributes(engine):
-    # All autofocus-related attributes start disabled/unset
-    assert engine._use_autofocus is False
-    assert engine._autofocus_success is False
-    assert engine._autofocus_stage is None
-    assert engine._autofocus_method is None
-    assert engine._autofocus_fail_at_index is None
+    # Mantis-specific state starts unset
     assert engine._xy_stage_speed is None
+    assert engine._dynatrack is None
 
 
-def test_init_registers_engine_and_callbacks(mock_core):
-    # Verify that __init__ wires up the engine and event callbacks
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.__init__", return_value=None):
-        MantisEngine(mock_core)
-
-    mock_core.mda.set_engine.assert_called_once()
-    mock_core.events.propertyChanged.connect.assert_called_once()
-    mock_core.events.roiSet.connect.assert_called_once()
-    mock_core.events.XYStagePositionChanged.connect.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# setup_sequence()
-# ---------------------------------------------------------------------------
+def test_init_acquisition_timeouts(mock_core):
+    # Timeouts guard against stalling on dropped frames / missed triggers
+    engine = MantisEngine(mock_core)
+    assert engine.timeout_base == 10.0
+    assert engine.timeout_multiplier == 1.0
+    assert engine.timeout_first_frame is None
+    assert engine.timeout_action == "warn"
+    # ... on top of the shared hardware sequencing defaults
+    assert engine.use_hardware_sequencing is True
+    assert engine.force_set_xy_position is False
 
 
-def test_setup_sequence_no_shrimpy_metadata(engine):
-    # Should not raise when metadata is empty
-    seq = _make_sequence()
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"):
-        engine.setup_sequence(seq)
-    assert engine._use_autofocus is False
-
-
-def test_setup_sequence_autofocus_enabled(engine, mock_core):
-    # Autofocus metadata with enabled=True should configure the engine
-    af = {"enabled": True, "stage": "ZDrive", "method": "PFS"}
-    seq = _make_sequence({"autofocus": af})
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"):
-        engine.setup_sequence(seq)
-
-    assert engine._use_autofocus is True
-    assert engine._autofocus_stage == "ZDrive"
-    assert engine._autofocus_method == "PFS"
-    # Non-demo method should call setAutoFocusDevice
-    mock_core.setAutoFocusDevice.assert_called_once_with("PFS")
-
-
-def test_setup_sequence_autofocus_disabled(engine, mock_core):
-    # Autofocus explicitly disabled → _use_autofocus stays False
-    af = {"enabled": False, "stage": "ZDrive", "method": "PFS"}
-    seq = _make_sequence({"autofocus": af})
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_sequence"):
-        engine.setup_sequence(seq)
-    assert engine._use_autofocus is False
-    mock_core.setAutoFocusDevice.assert_not_called()
+def test_init_timeout_kwargs_override_defaults(mock_core):
+    engine = MantisEngine(mock_core, timeout_base=1.0, timeout_action="raise")
+    assert engine.timeout_base == 1.0
+    assert engine.timeout_action == "raise"
 
 
 # ---------------------------------------------------------------------------
@@ -224,92 +154,8 @@ def test_speed_same_speed_not_set_again(engine, mock_core):
 
 
 # ---------------------------------------------------------------------------
-# _engage_autofocus()
+# engage_autofocus() — Nikon PFS
 # ---------------------------------------------------------------------------
-
-
-def test_autofocus_disabled_returns_early(engine):
-    # Autofocus disabled → no method calls
-    engine._use_autofocus = False
-    engine._engage_autofocus(MDAEvent())
-    # No crash, no side effects
-
-
-def test_autofocus_demo_pfs_dispatched(engine):
-    # demo-PFS method → calls _engage_demo_pfs
-    engine._use_autofocus = True
-    engine._autofocus_method = DEMO_PFS_METHOD
-    with patch.object(engine, "_engage_demo_pfs") as mock_demo:
-        engine._engage_autofocus(MDAEvent())
-    mock_demo.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# _engage_demo_pfs()
-# ---------------------------------------------------------------------------
-
-
-def test_demo_pfs_fail_at_index_matching_event_fails(engine):
-    # Deterministic failure when event index matches fail_at_index entry
-    event = MDAEvent(index={"t": 1, "p": 0})
-    engine._engage_demo_pfs(event=event, fail_at_index=[{"t": 1, "p": 0}])
-    assert engine._autofocus_success is False
-
-
-def test_demo_pfs_fail_at_index_partial_match_fails(engine):
-    # Partial key match: {"p": 0} matches any event with p=0
-    event = MDAEvent(index={"t": 5, "p": 0})
-    engine._engage_demo_pfs(event=event, fail_at_index=[{"p": 0}])
-    assert engine._autofocus_success is False
-
-
-def test_demo_pfs_fail_at_index_no_match_succeeds(engine):
-    # No matching entry → autofocus succeeds
-    event = MDAEvent(index={"t": 0, "p": 1})
-    engine._engage_demo_pfs(event=event, fail_at_index=[{"t": 1, "p": 0}])
-    assert engine._autofocus_success is True
-
-
-def test_demo_pfs_fail_at_index_empty_dict_fails_all(engine):
-    # Empty dict matches every event (all zero keys trivially match)
-    event = MDAEvent(index={"t": 3, "p": 2})
-    engine._engage_demo_pfs(event=event, fail_at_index=[{}])
-    assert engine._autofocus_success is False
-
-
-def test_demo_pfs_fail_at_index_empty_list_succeeds(engine):
-    # Empty fail list → no failures
-    event = MDAEvent(index={"t": 0, "p": 0})
-    engine._engage_demo_pfs(event=event, fail_at_index=[])
-    assert engine._autofocus_success is True
-
-
-def test_demo_pfs_random_fallback_when_no_fail_at_index(engine):
-    # When fail_at_index is None, uses random success_rate
-    engine._engage_demo_pfs(event=MDAEvent(), success_rate=1.0, fail_at_index=None)
-    assert engine._autofocus_success is True
-
-    engine._engage_demo_pfs(event=MDAEvent(), success_rate=0.0, fail_at_index=None)
-    assert engine._autofocus_success is False
-
-
-def test_demo_pfs_sequenced_event_uses_first_sub_event_index(engine):
-    # For SequencedEvents, index matching uses the first sub-event
-    from pymmcore_plus.core._sequencing import SequencedEvent
-
-    sub_events = [
-        MDAEvent(index={"t": 0, "p": 1, "z": 0}),
-        MDAEvent(index={"t": 0, "p": 1, "z": 1}),
-    ]
-    seq_event = SequencedEvent(events=sub_events)
-
-    # Partial match on first sub-event's index → should fail
-    engine._engage_demo_pfs(event=seq_event, fail_at_index=[{"p": 1}])
-    assert engine._autofocus_success is False
-
-    # No match → should succeed
-    engine._engage_demo_pfs(event=seq_event, fail_at_index=[{"p": 2}])
-    assert engine._autofocus_success is True
 
 
 def test_autofocus_nikon_pfs_dispatched(engine, mock_core):
@@ -318,9 +164,20 @@ def test_autofocus_nikon_pfs_dispatched(engine, mock_core):
     engine._autofocus_method = "PFS"
     engine._autofocus_stage = "ZDrive"
     mock_core.getPosition.return_value = 42.0
-    with patch.object(engine, "_engage_nikon_pfs") as mock_pfs:
+    with patch.object(engine, "_engage_nikon_pfs", return_value=True) as mock_pfs:
         engine._engage_autofocus(MDAEvent())
     mock_pfs.assert_called_once_with("ZDrive", 42.0)
+    assert engine._autofocus_success is True
+
+
+def test_autofocus_failure_recorded(engine, mock_core):
+    # A failed PFS engagement is recorded so setup_event can skip the event
+    engine._use_autofocus = True
+    engine._autofocus_method = "PFS"
+    engine._autofocus_stage = "ZDrive"
+    with patch.object(engine, "_engage_nikon_pfs", return_value=False):
+        engine._engage_autofocus(MDAEvent())
+    assert engine._autofocus_success is False
 
 
 # ---------------------------------------------------------------------------
@@ -332,10 +189,9 @@ def test_pfs_already_locked_after_fullfocus(engine, mock_core):
     # fullFocus succeeds and focus is locked → immediate success
     mock_core.isContinuousFocusLocked.return_value = True
 
-    with patch("shrimpy.mantis.mantis_engine.time.sleep"):
-        engine._engage_nikon_pfs("ZDrive", 100.0)
+    with patch("shrimpy.engines.mantis_engine.time.sleep"):
+        assert engine._engage_nikon_pfs("ZDrive", 100.0) is True
 
-    assert engine._autofocus_success is True
     mock_core.fullFocus.assert_called_once()
     # Should not enter the z_offset retry loop
     mock_core.enableContinuousFocus.assert_not_called()
@@ -345,10 +201,9 @@ def test_pfs_locks_on_first_z_offset(engine, mock_core):
     # fullFocus fails, but first z_offset (0) succeeds
     mock_core.isContinuousFocusLocked.side_effect = [False, True]
 
-    with patch("shrimpy.mantis.mantis_engine.time.sleep"):
-        engine._engage_nikon_pfs("ZDrive", 100.0)
+    with patch("shrimpy.engines.mantis_engine.time.sleep"):
+        assert engine._engage_nikon_pfs("ZDrive", 100.0) is True
 
-    assert engine._autofocus_success is True
     # Should have set position to 100 + 0 = 100
     mock_core.setPosition.assert_called_with("ZDrive", 100.0)
 
@@ -357,10 +212,9 @@ def test_pfs_locks_on_later_z_offset(engine, mock_core):
     # fullFocus fails, first two offsets fail, third (offset=10) succeeds
     mock_core.isContinuousFocusLocked.side_effect = [False, False, False, True]
 
-    with patch("shrimpy.mantis.mantis_engine.time.sleep"):
-        engine._engage_nikon_pfs("ZDrive", 100.0)
+    with patch("shrimpy.engines.mantis_engine.time.sleep"):
+        assert engine._engage_nikon_pfs("ZDrive", 100.0) is True
 
-    assert engine._autofocus_success is True
     # Offsets are [0, -10, 10, ...]; third is 10 → position = 110
     assert any(c == call("ZDrive", 110.0) for c in mock_core.setPosition.call_args_list)
 
@@ -369,94 +223,9 @@ def test_pfs_all_offsets_fail(engine, mock_core):
     # fullFocus fails, none of the 7 z_offsets succeed
     mock_core.isContinuousFocusLocked.return_value = False
 
-    with patch("shrimpy.mantis.mantis_engine.time.sleep"):
-        engine._engage_nikon_pfs("ZDrive", 100.0)
+    with patch("shrimpy.engines.mantis_engine.time.sleep"):
+        assert engine._engage_nikon_pfs("ZDrive", 100.0) is False
 
-    assert engine._autofocus_success is False
     # Z stage should be returned to the original position
     last_set_position = mock_core.setPosition.call_args_list[-1]
     assert last_set_position == call("ZDrive", 100.0)
-
-
-# ---------------------------------------------------------------------------
-# setup_event() — SkipEvent on autofocus failure
-# ---------------------------------------------------------------------------
-
-
-def test_setup_event_autofocus_failure_raises_skip_event(engine, mock_core):
-    # Autofocus on + failure → SkipEvent raised with num_frames=1 for single event
-    from pymmcore_plus.mda import SkipEvent
-
-    engine._use_autofocus = True
-    engine._autofocus_method = "demo-PFS"
-    # Force autofocus to fail at every event
-    engine._autofocus_fail_at_index = [{}]
-
-    event = MDAEvent()
-    with pytest.raises(SkipEvent, match="autofocus failed") as exc_info:
-        engine.setup_event(event)
-    assert exc_info.value.num_frames == 1
-
-
-def test_setup_event_autofocus_failure_sequenced_event_skips_all_frames(engine, mock_core):
-    # SkipEvent.num_frames equals len(event.events) for SequencedEvents
-    from pymmcore_plus.core._sequencing import SequencedEvent
-    from pymmcore_plus.mda import SkipEvent
-
-    engine._use_autofocus = True
-    engine._autofocus_method = "demo-PFS"
-
-    engine._autofocus_fail_at_index = [{}]
-
-    sub_events = [MDAEvent(index={"t": 0, "p": 0, "z": i}) for i in range(5)]
-    seq_event = SequencedEvent(events=sub_events)
-
-    with pytest.raises(SkipEvent) as exc_info:
-        engine.setup_event(seq_event)
-    assert exc_info.value.num_frames == 5
-
-
-def test_setup_event_autofocus_success_does_not_raise(engine, mock_core):
-    # Autofocus on + success → no SkipEvent, delegates to parent setup_event
-    engine._use_autofocus = True
-    engine._autofocus_method = "demo-PFS"
-    engine._autofocus_fail_at_index = []
-
-    event = MDAEvent()
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.setup_event"):
-        engine.setup_event(event)  # should not raise
-
-
-# ---------------------------------------------------------------------------
-# teardown_sequence()
-# ---------------------------------------------------------------------------
-
-
-def test_teardown_applies_reset_hardware_sequencing_settings(engine, mock_core):
-    # Sequence with reset_hardware_sequencing_settings → applies each setting
-    seq = MDASequence(
-        metadata={
-            "reset_hardware_sequencing_settings": [
-                ["Z", "UseSequences", "No"],
-            ],
-        }
-    )
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.teardown_sequence"):
-        engine.teardown_sequence(seq)
-    mock_core.setProperty.assert_called_once_with("Z", "UseSequences", "No")
-
-
-def test_teardown_no_reset_settings(engine, mock_core):
-    # Sequence without reset_hardware_sequencing_settings → no setProperty calls
-    seq = MDASequence(metadata={})
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.teardown_sequence"):
-        engine.teardown_sequence(seq)
-    mock_core.setProperty.assert_not_called()
-
-
-def test_teardown_no_shrimpy_metadata(engine, mock_core):
-    # Sequence with no metadata at all → no setProperty calls
-    seq = MDASequence()
-    with patch("shrimpy.mantis.mantis_engine.MDAEngine.teardown_sequence"):
-        engine.teardown_sequence(seq)
-    mock_core.setProperty.assert_not_called()
