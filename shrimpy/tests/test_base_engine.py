@@ -347,6 +347,62 @@ def test_demo_pfs_sequenced_event_uses_first_sub_event_index(engine):
 
 
 # ---------------------------------------------------------------------------
+# _should_engage_autofocus() — once per burst / once per Z-stack
+# ---------------------------------------------------------------------------
+
+
+def test_should_engage_autofocus_sequenced_event(engine):
+    # A SequencedEvent is one hardware-triggered burst → engage once, up front,
+    # regardless of the Z index its first frame carries.
+    for z in (0, 1, 5):
+        sub_events = [MDAEvent(index={"t": 0, "p": 0, "z": z + i}) for i in range(3)]
+        assert engine._should_engage_autofocus(SequencedEvent(events=sub_events)) is True
+
+
+def test_should_engage_autofocus_single_event_bottom_of_stack(engine):
+    # Single events arrive one Z slice at a time → engage only at z=0
+    assert engine._should_engage_autofocus(MDAEvent(index={"t": 0, "p": 0, "z": 0})) is True
+    for z in (1, 2, 7):
+        event = MDAEvent(index={"t": 0, "p": 0, "z": z})
+        assert engine._should_engage_autofocus(event) is False
+
+
+def test_should_engage_autofocus_event_without_z_axis(engine):
+    # No Z axis in the sequence → every event engages
+    assert engine._should_engage_autofocus(MDAEvent(index={"t": 0, "p": 0})) is True
+
+
+def test_engage_autofocus_skipped_within_stack_keeps_previous_outcome(engine):
+    # Autofocus is not re-run for z>0; the previous outcome (and lock) stands
+    engine._use_autofocus = True
+    engine._autofocus_method = DEMO_PFS_METHOD
+    engine._autofocus_fail_at_index = []
+
+    engine._engage_autofocus(MDAEvent(index={"t": 0, "p": 0, "z": 0}))
+    assert engine._autofocus_success is True
+
+    # Would fail if it ran at all — but it must not run within the stack
+    engine._autofocus_fail_at_index = [{}]
+    engine._engage_autofocus(MDAEvent(index={"t": 0, "p": 0, "z": 1}))
+    assert engine._autofocus_success is True
+
+    # ... and runs again at the bottom of the next stack
+    engine._engage_autofocus(MDAEvent(index={"t": 0, "p": 1, "z": 0}))
+    assert engine._autofocus_success is False
+
+
+def test_engage_autofocus_calls_hardware_once_per_stack(engine):
+    # The microscope-specific hook is called only for the events that engage
+    engine._use_autofocus = True
+    engine._autofocus_method = "PFS"
+
+    with patch.object(engine, "engage_autofocus", return_value=True) as mock_af:
+        for z in range(4):
+            engine._engage_autofocus(MDAEvent(index={"t": 0, "p": 0, "z": z}))
+    assert mock_af.call_count == 1
+
+
+# ---------------------------------------------------------------------------
 # setup_event() — SkipEvent on autofocus failure
 # ---------------------------------------------------------------------------
 
@@ -376,6 +432,31 @@ def test_setup_event_autofocus_failure_sequenced_event_skips_all_frames(engine, 
     with pytest.raises(SkipEvent) as exc_info:
         engine.setup_event(seq_event)
     assert exc_info.value.num_frames == 5
+
+
+def test_setup_event_failure_at_z0_skips_rest_of_stack(engine, mock_core):
+    # Non-sequenced events: autofocus is attempted once, at z=0. If it does not
+    # engage, the remaining slices of that stack are skipped too — one SkipEvent
+    # each, since the runner only skips the event it was raised from.
+    engine._use_autofocus = True
+    engine._autofocus_method = "PFS"
+
+    with patch.object(engine, "engage_autofocus", return_value=False) as mock_af:
+        for z in range(4):
+            event = MDAEvent(index={"t": 0, "p": 0, "z": z})
+            with pytest.raises(SkipEvent, match="autofocus failed") as exc_info:
+                engine.setup_event(event)
+            assert exc_info.value.num_frames == 1
+    # ... and the hardware routine was only run once, at z=0
+    assert mock_af.call_count == 1
+
+    # The next position engages again; a successful lock acquires the stack
+    with (
+        patch.object(engine, "engage_autofocus", return_value=True),
+        patch("shrimpy.engines.base_engine.MDAEngine.setup_event"),
+    ):
+        for z in range(4):
+            engine.setup_event(MDAEvent(index={"t": 0, "p": 1, "z": z}))  # no raise
 
 
 def test_setup_event_autofocus_success_does_not_raise(engine, mock_core):
@@ -483,7 +564,7 @@ def test_teardown_no_shrimpy_metadata(engine, mock_core):
 
 @pytest.mark.parametrize("engine_cls", [ISIMEngine, DragonflyEngine])
 def test_placeholder_engines_inherit_shared_behavior(engine_cls, mock_core):
-    # The iSIM / Dragonfly skeletons are BaseEngine subclasses that inherit the
+    # The iSIM / Dragonfly engines are BaseEngine subclasses that inherit the
     # shared defaults; they acquire with autofocus disabled or with demo-PFS.
     with patch("shrimpy.engines.base_engine.MDAEngine.__init__", return_value=None):
         eng = engine_cls(mock_core)
@@ -492,8 +573,36 @@ def test_placeholder_engines_inherit_shared_behavior(engine_cls, mock_core):
     assert isinstance(eng, BaseEngine)
     assert eng._engage_demo_pfs(event=MDAEvent(), fail_at_index=[]) is True
 
-    # No hardware autofocus routine yet
+
+def test_isim_engine_has_no_hardware_autofocus(mock_core):
+    # iSIM is still a skeleton: no engage_autofocus() implementation.
+    with patch("shrimpy.engines.base_engine.MDAEngine.__init__", return_value=None):
+        eng = ISIMEngine(mock_core)
+    eng._mmcore_ref = weakref.ref(mock_core)
+
     eng._use_autofocus = True
     eng._autofocus_method = "PFS"
     with pytest.raises(NotImplementedError, match="engage_autofocus"):
         eng._engage_autofocus(MDAEvent())
+
+
+def test_dragonfly_engage_autofocus_calls_afc(mock_core):
+    # Dragonfly implements engage_autofocus() via Leica AFC.
+    with patch("shrimpy.engines.base_engine.MDAEngine.__init__", return_value=None):
+        eng = DragonflyEngine(mock_core)
+    eng._mmcore_ref = weakref.ref(mock_core)
+
+    eng._use_autofocus = True
+    eng._autofocus_method = "Adaptive Focus Control"
+    eng._autofocus_stage = "FocusDrive"
+    mock_core.getPosition.return_value = 100.0
+
+    eng._engage_autofocus(MDAEvent())
+    assert eng._autofocus_success is True
+    mock_core.setPosition.assert_called_once_with("FocusDrive", 100.0)
+    mock_core.fullFocus.assert_called_once()
+
+    # A failing AFC call is reported, so setup_event skips the event
+    mock_core.fullFocus.side_effect = RuntimeError("no lock")
+    eng._engage_autofocus(MDAEvent())
+    assert eng._autofocus_success is False

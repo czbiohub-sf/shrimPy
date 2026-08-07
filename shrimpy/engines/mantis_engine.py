@@ -9,13 +9,12 @@ from pathlib import Path
 import numpy as np
 
 from pymmcore_plus.core import CMMCorePlus
-from pymmcore_plus.core._sequencing import SequencedEvent
 from pymmcore_plus.metadata import SummaryMetaV1
 from useq import MDAEvent, MDASequence
 
 from shrimpy.config import ShrimpyMetadata
 from shrimpy.dynatrack import DynaTrack
-from shrimpy.engines.base_engine import BaseEngine
+from shrimpy.engines.base_engine import BaseEngine, first_event
 
 # Get the logger instance (will be configured by the CLI entry point)
 logger = logging.getLogger(__name__)
@@ -133,10 +132,7 @@ class MantisEngine(BaseEngine):
         last_t: int | None = None
         for event in super().event_iterator(events):
             if self._dynatrack is not None:
-                idx = (
-                    event.events[0].index if isinstance(event, SequencedEvent) else event.index
-                )
-                t_idx = idx.get("t", 0)
+                t_idx = first_event(event).index.get("t", 0)
                 if last_t is not None and t_idx != last_t:
                     self._dynatrack.drain_pending()
                 last_t = t_idx
@@ -144,7 +140,12 @@ class MantisEngine(BaseEngine):
             yield event
 
     def setup_event(self, event: MDAEvent) -> None:
-        """Prepare mantis hardware for each event."""
+        """Prepare mantis hardware for each event.
+
+        Mantis acquires with hardware sequencing, so ``event`` is normally a
+        ``SequencedEvent`` covering a whole Z-stack and PFS is engaged once per
+        burst by :meth:`BaseEngine.setup_event`.
+        """
         # TODO: debug resetting xy stage speed
         # self._adjust_xy_stage_speed(event)
 

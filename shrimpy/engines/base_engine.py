@@ -7,8 +7,9 @@ microscope shrimPy drives (mantis, iSIM, Dragonfly, ...):
   ``force_set_xy_position``),
 - verbose hardware logging (property changes, ROI changes, XY stage moves),
 - continuous-autofocus handling, including the simulated ``demo-PFS`` method
-  used with the Micro-Manager demo config, and skipping events whose autofocus
-  did not engage,
+  used with the Micro-Manager demo config, deciding when to engage for
+  sequenced vs. single events, and skipping events whose autofocus did not
+  engage,
 - resetting hardware properties in ``teardown_sequence``,
 - the :meth:`BaseEngine.acquire` entry point that runs an ``MDASequence`` and
   writes OME-Zarr.
@@ -57,6 +58,22 @@ _PROC = psutil.Process(os.getpid())
 
 def _rss_gb() -> float:
     return _PROC.memory_info().rss / (1024**3)
+
+
+def first_event(event: MDAEvent) -> MDAEvent:
+    """Return the first sub-event of a ``SequencedEvent``, or ``event`` itself.
+
+    Engine hooks receive either a single :class:`~useq.MDAEvent` or a
+    :class:`~pymmcore_plus.core._sequencing.SequencedEvent` bundling the frames
+    of one hardware-sequenced burst; the burst's index, position and properties
+    are those of its first sub-event.
+    """
+    return event.events[0] if isinstance(event, SequencedEvent) else event
+
+
+def num_frames(event: MDAEvent) -> int:
+    """Return the number of frames ``event`` acquires."""
+    return len(event.events) if isinstance(event, SequencedEvent) else 1
 
 
 class BaseEngine(MDAEngine):
@@ -151,7 +168,15 @@ class BaseEngine(MDAEngine):
         return super().setup_sequence(sequence)
 
     def setup_event(self, event: MDAEvent) -> None:
-        """Move to the event position, engage autofocus, and prepare hardware."""
+        """Move to the event position, engage autofocus, and prepare hardware.
+
+        ``event`` is either a single :class:`~useq.MDAEvent` or a
+        :class:`~pymmcore_plus.core._sequencing.SequencedEvent` bundling the
+        frames of one hardware-sequenced burst. Autofocus engages once per
+        burst, or once per Z-stack for single events — see
+        :meth:`_should_engage_autofocus`. When it fails, every frame the event
+        would have acquired is skipped.
+        """
         # Set XY stage position and engage autofocus
         # Note: this command will not move the stage if the target position is the same
         # as the last commanded position and force_set_xy_position is False.
@@ -163,10 +188,11 @@ class BaseEngine(MDAEngine):
         # Engage autofocus
         self._engage_autofocus(event)
 
-        # Skip acquisition if autofocus failed
+        # Skip acquisition if autofocus failed. For single events, the outcome of
+        # the last engagement stands, so the whole Z-stack is skipped, not only
+        # the slice at which autofocus was attempted.
         if self._use_autofocus and not self._autofocus_success:
-            num_frames = len(event.events) if isinstance(event, SequencedEvent) else 1
-            raise SkipEvent(num_frames=num_frames, reason="autofocus failed")
+            raise SkipEvent(num_frames=num_frames(event), reason="autofocus failed")
 
         self._log_memory_usage()
 
@@ -221,17 +247,43 @@ class BaseEngine(MDAEngine):
     # Autofocus
     # ------------------------------------------------------------------
 
+    def _should_engage_autofocus(self, event: MDAEvent) -> bool:
+        """Return whether autofocus should be engaged for ``event``.
+
+        A ``SequencedEvent`` is acquired as one hardware-triggered burst, so
+        autofocus engages once, before the burst starts. Single events are
+        delivered one Z slice at a time, so autofocus engages only at the
+        bottom of each stack (``index['z'] == 0``) and the lock is left alone
+        for the remaining slices.
+
+        Events without a Z axis have no ``'z'`` index and always engage.
+        """
+        if isinstance(event, SequencedEvent):
+            return True
+
+        z_index = event.index.get("z", 0)
+        if z_index != 0:
+            logger.debug(f"Autofocus already engaged for this Z-stack (z={z_index})")
+            return False
+        return True
+
     def _engage_autofocus(self, event: MDAEvent) -> None:
         """Engage autofocus for ``event``, recording the outcome.
 
-        Dispatches to the simulated :meth:`_engage_demo_pfs` when the
-        configured method is ``demo-PFS``, and to the microscope-specific
-        :meth:`engage_autofocus` otherwise. The outcome is stored in
-        ``self._autofocus_success``; :meth:`setup_event` skips the event when
-        autofocus is enabled but did not engage.
+        Does nothing when autofocus is disabled or when
+        :meth:`_should_engage_autofocus` rejects the event, in which case the
+        outcome of the previous engagement stands. Otherwise dispatches to the
+        simulated :meth:`_engage_demo_pfs` when the configured method is
+        ``demo-PFS``, and to the microscope-specific :meth:`engage_autofocus`
+        otherwise. The outcome is stored in ``self._autofocus_success``;
+        :meth:`setup_event` skips the event when autofocus is enabled but did
+        not engage.
         """
         if not self._use_autofocus:
             logger.debug("Autofocus is disabled.")
+            return
+
+        if not self._should_engage_autofocus(event):
             return
 
         if self._autofocus_method == DEMO_PFS_METHOD:
@@ -298,9 +350,7 @@ class BaseEngine(MDAEngine):
         """
         if fail_at_index is not None and event is not None:
             # For SequencedEvents, use the first sub-event's index
-            event_index = (
-                event.events[0].index if isinstance(event, SequencedEvent) else event.index
-            )
+            event_index = first_event(event).index
             success = not any(
                 all(event_index.get(k) == v for k, v in idx.items()) for idx in fail_at_index
             )
@@ -320,12 +370,14 @@ class BaseEngine(MDAEngine):
         Z positions are not written to the autofocus stage while autofocus is
         enabled (see :meth:`_set_event_properties`), so the target position is
         read from the event's properties when present, and from the stage's
-        current position otherwise.
+        current position otherwise. For a ``SequencedEvent``, the position of
+        the first frame of the burst is used.
         """
+        event = first_event(event)
         if event.properties:
             for dev, prop, value in event.properties:
                 if dev == self._autofocus_stage and prop == "Position":
-                    return value
+                    return float(value)
         return self.mmcore.getPosition(self._autofocus_stage)
 
     # ------------------------------------------------------------------

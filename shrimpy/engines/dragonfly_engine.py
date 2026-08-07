@@ -1,34 +1,76 @@
-"""Placeholder acquisition engine for the Dragonfly microscope.
+"""Acquisition engine for the Dragonfly microscope.
 
-Not implemented yet — this is a skeleton that inherits the shared behavior
-from :class:`~shrimpy.engines.base_engine.BaseEngine` (hardware sequencing
-defaults, hardware logging, autofocus dispatch and event skipping, hardware
-reset on teardown, and ``acquire()``), and marks the hooks a Dragonfly
-implementation is expected to fill in. See
-:mod:`shrimpy.engines.mantis_engine` for a worked example.
+Inherits the shared behavior from
+:class:`~shrimpy.engines.base_engine.BaseEngine` (hardware sequencing defaults,
+hardware logging, autofocus dispatch and event skipping, hardware reset on
+teardown, and ``acquire()``) and adds the Leica Adaptive Focus Control (AFC)
+autofocus routine. See :mod:`shrimpy.engines.mantis_engine` for a more
+elaborate subclass.
 
-As it stands, an acquisition runs only with autofocus disabled or with the
-simulated ``demo-PFS`` method; any other method raises ``NotImplementedError``
-from ``BaseEngine.engage_autofocus``.
+Unlike mantis, Dragonfly acquisitions are usually not hardware-sequenced, so
+``setup_event`` mostly receives single events, one per Z slice; AFC therefore
+engages at the bottom of each Z-stack rather than once per burst. Both paths
+are handled by :meth:`BaseEngine._should_engage_autofocus`.
 """
 
 from __future__ import annotations
 
 import logging
 
+from typing import TYPE_CHECKING
+
 from shrimpy.engines.base_engine import BaseEngine
+
+if TYPE_CHECKING:
+    from useq import MDAEvent
 
 logger = logging.getLogger(__name__)
 
 
 class DragonflyEngine(BaseEngine):
-    """MDA engine for the Dragonfly microscope (placeholder).
+    """MDA engine for the Dragonfly microscope.
 
-    Hooks to implement:
+    Hooks left to implement:
 
-    - ``__init__``: microscope-specific defaults (e.g. acquisition timeouts)
-      via ``kwargs.setdefault(...)`` before ``super().__init__()``
-    - ``engage_autofocus(event) -> bool``: the hardware autofocus routine
     - ``setup_sequence`` / ``setup_event`` / ``teardown_sequence``: Dragonfly
       hardware setup around the corresponding ``super()`` call
     """
+
+    def engage_autofocus(self, event: MDAEvent) -> bool:
+        """Engage Leica AFC for ``event``.
+
+        Called by :meth:`~shrimpy.engines.base_engine.BaseEngine._engage_autofocus`
+        once per Z-stack (or once per burst, if the event was sequenced) when
+        autofocus is enabled with a method other than ``demo-PFS``. The
+        acquisition of events for which this returns False is skipped.
+        """
+        z_position = self._get_autofocus_z_position(event)
+        return self._engage_leica_afc(self._autofocus_stage, z_position)
+
+    def _engage_leica_afc(self, z_stage_name: str, z_position: float) -> bool:
+        """Move the Z stage to ``z_position`` and run a full AFC focus.
+
+        Parameters
+        ----------
+        z_stage_name : str
+            The name of the z stage device which is moved before focusing.
+        z_position : float
+            The target position at which autofocus will be engaged.
+
+        Returns
+        -------
+        bool
+            True if the AFC call succeeded.
+        """
+        core = self.mmcore
+
+        core.setPosition(z_stage_name, z_position)
+        core.waitForDevice(z_stage_name)
+
+        try:
+            core.fullFocus()
+            logger.debug("Call to fullFocus() succeeded")
+            return True
+        except Exception:
+            logger.error("Autofocus call failed")
+            return False
