@@ -63,14 +63,23 @@ class DragonflyEngine(BaseEngine):
             True if the AFC call succeeded.
         """
         core = self.mmcore
+        z_offsets = [0, -10, 10, -20, 20, -30, 30]  # in um
 
+        for z_offset in z_offsets:
+            core.setPosition(z_stage_name, z_position + z_offset)
+            core.waitForDevice(z_stage_name)
+
+            try:
+                core.fullFocus()
+            except Exception:
+                logger.debug(f"Autofocus failed to engage with Z offset of {z_offset} um")
+                continue
+            logger.debug(f"Autofocus engaged with Z offset of {z_offset} um")
+            return True
+
+        # return z stage to original position if autofocus attempts failed
         core.setPosition(z_stage_name, z_position)
         core.waitForDevice(z_stage_name)
 
-        try:
-            core.fullFocus()
-            logger.debug("Call to fullFocus() succeeded")
-            return True
-        except Exception:
-            logger.error("Autofocus call failed")
-            return False
+        logger.error(f"Autofocus call failed after {len(z_offsets)} attempts")
+        return False

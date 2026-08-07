@@ -177,12 +177,11 @@ class BaseEngine(MDAEngine):
         :meth:`_should_engage_autofocus`. When it fails, every frame the event
         would have acquired is skipped.
         """
-        # Set XY stage position and engage autofocus
-        # Note: this command will not move the stage if the target position is the same
-        # as the last commanded position and force_set_xy_position is False.
-        self._set_event_xy_position(event)
-        # _set_event_xy_position does not wait for the stage to reach the target position
-        if self._xy_stage_device:
+        # Move the XY stage, then wait for it: _set_event_xy_position does not
+        # block. The single events of one Z-stack all carry the same XY position,
+        # so only the first of them moves.
+        if self._should_move_xy(event):
+            self._set_event_xy_position(event)
             self.mmcore.waitForDevice(self._xy_stage_device)
 
         # Engage autofocus
@@ -198,6 +197,33 @@ class BaseEngine(MDAEngine):
 
         # Call parent setup_event
         super().setup_event(event)
+
+    def _should_move_xy(self, event: MDAEvent) -> bool:
+        """Return whether the XY stage should be moved for ``event``.
+
+        Mirrors the guard inside ``MDAEngine._set_event_xy_position``, which is
+        a no-op when there is no XY stage, when the event carries no XY
+        position, or when that position equals the last commanded one and
+        ``force_set_xy_position`` is False. Deciding here rather than letting
+        the move no-op keeps the blocking ``waitForDevice`` out of the events
+        that do not move — the Z slices of a stack all repeat one position.
+
+        Must be called *before* the move, while the last commanded position is
+        still the previous one.
+        """
+        if not self._xy_stage_device:
+            return False
+
+        event_x, event_y = event.x_pos, event.y_pos
+        if event_x is None and event_y is None:
+            return False
+        if self.force_set_xy_position:
+            return True
+
+        last_x, last_y = self.mmcore._last_xy_position.get(None) or (None, None)
+        return not (
+            (event_x is None or event_x == last_x) and (event_y is None or event_y == last_y)
+        )
 
     def teardown_sequence(self, sequence: MDASequence) -> None:
         """Return the hardware to a safe idle state after the sequence."""

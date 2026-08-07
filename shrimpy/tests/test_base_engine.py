@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import weakref
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -481,6 +481,62 @@ def test_setup_event_waits_for_xy_stage(engine, mock_core):
     mock_core.waitForDevice.assert_any_call("XYStage")
 
 
+def test_setup_event_does_not_wait_when_xy_position_unchanged(engine, mock_core):
+    # Within a Z-stack the XY position repeats: the stage is neither moved nor
+    # waited for.
+    engine._xy_stage_device = "XYStage"
+    engine.force_set_xy_position = False
+    mock_core._last_xy_position = {None: (10.0, 20.0)}
+
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_event"):
+        for z in range(3):
+            engine.setup_event(MDAEvent(index={"z": z}, x_pos=10.0, y_pos=20.0))
+    mock_core.setXYPosition.assert_not_called()
+    mock_core.waitForDevice.assert_not_called()
+
+
+def test_setup_event_does_not_wait_without_xy_position(engine, mock_core):
+    # Events with no XY position never move the stage
+    engine._xy_stage_device = "XYStage"
+    engine.force_set_xy_position = False
+
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_event"):
+        engine.setup_event(MDAEvent())
+    mock_core.waitForDevice.assert_not_called()
+
+
+def test_setup_event_waits_when_xy_position_forced(engine, mock_core):
+    # force_set_xy_position re-issues the move even for an unchanged position
+    engine._xy_stage_device = "XYStage"
+    engine.force_set_xy_position = True
+    mock_core._last_xy_position = {None: (10.0, 20.0)}
+
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_event"):
+        engine.setup_event(MDAEvent(x_pos=10.0, y_pos=20.0))
+    mock_core.waitForDevice.assert_any_call("XYStage")
+
+
+def test_setup_event_waits_once_per_position(engine, mock_core):
+    # One wait at the bottom of the stack, none for the remaining slices, and
+    # another one when the stack moves to a new position.
+    engine._xy_stage_device = "XYStage"
+    engine.force_set_xy_position = False
+    mock_core._last_xy_position = {None: (0.0, 0.0)}
+
+    def _set_xy(event):
+        if event.x_pos is not None:
+            mock_core._last_xy_position[None] = (event.x_pos, event.y_pos)
+
+    with (
+        patch("shrimpy.engines.base_engine.MDAEngine.setup_event"),
+        patch.object(engine, "_set_event_xy_position", side_effect=_set_xy),
+    ):
+        for p, (x, y) in enumerate([(10.0, 20.0), (30.0, 40.0)]):
+            for z in range(3):
+                engine.setup_event(MDAEvent(index={"p": p, "z": z}, x_pos=x, y_pos=y))
+    assert mock_core.waitForDevice.call_count == 2
+
+
 # ---------------------------------------------------------------------------
 # _set_event_properties() — autofocus stage protection
 # ---------------------------------------------------------------------------
@@ -599,10 +655,24 @@ def test_dragonfly_engage_autofocus_calls_afc(mock_core):
 
     eng._engage_autofocus(MDAEvent())
     assert eng._autofocus_success is True
+    # Locked on the first try, at the target Z position
     mock_core.setPosition.assert_called_once_with("FocusDrive", 100.0)
     mock_core.fullFocus.assert_called_once()
 
-    # A failing AFC call is reported, so setup_event skips the event
+    # A failed call is retried at increasing Z offsets, and the offset at which
+    # it locks is the one the stage is left at
+    mock_core.reset_mock()
+    mock_core.fullFocus.side_effect = [RuntimeError("no lock"), None]
+    eng._engage_autofocus(MDAEvent())
+    assert eng._autofocus_success is True
+    assert mock_core.setPosition.call_args_list == [
+        call("FocusDrive", 100.0),
+        call("FocusDrive", 90.0),
+    ]
+
+    # Exhausting every offset is reported, so setup_event skips the event
+    mock_core.reset_mock()
     mock_core.fullFocus.side_effect = RuntimeError("no lock")
     eng._engage_autofocus(MDAEvent())
     assert eng._autofocus_success is False
+    assert mock_core.setPosition.call_count == 7
