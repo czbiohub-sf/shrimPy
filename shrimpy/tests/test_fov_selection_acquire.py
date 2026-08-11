@@ -95,7 +95,7 @@ def _sequence(**overrides) -> MDASequence:
             {"config": "BF - Oblique", "group": "Channel"},
             {"config": "GFP", "group": "Channel"},
         ],
-        metadata={"mantis": {"fov_selection": _fov_cfg()}},
+        metadata={"fov_selection": _fov_cfg()},
     )
     kwargs.update(overrides)
     return MDASequence(**kwargs)
@@ -113,7 +113,7 @@ def test_fov_selection_config_returns_block_when_present():
 
 
 def test_fov_selection_config_reflects_disabled_flag():
-    seq = _sequence(metadata={"mantis": {"fov_selection": {"enabled": False}}})
+    seq = _sequence(metadata={"fov_selection": {"enabled": False}})
     assert fov_selection_config(seq).get("enabled") is False
 
 
@@ -135,22 +135,20 @@ def test_prescan_is_fov_selection_channel_only_one_timepoint_full_z():
     assert ps.sizes["z"] == 3  # pre-scan z-plan
     assert ps.sizes["p"] == 3  # all candidates
     # fov_selection stays enabled so setup_sequence builds the coordinator ...
-    assert ps.metadata["mantis"]["fov_selection"]["enabled"] is True
+    assert ps.metadata["fov_selection"]["enabled"] is True
     # ... but the nested prescan_mda is dropped to avoid a redundant self-copy
-    assert "prescan_mda" not in ps.metadata["mantis"]["fov_selection"]
+    assert "prescan_mda" not in ps.metadata["fov_selection"]
 
 
-def test_prescan_injects_shared_mantis_hardware_settings():
+def test_prescan_injects_shared_hardware_settings():
     seq = _sequence(
         metadata={
-            "mantis": {
-                "fov_selection": _fov_cfg(),
-                "autofocus": {"enabled": False, "method": "demo-PFS"},
-            }
+            "fov_selection": _fov_cfg(),
+            "autofocus": {"enabled": False, "method": "demo-PFS"},
         }
     )
     ps = build_prescan_sequence(seq, fov_selection_config(seq))
-    assert ps.metadata["mantis"]["autofocus"]["method"] == "demo-PFS"
+    assert ps.metadata["autofocus"]["method"] == "demo-PFS"
 
 
 def test_prescan_raises_on_unknown_fov_selection_channel():
@@ -201,20 +199,21 @@ def test_timelapse_disables_fov_selection_without_mutating_original():
     ps = build_prescan_sequence(seq, fov_selection_config(seq))
     tl = build_timelapse_sequence(seq, ps, ["B4_0000"])
 
-    assert tl.metadata["mantis"]["fov_selection"]["enabled"] is False
+    assert tl.metadata["fov_selection"]["enabled"] is False
     # the original sequence's metadata must be untouched (deep-copied)
-    assert seq.metadata["mantis"]["fov_selection"]["enabled"] is True
+    assert seq.metadata["fov_selection"]["enabled"] is True
 
 
-def test_filter_converts_plate_coords_and_field_names():
+def test_filter_keeps_int_plate_coords_and_reduces_names_to_field_index():
     seq = _sequence()
     ps = build_prescan_sequence(seq, fov_selection_config(seq))
     good = _filter_good_positions(ps, ["B4_0000", "B5_0000"])
 
-    # int plate coords -> string well names; the FOV name -> per-well field index.
+    # Plate coords stay zero-based ints; only the FOV name is reduced to the
+    # per-well field index (the well is already encoded by plate_row/plate_col).
     assert [(p.name, p.plate_row, p.plate_col) for p in good] == [
-        ("0000", "B", "4"),
-        ("0000", "B", "5"),
+        ("0000", 1, 3),
+        ("0000", 1, 4),
     ]
 
 
@@ -234,8 +233,12 @@ def test_timelapse_positions_produce_readable_hcs_plate():
 
     plate = ome_useq._plate_from_useq(tl)
     assert plate is not None
-    assert plate.row_names == ["B"]
-    assert plate.column_names == ["4", "5"]
+    # ome-writers infers the plate grid from the zero-based int coords and declares
+    # every row/column up to the largest one used, as an OME-NGFF plate should --
+    # the unused wells simply get no subgroup. The selected FOVs are in row B,
+    # columns 4 and 5, so the declared grid spans A-B and 1-5.
+    assert plate.row_names == ["A", "B"]
+    assert plate.column_names == ["1", "2", "3", "4", "5"]
 
     built = ome_useq._build_positions(tl)
     for p in built:
@@ -254,7 +257,7 @@ def test_timelapse_positions_produce_readable_hcs_plate():
 def test_prescan_grid_plan_expands_to_one_position_per_fov():
     # A top-level grid_plan must be flattened so each FOV is its own position
     # (its own p_idx), not left on useq's separate `g` axis.
-    seq = _sequence(metadata={"mantis": {"fov_selection": _grid_fov_cfg()}})
+    seq = _sequence(metadata={"fov_selection": _grid_fov_cfg()})
     ps = build_prescan_sequence(seq, fov_selection_config(seq))
 
     assert ps.grid_plan is None  # grid axis collapsed into positions
@@ -267,7 +270,7 @@ def test_prescan_grid_plan_expands_to_one_position_per_fov():
 
 
 def test_expand_candidate_fovs_absolute_xy_and_inherited_z():
-    seq = _sequence(metadata={"mantis": {"fov_selection": _grid_fov_cfg()}})
+    seq = _sequence(metadata={"fov_selection": _grid_fov_cfg()})
     ps = build_prescan_sequence(seq, fov_selection_config(seq))
     by_name = {p.name: p for p in ps.stage_positions}
 
@@ -284,7 +287,7 @@ def test_expand_candidate_fovs_absolute_xy_and_inherited_z():
 def test_grid_style_good_positions_pass_through_filter_unchanged():
     # Without plate coords the good FOVs are kept verbatim (name + XY), producing
     # a flat, non-HCS list for the timelapse run.
-    seq = _sequence(metadata={"mantis": {"fov_selection": _grid_fov_cfg()}})
+    seq = _sequence(metadata={"fov_selection": _grid_fov_cfg()})
     ps = build_prescan_sequence(seq, fov_selection_config(seq))
     good = _filter_good_positions(ps, ["site0_0001", "p1_0003"])
 
@@ -307,7 +310,7 @@ def test_explicit_positions_no_grid_pass_through():
     # A plain explicit list with no grid_plan is not expanded by build_prescan.
     cfg = _grid_fov_cfg()
     cfg["prescan_mda"].pop("grid_plan")
-    seq = _sequence(metadata={"mantis": {"fov_selection": cfg}})
+    seq = _sequence(metadata={"fov_selection": cfg})
     ps = build_prescan_sequence(seq, fov_selection_config(seq))
     assert ps.grid_plan is None
     assert ps.sizes["p"] == 2  # the two centers, unexpanded
@@ -335,7 +338,7 @@ def test_expand_candidate_fovs_inherits_center_properties():
             "plate_col": 2,
         },
     ]
-    seq = _sequence(metadata={"mantis": {"fov_selection": cfg}})
+    seq = _sequence(metadata={"fov_selection": cfg})
     ps = build_prescan_sequence(seq, fov_selection_config(seq))
 
     def zdrive(pos):
@@ -352,9 +355,9 @@ def test_expand_candidate_fovs_inherits_center_properties():
     # every FOV of a well inherits that well's coarse focus, and the two wells differ
     assert {zdrive(by_name[f"B2_{g:04d}"]) for g in range(4)} == {4522.0}
     assert {zdrive(by_name[f"B3_{g:04d}"]) for g in range(4)} == {4573.0}
-    # integer plate coords are converted to labels so the field-suffixed name
-    # survives MDASequence.replace()'s re-validation of the expanded list.
-    assert (by_name["B2_0000"].plate_row, by_name["B2_0000"].plate_col) == ("B", "2")
+    # plate coords are inherited unchanged as zero-based ints; the name is derived
+    # from the well label so it still reads "B2_0000".
+    assert (by_name["B2_0000"].plate_row, by_name["B2_0000"].plate_col) == (1, 1)
 
     # the property survives into the acquisition events of BOTH runs
     prescan_event = next(ps.iter_events())
@@ -362,8 +365,8 @@ def test_expand_candidate_fovs_inherits_center_properties():
 
     good = _filter_good_positions(ps, ["B2_0001", "B3_0002"])
     assert [(g.name, g.plate_row, g.plate_col, zdrive(g)) for g in good] == [
-        ("0001", "B", "2", 4522.0),
-        ("0002", "B", "3", 4573.0),
+        ("0001", 1, 1, 4522.0),
+        ("0002", 1, 2, 4573.0),
     ]
     timelapse = build_timelapse_sequence(seq, ps, ["B2_0001", "B3_0002"])
     assert ("ZDrive", "Position", 4522.0) in [
@@ -396,7 +399,7 @@ def test_selected_fov_config_fills_stage_positions_and_reloads(tmp_path):
     # The starting config has stage_positions: []; the saved record must carry one entry per
     # SELECTED FOV (absolute XY + the well's ZDrive coarse focus + plate coords), named after
     # the experiment folder.
-    from shrimpy.mantis.mantis_engine import MantisEngine
+    from shrimpy.engines.mantis_engine import MantisEngine
 
     cfg = _grid_fov_cfg()
     cfg["prescan_mda"]["stage_positions"] = [
@@ -408,7 +411,7 @@ def test_selected_fov_config_fills_stage_positions_and_reloads(tmp_path):
             "plate_col": 1,
         },
     ]
-    seq = _sequence(metadata={"mantis": {"fov_selection": cfg}})
+    seq = _sequence(metadata={"fov_selection": cfg})
     prescan = build_prescan_sequence(seq, fov_selection_config(seq))
     assert not seq.stage_positions  # the starting config really is empty
 
@@ -442,9 +445,9 @@ def test_selected_fov_config_fills_stage_positions_and_reloads(tmp_path):
 def test_selected_fov_config_appends_the_dedup_index(tmp_path):
     # A second acquisition in the same folder must not silently replace the first record --
     # the folder name alone does not distinguish them.
-    from shrimpy.mantis.mantis_engine import MantisEngine
+    from shrimpy.engines.mantis_engine import MantisEngine
 
-    seq = _sequence(metadata={"mantis": {"fov_selection": _grid_fov_cfg()}})
+    seq = _sequence(metadata={"fov_selection": _grid_fov_cfg()})
     prescan = build_prescan_sequence(seq, fov_selection_config(seq))
     timelapse = build_timelapse_sequence(seq, prescan, ["site0_0001"])
 
@@ -468,9 +471,9 @@ def test_selected_fov_config_appends_the_dedup_index(tmp_path):
 def test_selected_fov_config_never_raises(tmp_path):
     # Written between the pre-scan and the timelapse: a filesystem failure must be logged,
     # not propagated.
-    from shrimpy.mantis.mantis_engine import MantisEngine
+    from shrimpy.engines.mantis_engine import MantisEngine
 
-    seq = _sequence(metadata={"mantis": {"fov_selection": _grid_fov_cfg()}})
+    seq = _sequence(metadata={"fov_selection": _grid_fov_cfg()})
     prescan = build_prescan_sequence(seq, fov_selection_config(seq))
     timelapse = build_timelapse_sequence(seq, prescan, ["site0_0001"])
 

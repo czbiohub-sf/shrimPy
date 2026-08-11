@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from useq import Position, WellPlatePlan
@@ -50,11 +52,15 @@ def test_col_label_is_one_based():
     assert (col_label(0), col_label(1), col_label(11)) == ("1", "2", "12")
 
 
-def test_plate_labels_normalizes_either_form():
-    as_int = Position(x=0, y=0, plate_row=1, plate_col=1)
-    as_str = Position(x=0, y=0, name="B2_0000", plate_row="B", plate_col="2")
-    assert plate_labels(as_int) == ("B", "2")
-    assert plate_labels(as_str) == ("B", "2")
+def test_plate_labels_renders_int_coords():
+    # useq stores plate coordinates as zero-based ints; plate_labels renders them.
+    assert plate_labels(Position(x=0, y=0, plate_row=1, plate_col=1)) == ("B", "2")
+
+
+def test_plate_labels_passes_rendered_labels_through():
+    # Not a useq Position: a plain object standing in for an already-rendered pair,
+    # so a label is not double-converted if one reaches plate_labels.
+    assert plate_labels(SimpleNamespace(plate_row="B", plate_col="2")) == ("B", "2")
 
 
 def test_plate_labels_none_when_not_on_a_plate():
@@ -86,20 +92,19 @@ def test_the_two_sanitizers_differ_on_the_same_name():
 
 
 def test_well_field_name_strips_the_well_prefix():
-    pos = Position(x=0, y=0, name="B4_0000", plate_row="B", plate_col="4")
+    # plate_row=1, plate_col=3 -> well "B4", so "B4_0000" reduces to the field "0000".
+    pos = Position(x=0, y=0, name="B4_0000", plate_row=1, plate_col=3)
     assert well_field_name(pos, "0009") == "0000"
 
 
-def test_well_field_name_handles_int_coords_too():
-    # plate_row=1, plate_col=3 -> well "B4"; useq forces name == "B4" here, so the
-    # prefix check simply finds nothing to strip and the well name is sanitized.
-    pos = Position(x=0, y=0, plate_row=1, plate_col=3)
-    assert pos.name == "B4"
+def test_well_field_name_keeps_a_name_with_no_field_suffix():
+    # A bare well name has no prefix to strip; it is only sanitized.
+    pos = Position(x=0, y=0, name="B4", plate_row=1, plate_col=3)
     assert well_field_name(pos, "0009") == "B4"
 
 
 def test_well_field_name_falls_back_on_a_bare_well_name():
-    pos = Position(x=0, y=0, name="B4_", plate_row="B", plate_col="4")
+    pos = Position(x=0, y=0, name="B4_", plate_row=1, plate_col=3)
     assert well_field_name(pos, "0007") == "0007"
 
 

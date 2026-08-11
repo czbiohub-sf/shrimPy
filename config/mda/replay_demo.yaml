@@ -1,0 +1,37 @@
+# Replay of a previously acquired zarr store through ReplayCamera
+
+# Define stage positions
+# Position names should match those in the zarr store.
+# Exact XY locations don't matter
+stage_positions:
+  - name: "0/2/000"
+    x: 0
+    y: 0
+  - name: "0/2/001"
+    x: 0
+    y: 1
+
+# Define time plan
+# Equal to or less than the number of timepoints in the zarr store
+time_plan:
+  prioritize_duration: true
+  interval: 1
+  loops: 5
+
+# Define z plan
+# Should match number of slices in zarr store
+z_plan:
+  top: 30
+  bottom: -30
+  step: 0.15
+  go_up: true
+
+# Define channels.
+# Should match channels names in the zarr store
+channels:
+- config: GFP EX488 EM525-45
+  group: Channel
+  exposure: 1.0
+- config: mCherry EX561 EM600-37
+  group: Channel
+  exposure: 1.0

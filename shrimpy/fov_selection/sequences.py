@@ -19,18 +19,18 @@ from shrimpy.fov_selection.plate_naming import plate_labels, well_field_name
 
 
 def fov_selection_config(sequence: MDASequence) -> dict:
-    """Return the ``metadata.mantis.fov_selection`` block (``{}`` if absent).
+    """Return the ``metadata.fov_selection`` block (``{}`` if absent).
 
     The caller decides whether it is active by reading its ``enabled`` flag,
     e.g. ``fov_selection_config(sequence).get("enabled")``.
     """
-    meta = sequence.metadata.get("mantis", {}) if sequence.metadata else {}
+    meta = sequence.metadata if sequence.metadata else {}
     return meta.get("fov_selection") or {}
 
 
-# Mantis hardware-setup metadata keys that the pre-scan run must share with the
+# Hardware-setup metadata keys that the pre-scan run must share with the
 # timelapse run so the scope is configured identically for both.
-_SHARED_MANTIS_KEYS = (
+_SHARED_METADATA_KEYS = (
     "autofocus",
     "roi",
     "initialization_settings",
@@ -43,7 +43,7 @@ def build_prescan_sequence(sequence: MDASequence, fov_cfg: dict) -> MDASequence:
     """Build the pre-scan ``MDASequence`` from ``fov_selection.prescan_mda``.
 
     The pre-scan is configured as its own complete, valid ``MDASequence`` nested
-    under ``metadata.mantis.fov_selection.prescan_mda``. It carries its own
+    under ``metadata.fov_selection.prescan_mda``. It carries its own
     ``stage_positions`` (the candidate FOVs to search) and ``z_plan`` -- which
     may be a single 2D slice for fluorescence-based selection, independent of the
     timelapse z-plan. The parent ``fov_selection`` config (minus ``prescan_mda``)
@@ -69,7 +69,7 @@ def build_prescan_sequence(sequence: MDASequence, fov_cfg: dict) -> MDASequence:
     prescan_mda = fov_cfg.get("prescan_mda")
     if not prescan_mda:
         raise ValueError(
-            "FOV selection requires metadata.mantis.fov_selection.prescan_mda "
+            "FOV selection requires metadata.fov_selection.prescan_mda "
             "(a valid MDASequence defining the candidate stage_positions and z_plan)."
         )
 
@@ -89,7 +89,7 @@ def build_prescan_sequence(sequence: MDASequence, fov_cfg: dict) -> MDASequence:
     if not fov_selection_channel:
         raise ValueError(
             "FOV selection requires fov_selection_channel in the config "
-            "(metadata.mantis.fov_selection.fov_selection_channel); there is no default."
+            "(metadata.fov_selection.fov_selection_channel); there is no default."
         )
     channel_configs = [c.config for c in prescan_seq.channels]
     if fov_selection_channel not in channel_configs:
@@ -113,16 +113,15 @@ def build_prescan_sequence(sequence: MDASequence, fov_cfg: dict) -> MDASequence:
     # Inject the fov_selection config + shared mantis hardware settings into the
     # pre-scan metadata. Drop prescan_mda from the injected block so the coordinator
     # doesn't carry a redundant nested copy of itself.
-    parent_mantis = (sequence.metadata or {}).get("mantis", {})
+    parent_meta = sequence.metadata or {}
     fov_block = copy.deepcopy(fov_cfg)
     fov_block.pop("prescan_mda", None)
 
     prescan_meta = copy.deepcopy(prescan_seq.metadata) if prescan_seq.metadata else {}
-    prescan_mantis = prescan_meta.setdefault("mantis", {})
-    prescan_mantis["fov_selection"] = fov_block
-    for key in _SHARED_MANTIS_KEYS:
-        if key in parent_mantis and key not in prescan_mantis:
-            prescan_mantis[key] = copy.deepcopy(parent_mantis[key])
+    prescan_meta["fov_selection"] = fov_block
+    for key in _SHARED_METADATA_KEYS:
+        if key in parent_meta and key not in prescan_meta:
+            prescan_meta[key] = copy.deepcopy(parent_meta[key])
 
     return prescan_seq.replace(metadata=prescan_meta)
 
@@ -146,21 +145,10 @@ def expand_candidate_fovs(prescan_seq: MDASequence) -> list[Position]:
     which fails as soon as the run crosses a well (plate tilt) -- see the
     ``B2 -> B3`` failure in ``docs``/the FOV-selection integration notes.
 
-    ``plate_row``/``plate_col`` are inherited too, so a center placed on a plate
-    yields FOVs that still produce an HCS OME-Zarr -- but integer plate coordinates
-    are converted to their string labels (``1 -> "B"``, ``1 -> "2"``).
-
-    That conversion is forced by where these positions go next. ``Position``'s
-    ``_name_from_plate`` validator rejects a field-suffixed name next to *integer*
-    plate coords and accepts it next to *string* ones. ``WellPlatePlan`` emits the
-    integer pairing anyway (``image_positions`` -> ``Position.__add__``, which
-    builds via ``model_construct`` and so skips validation) and gets away with it
-    because it stays a ``WellPlatePlan`` -- useq iterates it lazily and never
-    re-validates the individual positions. An expanded *list*, by contrast, is
-    handed straight back to ``MDASequence.replace(stage_positions=...)``, which
-    re-validates every element; keeping the integer coords raises there. So the
-    labels are applied here, and :func:`_filter_good_positions` accepts either form
-    for the later timelapse handoff.
+    ``plate_row``/``plate_col`` are inherited unchanged, so a center placed on a
+    plate yields FOVs that still produce an HCS OME-Zarr. They stay zero-based
+    integers -- the form ``WellPlatePlan`` expands to and the only form useq accepts
+    -- alongside the field-suffixed name, which useq permits.
     """
     centers = list(prescan_seq.stage_positions)
     grid = MDASequence(stage_positions=centers, grid_plan=prescan_seq.grid_plan)
@@ -169,16 +157,20 @@ def expand_candidate_fovs(prescan_seq: MDASequence) -> list[Position]:
         p_idx = event.index.get("p", 0)
         g_idx = event.index.get("g", 0)
         center = centers[p_idx]
-        base = center.name or f"p{p_idx}"
-        update = {
-            "x": event.x_pos,
-            "y": event.y_pos,
-            "name": f"{base}_{g_idx:04d}",
-        }
+        # Name each FOV "<center>_<field>". An unnamed center on a plate takes its
+        # well label ("B2"), matching what WellPlatePlan emits for the same layout;
+        # useq only auto-names positions it expands itself, not ones a config wrote.
         well = plate_labels(center)
-        if well is not None:
-            update["plate_row"], update["plate_col"] = well
-        out.append(center.model_copy(update=update))
+        base = center.name or (f"{well[0]}{well[1]}" if well else f"p{p_idx}")
+        out.append(
+            center.model_copy(
+                update={
+                    "x": event.x_pos,
+                    "y": event.y_pos,
+                    "name": f"{base}_{g_idx:04d}",
+                }
+            )
+        )
     return out
 
 
@@ -196,7 +188,7 @@ def build_timelapse_sequence(
     """
     good_positions = _filter_good_positions(prescan_seq, good_names)
     meta = copy.deepcopy(sequence.metadata) if sequence.metadata else {}
-    fov_cfg = meta.get("mantis", {}).get("fov_selection")
+    fov_cfg = meta.get("fov_selection")
     if fov_cfg is not None:
         fov_cfg["enabled"] = False
     return sequence.replace(stage_positions=good_positions, metadata=meta)
@@ -206,13 +198,11 @@ def _filter_good_positions(sequence: MDASequence, good_names: list[str]) -> list
     """Candidate positions whose name is in ``good_names`` (order preserved).
 
     Iterating ``sequence.stage_positions`` yields expanded ``AbsolutePosition``
-    objects that carry ``plate_row``/``plate_col``, so the filtered list still
-    produces a proper HCS OME-Zarr for the good FOVs. Two adjustments are made so
-    the rebuilt explicit list matches what the ``WellPlatePlan`` path would emit:
+    objects that carry zero-based integer ``plate_row``/``plate_col``, so the
+    filtered list still produces a proper HCS OME-Zarr for the good FOVs. The plate
+    coordinates are kept as-is; only the name is adjusted so the rebuilt explicit
+    list matches what the ``WellPlatePlan`` path would emit:
 
-    * plate coordinates are normalized to their string labels (``1 -> "B"``,
-      ``3 -> "4"``) -- useq forbids a field-suffixed name on a standalone position
-      with *integer* plate coords, but accepts an explicit name with *string* ones;
     * the useq FOV name (e.g. ``"B4_0000"``) is reduced to the per-well field name
       (``"0000"``) -- the well's image path must be alphanumeric (iohub rejects the
       underscore), and this is exactly what ome-writers' WellPlatePlan builder uses.
@@ -225,14 +215,7 @@ def _filter_good_positions(sequence: MDASequence, good_names: list[str]) -> list
     for idx, pos in enumerate(sequence.stage_positions):
         if (pos.name or f"p{idx}") not in good:
             continue
-        well = plate_labels(pos)
-        if well is not None:
-            pos = pos.model_copy(
-                update={
-                    "plate_row": well[0],
-                    "plate_col": well[1],
-                    "name": well_field_name(pos, f"{idx:04d}"),
-                }
-            )
+        if plate_labels(pos) is not None:
+            pos = pos.model_copy(update={"name": well_field_name(pos, f"{idx:04d}")})
         out.append(pos)
     return out

@@ -43,11 +43,13 @@ uv run pytest
 uv run pytest shrimpy/tests/test_mantis_logger.py
 ```
 
-### Running the Mantis GUI
+### Running the GUI
 ```bash
-# Launch the GUI-based acquisition interface
-uv run python -m shrimpy.mantis.launch_mantis_gui
+# Launch pymmcore-gui through the shrimPy CLI
+uv run shrimpy gui
 ```
+The older Mantis acquisition widget is deprecated and archived in
+`shrimpy/archive/` — do not update it.
 
 ### Demo Mode Acquisition (Legacy)
 The legacy CLI is archived but provides a pattern for programmatic acquisition:
@@ -63,112 +65,149 @@ shrimpy acquire mantis \
 ### Microscope Module Structure
 ```
 shrimpy/
-├── mantis/              # Label-free + Light-sheet microscope (fully implemented)
-│   ├── mantis_engine.py              # MDAEngine subclass (~455 lines)
-│   ├── mantis_acquisition_widget.py  # Qt GUI (~815 lines)
-│   ├── mantis_logger.py              # Logging configuration
-│   ├── launch_mantis_gui.py          # GUI entry point
-│   └── archive/                      # Historical implementations (pycromanager, old pymmcore-plus)
+├── engines/             # One module per microscope, all sharing BaseEngine
+│   ├── base_engine.py        # BaseEngine: MDAEngine subclass shared by all microscopes
+│   ├── mantis_engine.py      # Label-free + light-sheet microscope (implemented)
+│   ├── isim_engine.py        # iSIM (placeholder)
+│   └── dragonfly_engine.py   # Dragonfly (placeholder)
 │
-├── isim/                # iSIM microscope (placeholder for future implementation)
-├── viewer/              # Data visualization (placeholder)
-├── cli/                 # Command-line interface (in transition, currently empty)
-└── tests/               # Unit tests
+├── config.py            # pydantic validation of the shrimPy metadata sections
+├── _logging.py          # Logging configuration (config/logging.ini)
+├── dynatrack/           # DynaTrack position tracking (mantis)
+├── viewer/              # Out-of-process napari viewer for live acquisitions
+├── cli/                 # Command-line interface (`shrimpy acquire`, `shrimpy gui`)
+├── tests/               # Unit and integration tests
+└── archive/             # Historical implementations (pycromanager, old pymmcore-plus,
+                         # deprecated Mantis Qt widget and its launcher)
 ```
+
+Nothing is re-exported from `shrimpy/engines/__init__.py`: importing a
+microscope engine pulls in its heavy optional dependencies (torch, via
+DynaTrack), and the CLI controls when that happens. Import the module directly,
+e.g. `from shrimpy.engines.mantis_engine import MantisEngine`.
 
 ### Key Design Patterns
 
 #### 1. Engine Abstraction Pattern
-Each microscope implements a custom `MDAEngine` subclass:
+`shrimpy/engines/base_engine.py` holds `BaseEngine`, the `MDAEngine` subclass
+shared by every microscope. It owns the behavior that does not vary by platform:
+
+- hardware-sequencing defaults (`use_hardware_sequencing=True`,
+  `force_set_xy_position=False`) and registration with `mmc.mda`
+- debug logging of property changes, ROI changes, and XY stage moves
+- autofocus handling: reads `metadata.autofocus`, dispatches to the simulated
+  `demo-PFS` method or to the microscope's `engage_autofocus()`, and skips the
+  event (`SkipEvent`) when autofocus is enabled but did not engage
+- Z positions are not written to the autofocus stage while autofocus is engaged
+  (`_set_event_properties`)
+- resetting `metadata.reset_hardware_sequencing_settings` in `teardown_sequence`
+- `acquire()`: runs the sequence and writes OME-Zarr to `<name>_<idx>.ome.zarr`
+
+Each microscope subclasses it and overrides only what differs:
 ```python
-class MantisEngine(MDAEngine):
+class MantisEngine(BaseEngine):
+    def __init__(mmc, *args, **kwargs):
+        # Microscope-specific defaults (e.g. acquisition timeouts), then super()
+
+    def engage_autofocus(event: MDAEvent) -> bool:
+        # Required hook — BaseEngine raises NotImplementedError.
+        # Mantis: Nikon PFS with z-offset retries; returns False if it never locks
+
     def setup_sequence(sequence: MDASequence) -> SummaryMetaV1:
-        # Configure hardware before acquisition starts
-        # - Set ROI, focus device, initialization settings
-        # - Configure hardware sequencing
-        # - Setup autofocus parameters
+        # DynaTrack setup around super().setup_sequence()
 
     def setup_event(event: MDAEvent):
-        # Prepare for each acquisition event
-        # - Configure TriggerScope if using hardware sequencing
-
-    def _set_event_xy_position(event: MDAEvent):
-        # Custom XY positioning with intelligent stage movement
+        # XY stage speed modulation, then super().setup_event()
         # - Variable speed (2.0 mm/s short, 5.75 mm/s long distances)
-        # - Post-movement autofocus engagement with retry logic
-        # - Stage settlement waiting
 ```
 
 To add a new microscope:
-1. Create `shrimpy/<microscope_name>/` directory
-2. Subclass `MDAEngine` in `<microscope_name>_engine.py`
-3. Override `setup_sequence()`, `setup_event()`, and positioning methods as needed
-4. Define microscope-specific metadata schema
-5. Create Qt widget for GUI (optional)
+1. Subclass `BaseEngine` in `shrimpy/engines/<microscope_name>_engine.py`
+   (`isim_engine.py` and `dragonfly_engine.py` are placeholders to fill in)
+2. Implement `engage_autofocus()`; override `setup_sequence()`, `setup_event()`,
+   and positioning methods as needed, always calling `super()`
+3. Define microscope-specific metadata schema
+4. Add a `shrimpy acquire <microscope_name>` command in `shrimpy/cli/acquire.py`
+5. Add tests in `shrimpy/tests/test_<microscope_name>_engine.py`
 
 #### 2. Metadata Propagation Pattern
-Configuration is passed through MDASequence metadata:
-```python
-sequence = MDASequence.from_file('config.yaml')
-sequence.metadata = {
-    'mantis': {
-        'roi': [x, y, width, height],
-        'z_stage': 'AP Galvo',
-        'initialization_settings': [[device, property, value], ...],
-        'setup_hardware_sequencing_settings': [...],
-        'autofocus': {
-            'enabled': True,
-            'stage': 'ZDrive',
-            'method': 'PFS',  # Nikon Perfect Focus System
-            'wait_after_correction': 0.5,
-            'wait_before_acquire': 0.1,
-        },
-    }
-}
+An acquisition config file *is* an `MDASequence`; the microscope settings are
+folded directly into its `metadata`, which is how they reach the engine (the MDA
+runner passes only the sequence to `setup_sequence` / `teardown_sequence`, and
+`metadata` is also captured in the acquisition's summary metadata):
+
+```yaml
+setup: ...            # ROI, imaging path, device properties applied once
+channels: ...
+metadata:
+  autofocus: {enabled: true, method: PFS, stage: ZDrive}
+  reset_hardware_sequencing_settings:
+    - ['TS2_DAC03', 'Sequence', 'Off']
+  dynatrack: {enabled: true, input_channel: BF, tracking_channel: BF}
 ```
 
-#### 3. Logging Pattern
-Each microscope module uses a separate logger instance:
+`shrimpy/config.py` validates those sections with pydantic, so a mistyped
+setting fails before any hardware is touched:
+
 ```python
-from shrimpy.mantis.mantis_logger import configure_mantis_logger, get_mantis_logger
+from shrimpy.config import ShrimpyMetadata, load_config
 
-# During acquisition setup
-logger = configure_mantis_logger(save_dir, 'acquisition_name')
-# Creates dual handlers:
+sequence = load_config('config/mda/mantis/demo.yaml')  # validates on load
+meta = ShrimpyMetadata.from_sequence(sequence)         # engines read this
+meta.autofocus                                         # AutofocusSettings
+meta.reset_hardware_sequencing_settings                # [(device, property, value), ...]
+meta.dynatrack                                         # DynaTrackConfig | None
+```
+
+Validation is strict (`extra="forbid"`): an unknown metadata section, or an
+unknown key within one, is an error. A present-but-disabled `dynatrack` section
+is still fully validated — omit the section to disable tracking.
+
+#### 3. Logging Pattern
+Every module logs through the `shrimpy` logger hierarchy
+(`logger = logging.getLogger(__name__)`); the CLI configures the handlers once,
+from `config/logging.ini`:
+```python
+from shrimpy._logging import configure_logging
+
+# During acquisition setup, in the CLI entry point
+log_file = configure_logging(config_file, output_dir, name)
+# Creates dual handlers on the "shrimpy" logger:
 # - Console: INFO level
-# - File: DEBUG level (saved to logs/ subdirectory)
+# - File: DEBUG level (saved to <output_dir>/logs/)
 
-# Also captures pymmcore-plus logger to same file
+# Also attaches the file handler to the pymmcore-plus logger
 ```
 
 Use `logger.debug()` for detailed diagnostics (file only) and `logger.info()` for user-facing messages (console + file).
 
 ### Configuration Files
 
-Acquisitions are configured using YAML files that define MDASequence parameters plus microscope-specific metadata. Examples in `examples/acquisition_settings/`.
+Acquisitions are configured using YAML `MDASequence` files, validated by
+`shrimpy/config.py`. Examples in `config/mda/mantis/` (`demo.yaml`, `mantis.yaml`,
+`dynatrack_demo.yaml`, `replay_demo.yaml`).
 
 **Key Configuration Sections:**
+- `setup`: ROI, imaging path, and device properties applied once before the run
 - `time_plan`: Timepoint intervals and loops
 - `channels`: Channel configurations
 - `z_plan`: Z-stack range and step size
-- `stage_positions`: XY positions (optional)
-- `metadata.mantis`: Mantis-specific settings (ROI, autofocus, hardware sequencing)
+- `stage_positions`: XY positions or a well-plate plan (optional)
+- `metadata.autofocus`: `enabled`, `method` (`PFS` / `demo-PFS`), `stage`
+- `metadata.reset_hardware_sequencing_settings`: properties restored in teardown
+- `metadata.dynatrack`: DynaTrack position tracking (see `shrimpy/dynatrack/README.md`)
 
-See `examples/acquisition_settings/example_mda_sequence.yaml` for a minimal example.
+Configs with the settings nested one level deeper under `metadata.mantis` (the
+older layout) are rejected by `load_config` with a migration message.
 
-### Widget Composition (Qt GUI)
-```
-MantisAcquisitionWidget (main container)
-├── ImagePreview (from pymmcore-widgets)
-├── CustomCameraRoiWidget (workaround for camera snap issues)
-├── StageWidget (XY and Z stage control)
-├── MDAWidget (standard multi-dimensional acquisition configuration)
-└── MantisSettingsWidget
-    ├── TriggerScopeSettingsWidget (hardware triggering)
-    └── MicroscopeSettingsWidget (focus device, autofocus, hardware sequencing)
-```
+### Qt GUI
 
-Widgets communicate via Qt signals/slots. Settings are propagated to MDASequence metadata before acquisition starts.
+`shrimpy gui` launches pymmcore-gui. The Mantis-specific acquisition widget
+(`archive/mantis_acquisition_widget.py` and `archive/launch_mantis_gui.py`) **is
+deprecated** — do not update it. It still writes/reads the older
+`metadata['mantis']` nesting and has not been migrated to `shrimpy/config.py`,
+so its save/load and run paths are out of sync with the engine. Use the CLI
+(`shrimpy acquire mantis --mda-config <config.yaml>`) instead.
 
 ## Key Dependencies
 
@@ -208,26 +247,28 @@ This project uses [uv](https://docs.astral.sh/uv/) for dependency management and
 - Ignore: `scripts/`, `**/archive/` (configured in pyproject.toml)
 - Run with: `make test` or `pytest . --disable-pytest-warnings`
 
-Current tests focus on logging infrastructure. Add tests for new microscope engines in `shrimpy/tests/test_<microscope>_*.py`.
+Shared engine behavior is tested in `shrimpy/tests/test_base_engine.py`; keep
+microscope-specific tests in `shrimpy/tests/test_<microscope>_*.py` and add
+tests for new microscope engines there.
 
 ## Current Development Focus
 
-**Active restructuring** (branch `215-restructure-repository-for-multi-microscope-support`):
-- Transitioning from mantis-only to multi-microscope framework
-- Archiving legacy CLI and V1/V2 acquisition engines
-- Establishing iSIM placeholder for future work
-- Maintaining GUI-first approach with programmatic API
+**Active restructuring:**
+- Transitioning from mantis-only to a multi-microscope framework: all engines
+  now live in `shrimpy/engines/` and share `BaseEngine`
+- Archiving legacy code (pycromanager/V1-V2 engines, the Mantis Qt widget) in
+  `shrimpy/archive/`
+- iSIM and Dragonfly engines are placeholders for future work
 
 **What's stable:**
-- Mantis acquisition engine (MantisEngine)
-- GUI-based acquisition workflow
+- Shared acquisition engine (`BaseEngine`) and the Mantis engine (`MantisEngine`)
+- CLI-based acquisition workflow (`shrimpy acquire mantis`)
 - Logging infrastructure
 - Configuration via YAML + metadata
 
 **What's in flux:**
-- CLI interface (currently empty, being redesigned)
 - Cross-microscope abstractions
-- iSIM implementation
+- iSIM and Dragonfly implementations
 
 ## Important Implementation Notes
 
@@ -238,12 +279,14 @@ Current tests focus on logging infrastructure. Add tests for new microscope engi
 - **Dual-arm imaging**: Label-free and light-sheet acquired on separate Micro-Manager instances
 
 ### Extending to New Microscopes
-When adding iSIM or other microscopes:
-1. Study `shrimpy/mantis/mantis_engine.py` as the reference implementation
-2. Override only the methods that differ from default MDAEngine behavior
+When filling in the iSIM / Dragonfly placeholders or adding another microscope:
+1. Study `shrimpy/engines/base_engine.py` for the shared behavior and
+   `shrimpy/engines/mantis_engine.py` as the reference subclass
+2. Override only the methods that differ from `BaseEngine` behavior
 3. Document microscope-specific metadata schema in docstrings
-4. Create separate logger instance following mantis_logger pattern
-5. Keep archived code in `archive/` subdirectory for reference
+4. Log through `logging.getLogger(__name__)` so messages land in the shared
+   `shrimpy` log file
+5. Keep archived code in `shrimpy/archive/` for reference
 
 ### Data Output
 Raw data follows OME-Zarr or NDTiff format. Reconstruction workflows handled by separate biahub library. See `docs/data_structure.md` for details.

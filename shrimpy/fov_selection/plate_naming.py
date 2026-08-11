@@ -5,10 +5,11 @@ timelapse ``stage_positions``, the pre-scan OME-Zarr, the debug PNGs), and each
 imposes a different rule. Collected here so there is one definition of each rule
 and the call site says which sink it targets:
 
-* :func:`plate_labels` / :func:`row_label` / :func:`col_label` -- useq expresses
-  plate coordinates either as zero-based integers (what ``WellPlatePlan`` expands
-  to, and what a config writes) or as the human labels they render to. These
-  normalize both forms to the labels, so callers never branch on the type.
+* :func:`plate_labels` / :func:`row_label` / :func:`col_label` -- useq stores plate
+  coordinates as zero-based integers (what ``WellPlatePlan`` expands to, and what a
+  config writes); these render them to the human labels (``1, 3 -> "B", "4"``). A
+  string is passed through unchanged, so a label that has already been rendered is
+  not double-converted.
 * :func:`zarr_path_name` -- an OME-Zarr path part, which iohub requires to be
   alphanumeric. Drops everything else (``"B4_0000" -> "B40000"``).
 * :func:`file_stem_name` -- a filesystem stem for debug images, where ``_`` and

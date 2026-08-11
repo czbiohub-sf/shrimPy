@@ -463,7 +463,9 @@ class FeatureViewer(QtWidgets.QMainWindow):
         left_col.addWidget(self._build_center())
         left_col.setStretchFactor(0, 0)
         left_col.setStretchFactor(1, 1)
-        left_col.setSizes([540, 660])  # settings tall enough to show all sections; scatter gets the rest
+        left_col.setSizes(
+            [540, 660]
+        )  # settings tall enough to show all sections; scatter gets the rest
 
         main = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         main.addWidget(left_col)
@@ -2846,7 +2848,9 @@ class FeatureViewer(QtWidgets.QMainWindow):
         self._rank_axes = []
         # only draw features actually present in the loaded matrix; a ranking profile may
         # reference features this matrix does not have (skip them instead of KeyError-crashing).
-        feats = [] if self.df is None else [f for f in self.rank_ranges if f in self.df.columns]
+        feats = (
+            [] if self.df is None else [f for f in self.rank_ranges if f in self.df.columns]
+        )
         if self.df is None or not feats:
             self.rank_canvas.draw_idle()
             return

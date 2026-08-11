@@ -13,7 +13,7 @@ The decision is streamed: as each pre-scan FOV's z-stack completes in
 like DynaTrack). ``drain`` is awaited after the pre-scan run, and
 ``passed_position_names`` selects which FOVs the timelapse run images.
 
-Config lives under ``metadata.mantis.fov_selection``. Scale parameters (XY pixel
+Config lives under ``metadata.fov_selection``. Scale parameters (XY pixel
 size, Z step) are the single source of truth injected into the deskew/phase
 sub-configs (as DynaTrack does), so they are not duplicated in the config.
 """
@@ -171,7 +171,7 @@ class FovSelection:
         if not self._fov_selection_channel:
             raise ValueError(
                 "FOV selection requires fov_selection_channel in the acquisition config "
-                "(metadata.mantis.fov_selection.fov_selection_channel); there is no default."
+                "(metadata.fov_selection.fov_selection_channel); there is no default."
             )
         # Ordered preprocessing steps (DynaTrack style), e.g.
         # ['deskew', 'phase', 'vs', 'sum_projection', 'segmentation']. The
@@ -326,7 +326,7 @@ class FovSelection:
         model_type = model_cfg.get("type")
         if model_type not in MODEL_TYPES:
             raise ValueError(
-                "FOV selection is enabled but metadata.mantis.fov_selection.model.type "
+                "FOV selection is enabled but metadata.fov_selection.model.type "
                 f"must be one of {sorted(MODEL_TYPES)}; got {model_type!r}. Aborting "
                 "before acquisition."
             )

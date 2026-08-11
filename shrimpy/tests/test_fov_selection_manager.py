@@ -32,7 +32,7 @@ SEQUENCE = MDASequence(
 N_Z = 5
 META = {
     "enabled": True,
-    "model": {"path": "dummy.joblib"},
+    "model": {"type": "classification_tree", "path": "dummy.joblib"},
     "fov_selection_channel": "BF",
     "preprocessing": ["deskew", "phase", "vs", "sum_projection", "segmentation"],
 }

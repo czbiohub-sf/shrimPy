@@ -74,14 +74,11 @@ axis_order:
 autofocus_plan: null
 keep_shutter_open_across: []
 
-# Define metadata per microscope
+# Microscope settings
 metadata:
-  pymmcore_widgets:
-    version: 0.10.2.dev23+g22b8c0aff.d20260106
-  mantis:
-    reset_hardware_sequencing_settings:
-      - ['Z', 'UseSequences', 'No']
-    autofocus:
-      enabled: true
-      method: demo-PFS
-      stage: Z
+  reset_hardware_sequencing_settings:
+    - ['Z', 'UseSequences', 'No']
+  autofocus:
+    enabled: true
+    method: demo-PFS
+    stage: Z
