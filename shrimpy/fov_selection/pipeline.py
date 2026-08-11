@@ -483,7 +483,10 @@ def decide_fov(
             bf_zyx, label=label, return_intermediates=return_stacks
         )  # {'nuclei', 'membrane', 'phase', ('deskew')}
     else:
-        channels = {"brightfield": bf_zyx}  # no reconstruction, just the raw input stack
+        # No reconstruction: the raw input stack is the single channel. Key it by the
+        # label the caller chose (target_channels[0]) so the same label reaches the
+        # segmenter (which picks the Cellpose diameter from it) downstream.
+        channels = {target_channels[0]: bf_zyx}
 
     # Per-step 3D stacks for the reconstruction store (deskew, phase, and each VS
     # target volume); only populated when return_stacks is set.

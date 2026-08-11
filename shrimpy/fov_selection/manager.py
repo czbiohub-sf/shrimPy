@@ -48,6 +48,13 @@ _FOV_FIELD_SUFFIX = re.compile(r"_\d{4}$")
 # Channels the decision needs (segmented + fed to the model).
 DEFAULT_TARGET_CHANNELS = ["nuclei", "membrane"]
 
+# Without a 'vs' step the decision runs on a single reconstructed channel. The label does
+# not reach the feature names (single channel mode yields channel-independent names) but it
+# IS passed to the segmenter, whose MEMBRANE_HINT match picks the Cellpose diameter. A single
+# brightfield/phase channel is segmented as whole cells, so default to 'membrane' to get the
+# whole-cell diameter (auto-scale under-covers whole cells).
+SINGLE_CHANNEL_LABEL = "membrane"
+
 # Timepoint used for the pre-scan (first timepoint of the run).
 PRESCAN_TIMEPOINT = 0
 
@@ -158,7 +165,14 @@ class FovSelection:
         # fov_selection.require_gpu: false to allow a (slow) CPU run for debugging.
         self._require_gpu = bool(config.get("require_gpu", True))
         # Acquired channel imaged during the pre-scan and fed to reconstruction.
-        self._fov_selection_channel = config.get("fov_selection_channel", "BF - Oblique")
+        # No default: it must be declared in the acquisition config so the pipeline
+        # always images whatever the YAML specifies.
+        self._fov_selection_channel = config.get("fov_selection_channel")
+        if not self._fov_selection_channel:
+            raise ValueError(
+                "FOV selection requires fov_selection_channel in the acquisition config "
+                "(metadata.mantis.fov_selection.fov_selection_channel); there is no default."
+            )
         # Ordered preprocessing steps (DynaTrack style), e.g.
         # ['deskew', 'phase', 'vs', 'sum_projection', 'segmentation']. The
         # reconstruction steps are consumed by build_preprocessor; projection and
@@ -189,7 +203,7 @@ class FovSelection:
                 vs_cfg.get("target_channels") or DEFAULT_TARGET_CHANNELS
             )
         else:
-            self._target_channels = ["phase" if "phase" in self._steps else "brightfield"]
+            self._target_channels = [SINGLE_CHANNEL_LABEL]
 
         self._validate_fov_selection_channel(sequence)
         self._require_segmentation_step()

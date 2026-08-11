@@ -63,7 +63,8 @@ def build_prescan_sequence(sequence: MDASequence, fov_cfg: dict) -> MDASequence:
     ValueError
         If ``prescan_mda`` is missing or defines no ``stage_positions``; if the
         pre-scan has more than one timepoint (a looping pre-scan is not yet
-        supported); or if ``fov_selection_channel`` is not one of the pre-scan channels.
+        supported); or if ``fov_selection_channel`` is missing from the config or is
+        not one of the pre-scan channels.
     """
     prescan_mda = fov_cfg.get("prescan_mda")
     if not prescan_mda:
@@ -84,7 +85,12 @@ def build_prescan_sequence(sequence: MDASequence, fov_cfg: dict) -> MDASequence:
             f"t={prescan_seq.sizes['t']}); a looping pre-scan is not yet supported."
         )
 
-    fov_selection_channel = fov_cfg.get("fov_selection_channel", "BF - Oblique")
+    fov_selection_channel = fov_cfg.get("fov_selection_channel")
+    if not fov_selection_channel:
+        raise ValueError(
+            "FOV selection requires fov_selection_channel in the config "
+            "(metadata.mantis.fov_selection.fov_selection_channel); there is no default."
+        )
     channel_configs = [c.config for c in prescan_seq.channels]
     if fov_selection_channel not in channel_configs:
         raise ValueError(
