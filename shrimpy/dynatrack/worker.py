@@ -177,7 +177,7 @@ def _worker_loop(
     log = logging.getLogger("shrimpy.dynatrack.worker")
 
     try:
-        from shrimpy.dynatrack.preprocessing import build_preprocessor
+        from shrimpy.preprocessing import build_preprocessor
         from shrimpy.dynatrack.tracking import DynaTrackUpdater
 
         log.info("DynaTrack worker: initializing preprocessor for shape %s...", zyx_shape)
