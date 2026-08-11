@@ -71,33 +71,31 @@ def test_format_duration_scales_units_with_magnitude():
 
 
 def test_next_name_first_acquisition_in_empty_dir(tmp_path):
-    # Empty directory → the bare name is used as-is (no suffix appended)
-    assert _get_next_acquisition_name(tmp_path, "acq") == "acq"
-
-
-def test_next_name_appends_suffix_when_bare_name_taken(tmp_path):
-    # acq.ome.zarr already exists → append the first free suffix, acq_1
-    (tmp_path / "acq.ome.zarr").mkdir()
+    # Empty directory → the index is still appended; the bare name is never used
     assert _get_next_acquisition_name(tmp_path, "acq") == "acq_1"
 
 
+def test_next_name_appends_suffix_when_first_index_taken(tmp_path):
+    # acq_1.ome.zarr already exists → append the next free suffix, acq_2
+    (tmp_path / "acq_1.ome.zarr").mkdir()
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"
+
+
 def test_next_name_skips_multiple_existing(tmp_path):
-    # acq + acq_1 through acq_3 exist → should return acq_4
-    (tmp_path / "acq.ome.zarr").mkdir()
+    # acq_1 through acq_3 exist → should return acq_4
     for i in range(1, 4):
         (tmp_path / f"acq_{i}.ome.zarr").mkdir()
     assert _get_next_acquisition_name(tmp_path, "acq") == "acq_4"
 
 
 def test_next_name_different_base_names_dont_collide(tmp_path):
-    # "experiment.ome.zarr" exists, but asking for "acq" → bare "acq"
-    (tmp_path / "experiment.ome.zarr").mkdir()
-    assert _get_next_acquisition_name(tmp_path, "acq") == "acq"
+    # "experiment_1.ome.zarr" exists, but asking for "acq" → acq_1
+    (tmp_path / "experiment_1.ome.zarr").mkdir()
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_1"
 
 
 def test_next_name_gap_in_indices(tmp_path):
-    # acq + acq_1 exist, acq_2 missing, acq_3 exists → returns acq_2
-    (tmp_path / "acq.ome.zarr").mkdir()
+    # acq_1 exists, acq_2 missing, acq_3 exists → returns acq_2
     (tmp_path / "acq_1.ome.zarr").mkdir()
     (tmp_path / "acq_3.ome.zarr").mkdir()
     assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"
@@ -522,21 +520,21 @@ def test_teardown_captures_selection_before_debug_writes():
 
 def test_next_name_avoids_a_crashed_prescan_debug_dir(tmp_path):
     # Store absent, debug dir present -> the name is NOT free.
-    (tmp_path / "acq_fov_debug").mkdir()
-    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_1"
+    (tmp_path / "acq_fov_debug_1").mkdir()
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"
 
 
 def test_next_name_avoids_a_crashed_prescan_zarr(tmp_path):
-    (tmp_path / "acq_prescan.ome.zarr").mkdir()
-    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_1"
+    (tmp_path / "acq_prescan_1.ome.zarr").mkdir()
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"
 
 
 def test_next_name_avoids_indexed_sibling_leftovers(tmp_path):
-    # The real failure: stores acq..acq_3 exist, but a crashed 5th run left
+    # The real failure: stores acq_1..acq_3 exist, but a crashed 4th run left
     # acq_fov_debug_4 and acq_prescan_4. acq_4 looks free by the store alone.
-    for suffix in ("", "_1", "_2", "_3"):
+    for suffix in ("_1", "_2", "_3"):
         (tmp_path / f"acq{suffix}.ome.zarr").mkdir()
-    for suffix in ("", "_1", "_2", "_3", "_4"):
+    for suffix in ("_1", "_2", "_3", "_4"):
         (tmp_path / f"acq_fov_debug{suffix}").mkdir()
     (tmp_path / "acq_prescan_4.ome.zarr").mkdir()
 
@@ -546,23 +544,23 @@ def test_next_name_avoids_indexed_sibling_leftovers(tmp_path):
 def test_next_name_never_reuses_or_deletes_leftovers(tmp_path):
     # Freshness is about the NAME existing, not about the run having completed: an
     # incomplete folder is skipped and left untouched for inspection.
-    debug = tmp_path / "acq_fov_debug"
+    debug = tmp_path / "acq_fov_debug_1"
     debug.mkdir()
     (debug / "fov_summary.csv").write_text("name,proba\np0_0000,0.5\n")
 
     name = _get_next_acquisition_name(tmp_path, "acq")
 
-    assert name == "acq_1"
+    assert name == "acq_2"
     assert (debug / "fov_summary.csv").read_text() == "name,proba\np0_0000,0.5\n"
 
 
 def test_artifact_paths_cover_store_and_siblings(tmp_path):
     from shrimpy.mantis.mantis_engine import acquisition_artifact_paths
 
-    assert [p.name for p in acquisition_artifact_paths(tmp_path, "acq", None)] == [
-        "acq.ome.zarr",
-        "acq_fov_debug",
-        "acq_prescan.ome.zarr",
+    assert [p.name for p in acquisition_artifact_paths(tmp_path, "acq_1", 1)] == [
+        "acq_1.ome.zarr",
+        "acq_fov_debug_1",
+        "acq_prescan_1.ome.zarr",
     ]
     # The dedup index lands at the END of each sibling name, not mid-name.
     assert [p.name for p in acquisition_artifact_paths(tmp_path, "acq_2", 2)] == [

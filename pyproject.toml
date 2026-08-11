@@ -24,6 +24,7 @@ dependencies = [
   "click",
   "numpy",
   "ome-writers[acquire-zarr]",
+  "acquire-zarr==0.9.0",
   "pymmcore>=11.14.0.75.0",
   "pymmcore-gui",
   "pymmcore-plus",
@@ -97,6 +98,8 @@ packages = ["shrimpy"]
 
 [tool.uv.sources]
 pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "dev" }
+# plate_row/plate_col are `int | None` on main (0-based indices), not the string well
+# labels the `add-plate-row-col` branch allowed. Configs and plate naming use ints.
 ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
 useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "main" }
 napari-deskew-preview = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview", branch = "main" }

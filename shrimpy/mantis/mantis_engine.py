@@ -584,14 +584,13 @@ class MantisEngine(MDAEngine):
         """
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        # Deduplicate the acquisition name. The index is kept separately so sibling
-        # artifacts (<name>_fov_debug/, <name>_prescan.ome.zarr) can append it at the
-        # END of their own name rather than inheriting it mid-name -- "acq_fov_debug_1",
-        # not "acq_1_fov_debug". Comparing against the base is exact: a user-supplied
-        # name that already ends in _<n> yields run_index None and is left intact.
+        # Index the acquisition name. The index is kept separately so sibling artifacts
+        # (<name>_fov_debug/, <name>_prescan.ome.zarr) can append it at the END of their
+        # own name rather than inheriting it mid-name -- "acq_fov_debug_1", not
+        # "acq_1_fov_debug".
         base_name = name
         name = _get_next_acquisition_name(output_dir, base_name)
-        self._run_index = None if name == base_name else int(name[len(base_name) + 1 :])
+        self._run_index = int(name[len(base_name) + 1 :])
 
         if isinstance(mda_config, MDASequence):
             sequence = mda_config
@@ -809,9 +808,7 @@ def _format_duration(seconds: float) -> str:
 MAX_ACQUISITION_INDEX = 10_000
 
 
-def acquisition_artifact_paths(
-    output_dir: Path, name: str, run_index: int | None
-) -> list[Path]:
+def acquisition_artifact_paths(output_dir: Path, name: str, run_index: int) -> list[Path]:
     """Every path an acquisition called ``name`` would write in ``output_dir``.
 
     The output store plus the FOV-selection siblings (``<base>_fov_debug/``,
@@ -824,12 +821,15 @@ def acquisition_artifact_paths(
 
 
 def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
-    """Return ``name`` if free, else ``name`` with the next free ``_<idx>`` suffix.
+    """Return ``name`` with the next free ``_<idx>`` suffix (``acq_1``, ``acq_2``, ...).
+
+    The index is ALWAYS appended -- the bare ``name`` is never used as a store name. This
+    keeps every acquisition in a folder consistently numbered, so runs sort and read as a
+    series rather than "the first one" plus numbered stragglers.
 
     Guards an acquisition from crashing (the zarr writer refuses to overwrite) or
-    silently clobbering a previous experiment: the bare ``name`` is used as-is when
-    NOTHING it would write already exists in ``output_dir``; otherwise a ``_1``, ``_2``,
-    ... suffix is appended until a fully unused name is found.
+    silently clobbering a previous experiment: the index is bumped until a fully unused
+    name is found.
 
     "Free" deliberately means *no artifact of that name exists*, not *no complete
     acquisition of that name exists*. Completeness is not knowable and not the point: a
@@ -850,12 +850,11 @@ def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
     Returns
     -------
     str
-        A name none of whose artifacts exist (e.g. ``acq``, ``acq_1``, ``acq_2``, ...).
+        A name none of whose artifacts exist (e.g. ``acq_1``, ``acq_2``, ...).
     """
     conflicts: list[Path] = []
-    for idx in range(MAX_ACQUISITION_INDEX):
-        run_index = None if idx == 0 else idx
-        candidate = name if run_index is None else f"{name}_{run_index}"
+    for run_index in range(1, MAX_ACQUISITION_INDEX + 1):
+        candidate = f"{name}_{run_index}"
         taken = [
             p
             for p in acquisition_artifact_paths(output_dir, candidate, run_index)

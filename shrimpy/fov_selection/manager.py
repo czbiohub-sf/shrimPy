@@ -245,16 +245,16 @@ class FovSelection:
     ) -> Path | None:
         """Sibling artifact path next to the output store: ``<base><suffix>[_<run_index>]``.
 
-        ``run_index`` is the deduplication index the engine appended to the acquisition
-        name when the bare name was taken (``acq`` -> ``acq_1``). It is stripped off the
-        store name and re-appended at the END of the sibling's own name, so a second run
-        of ``acq`` yields ``acq_fov_debug_1`` -- not ``acq_1_fov_debug``, which buries the
-        index mid-name and sorts the two runs' folders apart.
+        ``run_index`` is the index the engine appends to every acquisition name
+        (``acq`` -> ``acq_1``). It is stripped off the store name and re-appended at the
+        END of the sibling's own name, so the first run of ``acq`` yields
+        ``acq_fov_debug_1`` -- not ``acq_1_fov_debug``, which buries the index mid-name
+        and sorts the runs' folders apart.
 
         Passing the index explicitly (rather than pattern-matching a trailing ``_<n>``
         off the path) keeps a user-supplied name that genuinely ends in a number intact:
-        ``plate_2`` with no collision has ``run_index=None`` and yields
-        ``plate_2_fov_debug``, which cannot collide with the third run of ``plate``
+        the first run of ``plate_2`` is stored as ``plate_2_1`` and yields
+        ``plate_2_fov_debug_1``, which cannot collide with the second run of ``plate``
         (``plate_fov_debug_2``).
         """
         if data_path is None:
