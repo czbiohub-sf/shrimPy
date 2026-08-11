@@ -29,27 +29,29 @@ def test_no_pipeline_returns_none():
 
 
 def test_pipeline_without_reconstruction_step_returns_none():
-    """A pipeline lacking both 'deskew' and 'phase' cannot reconstruct -> None.
+    """A pipeline of downstream-only steps needs no reconstruction -> None.
 
-    Also assert it warns. We attach a handler directly to the module logger
-    rather than using ``caplog`` (which captures at root): shrimpy's logging
-    config sets ``propagate=False`` on the ``shrimpy`` logger, so root-level
-    capture is unreliable when the full suite runs.
+    ``RECON_STEPS`` is what decides this: projection / segmentation are consumed
+    by the caller, not here, so a pipeline containing none of flatfield / deskew /
+    phase / vs means the caller uses the raw stack directly. A ``vs``-only
+    pipeline DOES build a preprocessor and is covered separately.
     """
-    import logging
+    assert build_preprocessor(ZYX, ["sum_projection"]) is None
+    assert build_preprocessor(ZYX, ["sum_projection", "segmentation"]) is None
 
-    records: list[logging.LogRecord] = []
-    handler = logging.Handler()
-    handler.emit = records.append  # type: ignore[method-assign]
-    module_logger = logging.getLogger("shrimpy.preprocessing")
-    module_logger.addHandler(handler)
-    try:
-        assert build_preprocessor(ZYX, ["vs"]) is None
-        assert build_preprocessor(ZYX, ["sum_projection"]) is None
-    finally:
-        module_logger.removeHandler(handler)
 
-    assert any("requires a 'deskew' and/or 'phase' step" in r.getMessage() for r in records)
+def test_recon_steps_each_build_a_preprocessor(monkeypatch):
+    """Any single reconstruction step is enough to need a preprocessor.
+
+    Guards the regression this module was deduplicated out of: DynaTrack's old
+    private copy returned ``None`` unless 'deskew' or 'phase' was present, so a
+    'vs'-only or 'flatfield'-only pipeline silently skipped reconstruction.
+    """
+    monkeypatch.setattr(
+        "shrimpy.preprocessing._LabelfreePreprocessor.warm_up", lambda self: None
+    )
+    for step in ("flatfield", "vs"):
+        assert build_preprocessor(ZYX, [step]) is not None, step
 
 
 def test_settings_kwargs_filters_to_signature():

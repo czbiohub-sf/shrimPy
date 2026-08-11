@@ -130,9 +130,12 @@ for a fully commented example.
 | --- | --- |
 | [`manager.py`](manager.py) | `DynaTrack` — the engine-facing coordinator (frame buffering, worker lifecycle, position corrections). |
 | [`tracking.py`](tracking.py) | `DynaTrackConfig` and `DynaTrackUpdater` — the tracking algorithms and shift estimation. |
-| [`preprocessing.py`](preprocessing.py) | Builds the deskew → phase → virtual-staining callable from config. |
 | [`worker.py`](worker.py) | `DynaTrackWorker` — the subprocess that runs preprocessing and shift estimation. |
 | [`position_update.py`](position_update.py) | Internal position-update infrastructure: `PositionStore`, `PositionUpdater` (extension point for custom trackers), `PositionUpdateManager`. |
+
+The deskew → phase → virtual-staining callable is built by
+[`shrimpy/preprocessing.py`](../preprocessing.py), which is shared with FOV
+selection rather than owned by this package.
 
 ## Integrating with a new engine
 
