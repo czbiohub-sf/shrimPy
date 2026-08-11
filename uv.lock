@@ -49,82 +49,25 @@ wheels = [
 
 [[package]]
 name = "acquire-zarr"
-version = "0.8.1"
+version = "0.9.0"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "python_full_version >= '3.14' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "python_full_version == '3.13.*' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "python_full_version < '3.13' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu'",
-    "python_full_version >= '3.14' and sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version >= '3.14' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version == '3.13.*' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version < '3.13' and sys_platform == 'darwin' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version >= '3.14' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version >= '3.14' and sys_platform == 'emscripten' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version == '3.13.*' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version == '3.13.*' and sys_platform == 'emscripten' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version < '3.13' and sys_platform == 'darwin' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version < '3.13' and sys_platform == 'emscripten' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra != 'group-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bc/e5/37ab9e206f1f1ee3f207c683720f5a86af020d87b1036ce70d8997f1212a/acquire_zarr-0.8.1-cp312-cp312-macosx_15_0_arm64.whl", hash = "sha256:1a005b515c224603d1b4444982136ab44b56d2b3c5e92561512056834cdf8f19", size = 3683324, upload-time = "2026-06-23T17:00:16.652Z" },
-    { url = "https://files.pythonhosted.org/packages/b1/9d/90e5d2f1ae0ebacb4fef0e940c9eedfb630514b07d537eeb12b90499d4d9/acquire_zarr-0.8.1-cp312-cp312-macosx_15_0_x86_64.whl", hash = "sha256:dc2166557d28b35cd528cb42b9dc01c147c1f5dd7eca18d8ab8504622425e622", size = 3571293, upload-time = "2026-06-23T17:00:18.434Z" },
-    { url = "https://files.pythonhosted.org/packages/ca/06/774c82cb798bf0c8c98c1eda023324959d897ea7d53f04639ef88baba0b6/acquire_zarr-0.8.1-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:2b9816d265493fd143b0a11f781497cb11055daa03284b31a451489c533f747f", size = 4773557, upload-time = "2026-06-23T17:00:20.738Z" },
-    { url = "https://files.pythonhosted.org/packages/54/1a/9849759e168b579d425b301a389d8a734b30c672a9db8c71d35947a2455e/acquire_zarr-0.8.1-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:78d8fc3c61be01ce0305093b2d1b07534fda2f1d5050f7377c52260f78c254dc", size = 4654709, upload-time = "2026-06-23T17:00:22.794Z" },
-    { url = "https://files.pythonhosted.org/packages/52/29/d4d0c7d7b138fc518ec45845c09227204230c734c7757f015c18bf32cb32/acquire_zarr-0.8.1-cp312-cp312-win_amd64.whl", hash = "sha256:713120c037f53b09459a971b01c88e25aa888e2ea16eadec361a1fccbca497a9", size = 2916586, upload-time = "2026-06-23T17:00:24.924Z" },
-    { url = "https://files.pythonhosted.org/packages/69/ab/ad3ccfd775b5bbe14f0fa58195ed3563d670cc3bb2e9baadbad72e1e79b5/acquire_zarr-0.8.1-cp313-cp313-macosx_15_0_arm64.whl", hash = "sha256:e440311522f41081575d6ad9df3f080c0078da081008fc08dadeaf2ba6744a67", size = 3683382, upload-time = "2026-06-23T17:00:27.033Z" },
-    { url = "https://files.pythonhosted.org/packages/a2/ab/d20ed4ae6d142b2d36e2a0830a5d5675f293f5106d731b8e0b8d94785bfc/acquire_zarr-0.8.1-cp313-cp313-macosx_15_0_x86_64.whl", hash = "sha256:af7464041e7b1eef5001b2e3fb0b7e97c039939dfd81b5d895546cfd99201dfb", size = 3571156, upload-time = "2026-06-23T17:00:29.184Z" },
-    { url = "https://files.pythonhosted.org/packages/af/22/6347020eaae824e987f111876ff06552a29e021e83c55fb513a49875e288/acquire_zarr-0.8.1-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:f1e1353bf001951bfa6839ef340d631f502271e54b6a3bfc0259fc84c3241f21", size = 4772899, upload-time = "2026-06-23T17:00:30.999Z" },
-    { url = "https://files.pythonhosted.org/packages/c4/2e/fc88a3e512bb48a07075e92d9098d251d8cf68aff4767dd301681cbb5ef7/acquire_zarr-0.8.1-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:024be825fd3db2ecc41c3d3ec9ebc066ff1d950786b679ad436324033d0ff9dd", size = 4654471, upload-time = "2026-06-23T17:00:33.111Z" },
-    { url = "https://files.pythonhosted.org/packages/b6/c0/593d7e51796984883bfa59e093f0f686105c5c49acef9ff20c4ffddcfdc6/acquire_zarr-0.8.1-cp313-cp313-win_amd64.whl", hash = "sha256:06cc5b2aa0224c258b29491682ce6d47fb984a82ce878976a5782c2b1a003bb3", size = 2916433, upload-time = "2026-06-23T17:00:34.984Z" },
-    { url = "https://files.pythonhosted.org/packages/6e/62/bbe0629afecf8aa3dc2e3844cf7eeb6310998d77ac7c1cfab3f51bc507f2/acquire_zarr-0.8.1-cp314-cp314-macosx_15_0_arm64.whl", hash = "sha256:8a49d320c45e5a608f3deaf48ab76f9ab4c896e720a08e68252e877d72e04d36", size = 3648697, upload-time = "2026-06-23T17:00:36.744Z" },
-    { url = "https://files.pythonhosted.org/packages/9c/e8/d9823ae08b44119532c895918d72fb617309e782893177b1e776f7f0237d/acquire_zarr-0.8.1-cp314-cp314-macosx_15_0_x86_64.whl", hash = "sha256:f3ba7484c5f1427c36077514ee60dc51f019cf43265caa3c012f833a60695d67", size = 3571404, upload-time = "2026-06-23T17:00:38.876Z" },
-    { url = "https://files.pythonhosted.org/packages/3a/37/f8300326d19ad83cef3bc7ff973dd48a1d79b38afe40fe610986ac3f972e/acquire_zarr-0.8.1-cp314-cp314-manylinux_2_28_aarch64.whl", hash = "sha256:717721b47c31ded953d1764b26134828c3fe15322de3f2877a1820dabe4434ec", size = 4773697, upload-time = "2026-06-23T17:00:41.15Z" },
-    { url = "https://files.pythonhosted.org/packages/98/2f/fb2ac7565ccdcce2f176c9368adf814517078132ece0cb9597be557b8448/acquire_zarr-0.8.1-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:3f7eeba90c1021d4a251caaac3b62ef9b58d862ce12ab53e4b8bb04be791f4d6", size = 4654527, upload-time = "2026-06-23T17:00:44.108Z" },
-    { url = "https://files.pythonhosted.org/packages/63/80/162740966b1c8993c2d2491d7286743536b015e5670dcf2369eee0e34770/acquire_zarr-0.8.1-cp314-cp314-win_amd64.whl", hash = "sha256:269d29c7f145621338eee46d6d10c52e4ac20dc4fdd2a71e962879a68ad72ae9", size = 3003241, upload-time = "2026-06-23T17:00:46.064Z" },
+    { url = "https://files.pythonhosted.org/packages/a6/44/a62c7c11269669655acfe145e59f0cbec4a3ee6e0713230eec870ef29294/acquire_zarr-0.9.0-cp312-cp312-macosx_15_0_arm64.whl", hash = "sha256:c1aa3f6a0507a257e777e0015cdc4576808b6099e2568c2e9a08cbc2df24188a", size = 3832778, upload-time = "2026-08-11T16:03:15.06Z" },
+    { url = "https://files.pythonhosted.org/packages/e2/15/09d2e37f700a543bd0a990ca63e14b5d4852e2c83f0a7c773665cd70a016/acquire_zarr-0.9.0-cp312-cp312-macosx_15_0_x86_64.whl", hash = "sha256:f4dee2ddc41c9236de1bb64ace651890934b7d4a018c02daeddf4f2d719c42a5", size = 3736892, upload-time = "2026-08-11T16:03:16.71Z" },
+    { url = "https://files.pythonhosted.org/packages/2c/b7/05f9f99ed50db2cbc0ee00d140ac9cf4a57d44596e44773acc7d249674b5/acquire_zarr-0.9.0-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:f47548c80f8c819ec52cc43cd453a9437222d6c609ec5312b7f6ca70c3530d5c", size = 4998874, upload-time = "2026-08-11T16:03:18.251Z" },
+    { url = "https://files.pythonhosted.org/packages/a1/8b/94a25e61abb85d4ab9c8243c1c81e7121d8d1222bd0e9e1bb44ef484ad98/acquire_zarr-0.9.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:69331a922b0dc2ae28fae378000f876c983735e84710885b2aa197e07a534654", size = 4902872, upload-time = "2026-08-11T16:03:19.859Z" },
+    { url = "https://files.pythonhosted.org/packages/d8/bc/34542007bd85d3cba958b77260d1fd03c8adea40958557bf83a6c504e199/acquire_zarr-0.9.0-cp312-cp312-win_amd64.whl", hash = "sha256:ad31dce9122bab8aa8580c946ecf6a986fd0bd3b70e1baeb2281d55d1d08f3d1", size = 3019496, upload-time = "2026-08-11T16:03:21.439Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/76/9f22b78eccd4f1e9003138aea2590ea4b02824d8fa96fea6eb4d2d0bf801/acquire_zarr-0.9.0-cp313-cp313-macosx_15_0_arm64.whl", hash = "sha256:a6e75a3d41f9c7f6b3eef8217c75a0e26d9ae636acbd1422d2fe9ee413c0aee6", size = 3832776, upload-time = "2026-08-11T16:03:23.116Z" },
+    { url = "https://files.pythonhosted.org/packages/9a/18/725dab46c8fbb4c2bcbd31388be4e7659cf39ae194cf889fc969f7aa27bd/acquire_zarr-0.9.0-cp313-cp313-macosx_15_0_x86_64.whl", hash = "sha256:ba81b5a26f18c690e6226d43a61d59914515616832d4f65df38771c1a929b9f1", size = 3737007, upload-time = "2026-08-11T16:03:24.68Z" },
+    { url = "https://files.pythonhosted.org/packages/e5/37/90bb861cd6b3a7e28734119b2db999fae7fe9691cb9c8a353c608ce77a79/acquire_zarr-0.9.0-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:90a70a37e08bcf84ac1617b89e5f5deec04714652e35dd22d7f37cda720b178d", size = 4999286, upload-time = "2026-08-11T16:03:26.275Z" },
+    { url = "https://files.pythonhosted.org/packages/e9/f6/fd91e1780ddceae18980493ddd5093de6c6c9f6125967cd325a11a0eeb1e/acquire_zarr-0.9.0-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:b07642bf675203adccebe6c2e72c5c93c7a812c05e8781f80328974ada382d6b", size = 4903038, upload-time = "2026-08-11T16:03:27.931Z" },
+    { url = "https://files.pythonhosted.org/packages/30/5b/b7cbce5a70c2e4f4195e9afb71a10e4cf30a1a0446b4ddd5b709224329a3/acquire_zarr-0.9.0-cp313-cp313-win_amd64.whl", hash = "sha256:88699c79f762810dc1377ca88c78a3a893913d8abb097a5fd3d8705e634c47a2", size = 3019822, upload-time = "2026-08-11T16:03:29.718Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/33/887f7f3f2e068b6626064aa9d2a45a850f73b6c7ee2bbc6a1df3408d5da2/acquire_zarr-0.9.0-cp314-cp314-macosx_15_0_arm64.whl", hash = "sha256:8a5b4dd53b292fd4d4e9748b7fdfe05dc1c53727dc8decef0de9d3193e5e264e", size = 3833339, upload-time = "2026-08-11T16:03:31.28Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/9c/7e5bbeade07ae40aea480b5362b35cac4d2ce06bd797ee6bab3d4c1c00ef/acquire_zarr-0.9.0-cp314-cp314-macosx_15_0_x86_64.whl", hash = "sha256:4c30ad395426c570790b9390194e4b534e56e9b1771cfa5272a0a71bb33eb441", size = 3737668, upload-time = "2026-08-11T16:03:32.853Z" },
+    { url = "https://files.pythonhosted.org/packages/c5/53/d7572ecba9fe7df9c1cc3628d9ead8aef1c016a0b698dad12b9d9bd1908f/acquire_zarr-0.9.0-cp314-cp314-manylinux_2_28_aarch64.whl", hash = "sha256:c61aa4128dd74d65bbfd2c7e5ecff47be4247f78cab6b7aa689cab2a9c5ea52e", size = 5000542, upload-time = "2026-08-11T16:03:34.579Z" },
+    { url = "https://files.pythonhosted.org/packages/29/0e/413f114d5941cedc6509256fc65f63c205cc700f6b6534018ecd91dbc5b4/acquire_zarr-0.9.0-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:87004e21297029c4418ec7c6af7a111aa5ef95f3723cfa70538852671a00f952", size = 4903020, upload-time = "2026-08-11T16:03:36.1Z" },
+    { url = "https://files.pythonhosted.org/packages/02/01/51d960e3327452cc3a7b88fce9ab863f0034e2a2c1b15a5bbb7783e4bc4f/acquire_zarr-0.9.0-cp314-cp314-win_amd64.whl", hash = "sha256:6dd7e8d7bbba51bd8f2aef5eb577a3bd811c8cde17c304e4b4a209127f72de4f", size = 3109017, upload-time = "2026-08-11T16:03:37.642Z" },
 ]
-
-[[package]]
-name = "acquire-zarr"
-version = "0.8.1"
-source = { path = "../acquire_zarr_cb374ea/acquire_zarr-0.8.1-cp312-cp312-win_amd64.whl" }
-resolution-markers = [
-    "python_full_version < '3.13' and sys_platform == 'win32'",
-]
-wheels = [
-    { filename = "acquire_zarr-0.8.1-cp312-cp312-win_amd64.whl", hash = "sha256:f01afed12b9d2b41f9c85cbe4fcbc91944bee0c1427e17b616ffb581a9236fdd" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "black", marker = "extra == 'testing'" },
-    { name = "dask", marker = "extra == 'testing'" },
-    { name = "mypy", marker = "extra == 'testing'" },
-    { name = "ome-zarr", marker = "extra == 'testing'" },
-    { name = "pytest", marker = "extra == 'testing'", specifier = ">=7" },
-    { name = "pytest-cov", marker = "extra == 'testing'" },
-    { name = "python-dotenv", marker = "extra == 'testing'" },
-    { name = "ruff", marker = "extra == 'testing'" },
-    { name = "s3fs", marker = "extra == 'testing'" },
-    { name = "scikit-image", marker = "extra == 'testing'" },
-    { name = "tifffile", marker = "extra == 'testing'" },
-    { name = "zarr", marker = "python_full_version >= '3.11' and extra == 'testing'", specifier = ">=3.0.0" },
-]
-provides-extras = ["testing"]
 
 [[package]]
 name = "aiobotocore"
@@ -3238,8 +3181,7 @@ dependencies = [
 
 [package.optional-dependencies]
 acquire-zarr = [
-    { name = "acquire-zarr", version = "0.8.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or sys_platform != 'win32'" },
-    { name = "acquire-zarr", version = "0.8.1", source = { path = "../acquire_zarr_cb374ea/acquire_zarr-0.8.1-cp312-cp312-win_amd64.whl" }, marker = "(python_full_version < '3.13' and sys_platform == 'win32') or (python_full_version >= '3.13' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "acquire-zarr" },
 ]
 tensorstore = [
     { name = "tensorstore" },
@@ -5090,8 +5032,7 @@ wheels = [
 name = "shrimpy"
 source = { editable = "." }
 dependencies = [
-    { name = "acquire-zarr", version = "0.8.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or sys_platform != 'win32'" },
-    { name = "acquire-zarr", version = "0.8.1", source = { path = "../acquire_zarr_cb374ea/acquire_zarr-0.8.1-cp312-cp312-win_amd64.whl" }, marker = "(python_full_version < '3.13' and sys_platform == 'win32') or (python_full_version >= '3.13' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform != 'win32' and extra == 'group-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "acquire-zarr" },
     { name = "click" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-dynatrack'" },
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu' or extra != 'group-7-shrimpy-dynatrack'" },
@@ -5136,8 +5077,7 @@ test-cpu = [
 
 [package.metadata]
 requires-dist = [
-    { name = "acquire-zarr", marker = "python_full_version >= '3.13' or sys_platform != 'win32'" },
-    { name = "acquire-zarr", marker = "python_full_version < '3.13' and sys_platform == 'win32'", path = "../acquire_zarr_cb374ea/acquire_zarr-0.8.1-cp312-cp312-win_amd64.whl" },
+    { name = "acquire-zarr", specifier = ">=0.9.0" },
     { name = "build", marker = "extra == 'build'" },
     { name = "click" },
     { name = "napari", extras = ["pyqt6"], marker = "extra == 'viewer'" },
@@ -5846,7 +5786,7 @@ dependencies = [
 
 [[package]]
 name = "viscy-transforms"
-version = "0.1.0a0"
+version = "0.0.0.post215.dev0+4b62365"
 source = { git = "https://github.com/mehta-lab/VisCy?subdirectory=packages%2Fviscy-transforms&rev=4b62365c0df25929bffc7f01b3bb2d1c11d69cce#4b62365c0df25929bffc7f01b3bb2d1c11d69cce" }
 dependencies = [
     { name = "kornia" },
