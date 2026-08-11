@@ -177,14 +177,24 @@ def _worker_loop(
     log = logging.getLogger("shrimpy.dynatrack.worker")
 
     try:
-        from shrimpy.preprocessing import build_preprocessor
         from shrimpy.dynatrack.tracking import DynaTrackUpdater
+        from shrimpy.preprocessing import build_preprocessor
 
         log.info("DynaTrack worker: initializing preprocessor for shape %s...", zyx_shape)
 
         preprocessor = None
         if config.preprocessing:
-            preprocessor = build_preprocessor(config, zyx_shape)
+            # DynaTrack tracks on a single channel: the deskew/phase/raw pipeline
+            # emits it under tracking_channel; a VS pipeline emits its target
+            # channels and tracking_channel selects among them.
+            preprocessor = build_preprocessor(
+                zyx_shape=zyx_shape,
+                preprocessing=config.preprocessing,
+                deskew=config.deskew,
+                phase=config.phase,
+                virtual_staining=config.virtual_staining,
+                output_channel=config.tracking_channel,
+            )
 
         updater = DynaTrackUpdater(
             config=config, preprocessor=preprocessor, scale_yx=scale_yx, scale_z=scale_z

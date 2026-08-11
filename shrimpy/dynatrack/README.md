@@ -133,8 +133,8 @@ for a fully commented example.
 | [`position_update.py`](position_update.py) | Internal position-update infrastructure: `PositionStore`, `PositionUpdater` (extension point for custom trackers), `PositionUpdateManager`. |
 
 The deskew → phase → virtual-staining callable is built by
-[`shrimpy/preprocessing.py`](../preprocessing.py), which now lives at the
-package root rather than inside this package.
+[`shrimpy/preprocessing.py`](../preprocessing.py), which is shared with FOV
+selection rather than owned by this package.
 
 ## Integrating with a new engine
 

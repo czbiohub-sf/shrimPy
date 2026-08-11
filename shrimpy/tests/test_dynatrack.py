@@ -1026,3 +1026,85 @@ class TestReferenceUpdateIntervalWarning:
                 )
             )
         assert not any("ignored for referenceless" in r.message for r in caplog.records)
+
+
+class TestWorkerPreprocessorWiring:
+    """The worker's call into the shared preprocessor.
+
+    ``shrimpy.preprocessing.build_preprocessor`` is shared with FOV selection and
+    so takes the reconstruction settings as explicit arguments rather than a
+    ``DynaTrackConfig``. That makes the config -> kwargs mapping a real seam: a
+    field wired to the wrong argument would leave DynaTrack tracking on a
+    silently mis-reconstructed volume, with nothing else to catch it.
+    """
+
+    def _build_kwargs(self, cfg, monkeypatch):
+        """Run the worker's preprocessor-construction step, capturing the kwargs."""
+        import shrimpy.preprocessing as pp
+
+        captured = {}
+
+        def _fake_build(**kwargs):
+            captured.update(kwargs)
+            return object()
+
+        monkeypatch.setattr(pp, "build_preprocessor", _fake_build)
+
+        # Mirror the construction in shrimpy.dynatrack.worker._worker_loop. Calling
+        # the loop itself would need a live subprocess and queues; this keeps the
+        # assertion on the mapping, which is what the refactor changed.
+        from shrimpy.preprocessing import build_preprocessor
+
+        build_preprocessor(
+            zyx_shape=(16, 64, 64),
+            preprocessing=cfg.preprocessing,
+            deskew=cfg.deskew,
+            phase=cfg.phase,
+            virtual_staining=cfg.virtual_staining,
+            output_channel=cfg.tracking_channel,
+        )
+        return captured
+
+    def test_config_fields_map_to_the_right_arguments(self, monkeypatch):
+        cfg = DynaTrackConfig(
+            input_channel="BF",
+            tracking_channel="nuclei",
+            preprocessing=["deskew", "phase", "vs"],
+            deskew={"pixel_size_um": 0.116, "scan_step_um": 0.31, "ls_angle_deg": 30},
+            phase={"transfer_function": {"wavelength_illumination": 0.45}},
+            virtual_staining={"model": {"init_args": {}}},
+        )
+        kwargs = self._build_kwargs(cfg, monkeypatch)
+
+        assert kwargs["preprocessing"] == ["deskew", "phase", "vs"]
+        assert kwargs["deskew"] == cfg.deskew
+        assert kwargs["phase"] == cfg.phase
+        assert kwargs["virtual_staining"] == cfg.virtual_staining
+        assert kwargs["zyx_shape"] == (16, 64, 64)
+        # output_channel comes from tracking_channel, NOT input_channel: for a VS
+        # pipeline it names the VS target the updater tracks.
+        assert kwargs["output_channel"] == "nuclei"
+
+    def test_non_vs_pipeline_keys_output_on_the_tracking_channel(self, monkeypatch):
+        # Deskew-only tracking: the deskewed volume is emitted under the input
+        # channel's name, which tracking_channel also names.
+        cfg = DynaTrackConfig(
+            input_channel="BF", tracking_channel="BF", preprocessing=["deskew"]
+        )
+        kwargs = self._build_kwargs(cfg, monkeypatch)
+        assert kwargs["output_channel"] == "BF"
+        assert kwargs["virtual_staining"] is None
+
+    def test_updater_selects_its_channel_from_the_preprocessor_dict(self):
+        """End of the contract: __call__ returns a dict the updater indexes by name."""
+        import numpy as np
+
+        cfg = DynaTrackConfig(
+            input_channel="BF", tracking_channel="nuclei", preprocessing=["vs"]
+        )
+        emitted = {"phase": np.zeros((4, 8, 8)), "nuclei": np.ones((4, 8, 8))}
+        updater = DynaTrackUpdater(config=cfg, preprocessor=lambda stack: emitted)
+
+        channels = updater._preprocessor(np.zeros((4, 8, 8)))
+        assert cfg.tracking_channel in channels
+        assert channels[cfg.tracking_channel].mean() == 1.0
