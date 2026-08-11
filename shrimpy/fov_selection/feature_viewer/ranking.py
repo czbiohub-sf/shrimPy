@@ -77,8 +77,9 @@ DEFAULT_DIRECTION: dict[str, str] = {
     "nn_cv": "lower",  # even spacing (low variability) is better
     "empty_grid_frac": "lower",  # few empty regions -> even coverage
     "occupancy_entropy": "higher",  # spread-out occupancy is better
-    "max_empty_radius_norm": "lower",  # small largest gap -> no big empty area
-    "max_gap_um": "lower",  # small largest object-free region
+    "max_radius_corner_to_edge": "lower",  # small largest object-free region
+    "max_radius_between_cells_norm": "lower",  # small largest empty circle -> no big void
+    "nn_mask_um_mean": "target",  # cell-to-cell edge spacing depends on desired density
 }
 
 # Robust quantiles frozen into a profile's normalization (feature scale + target defaults).

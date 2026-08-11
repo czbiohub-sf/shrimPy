@@ -32,28 +32,25 @@ from skimage.measure import regionprops_table
 # produced by mask_gap_features(), so they are NOT in FEATURE_NAMES (the group_features set).
 MASK_FEATURE_KEYS = frozenset(
     {
-        "max_gap_um",
+        "max_radius_corner_to_edge",
         "mask_occupancy_entropy",
         "edge_frac",
         "central_cov_ratio",
-        "center_gap_norm",
     }
 )
 
 # The per-variant features produced by group_features(), in output order. Coverage +
 # spacing + large-scale-void / non-uniformity features (an empty center, ring, or single
-# clump that COM / local-NN features miss). max_gap_um is mask-derived (mask_gap_features).
+# clump that COM / local-NN features miss). max_radius_corner_to_edge is mask-derived (mask_gap_features).
 FEATURE_NAMES = [
     "coverage_frac",
     "nn_um_mean",
     "nn_cv",
     "com_offset_norm",
-    "centroid_radial_mean",
+    "mean_distance_to_center_fov",
     "empty_grid_frac",
     "occupancy_entropy",
     "angular_uniformity",
-    "max_empty_radius_norm",
-    "max_empty_edge_offset_norm",
 ]
 
 
@@ -75,27 +72,21 @@ class FeatureExtractor:
         "intensity_max",
     )
 
-    # Quadrat grid for empty_grid_frac / occupancy_entropy. ADAPTIVE: the grid side scales
-    # with the object count so each cell holds ~GRID_LAMBDA objects on average (grid
-    # resolution tracks density), clamped to [GRID_MIN, GRID_MAX].
-    GRID_LAMBDA = 2.0
-    GRID_MIN, GRID_MAX = 2, 24
+    # Quadrat grid for empty_grid_frac / occupancy_entropy: FIXED QUADRAT_GRID^2 cells (same
+    # size on every FOV), so the values are directly comparable across FOVs. 8 (64 cells)
+    # matches MASK_OCCUPANCY_GRID.
+    QUADRAT_GRID = 8
 
-    # Angular sectors for angular_uniformity, ADAPTIVE like the quadrat grid (~ANGULAR_LAMBDA
-    # objects per sector), clamped to [ANGULAR_BINS_MIN, ANGULAR_BINS_MAX].
-    ANGULAR_LAMBDA = 2.0
-    ANGULAR_BINS_MIN, ANGULAR_BINS_MAX = 4, 16
+    # Angular sectors for angular_uniformity: FIXED count (same on every FOV), so the values
+    # are comparable across FOVs. 12 sectors -> 30 degrees each.
+    ANGULAR_SECTORS = 12
 
-    EMPTY_RADIUS_SAMPLES = 40  # NxN test-point grid for the largest-empty-circle feature
-
-    # central_cov_ratio: central-disk radius as a fraction of the half-diagonal. center_gap_norm:
-    # half-size of the window sampled at the image center, as a fraction of min(H, W).
+    # central_cov_ratio: central-disk radius as a fraction of the half-diagonal.
     CENTRAL_DISK_FRAC = 0.40
-    CENTER_WINDOW_FRAC = 0.02
 
     # Border band for edge_frac: an object counts as "edge" if any of its pixels lie within this
     # fraction of the image WIDTH (left/right) or HEIGHT (top/bottom) from an edge.
-    EDGE_BAND_FRAC = 0.1
+    EDGE_BAND_FRAC = 0.02
 
     # Grid side for mask_occupancy_entropy: the FOV is split into MASK_OCCUPANCY_GRID^2 cells.
     # 8 (64 cells) resolves large-scale voids without being so fine that ordinary gaps read as
@@ -108,26 +99,6 @@ class FeatureExtractor:
         """Organelle the channel labels: 'nuclei_GFP_maxproj' -> 'nuclei',
         'membrane_prediction_sumproj' -> 'membrane' (first underscore-delimited token)."""
         return (channel or "").split("_")[0]
-
-    @classmethod
-    def _adaptive_grid(cls, n: int) -> int:
-        """Grid side G = round(sqrt(n / GRID_LAMBDA)), clamped to [GRID_MIN, GRID_MAX]."""
-        return int(
-            np.clip(
-                round(np.sqrt(max(int(n), 1) / cls.GRID_LAMBDA)), cls.GRID_MIN, cls.GRID_MAX
-            )
-        )
-
-    @classmethod
-    def _adaptive_angular_bins(cls, n: int) -> int:
-        """Sector count K = round(n / ANGULAR_LAMBDA), clamped to [ANGULAR_BINS_MIN, MAX]."""
-        return int(
-            np.clip(
-                round(max(int(n), 1) / cls.ANGULAR_LAMBDA),
-                cls.ANGULAR_BINS_MIN,
-                cls.ANGULAR_BINS_MAX,
-            )
-        )
 
     # -------------------------------------------------------------- object level
     @classmethod
@@ -244,9 +215,9 @@ class FeatureExtractor:
         # half-diagonal (0 = every cell centered, ~1 = every cell in a corner). ASYMMETRIC
         # counterpart to com_offset_norm: two cells in opposite corners score ~1, not 0.
         r_norm = np.hypot(cx - width / 2.0, cy - height / 2.0) / half_diag
-        rec["centroid_radial_mean"] = float(r_norm.mean())
+        rec["mean_distance_to_center_fov"] = float(r_norm.mean())
         # --- spatial-distribution features (voids / non-uniformity that local NN misses) ---
-        grid = cls._adaptive_grid(n)  # grid resolution tracks the object count
+        grid = cls.QUADRAT_GRID  # fixed grid -> values comparable across FOVs
         gx = np.clip((cx / width * grid).astype(int), 0, grid - 1)
         gy = np.clip((cy / height * grid).astype(int), 0, grid - 1)
         counts = np.zeros(grid * grid, int)
@@ -260,9 +231,9 @@ class FeatureExtractor:
             float(-(p * np.log(p)).sum() / np.log(n_cells)) if p.size else np.nan
         )
         # Angular uniformity: how evenly the centroids are spread in ANGLE around the FOV
-        # center. Bin angles into adaptive sectors, take normalized Shannon entropy: 1 ->
-        # objects surround the center evenly, 0 -> all clustered in one direction.
-        k = cls._adaptive_angular_bins(n)
+        # center. Bin angles into a FIXED number of sectors, take normalized Shannon entropy:
+        # 1 -> objects surround the center evenly, 0 -> all clustered in one direction.
+        k = cls.ANGULAR_SECTORS
         ang = np.arctan2(cy - height / 2.0, cx - width / 2.0)  # (-pi, pi]
         abin = np.clip(((ang + np.pi) / (2 * np.pi) * k).astype(int), 0, k - 1)
         acounts = np.bincount(abin, minlength=k).astype(float)
@@ -270,21 +241,6 @@ class FeatureExtractor:
         rec["angular_uniformity"] = (
             float(-(ap * np.log(ap)).sum() / np.log(k)) if ap.size and k > 1 else np.nan
         )
-        # Largest object-free circle, from the centroids (grid-sampled), normalized by the
-        # half-diagonal: the radius of the biggest gap -> large when there is a big empty area.
-        s = cls.EMPTY_RADIUS_SAMPLES
-        gxs, gys = np.meshgrid(np.linspace(0, width, s), np.linspace(0, height, s))
-        pts = np.column_stack([gxs.ravel(), gys.ravel()])
-        dmin, _ = cKDTree(np.column_stack([cx, cy])).query(pts)
-        imax = int(np.argmax(dmin))
-        r_gap = float(dmin[imax])  # radius of the largest empty circle (px)
-        rec["max_empty_radius_norm"] = r_gap / half_diag
-        # Where that largest void sits relative to the FOV center: signed clearance from the
-        # image center to the void's NEAR edge, normalized by the half-diagonal. Higher better:
-        #   < 0 -> void engulfs the image center (central hole; worst); > 0 -> void at periphery.
-        void_cx, void_cy = float(pts[imax, 0]), float(pts[imax, 1])
-        center_to_void = np.hypot(void_cx - width / 2.0, void_cy - height / 2.0)
-        rec["max_empty_edge_offset_norm"] = float((center_to_void - r_gap) / half_diag)
         return rec
 
     @classmethod
@@ -344,26 +300,61 @@ class FeatureExtractor:
         return float(edge_labels.size / labels.size)
 
     @classmethod
+    def edge_area_frac(cls, mask: np.ndarray, band_frac: float | None = None) -> float:
+        """Mask-AREA fraction contributed by objects touching the image-edge border band.
+
+        Like :meth:`edge_object_frac`, an object is an "edge" object if ANY of its pixels lie
+        within ``band_frac`` of the image width from the left/right edge OR of the image height
+        from the top/bottom edge. But instead of counting objects, this weights by area:
+
+            edge_area_frac = (total mask area of edge objects) / (total mask area of all objects)
+
+        i.e. the share of the segmented footprint that belongs to border-touching objects. In
+        ``[0, 1]``; NaN for an empty mask. The default band is :attr:`EDGE_BAND_FRAC` of each
+        dimension. Area-weighted so one big border cell counts more than a tiny one.
+        """
+        if band_frac is None:
+            band_frac = cls.EDGE_BAND_FRAC
+        m = np.asarray(mask)
+        fg = m != 0
+        total_area = int(fg.sum())
+        if total_area == 0:
+            return float("nan")
+        h, w = m.shape
+        mx = int(round(band_frac * w))
+        my = int(round(band_frac * h))
+        border = np.zeros(m.shape, bool)
+        if mx > 0:
+            border[:, :mx] = True
+            border[:, w - mx :] = True
+        if my > 0:
+            border[:my, :] = True
+            border[h - my :, :] = True
+        edge_labels = np.unique(m[border])
+        edge_labels = edge_labels[edge_labels != 0]
+        edge_area = int(
+            np.isin(m, edge_labels).sum()
+        )  # all pixels of every edge-touching object
+        return float(edge_area / total_area)
+
+    @classmethod
     def mask_gap_features(cls, mask: np.ndarray, px_um: float) -> dict:
         """Spatial features that need the mask itself (not just centroids).
 
-        ``max_gap_um``: radius (um) of the largest object-free region (max over background
+        ``max_radius_corner_to_edge``: radius (um) of the largest object-free region (max over background
         pixels of the distance to the nearest foreground pixel). Empty mask -> NaN.
         ``mask_occupancy_entropy``: foreground-pixel spread (see :meth:`mask_occupancy_entropy`).
-        ``edge_frac``: fraction of objects stuck to the border band (see :meth:`edge_object_frac`).
+        ``edge_frac``: mask-area share of objects stuck to the border band (see :meth:`edge_area_frac`).
         ``central_cov_ratio``: coverage inside the central disk / whole-FOV coverage
         (coverage-independent; < 1 for a central void or edge ring). Empty mask -> NaN.
-        ``center_gap_norm``: radius of empty space AT the image center, normalized by the
-        half-diagonal (localized central-blank detector). Empty mask -> NaN.
         """
         m = np.asarray(mask)
         fg = m > 0
         keys = (
-            "max_gap_um",
+            "max_radius_corner_to_edge",
             "mask_occupancy_entropy",
             "edge_frac",
             "central_cov_ratio",
-            "center_gap_norm",
         )
         if not fg.any():
             return {k: float("nan") for k in keys}
@@ -379,18 +370,94 @@ class FeatureExtractor:
         overall = float(fg.mean())
         central_cov = float(fg[central].mean()) if central.any() else float("nan")
         central_cov_ratio = central_cov / overall if overall > 0 else float("nan")
-        # empty radius sampled at the image center
-        win = max(1, int(round(cls.CENTER_WINDOW_FRAC * min(h, w))))
-        yc, xc = int(round(cy0)), int(round(cx0))
-        center_gap_norm = float(
-            dt[yc - win : yc + win + 1, xc - win : xc + win + 1].min() / half
-        )
         return {
-            "max_gap_um": float(dt.max()) * float(px_um),
+            "max_radius_corner_to_edge": float(dt.max()) * float(px_um),
             "mask_occupancy_entropy": cls.mask_occupancy_entropy(fg),
-            "edge_frac": cls.edge_object_frac(m),
+            "edge_frac": cls.edge_area_frac(m),
             "central_cov_ratio": central_cov_ratio,
-            "center_gap_norm": center_gap_norm,
+        }
+
+    @classmethod
+    def mask_empty_circle_features(cls, mask: np.ndarray) -> dict:
+        """Largest object-free circle fit to CELL EDGES and fully INSIDE the FOV.
+
+        The largest empty circle that (a) contains no foreground and (b) lies entirely
+        within the image. At each candidate center the achievable radius is limited by BOTH the
+        nearest cell edge (background distance transform) AND the nearest image border, so
+        ``r(p) = min(dist_to_cell, dist_to_border)``; the circle is the max of ``r`` over the
+        FOV. This keeps the circle off the edges/corners (a circle centered at a corner is only
+        a quarter inside the image and is not a real "void inside the FOV").
+
+          max_radius_between_cells_norm       circle radius / half-diagonal (large -> big void)
+          max_radius_between_cells_offset_norm  signed clearance from the image center to the
+                                           circle's NEAR edge / half-diagonal. Higher better:
+                                           < 0 -> void engulfs the center; > 0 -> void at edge.
+        Empty mask -> both NaN.
+        """
+        fg = np.asarray(mask) > 0
+        keys = ("max_radius_between_cells_norm", "max_radius_between_cells_offset_norm")
+        if not fg.any():
+            return {k: float("nan") for k in keys}
+        dt = distance_transform_edt(
+            ~fg
+        )  # background -> nearest-foreground (cell-edge) distance
+        h, w = fg.shape
+        half = 0.5 * float(np.hypot(h, w))
+        # distance from each pixel to the nearest image border; the empty circle can be no
+        # bigger than this without spilling outside the FOV.
+        yy, xx = np.ogrid[0:h, 0:w]
+        border = np.minimum(np.minimum(xx, (w - 1) - xx), np.minimum(yy, (h - 1) - yy))
+        r_map = np.minimum(dt, border)  # largest circle fully inside the FOV at each center
+        vy, vx = np.unravel_index(int(np.argmax(r_map)), r_map.shape)
+        r = float(r_map[vy, vx])  # largest empty-and-contained circle radius (px)
+        center_to_void = float(np.hypot(vx - (w - 1) / 2.0, vy - (h - 1) / 2.0))
+        return {
+            "max_radius_between_cells_norm": r / half,
+            "max_radius_between_cells_offset_norm": (center_to_void - r) / half,
+        }
+
+    @classmethod
+    def mask_nn_distance_features(cls, mask: np.ndarray, px_um: float) -> dict:
+        """Nearest-neighbor distance between cell MASKS (edge-to-edge), not centroids.
+
+        Edge-to-edge counterpart of :meth:`group_features`' centroid ``nn_um_mean``: for each
+        cell, the distance to the NEAREST OTHER cell measured between their mask boundaries
+        (0 for touching cells), averaged over cells and converted to microns.
+
+        Uses the cells' generalized Voronoi tessellation: with ``dt`` = distance to the nearest
+        foreground pixel and ``nl`` = the label of that nearest cell at every pixel, two cells
+        meet along an ``nl`` boundary, and their edge-to-edge gap across it is ``dt`` on one
+        side plus ``dt`` on the other (0 where masks touch, since ``dt`` = 0 on foreground).
+        Per cell we take the min over its Voronoi boundaries; the FOV feature is the mean.
+
+          nn_mask_um_mean   mean per-cell nearest-neighbor edge-to-edge distance (um).
+        < 2 objects -> NaN.
+        """
+        m = np.asarray(mask)
+        labels = np.unique(m)
+        labels = labels[labels != 0]
+        if labels.size < 2:
+            return {"nn_mask_um_mean": float("nan")}
+        fg = m != 0
+        dt, (iy, ix) = distance_transform_edt(~fg, return_indices=True)
+        nl = m[
+            iy, ix
+        ]  # nearest-cell label at every pixel (foreground pixels map to themselves)
+        per_cell = np.full(int(m.max()) + 1, np.inf)
+
+        def _accumulate(a, b, da, db):
+            d = a != b  # a Voronoi boundary between two different cells
+            if d.any():
+                g = (da + db)[d]  # edge-to-edge gap estimate across the boundary
+                np.minimum.at(per_cell, a[d], g)
+                np.minimum.at(per_cell, b[d], g)
+
+        _accumulate(nl[:, :-1], nl[:, 1:], dt[:, :-1], dt[:, 1:])  # horizontal neighbours
+        _accumulate(nl[:-1, :], nl[1:, :], dt[:-1, :], dt[1:, :])  # vertical neighbours
+        vals = per_cell[labels]
+        vals = vals[np.isfinite(vals)]
+        return {
+            "nn_mask_um_mean": float(vals.mean()) * float(px_um) if vals.size else float("nan")
         }
 
 
@@ -400,5 +467,8 @@ class FeatureExtractor:
 object_feature_rows = FeatureExtractor.object_feature_rows
 group_features = FeatureExtractor.group_features
 mask_gap_features = FeatureExtractor.mask_gap_features
+mask_empty_circle_features = FeatureExtractor.mask_empty_circle_features
 mask_occupancy_entropy = FeatureExtractor.mask_occupancy_entropy
+mask_nn_distance_features = FeatureExtractor.mask_nn_distance_features
 edge_object_frac = FeatureExtractor.edge_object_frac
+edge_area_frac = FeatureExtractor.edge_area_frac
