@@ -103,6 +103,12 @@ def project_zyx(
     which combine all slices and have no single source index).
     """
     zyx = np.asarray(zyx)
+    if zyx.ndim == 2:
+        # Already a 2D (Y, X) image: there is no Z axis to project over, so return it
+        # unchanged for every method. Lets an already-projected / single-slice input go
+        # straight to segmentation without a projection step.
+        img = np.asarray(zyx, np.float32)
+        return (img, None) if return_index else img
     if method == "middle":
         idx = zyx.shape[0] // 2
         img = np.asarray(zyx[idx], np.float32)

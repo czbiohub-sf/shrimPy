@@ -525,12 +525,10 @@ class FovSelection:
             return "logstd"
         if "best_focus_z" in steps:
             return "best_focus_z"
-        ### HARDCODE
-        # raise ValueError(
-        #     "fov_selection.preprocessing must include a projection step ('sum_projection', "
-        #     "'max_projection', 'middle_slice_projection', 'logstd_projection', or "
-        #     "'best_focus_z')."
-        # )
+        # No explicit projection step: default to 'sum' (the trained-model default and
+        # project_zyx's own default; channel-agnostic, and a no-op for a single-slice
+        # stack). A projection step is not mandatory in the config.
+        return "sum"
 
     def _recon_config(self) -> dict:
         """Assemble the reconstruction sub-config for build_preprocessor.

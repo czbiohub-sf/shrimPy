@@ -34,6 +34,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Reconstruction steps this module knows how to apply. A pipeline that contains any of
+# these builds a preprocessor; one that contains none needs no reconstruction and the
+# caller uses the raw stack directly (build_preprocessor returns None). Downstream steps
+# (projection, segmentation) are consumed by the caller, not here.
+RECON_STEPS = ("flatfield", "deskew", "phase", "vs")
+
 
 def _settings_kwargs(func: Callable, settings: Any) -> dict[str, Any]:
     """Return the fields of a pydantic *settings* model that *func* accepts.
@@ -101,16 +107,13 @@ def build_preprocessor(
     Callable or None
         ``(np.ndarray ZYX) -> dict[str, torch.Tensor]`` or ``None``.
     """
-    pipeline = preprocessing
+    pipeline = preprocessing or []
 
-    if not pipeline:
-        return None
-
-    if "phase" not in pipeline and "deskew" not in pipeline:
-        logger.warning(
-            "Preprocessing requires a 'deskew' and/or 'phase' step; got %s",
-            pipeline,
-        )
+    # Build a preprocessor for whatever reconstruction steps are present (in any
+    # combination -- flatfield only, deskew only, deskew+phase, vs, ...). No
+    # reconstruction step means the raw stack is used as-is: return None and let the
+    # caller pass the raw input through. No single step is mandatory.
+    if not any(step in pipeline for step in RECON_STEPS):
         return None
 
     deskew_settings = None
