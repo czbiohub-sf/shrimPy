@@ -119,7 +119,7 @@ class DynaTrackConfig(BaseModel):
     so a mistyped setting fails fast. The nested ``deskew``, ``phase``, and
     ``virtual_staining`` sub-configs are kept as plain dicts here and
     validated against their upstream schemas where they are consumed (see
-    :func:`shrimpy.preprocessing.build_preprocessor`), so this model
+    :func:`shrimpy.dynatrack.preprocessing.build_preprocessor`), so this model
     stays importable without the optional deskew/phase/VS dependencies.
 
 
@@ -205,7 +205,7 @@ class DynaTrackConfig(BaseModel):
     virtual_staining : dict[str, Any] | None
         Model and checkpoint config for virtual staining, validated against
         cytoland's ``VSUNet`` (see
-        :meth:`shrimpy.preprocessing._LabelfreePreprocessor._load_vs_model`).
+        :meth:`shrimpy.dynatrack.preprocessing._LabelfreePreprocessor._load_vs_model`).
     shift_log_path : str | Path | None
         Path to a CSV file for incremental shift logging. Each computed
         shift is appended immediately after calculation. Typically set
