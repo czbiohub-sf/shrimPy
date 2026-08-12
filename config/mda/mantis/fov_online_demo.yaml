@@ -131,24 +131,24 @@ metadata:
     # ---- ALTERNATIVE (pipeline D): in-focus brightfield slice + a segmenter --------
     # Uncomment the `best_focus_z:` block below; like middle-slice this yields an IMAGE, so
     # pair it with an image-like segmenter (cellpose or instanseg), not Otsu on texture.
-    preprocessing: ['flatfield', 'deskew', 'best_focus_z', 'segmentation']
+    preprocessing: ['segmentation']
 
-    deskew:
-      ls_angle_deg: 30.0
-      keep_overhang: false
-      average_n_slices: 3
+    # deskew:
+    #   ls_angle_deg: 30.0
+    #   keep_overhang: false
+    #   average_n_slices: 3
 
     # Optics for the `best_focus_z` step (waveorder's transverse-band focus finder): keeps the
     # single in-focus Z slice. REQUIRED only when that projection is selected; the run ABORTS
     # before acquiring if it is chosen and these are missing. Units are microns and must match
     # the acquisition pixel size. If the optics ARE given but a FOV has no confident focus, it
     # falls back to that FOV's middle slice. `mode`/`midband_fractions` are optional.
-    best_focus_z:
-      numerical_aperture_detection: 1.35   # detection (objective) NA
-      wavelength_illumination: 0.450       # illumination wavelength, um
-      mode: max                            # optional: 'max' (bright objects; default) | 'min'
-      midband_fractions: [0.125, 0.25]     # optional: band as a fraction of the cutoff freq
-    save_best_focus_z_for_debug: True
+    # best_focus_z:
+    #   numerical_aperture_detection: 1.35   # detection (objective) NA
+    #   wavelength_illumination: 0.450       # illumination wavelength, um
+    #   mode: max                            # optional: 'max' (bright objects; default) | 'min'
+    #   midband_fractions: [0.125, 0.25]     # optional: band as a fraction of the cutoff freq
+    # save_best_focus_z_for_debug: True
     
     # Switchable segmentation (`model`: cellpose | instanseg | otsu). Pick ONE block.
     # ---- ACTIVE (pipeline A): Cellpose-DINO ----------------------------------------
@@ -186,17 +186,23 @@ metadata:
     # what you save from the feature viewer's Rank tab, then set calibration_mode: False.
     model:
       type: ranking_by_defined_range
-      top_fov: 20                    # keep the 20 highest-ranked FOVs (used only when calibration off)
+      top_fov: 1                    # keep (pass) the 20 highest-ranked FOVs; required
+      aggregation: gaussian
       features:
-        coverage_frac:               # fraction of the FOV covered by objects (gaussian bell)
+        coverage_frac:
           shape: gaussian
-          center: 0.68376
-          fwhm: 0.17561
+          center: 0.6824
+          fwhm: 0.14150000000000007
           weight: 1.0
-        max_gap_um:                  # largest object-free region radius (um) (gaussian bell)
+        max_empty_radius_norm:
           shape: gaussian
-          center: 21.96101
-          fwhm: 7.81154
+          center: 0.32115
+          fwhm: 0.34737000000000007
+          weight: 1.0
+        nn_um_mean:
+          shape: gaussian
+          center: 24.86861
+          fwhm: 6.760670000000004
           weight: 1.0
 
     # Debug outputs. save_decision is forced on in calibration mode regardless of this flag.
