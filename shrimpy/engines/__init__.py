@@ -5,8 +5,8 @@
 - :mod:`shrimpy.engines.isim_engine` — ``ISIMEngine`` (placeholder)
 - :mod:`shrimpy.engines.dragonfly_engine` — ``DragonflyEngine`` (placeholder)
 
-The engine classes are deliberately *not* re-exported here: importing a
-microscope engine pulls in its heavy optional dependencies (e.g. torch, via
-DynaTrack), and the CLI controls when that happens. Import the module you
+The engine classes are deliberately *not* re-exported here: importing an engine
+pulls in the shared smart-microscopy packages (DynaTrack, and its optional
+dependencies), and the CLI controls when that happens. Import the module you
 need, e.g. ``from shrimpy.engines.mantis_engine import MantisEngine``.
 """

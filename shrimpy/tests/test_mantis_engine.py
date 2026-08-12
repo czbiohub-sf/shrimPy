@@ -55,7 +55,6 @@ def test_engine_derives_from_base_engine():
 def test_init_default_attributes(engine):
     # Mantis-specific state starts unset
     assert engine._xy_stage_speed is None
-    assert engine._dynatrack is None
 
 
 def test_init_acquisition_timeouts(mock_core):

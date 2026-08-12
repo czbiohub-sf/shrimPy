@@ -11,6 +11,8 @@ microscope shrimPy drives (mantis, iSIM, Dragonfly, ...):
   sequenced vs. single events, and skipping events whose autofocus did not
   engage,
 - resetting hardware properties in ``teardown_sequence``,
+- the smart-microscopy features shared by all microscopes — currently DynaTrack
+  position tracking, switched on from ``metadata.dynatrack``,
 - the :meth:`BaseEngine.acquire` entry point that runs an ``MDASequence`` and
   writes OME-Zarr.
 
@@ -46,7 +48,9 @@ from pymmcore_plus.metadata import SummaryMetaV1
 from pymmcore_plus.metadata.serialize import to_builtins
 from useq import MDAEvent, MDASequence
 
+from shrimpy._logging import find_log_file
 from shrimpy.config import ShrimpyMetadata, load_config
+from shrimpy.dynatrack import DynaTrack
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +107,7 @@ class BaseEngine(MDAEngine):
         self._autofocus_fail_at_index = None
         self._xy_stage_device = None
         self._data_path: Path | None = None
+        self._dynatrack: DynaTrack | None = None
 
         # Register event callbacks for logging
         mmc.mda.set_engine(self)
@@ -140,7 +145,7 @@ class BaseEngine(MDAEngine):
 
         The microscope settings are read from ``sequence.metadata`` and
         validated by :class:`~shrimpy.config.ShrimpyMetadata`; missing sections
-        fall back to their defaults (autofocus disabled).
+        fall back to their defaults (autofocus and DynaTrack disabled).
         """
         logger.info("Setting up hardware for acquisition sequence")
 
@@ -165,7 +170,11 @@ class BaseEngine(MDAEngine):
 
         # Call parent setup so SummaryMetaV1 captures the fully configured
         # hardware state and the setup event applies the ROI.
-        return super().setup_sequence(sequence)
+        result = super().setup_sequence(sequence)
+
+        self._setup_dynatrack(meta, sequence)
+
+        return result
 
     def setup_event(self, event: MDAEvent) -> None:
         """Move to the event position, engage autofocus, and prepare hardware.
@@ -227,6 +236,8 @@ class BaseEngine(MDAEngine):
 
     def teardown_sequence(self, sequence: MDASequence) -> None:
         """Return the hardware to a safe idle state after the sequence."""
+        self._teardown_dynatrack()
+
         super().teardown_sequence(sequence)
 
         core = self.mmcore
@@ -405,6 +416,84 @@ class BaseEngine(MDAEngine):
                 if dev == self._autofocus_stage and prop == "Position":
                     return float(value)
         return self.mmcore.getPosition(self._autofocus_stage)
+
+    # ------------------------------------------------------------------
+    # DynaTrack position tracking
+    # ------------------------------------------------------------------
+
+    def _setup_dynatrack(self, meta: ShrimpyMetadata, sequence: MDASequence) -> None:
+        """Build and start DynaTrack, if ``metadata.dynatrack`` enables it.
+
+        The XY pixel size (from the core) and the sequence z_plan step are the
+        single source of truth for all scale parameters; DynaTrack derives and
+        injects them. Called after the parent ``setup_sequence`` so the pixel
+        size and any grid-plan FOV sizes reflect the state the setup event
+        leaves the hardware in.
+        """
+        core = self.mmcore
+        self._dynatrack = DynaTrack.from_config(
+            meta.dynatrack,
+            sequence,
+            data_path=self._data_path,
+            pixel_size_um=core.getPixelSizeUm(),
+        )
+        if self._dynatrack is None:
+            return
+
+        core.mda.events.frameReady.connect(self._dynatrack.on_frame_ready)
+        cfg = self._dynatrack.config
+        preprocessing = cfg.preprocessing or ["none"]
+        logger.info(
+            "DynaTrack enabled: "
+            f"input_channel={cfg.input_channel} -> tracking_channel={cfg.tracking_channel}, "
+            f"preprocessing=[{', '.join(preprocessing)}], "
+            f"tracking_method={cfg.tracking_method}, "
+            f"tracking_interval={cfg.tracking_interval}, "
+            f"reference_update_interval={cfg.reference_update_interval}"
+        )
+
+        # DynaTrack runs in a worker subprocess for GPU/torch isolation:
+        # torch's OpenMP runtime segfaults when it coexists with the sequenced
+        # camera readout in the acquisition process. The worker is started after
+        # the setup event has applied the ROI, so getImageHeight/Width reflects
+        # the actual acquired frame size (also used to build the preprocessor,
+        # when configured, inside the worker).
+        zyx_shape = (
+            max(sequence.sizes.get("z", 1), 1),
+            core.getImageHeight(),
+            core.getImageWidth(),
+        )
+        self._dynatrack.start(zyx_shape=zyx_shape, log_file_path=find_log_file())
+
+    def _teardown_dynatrack(self) -> None:
+        """Disconnect and shut down DynaTrack, if it is running."""
+        if self._dynatrack is None:
+            return
+        self.mmcore.mda.events.frameReady.disconnect(self._dynatrack.on_frame_ready)
+        self._dynatrack.shutdown()
+        self._dynatrack = None
+
+    def event_iterator(self, events: Iterable[MDAEvent]):
+        """Wrap event iteration to apply position updates before logging.
+
+        By applying position updates here (before the MDA runner emits
+        ``eventStarted``), the logged event reflects the corrected
+        coordinates rather than the original sequence values.
+
+        At timepoint boundaries the iterator drains any pending DynaTrack
+        update so that (a) position corrections are applied before the new
+        timepoint starts and (b) frame data does not accumulate unboundedly
+        in the executor queue.
+        """
+        last_t: int | None = None
+        for event in super().event_iterator(events):
+            if self._dynatrack is not None:
+                t_idx = first_event(event).index.get("t", 0)
+                if last_t is not None and t_idx != last_t:
+                    self._dynatrack.drain_pending()
+                last_t = t_idx
+                event = self._dynatrack.apply_position_update(event)
+            yield event
 
     # ------------------------------------------------------------------
     # Acquisition entry point

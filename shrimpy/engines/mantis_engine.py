@@ -3,18 +3,12 @@ from __future__ import annotations
 import logging
 import time
 
-from collections.abc import Iterable
-from pathlib import Path
-
 import numpy as np
 
 from pymmcore_plus.core import CMMCorePlus
-from pymmcore_plus.metadata import SummaryMetaV1
-from useq import MDAEvent, MDASequence
+from useq import MDAEvent
 
-from shrimpy.config import ShrimpyMetadata
-from shrimpy.dynatrack import DynaTrack
-from shrimpy.engines.base_engine import BaseEngine, first_event
+from shrimpy.engines.base_engine import BaseEngine
 
 # Get the logger instance (will be configured by the CLI entry point)
 logger = logging.getLogger(__name__)
@@ -26,14 +20,6 @@ NEGLIGIBLE_XY_DISTANCE = 1  # in um, moves below this are ignored
 SHORT_XY_DISTANCE = 2000  # in um, threshold between slow and fast speed
 
 
-def _find_shrimpy_log_file() -> Path | None:
-    """Return the path of the FileHandler attached to the shrimpy logger."""
-    for handler in logging.getLogger("shrimpy").handlers:
-        if isinstance(handler, logging.FileHandler):
-            return Path(handler.baseFilename)
-    return None
-
-
 class MantisEngine(BaseEngine):
     """Custom MDA engine for the Mantis microscope.
 
@@ -42,7 +28,10 @@ class MantisEngine(BaseEngine):
     - Acquisition timeouts tuned for hardware-sequenced acquisition
     - Nikon PFS continuous autofocus
     - XY stage speed modulation
-    - DynaTrack position tracking
+
+    DynaTrack position tracking is shared by all engines and lives in
+    :class:`~shrimpy.engines.base_engine.BaseEngine`; mantis enables it from
+    ``metadata.dynatrack`` like any other microscope.
     """
 
     def __init__(self, mmc: CMMCorePlus, *args, **kwargs):
@@ -61,83 +50,6 @@ class MantisEngine(BaseEngine):
         kwargs.setdefault("timeout_action", "warn")
         super().__init__(mmc, *args, **kwargs)
         self._xy_stage_speed = None
-        self._dynatrack: DynaTrack | None = None
-
-    def setup_sequence(self, sequence: MDASequence) -> SummaryMetaV1 | None:
-        """Setup mantis-specific hardware before the sequence starts.
-
-        The microscope settings are read from ``sequence.metadata`` and
-        validated by :class:`~shrimpy.config.ShrimpyMetadata`; missing sections
-        fall back to their defaults (autofocus and DynaTrack disabled).
-        """
-        # Configure the shared hardware settings (autofocus, XY stage) and call
-        # the parent setup so SummaryMetaV1 captures the fully configured
-        # hardware state and the setup event applies the ROI.
-        result = super().setup_sequence(sequence)
-
-        core = self.mmcore
-        meta = ShrimpyMetadata.from_sequence(sequence)
-
-        # Setup DynaTrack position tracking. The XY pixel size (from the core)
-        # and the sequence z_plan step are the single source of truth for all
-        # scale parameters; DynaTrack derives and injects them. Built after the
-        # parent setup so the pixel size and any grid-plan FOV sizes reflect the
-        # state the setup event leaves the hardware in.
-        self._dynatrack = DynaTrack.from_config(
-            meta.dynatrack,
-            sequence,
-            data_path=self._data_path,
-            pixel_size_um=core.getPixelSizeUm(),
-        )
-        if self._dynatrack is not None:
-            core.mda.events.frameReady.connect(self._dynatrack.on_frame_ready)
-            cfg = self._dynatrack.config
-            preprocessing = cfg.preprocessing or ["none"]
-            logger.info(
-                "DynaTrack enabled: "
-                f"input_channel={cfg.input_channel} -> tracking_channel={cfg.tracking_channel}, "
-                f"preprocessing=[{', '.join(preprocessing)}], "
-                f"tracking_method={cfg.tracking_method}, "
-                f"tracking_interval={cfg.tracking_interval}, "
-                f"reference_update_interval={cfg.reference_update_interval}"
-            )
-
-            # DynaTrack runs in a worker subprocess for GPU/torch isolation:
-            # torch's OpenMP runtime segfaults when it coexists with the sequenced
-            # camera readout in the acquisition process. The worker is started after
-            # the setup event has applied the ROI, so getImageHeight/Width reflects
-            # the actual acquired frame size (also used to build the preprocessor,
-            # when configured, inside the worker).
-            zyx_shape = (
-                max(sequence.sizes.get("z", 1), 1),
-                core.getImageHeight(),
-                core.getImageWidth(),
-            )
-            self._dynatrack.start(zyx_shape=zyx_shape, log_file_path=_find_shrimpy_log_file())
-
-        return result
-
-    def event_iterator(self, events: Iterable[MDAEvent]):
-        """Wrap event iteration to apply position updates before logging.
-
-        By applying position updates here (before the MDA runner emits
-        ``eventStarted``), the logged event reflects the corrected
-        coordinates rather than the original sequence values.
-
-        At timepoint boundaries the iterator drains any pending DynaTrack
-        update so that (a) position corrections are applied before the new
-        timepoint starts and (b) frame data does not accumulate unboundedly
-        in the executor queue.
-        """
-        last_t: int | None = None
-        for event in super().event_iterator(events):
-            if self._dynatrack is not None:
-                t_idx = first_event(event).index.get("t", 0)
-                if last_t is not None and t_idx != last_t:
-                    self._dynatrack.drain_pending()
-                last_t = t_idx
-                event = self._dynatrack.apply_position_update(event)
-            yield event
 
     def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event.
@@ -151,15 +63,6 @@ class MantisEngine(BaseEngine):
 
         # Move the XY stage, engage autofocus, and prepare the shared hardware
         super().setup_event(event)
-
-    def teardown_sequence(self, sequence: MDASequence) -> None:
-        # DynaTrack: disconnect callback and shutdown
-        if self._dynatrack is not None:
-            self.mmcore.mda.events.frameReady.disconnect(self._dynatrack.on_frame_ready)
-            self._dynatrack.shutdown()
-            self._dynatrack = None
-
-        super().teardown_sequence(sequence)
 
     def _adjust_xy_stage_speed(self, event: MDAEvent) -> None:
         """Modulate XY stage speed based on distance to target position.

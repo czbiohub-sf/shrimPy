@@ -100,6 +100,7 @@ def test_init_default_attributes(engine):
     assert engine._autofocus_fail_at_index is None
     assert engine._xy_stage_device is None
     assert engine._data_path is None
+    assert engine._dynatrack is None
 
 
 def test_init_hardware_sequencing_defaults(mock_core):
