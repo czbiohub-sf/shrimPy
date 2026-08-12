@@ -73,7 +73,7 @@ shrimpy/
 │
 ├── config.py            # pydantic validation of the shrimPy metadata sections
 ├── _logging.py          # Logging configuration (config/logging.ini)
-├── dynatrack/           # DynaTrack position tracking (mantis)
+├── dynatrack/           # DynaTrack position tracking (any engine, via BaseEngine)
 ├── viewer/              # Out-of-process napari viewer for live acquisitions
 ├── cli/                 # Command-line interface (`shrimpy acquire`, `shrimpy gui`)
 ├── tests/               # Unit and integration tests
@@ -101,6 +101,9 @@ shared by every microscope. It owns the behavior that does not vary by platform:
 - Z positions are not written to the autofocus stage while autofocus is engaged
   (`_set_event_properties`)
 - resetting `metadata.reset_hardware_sequencing_settings` in `teardown_sequence`
+- shared smart-microscopy features: DynaTrack position tracking, built from
+  `metadata.dynatrack` in `_setup_dynatrack()`, applied in `event_iterator()`,
+  and shut down in `teardown_sequence` — so any engine can use it
 - `acquire()`: runs the sequence and writes OME-Zarr to `<name>_<idx>.ome.zarr`
 
 Each microscope subclasses it and overrides only what differs:
@@ -112,9 +115,6 @@ class MantisEngine(BaseEngine):
     def engage_autofocus(event: MDAEvent) -> bool:
         # Required hook — BaseEngine raises NotImplementedError.
         # Mantis: Nikon PFS with z-offset retries; returns False if it never locks
-
-    def setup_sequence(sequence: MDASequence) -> SummaryMetaV1:
-        # DynaTrack setup around super().setup_sequence()
 
     def setup_event(event: MDAEvent):
         # XY stage speed modulation, then super().setup_event()
@@ -195,7 +195,8 @@ Acquisitions are configured using YAML `MDASequence` files, validated by
 - `stage_positions`: XY positions or a well-plate plan (optional)
 - `metadata.autofocus`: `enabled`, `method` (`PFS` / `demo-PFS`), `stage`
 - `metadata.reset_hardware_sequencing_settings`: properties restored in teardown
-- `metadata.dynatrack`: DynaTrack position tracking (see `shrimpy/dynatrack/README.md`)
+- `metadata.dynatrack`: DynaTrack position tracking, available to every engine
+  (see `shrimpy/dynatrack/README.md`)
 
 Configs with the settings nested one level deeper under `metadata.mantis` (the
 older layout) are rejected by `load_config` with a migration message.

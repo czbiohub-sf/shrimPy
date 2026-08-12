@@ -4,7 +4,6 @@ import json
 import logging
 import time
 
-from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
@@ -15,9 +14,9 @@ from pymmcore_plus.metadata import SummaryMetaV1
 from pymmcore_plus.metadata.serialize import to_builtins
 from useq import MDAEvent, MDASequence
 
+from shrimpy._logging import find_log_file
 from shrimpy.config import ShrimpyMetadata, load_config
-from shrimpy.dynatrack import DynaTrack
-from shrimpy.engines.base_engine import BaseEngine, first_event
+from shrimpy.engines.base_engine import BaseEngine
 from shrimpy.fov_selection import FovSelection
 from shrimpy.fov_selection.sequences import (
     build_prescan_sequence,
@@ -35,14 +34,6 @@ NEGLIGIBLE_XY_DISTANCE = 1  # in um, moves below this are ignored
 SHORT_XY_DISTANCE = 2000  # in um, threshold between slow and fast speed
 
 
-def _find_shrimpy_log_file() -> Path | None:
-    """Return the path of the FileHandler attached to the shrimpy logger."""
-    for handler in logging.getLogger("shrimpy").handlers:
-        if isinstance(handler, logging.FileHandler):
-            return Path(handler.baseFilename)
-    return None
-
-
 class MantisEngine(BaseEngine):
     """Custom MDA engine for the Mantis microscope.
 
@@ -51,8 +42,11 @@ class MantisEngine(BaseEngine):
     - Acquisition timeouts tuned for hardware-sequenced acquisition
     - Nikon PFS continuous autofocus
     - XY stage speed modulation
-    - DynaTrack position tracking
     - Smart FOV selection, a two-run adaptive acquisition (see :meth:`acquire`)
+
+    DynaTrack position tracking is shared by all engines and lives in
+    :class:`~shrimpy.engines.base_engine.BaseEngine`; mantis enables it from
+    ``metadata.dynatrack`` like any other microscope.
     """
 
     def __init__(self, mmc: CMMCorePlus, *args, **kwargs):
@@ -71,7 +65,6 @@ class MantisEngine(BaseEngine):
         kwargs.setdefault("timeout_action", "warn")
         super().__init__(mmc, *args, **kwargs)
         self._xy_stage_speed = None
-        self._dynatrack: DynaTrack | None = None
         self._fov: FovSelection | None = None
         # Good FOV names from the pre-scan run, captured in teardown_sequence so
         # acquire() can build the timelapse run after the pre-scan run returns.
@@ -114,41 +107,6 @@ class MantisEngine(BaseEngine):
             core.getCurrentPixelSizeConfig(),
         )
 
-        # Setup DynaTrack position tracking. The XY pixel size (from the core)
-        # and the sequence z_plan step are the single source of truth for all
-        # scale parameters; DynaTrack derives and injects them. Built after the
-        # parent setup so the pixel size and any grid-plan FOV sizes reflect the
-        # state the setup event leaves the hardware in.
-        self._dynatrack = DynaTrack.from_config(
-            meta.dynatrack,
-            sequence,
-            data_path=self._data_path,
-            pixel_size_um=pixel_size_um,
-        )
-        if self._dynatrack is not None:
-            core.mda.events.frameReady.connect(self._dynatrack.on_frame_ready)
-            cfg = self._dynatrack.config
-            preprocessing = cfg.preprocessing or ["none"]
-            logger.info(
-                "DynaTrack enabled: "
-                f"input_channel={cfg.input_channel} -> tracking_channel={cfg.tracking_channel}, "
-                f"preprocessing=[{', '.join(preprocessing)}], "
-                f"tracking_method={cfg.tracking_method}, "
-                f"tracking_interval={cfg.tracking_interval}, "
-                f"reference_update_interval={cfg.reference_update_interval}"
-            )
-
-            # DynaTrack runs in a worker subprocess for GPU/torch isolation:
-            # torch's OpenMP runtime segfaults when it coexists with the sequenced
-            # camera readout in the acquisition process. The worker is started after
-            # the setup event has applied the ROI, so getImageHeight/Width reflects
-            # the actual acquired frame size (also used to build the preprocessor,
-            # when configured, inside the worker).
-            self._dynatrack.start(
-                zyx_shape=self._zyx_shape(sequence),
-                log_file_path=_find_shrimpy_log_file(),
-            )
-
         # Setup streaming FOV selection. This is the PRE-SCAN run: acquire() builds a
         # pre-scan sequence (fov_selection_channel only, one timepoint, all candidate
         # positions) and runs it first; the decision streams in via ``frameReady``. The
@@ -173,7 +131,7 @@ class MantisEngine(BaseEngine):
             # acquired frame shape (used to build the transfer function) is known.
             self._fov.start(
                 zyx_shape=self._zyx_shape(sequence),
-                log_file_path=_find_shrimpy_log_file(),
+                log_file_path=find_log_file(),
             )
 
         return result
@@ -191,32 +149,6 @@ class MantisEngine(BaseEngine):
             self.mmcore.getImageWidth(),
         )
 
-    def event_iterator(self, events: Iterable[MDAEvent]):
-        """Wrap event iteration to apply position updates before logging.
-
-        By applying position updates here (before the MDA runner emits
-        ``eventStarted``), the logged event reflects the corrected
-        coordinates rather than the original sequence values.
-
-        At timepoint boundaries the iterator drains any pending DynaTrack
-        update so that (a) position corrections are applied before the new
-        timepoint starts and (b) frame data does not accumulate unboundedly
-        in the executor queue.
-
-        FOV selection needs no per-event handling here: the pre-scan run is
-        fov_selection_channel-only and the timelapse run contains only good
-        FOVs, so there is no barrier or gating (see :meth:`acquire`).
-        """
-        last_t: int | None = None
-        for event in super().event_iterator(events):
-            if self._dynatrack is not None:
-                t_idx = first_event(event).index.get("t", 0)
-                if last_t is not None and t_idx != last_t:
-                    self._dynatrack.drain_pending()
-                last_t = t_idx
-                event = self._dynatrack.apply_position_update(event)
-            yield event
-
     def setup_event(self, event: MDAEvent) -> None:
         """Prepare mantis hardware for each event.
 
@@ -231,12 +163,6 @@ class MantisEngine(BaseEngine):
         super().setup_event(event)
 
     def teardown_sequence(self, sequence: MDASequence) -> None:
-        # DynaTrack: disconnect callback and shutdown
-        if self._dynatrack is not None:
-            self.mmcore.mda.events.frameReady.disconnect(self._dynatrack.on_frame_ready)
-            self._dynatrack.shutdown()
-            self._dynatrack = None
-
         # FOV selection (pre-scan run): capture the passing FOV names before shutting
         # down so acquire() can build the timelapse run, then disconnect + shut down the
         # worker. passed_position_names() survives shutdown() (only the frame buffers

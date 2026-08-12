@@ -1,4 +1,4 @@
-"""Tests for the engine-facing DynaTrack coordinator and its MantisEngine wiring.
+"""Tests for the engine-facing DynaTrack coordinator and its BaseEngine wiring.
 
 The coordinator's tracking work normally runs in a worker subprocess; these
 tests inject a lightweight in-process updater so no subprocess (or torch) is
@@ -20,6 +20,9 @@ from useq import MDAEvent, MDASequence
 
 from shrimpy.dynatrack import DynaTrack, DynaTrackConfig
 from shrimpy.dynatrack.position_update import PositionCoordinates, PositionUpdater
+from shrimpy.engines.base_engine import BaseEngine
+from shrimpy.engines.dragonfly_engine import DragonflyEngine
+from shrimpy.engines.isim_engine import ISIMEngine
 from shrimpy.engines.mantis_engine import MantisEngine
 
 # ---------------------------------------------------------------------------
@@ -28,10 +31,14 @@ from shrimpy.engines.mantis_engine import MantisEngine
 
 
 @pytest.fixture
-def engine(mock_core: MagicMock) -> MantisEngine:
-    """Create a MantisEngine wired to the mock CMMCorePlus."""
+def engine(mock_core: MagicMock) -> BaseEngine:
+    """Create a BaseEngine wired to the mock CMMCorePlus.
+
+    DynaTrack is wired up by BaseEngine, so every microscope engine inherits
+    it; the tests below exercise the base directly.
+    """
     with patch("shrimpy.engines.base_engine.MDAEngine.__init__", return_value=None):
-        eng = MantisEngine(mock_core)
+        eng = BaseEngine(mock_core)
     eng._mmcore_ref = weakref.ref(mock_core)
     return eng
 
@@ -316,11 +323,43 @@ class TestFrameBuffering:
 
 
 # ---------------------------------------------------------------------------
-# MantisEngine wiring
+# Engine wiring (BaseEngine — inherited by every microscope engine)
 # ---------------------------------------------------------------------------
 
 
-class TestMantisEngineWiring:
+class TestEngineWiring:
+    @pytest.mark.parametrize(
+        "engine_cls", [BaseEngine, MantisEngine, DragonflyEngine, ISIMEngine]
+    )
+    def test_every_engine_can_run_dynatrack(self, engine_cls, mock_core):
+        """DynaTrack lives in BaseEngine, so each microscope engine inherits it."""
+        with patch("shrimpy.engines.base_engine.MDAEngine.__init__", return_value=None):
+            eng = engine_cls(mock_core)
+        eng._mmcore_ref = weakref.ref(mock_core)
+
+        seq = MDASequence(
+            channels=[{"config": "BF", "group": "Channel"}],
+            z_plan={"top": 1.0, "bottom": -1.0, "step": 0.5},
+            stage_positions=[{"x": 10, "y": 20, "z": 5}],
+            metadata={
+                "dynatrack": {
+                    "enabled": True,
+                    "input_channel": "BF",
+                    "tracking_channel": "BF",
+                }
+            },
+        )
+        with (
+            patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence"),
+            patch.object(DynaTrack, "start"),
+        ):
+            eng.setup_sequence(seq)
+
+        assert eng._dynatrack is not None
+        mock_core.mda.events.frameReady.connect.assert_called_once_with(
+            eng._dynatrack.on_frame_ready
+        )
+
     def test_setup_sequence_initializes_dynatrack(self, engine, mock_core):
         seq = MDASequence(
             channels=[{"config": "BF", "group": "Channel"}],
@@ -380,7 +419,7 @@ class TestMantisEngineWiring:
 
     def test_event_iterator_applies_position_updates(self, demo_core):
         """event_iterator should apply position updates before events are logged."""
-        engine = MantisEngine(demo_core)
+        engine = BaseEngine(demo_core)
         dt = _make_dynatrack(_sequence(), PositionUpdater())
         dt.position_store.update_position(0, x=777.0, y=666.0, z=555.0)
         engine._dynatrack = dt
@@ -517,7 +556,7 @@ class TestDynaTrackIntegration:
         here we patch from_config to return an in-process coordinator with a
         shifting updater so no worker subprocess is spawned.
         """
-        MantisEngine(demo_core)  # registers the engine with demo_core.mda
+        BaseEngine(demo_core)  # registers the engine with demo_core.mda
 
         class ShiftUpdater(PositionUpdater):
             def update(self, t_idx, p_idx, position, data=None, **kwargs):
