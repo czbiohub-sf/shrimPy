@@ -648,6 +648,68 @@ def test_dragonfly_engage_autofocus_calls_afc(mock_core):
     assert mock_core.setPosition.call_args_list[-1] == call("FocusDrive", 100.0)
 
 
+def _dragonfly(mock_core) -> DragonflyEngine:
+    with patch("shrimpy.engines.base_engine.MDAEngine.__init__", return_value=None):
+        eng = DragonflyEngine(mock_core)
+    eng._mmcore_ref = weakref.ref(mock_core)
+    return eng
+
+
+def test_dragonfly_setup_sequence_opens_shutter_before_super(mock_core):
+    # Dragonfly images with the shutter held open. The order matters: MDAEngine
+    # latches _autoshutter_was_set at the END of its setup_sequence, and that
+    # flag drives its per-event shutter toggling -- so autoshutter must already
+    # be off by the time super() runs, or the parent undoes this every event.
+    eng = _dragonfly(mock_core)
+    mock_core.getAutoShutter.return_value = True
+
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence") as mock_super:
+        mock_core.attach_mock(mock_super, "super_setup_sequence")
+        eng.setup_sequence(MDASequence())
+
+    names = [c[0] for c in mock_core.mock_calls]
+    assert names.index("setAutoShutter") < names.index("super_setup_sequence")
+    assert names.index("setShutterOpen") < names.index("super_setup_sequence")
+    mock_core.setAutoShutter.assert_called_once_with(False)
+    mock_core.setShutterOpen.assert_called_once_with(True)
+    # The pre-run autoshutter state is remembered for teardown
+    assert eng._autoshutter_to_restore is True
+
+
+def test_dragonfly_teardown_sequence_restores_shutter(mock_core):
+    # The parent's state restoration captures autoshutter AFTER setup_sequence
+    # disabled it, so the engine restores it itself rather than leaving the
+    # shutter open on the sample.
+    eng = _dragonfly(mock_core)
+    mock_core.getAutoShutter.return_value = True
+
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence"):
+        eng.setup_sequence(MDASequence())
+    mock_core.reset_mock()
+
+    with patch("shrimpy.engines.base_engine.MDAEngine.teardown_sequence"):
+        eng.teardown_sequence(MDASequence())
+
+    mock_core.setShutterOpen.assert_called_once_with(False)
+    mock_core.setAutoShutter.assert_called_once_with(True)
+    assert eng._autoshutter_to_restore is None
+
+
+def test_dragonfly_teardown_leaves_autoshutter_off_when_it_started_off(mock_core):
+    # A scope left with autoshutter already off stays that way.
+    eng = _dragonfly(mock_core)
+    mock_core.getAutoShutter.return_value = False
+
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence"):
+        eng.setup_sequence(MDASequence())
+    mock_core.reset_mock()
+
+    with patch("shrimpy.engines.base_engine.MDAEngine.teardown_sequence"):
+        eng.teardown_sequence(MDASequence())
+
+    mock_core.setAutoShutter.assert_called_once_with(False)
+
+
 # ---------------------------------------------------------------------------
 # _get_next_acquisition_name() — pure function
 # ---------------------------------------------------------------------------
