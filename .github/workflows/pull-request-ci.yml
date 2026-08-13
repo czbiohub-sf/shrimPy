@@ -6,19 +6,28 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read # checkout source; token is read-only
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Ruff lint
-      uses: astral-sh/ruff-action@v3
+      uses: astral-sh/ruff-action@v4.1.0
 
     - name: Ruff format
-      uses: astral-sh/ruff-action@v3
+      uses: astral-sh/ruff-action@v4.1.0
       with:
         args: "format --check"
 
@@ -27,12 +36,13 @@ jobs:
 
     steps:
     - name: Checkout repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7.0.1
       with:
         fetch-depth: 0  # Fetch all history for hatch-vcs
+        persist-credentials: false
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v10.0.0
 
     - name: Install dependencies
       # test-cpu pulls the CPU torch wheel (not the ~2.5 GB CUDA build the
