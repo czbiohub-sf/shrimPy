@@ -109,19 +109,19 @@ To add a new microscope:
 #### 2. Metadata Propagation Pattern
 Configuration is passed through MDASequence metadata:
 ```python
-sequence = MDASequence.from_file('config.yaml')
+sequence = MDASequence.from_file("config.yaml")
 sequence.metadata = {
-    'mantis': {
-        'roi': [x, y, width, height],
-        'z_stage': 'AP Galvo',
-        'initialization_settings': [[device, property, value], ...],
-        'setup_hardware_sequencing_settings': [...],
-        'autofocus': {
-            'enabled': True,
-            'stage': 'ZDrive',
-            'method': 'PFS',  # Nikon Perfect Focus System
-            'wait_after_correction': 0.5,
-            'wait_before_acquire': 0.1,
+    "mantis": {
+        "roi": [x, y, width, height],
+        "z_stage": "AP Galvo",
+        "initialization_settings": [[device, property, value], ...],
+        "setup_hardware_sequencing_settings": [...],
+        "autofocus": {
+            "enabled": True,
+            "stage": "ZDrive",
+            "method": "PFS",  # Nikon Perfect Focus System
+            "wait_after_correction": 0.5,
+            "wait_before_acquire": 0.1,
         },
     }
 }
@@ -133,7 +133,7 @@ Each microscope module uses a separate logger instance:
 from shrimpy.mantis.mantis_logger import configure_mantis_logger, get_mantis_logger
 
 # During acquisition setup
-logger = configure_mantis_logger(save_dir, 'acquisition_name')
+logger = configure_mantis_logger(save_dir, "acquisition_name")
 # Creates dual handlers:
 # - Console: INFO level
 # - File: DEBUG level (saved to logs/ subdirectory)
