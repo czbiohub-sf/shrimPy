@@ -72,7 +72,11 @@ local_scheme = "no-local-version"
 packages = ["shrimpy"]
 
 [tool.uv.sources]
-pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "dev" }
+pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "main" }
+# Fork currently carries no patches of its own -- it is in sync with upstream main,
+# which is ahead of the v0.3.2 release by the "fov names for plate positions with
+# grid_plan" commit that our plate + grid_plan configs need. Switch to a plain
+# "ome-writers[acquire-zarr]>=0.3.3" pin once that ships.
 ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
 useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "main" }
 napari-deskew-preview = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview", branch = "main" }

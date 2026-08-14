@@ -151,7 +151,7 @@ def test_demo_mda_acquisition(demo_engine, demo_mda_sequence, tmp_path):
 
 
 def test_summary_metadata_written_to_zarr(demo_engine, demo_mda_sequence, tmp_path):
-    """Verify that summary_metadata.json is written at the zarr root."""
+    """Verify pymmcore-plus writes summary metadata into the zarr root attrs."""
     import json
 
     demo_engine.acquire(
@@ -163,10 +163,13 @@ def test_summary_metadata_written_to_zarr(demo_engine, demo_mda_sequence, tmp_pa
     zarr_dirs = list(tmp_path.glob("meta_test_*.ome.zarr"))
     assert len(zarr_dirs) == 1
 
-    meta_path = zarr_dirs[0] / "summary_metadata.json"
-    assert meta_path.exists(), "summary_metadata.json not found at zarr root"
+    root_json = zarr_dirs[0] / "zarr.json"
+    assert root_json.exists(), "zarr.json not found at zarr root"
 
-    summary = json.loads(meta_path.read_text())
+    attrs = json.loads(root_json.read_text()).get("attributes", {})
+    assert "pymmcore_plus" in attrs, f"no pymmcore_plus namespace in attrs: {attrs}"
+
+    summary = attrs["pymmcore_plus"]["summary_metadata"]
     assert summary["format"] == "summary-dict"
     assert summary["version"] == "1.0"
     assert "devices" in summary
