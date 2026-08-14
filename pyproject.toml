@@ -21,10 +21,11 @@ classifiers = [
 
 # list package dependencies here
 dependencies = [
+  # arrives transitively via ome-writers, but declared directly to pin the floor
+  "acquire-zarr>=0.9.0",
   "click",
   "numpy",
   "ome-writers[acquire-zarr]",
-  "acquire-zarr==0.9.0",
   "pymmcore>=11.14.0.75.0",
   "pymmcore-gui",
   "pymmcore-plus",
