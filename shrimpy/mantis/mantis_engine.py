@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 import time
@@ -19,7 +18,6 @@ from pymmcore_plus.core._constants import Keyword
 from pymmcore_plus.core._sequencing import SequencedEvent
 from pymmcore_plus.mda import MDAEngine, SkipEvent
 from pymmcore_plus.metadata import SummaryMetaV1
-from pymmcore_plus.metadata.serialize import to_builtins
 from useq import MDAEvent, MDASequence
 
 from shrimpy.config import ShrimpyMetadata, load_config
@@ -140,14 +138,27 @@ class MantisEngine(MDAEngine):
         self._xy_stage_device = core.getXYStageDevice()
         logger.debug(f"XY stage device: {self._xy_stage_device}")
 
+        # Call parent setup so SummaryMetaV1 captures the fully configured
+        # hardware state and the setup event applies the ROI.
+        result = super().setup_sequence(sequence)
+
         # Setup DynaTrack position tracking. The XY pixel size (from the core)
         # and the sequence z_plan step are the single source of truth for all
-        # scale parameters; DynaTrack derives and injects them.
+        # scale parameters; DynaTrack derives and injects them. This runs
+        # *after* the setup event so the pixel size is read from the
+        # configured acquisition camera.
+        pixel_size_um = core.getPixelSizeUm()
+        zyx_shape = (
+            max(sequence.sizes.get("z", 1), 1),
+            self.mmcore.getImageHeight(),
+            self.mmcore.getImageWidth(),
+        )
+
         self._dynatrack = DynaTrack.from_config(
             meta.dynatrack,
             sequence,
             data_path=self._data_path,
-            pixel_size_um=core.getPixelSizeUm(),
+            pixel_size_um=pixel_size_um,
         )
         if self._dynatrack is not None:
             self.mmcore.mda.events.frameReady.connect(self._dynatrack.on_frame_ready)
@@ -161,26 +172,9 @@ class MantisEngine(MDAEngine):
                 f"tracking_interval={cfg.tracking_interval}, "
                 f"reference_update_interval={cfg.reference_update_interval}"
             )
+            self._dynatrack.start(zyx_shape=zyx_shape, log_file_path=_find_shrimpy_log_file())
 
         logger.info("Mantis hardware setup completed successfully")
-
-        # Call parent setup so SummaryMetaV1 captures the fully configured
-        # hardware state and the setup event applies the ROI.
-        result = super().setup_sequence(sequence)
-
-        # DynaTrack runs in a worker subprocess for GPU/torch isolation:
-        # torch's OpenMP runtime segfaults when it coexists with the sequenced
-        # camera readout in the acquisition process. The worker is started after
-        # the setup event has applied the ROI, so getImageHeight/Width reflects
-        # the actual acquired frame size (also used to build the preprocessor,
-        # when configured, inside the worker).
-        if self._dynatrack is not None:
-            zyx_shape = (
-                max(sequence.sizes.get("z", 1), 1),
-                self.mmcore.getImageHeight(),
-                self.mmcore.getImageWidth(),
-            )
-            self._dynatrack.start(zyx_shape=zyx_shape, log_file_path=_find_shrimpy_log_file())
 
         return result
 
@@ -473,15 +467,8 @@ class MantisEngine(MDAEngine):
         data_path = output_dir / f"{name}.ome.zarr"
         self._data_path = data_path
 
-        # Write summary metadata after the zarr store is created
-        # TODO: remove once ome-writers supports root-level metadata natively
-        def _write_summary_metadata(_seq: MDASequence, meta: object) -> None:
-            self.mmcore.mda.events.sequenceStarted.disconnect(_write_summary_metadata)
-            if meta and isinstance(meta, dict):
-                meta_path = data_path / "summary_metadata.json"
-                meta_path.write_text(json.dumps(to_builtins(meta)))
-
-        self.mmcore.mda.events.sequenceStarted.connect(_write_summary_metadata)
+        # Summary metadata is written by pymmcore-plus into the zarr root group's
+        # attributes, under `attributes.pymmcore_plus.summary_metadata`.
 
         logger.info(f"Starting acquisition: {name}")
         self.mmcore.mda.run(

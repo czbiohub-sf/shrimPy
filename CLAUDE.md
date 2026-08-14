@@ -145,7 +145,7 @@ Each microscope module uses a separate logger instance:
 from shrimpy.mantis.mantis_logger import configure_mantis_logger, get_mantis_logger
 
 # During acquisition setup
-logger = configure_mantis_logger(save_dir, 'acquisition_name')
+logger = configure_mantis_logger(save_dir, "acquisition_name")
 # Creates dual handlers:
 # - Console: INFO level
 # - File: DEBUG level (saved to logs/ subdirectory)

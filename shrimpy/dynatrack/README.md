@@ -130,9 +130,12 @@ for a fully commented example.
 | --- | --- |
 | [`manager.py`](manager.py) | `DynaTrack` — the engine-facing coordinator (frame buffering, worker lifecycle, position corrections). |
 | [`tracking.py`](tracking.py) | `DynaTrackConfig` and `DynaTrackUpdater` — the tracking algorithms and shift estimation. |
-| [`preprocessing.py`](preprocessing.py) | Builds the deskew → phase → virtual-staining callable from config. |
 | [`worker.py`](worker.py) | `DynaTrackWorker` — the subprocess that runs preprocessing and shift estimation. |
 | [`position_update.py`](position_update.py) | Internal position-update infrastructure: `PositionStore`, `PositionUpdater` (extension point for custom trackers), `PositionUpdateManager`. |
+
+The deskew → phase → virtual-staining callable is built by
+[`shrimpy/preprocessing.py`](../preprocessing.py), which is shared with FOV
+selection rather than owned by this package.
 
 ## Integrating with a new engine
 
@@ -155,7 +158,7 @@ if self._dynatrack is not None:
 
 # in the event iterator:
 if last_t is not None and t_idx != last_t:
-    self._dynatrack.drain_pending()          # backpressure at timepoint boundary
+    self._dynatrack.drain_pending()  # backpressure at timepoint boundary
 event = self._dynatrack.apply_position_update(event)
 
 # in teardown_sequence:

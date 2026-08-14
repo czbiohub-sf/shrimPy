@@ -15,9 +15,11 @@ import pytest
 
 from iohub import open_ome_zarr
 from iohub.ngff import Plate
+from pymmcore_plus.mda import MDAEngine
 from useq import MDASequence, Position
 
 from shrimpy.config import load_config
+from shrimpy.dynatrack import DynaTrack
 from shrimpy.mantis.mantis_engine import DEMO_PFS_METHOD, MantisEngine
 
 # Local copy of the demo MDA config, kept in tests/artifacts so test inputs
@@ -65,6 +67,49 @@ def test_setup_applies_demo_settings(demo_engine, demo_mda_sequence, shrimpy_met
     assert demo_engine._use_autofocus is True
     assert demo_engine._autofocus_method == DEMO_PFS_METHOD
     assert demo_engine._autofocus_stage == shrimpy_metadata["autofocus"]["stage"]
+
+
+def test_pixel_size_is_read_after_the_setup_event(demo_engine, shrimpy_metadata, monkeypatch):
+    """The pixel size must be sampled after the setup event, not before.
+
+    ``getPixelSizeUm()`` resolves from the pixel-size preset matching the
+    current ``Core.Camera`` (scaled by binning). Reading it before the setup
+    event applies the imaging path captures whichever camera the config load
+    left current — on mantis that silently yielded the epi camera's 0.069 um
+    instead of the light-sheet camera's 0.1133 um, and a deskew/phase
+    reconstruction scaled by 1.64x.
+    """
+    setup_event_applied = False
+
+    real_parent_setup = MDAEngine.setup_sequence
+
+    def _parent_setup(self, sequence):
+        nonlocal setup_event_applied
+        result = real_parent_setup(self, sequence)
+        setup_event_applied = True
+        return result
+
+    monkeypatch.setattr(MDAEngine, "setup_sequence", _parent_setup)
+    monkeypatch.setattr(
+        demo_engine.mmcore,
+        "getPixelSizeUm",
+        lambda *_a, **_kw: 0.1133 if setup_event_applied else 0.069,
+    )
+
+    seen: dict[str, float | None] = {}
+
+    def _record_pixel_size(config, sequence, data_path=None, pixel_size_um=None):
+        seen["pixel_size_um"] = pixel_size_um
+        return None
+
+    monkeypatch.setattr(DynaTrack, "from_config", staticmethod(_record_pixel_size))
+
+    shrimpy_metadata["autofocus"]["enabled"] = False
+    demo_engine.setup_sequence(
+        MDASequence(time_plan={"interval": 0, "loops": 1}, metadata=shrimpy_metadata)
+    )
+
+    assert seen["pixel_size_um"] == 0.1133
 
 
 def test_demo_acquisition_collects_frames(demo_engine, shrimpy_metadata):
@@ -152,7 +197,7 @@ def test_demo_mda_acquisition(demo_engine, demo_mda_sequence, tmp_path):
 
 
 def test_summary_metadata_written_to_zarr(demo_engine, demo_mda_sequence, tmp_path):
-    """Verify that summary_metadata.json is written at the zarr root."""
+    """Verify pymmcore-plus writes summary metadata into the zarr root attrs."""
     import json
 
     demo_engine.acquire(
@@ -164,10 +209,13 @@ def test_summary_metadata_written_to_zarr(demo_engine, demo_mda_sequence, tmp_pa
     zarr_dirs = list(tmp_path.glob("meta_test_*.ome.zarr"))
     assert len(zarr_dirs) == 1
 
-    meta_path = zarr_dirs[0] / "summary_metadata.json"
-    assert meta_path.exists(), "summary_metadata.json not found at zarr root"
+    root_json = zarr_dirs[0] / "zarr.json"
+    assert root_json.exists(), "zarr.json not found at zarr root"
 
-    summary = json.loads(meta_path.read_text())
+    attrs = json.loads(root_json.read_text()).get("attributes", {})
+    assert "pymmcore_plus" in attrs, f"no pymmcore_plus namespace in attrs: {attrs}"
+
+    summary = attrs["pymmcore_plus"]["summary_metadata"]
     assert summary["format"] == "summary-dict"
     assert summary["version"] == "1.0"
     assert "devices" in summary

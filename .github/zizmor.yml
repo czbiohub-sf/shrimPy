@@ -1,0 +1,21 @@
+rules:
+  # Require every action to carry an explicit ref. We pin to exact release tags
+  # (@vX.Y.Z) so Dependabot still sees patch and minor bumps and opens a PR for
+  # them; a floating major like @v7 would silently absorb new code instead.
+  # Note ref-pin only rejects a bare `uses:` with no ref -- it accepts @v7 and
+  # @main too, so the exact-tag convention is on reviewers, not enforced here.
+  # Switch to hash-pin to have zizmor require full commit SHAs.
+  unpinned-uses:
+    config:
+      policies:
+        "*": ref-pin
+  # Only allow actions from these trusted owners; add new owners deliberately.
+  forbidden-uses:
+    config:
+      allow:
+        - actions/*
+        - astral-sh/*
+        - zizmorcore/*
+  # Requiring an explicit name on every job/step is stylistic noise for this repo.
+  anonymous-definition:
+    disable: true
