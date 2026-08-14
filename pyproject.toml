@@ -72,7 +72,7 @@ local_scheme = "no-local-version"
 packages = ["shrimpy"]
 
 [tool.uv.sources]
-pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "dev" }
+pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "main" }
 ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
 useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "main" }
 napari-deskew-preview = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview", branch = "main" }
