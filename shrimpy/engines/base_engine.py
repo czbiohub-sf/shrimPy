@@ -29,7 +29,6 @@ See :mod:`shrimpy.engines.mantis_engine` for the reference implementation.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 
@@ -45,7 +44,6 @@ from pymmcore_plus.core._constants import Keyword
 from pymmcore_plus.core._sequencing import SequencedEvent
 from pymmcore_plus.mda import MDAEngine, SkipEvent
 from pymmcore_plus.metadata import SummaryMetaV1
-from pymmcore_plus.metadata.serialize import to_builtins
 from useq import MDAEvent, MDASequence
 
 from shrimpy._logging import find_log_file
@@ -532,15 +530,8 @@ class BaseEngine(MDAEngine):
         data_path = output_dir / f"{name}.ome.zarr"
         self._data_path = data_path
 
-        # Write summary metadata after the zarr store is created
-        # TODO: remove once ome-writers supports root-level metadata natively
-        def _write_summary_metadata(_seq: MDASequence, meta: object) -> None:
-            self.mmcore.mda.events.sequenceStarted.disconnect(_write_summary_metadata)
-            if meta and isinstance(meta, dict):
-                meta_path = data_path / "summary_metadata.json"
-                meta_path.write_text(json.dumps(to_builtins(meta)))
-
-        self.mmcore.mda.events.sequenceStarted.connect(_write_summary_metadata)
+        # Summary metadata is written by pymmcore-plus into the zarr root group's
+        # attributes, under `attributes.pymmcore_plus.summary_metadata`.
 
         logger.info(f"Starting acquisition: {name}")
         self.mmcore.mda.run(

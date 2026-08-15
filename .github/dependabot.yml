@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # GitHub Actions only — keeps the exact @vX.Y.Z tags fresh.
+  #
+  # No uv ecosystem, and deliberately no scheduled `uv lock --upgrade` job (which
+  # biahub does have): four of our git sources track a branch rather than a rev
+  # (ieivanov/pymmcore-plus@dev, ieivanov/ome-writers@main,
+  # ieivanov/useq-schema@main, pymmcore-plus/pymmcore-gui@main), so a blanket
+  # refresh would pull unreviewed upstream commits alongside the dependency
+  # bumps. Such a job also could not run as-is: the `viewer` extra sources
+  # napari-deskew-preview over ssh://git@github.com, which `uv lock` has to
+  # resolve, and a runner with the default token cannot clone over SSH.
+  #
+  # Python CVEs come in via Dependabot security updates instead; clear them with
+  # a targeted `uv lock --upgrade-package <name>`, which leaves the git sources
+  # pinned where they are.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "ci(deps):"
+    # One PR bumping every action, rather than one PR per action.
+    groups:
+      actions:
+        patterns:
+          - "*"
