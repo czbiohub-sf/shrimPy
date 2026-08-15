@@ -676,4 +676,8 @@ def test_dragonfly_engage_autofocus_calls_afc(mock_core):
     mock_core.fullFocus.side_effect = RuntimeError("no lock")
     eng._engage_autofocus(MDAEvent())
     assert eng._autofocus_success is False
-    assert mock_core.setPosition.call_count == 7
+    # Every offset is tried, then the stage is returned to the target position
+    # rather than left at the last (+30 um) offset it failed on.
+    assert mock_core.setPosition.call_args_list == [
+        call("FocusDrive", 100.0 + offset) for offset in (0, -10, 10, -20, 20, -30, 30)
+    ] + [call("FocusDrive", 100.0)]
