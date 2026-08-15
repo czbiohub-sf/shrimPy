@@ -20,6 +20,7 @@ from pymmcore_plus.mda import MDAEngine, SkipEvent
 from pymmcore_plus.metadata import SummaryMetaV1
 from useq import MDAEvent, MDASequence
 
+from shrimpy.config import ShrimpyMetadata, load_config
 from shrimpy.dynatrack import DynaTrack
 
 # Get the logger instance (will be configured by the CLI entry point)
@@ -112,27 +113,26 @@ class MantisEngine(MDAEngine):
     def setup_sequence(self, sequence: MDASequence) -> SummaryMetaV1 | None:
         """Setup mantis-specific hardware before the sequence starts.
 
-        Reads mantis-specific settings from sequence.metadata['mantis'] if present,
-        otherwise uses default values.
+        The microscope settings are read from ``sequence.metadata`` and
+        validated by :class:`~shrimpy.config.ShrimpyMetadata`; missing sections
+        fall back to their defaults (autofocus and DynaTrack disabled).
         """
         logger.info("Setting up Mantis-specific hardware for acquisition sequence")
 
         core = self.mmcore
-
-        # Extract mantis settings from metadata
-        microscope_meta = sequence.metadata.get("mantis", {}) if sequence.metadata else {}
+        meta = ShrimpyMetadata.from_sequence(sequence)
 
         # Set autofocus settings
-        if autofocus := microscope_meta.get("autofocus"):
-            if autofocus.get("enabled"):
-                self._use_autofocus = True
-                self._autofocus_stage = autofocus.get("stage")
-                self._autofocus_method = autofocus.get("method")
-                logger.info(f"Enabling autofocus with method: {self._autofocus_method}")
-                if not self._autofocus_method == DEMO_PFS_METHOD:
-                    core.setAutoFocusDevice(self._autofocus_method)
-            else:
-                logger.info("Autofocus is disabled for this acquisition")
+        autofocus = meta.autofocus
+        if autofocus.enabled:
+            self._use_autofocus = True
+            self._autofocus_stage = autofocus.stage
+            self._autofocus_method = autofocus.method
+            logger.info(f"Enabling autofocus with method: {self._autofocus_method}")
+            if not self._autofocus_method == DEMO_PFS_METHOD:
+                core.setAutoFocusDevice(self._autofocus_method)
+        else:
+            logger.info("Autofocus is disabled for this acquisition")
 
         # Store XY stage device name
         self._xy_stage_device = core.getXYStageDevice()
@@ -154,8 +154,8 @@ class MantisEngine(MDAEngine):
             self.mmcore.getImageWidth(),
         )
 
-        self._dynatrack = DynaTrack.from_metadata(
-            microscope_meta.get("dynatrack"),
+        self._dynatrack = DynaTrack.from_config(
+            meta.dynatrack,
             sequence,
             data_path=self._data_path,
             pixel_size_um=pixel_size_um,
@@ -245,11 +245,9 @@ class MantisEngine(MDAEngine):
         super().teardown_sequence(sequence)
 
         core = self.mmcore
-        microscope_meta = sequence.metadata.get("mantis", {}) if sequence.metadata else {}
+        meta = ShrimpyMetadata.from_sequence(sequence)
 
-        if reset_hardware_sequencing_settings := microscope_meta.get(
-            "reset_hardware_sequencing_settings"
-        ):
+        if reset_hardware_sequencing_settings := meta.reset_hardware_sequencing_settings:
             logger.info(
                 f"Resetting {len(reset_hardware_sequencing_settings)} hardware sequencing settings"
             )
@@ -451,7 +449,9 @@ class MantisEngine(MDAEngine):
         name : str
             Base acquisition name; an index suffix will be appended automatically.
         mda_config : MDASequence | str | Path
-            An MDASequence object or path to an MDA sequence configuration YAML file.
+            An MDASequence object or path to an acquisition configuration YAML
+            file (an MDASequence with the microscope settings under
+            ``metadata``; see :mod:`shrimpy.config`).
         """
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -460,8 +460,9 @@ class MantisEngine(MDAEngine):
         if isinstance(mda_config, MDASequence):
             sequence = mda_config
         else:
-            logger.info(f"Loading MDA sequence from {mda_config}")
-            sequence = MDASequence.from_file(mda_config)
+            logger.info(f"Loading acquisition config from {mda_config}")
+            # Validates the shrimPy metadata sections before any hardware setup
+            sequence = load_config(mda_config)
 
         data_path = output_dir / f"{name}.ome.zarr"
         self._data_path = data_path

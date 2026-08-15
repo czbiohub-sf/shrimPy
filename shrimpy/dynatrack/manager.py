@@ -43,7 +43,7 @@ class DynaTrack:
     buffering, and (by default) the worker subprocess that runs the heavy
     tracking computation. An engine drives it through five calls:
 
-    1. :meth:`from_metadata` in ``setup_sequence`` (returns ``None`` when
+    1. :meth:`from_config` in ``setup_sequence`` (returns ``None`` when
        tracking is disabled)
     2. connect :meth:`on_frame_ready` to the core's ``frameReady`` signal
     3. :meth:`start` once hardware setup has applied the ROI
@@ -82,7 +82,7 @@ class DynaTrack:
         self._expected_slices = max(sequence.sizes.get("z", 1), 1)
         self._frames: dict[tuple[int, int], list[np.ndarray]] = {}
         # XY pixel size and Z step (microns) used to convert pixel shifts to
-        # microns; derived from the core / z_plan by from_metadata.
+        # microns; derived from the core / z_plan by from_config.
         self._pixel_size_um = pixel_size_um
         self._z_step_um = z_step_um
         # Resolve the input channel name to its index in the sequence (used to
@@ -168,6 +168,65 @@ class DynaTrack:
         return channel_names.index(name)
 
     @classmethod
+    def from_config(
+        cls,
+        config: DynaTrackConfig | None,
+        sequence: MDASequence,
+        data_path: Path | None = None,
+        pixel_size_um: float | None = None,
+    ) -> DynaTrack | None:
+        """Build a DynaTrack coordinator from a validated config.
+
+        This is the entry point used by engines, which get the ``dynatrack``
+        metadata section as a :class:`DynaTrackConfig` from
+        :class:`shrimpy.config.ShrimpyMetadata`. The XY pixel size and Z step
+        are derived here (see :meth:`from_metadata`) and injected into the
+        ``deskew`` / ``phase`` sub-configs.
+
+        Returns
+        -------
+        DynaTrack | None
+            ``None`` when ``config`` is ``None``, tracking is disabled, or the
+            sequence has no stage positions.
+
+        Raises
+        ------
+        ValueError
+            If ``pixel_size_um`` is unset/zero (pixel size not calibrated) or
+            the sequence's z_plan has no step.
+        """
+        if config is None or not config.enabled:
+            return None
+        if not sequence.stage_positions:
+            return None
+        if not pixel_size_um:
+            raise ValueError(
+                "DynaTrack: pixel size is not set (core.getPixelSizeUm() returned "
+                "0 or None); calibrate the pixel size in Micro-Manager."
+            )
+        z_step_um = getattr(sequence.z_plan, "step", None) if sequence.z_plan else None
+        if not z_step_um:
+            raise ValueError(
+                "DynaTrack: the sequence z_plan has no step; a stepped z_plan is "
+                "required to derive the Z scale."
+            )
+
+        # Work on a copy so the caller's config (and any config file round-trip)
+        # is not mutated by the injected scales / log path.
+        config = config.model_copy(deep=True)
+        cls._inject_scales_into_config(config, pixel_size_um, z_step_um)
+        if data_path is not None and config.shift_log_path is None:
+            config.shift_log_path = str(Path(data_path) / "dynatrack_log.csv")
+
+        return cls(
+            config=config,
+            sequence=sequence,
+            data_path=data_path,
+            pixel_size_um=pixel_size_um,
+            z_step_um=z_step_um,
+        )
+
+    @classmethod
     def from_metadata(
         cls,
         meta: dict | None,
@@ -175,7 +234,10 @@ class DynaTrack:
         data_path: Path | None = None,
         pixel_size_um: float | None = None,
     ) -> DynaTrack | None:
-        """Build a DynaTrack coordinator from acquisition metadata.
+        """Build a DynaTrack coordinator from a ``dynatrack`` config dict.
+
+        Thin wrapper around :meth:`from_config` for callers holding a plain
+        dict (e.g. tests, or a hand-built config).
 
         The XY pixel size and Z step are the single source of truth for all
         scale parameters: ``pixel_size_um`` (from ``core.getPixelSizeUm()``)
@@ -188,9 +250,8 @@ class DynaTrack:
         Parameters
         ----------
         meta : dict | None
-            The ``dynatrack`` section of the microscope metadata (e.g.
-            ``sequence.metadata['mantis']['dynatrack']``), mapping directly
-            onto :class:`DynaTrackConfig` fields.
+            The ``dynatrack`` metadata section, mapping directly onto
+            :class:`DynaTrackConfig` fields.
         sequence : MDASequence
             The acquisition sequence; ``z_plan.step`` provides the Z step.
         data_path : Path | None
@@ -216,50 +277,30 @@ class DynaTrack:
             return None
         if not sequence.stage_positions:
             return None
-        if not pixel_size_um:
-            raise ValueError(
-                "DynaTrack: pixel size is not set (core.getPixelSizeUm() returned "
-                "0 or None); calibrate the pixel size in Micro-Manager."
-            )
-        z_step_um = getattr(sequence.z_plan, "step", None) if sequence.z_plan else None
-        if not z_step_um:
-            raise ValueError(
-                "DynaTrack: the sequence z_plan has no step; a stepped z_plan is "
-                "required to derive the Z scale."
-            )
-        meta = cls._inject_scales(meta, pixel_size_um, z_step_um)
-        if data_path is not None:
-            meta.setdefault("shift_log_path", str(Path(data_path) / "dynatrack_log.csv"))
-        config = DynaTrackConfig(**meta)
-        return cls(
-            config=config,
-            sequence=sequence,
+        return cls.from_config(
+            DynaTrackConfig(**meta),
+            sequence,
             data_path=data_path,
             pixel_size_um=pixel_size_um,
-            z_step_um=z_step_um,
         )
 
     @staticmethod
-    def _inject_scales(meta: dict, pixel_size_um: float, z_step_um: float) -> dict:
-        """Return a copy of ``meta`` with the pixel size / z step injected.
+    def _inject_scales_into_config(
+        config: DynaTrackConfig, pixel_size_um: float, z_step_um: float
+    ) -> None:
+        """Inject the pixel size / z step into ``config`` in place.
 
         Feeds the ``deskew`` and ``phase`` sub-configs their pixel/step
         parameters from the single source of truth, so they are not specified
         (and cannot drift) in the config.
         """
-        import copy
-
-        meta = copy.deepcopy(meta)
-        deskew = meta.get("deskew")
-        if deskew is not None:
-            deskew["pixel_size_um"] = pixel_size_um
-            deskew["scan_step_um"] = z_step_um
-        phase = meta.get("phase")
-        if phase is not None:
-            tf = phase.setdefault("transfer_function", {})
+        if config.deskew is not None:
+            config.deskew["pixel_size_um"] = pixel_size_um
+            config.deskew["scan_step_um"] = z_step_um
+        if config.phase is not None:
+            tf = config.phase.setdefault("transfer_function", {})
             tf["yx_pixel_size"] = pixel_size_um
             tf["z_pixel_size"] = z_step_um
-        return meta
 
     @property
     def position_store(self) -> PositionStore:

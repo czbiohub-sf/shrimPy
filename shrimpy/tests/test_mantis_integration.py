@@ -18,6 +18,7 @@ from iohub.ngff import Plate
 from pymmcore_plus.mda import MDAEngine
 from useq import MDASequence, Position
 
+from shrimpy.config import load_config
 from shrimpy.dynatrack import DynaTrack
 from shrimpy.mantis.mantis_engine import DEMO_PFS_METHOD, MantisEngine
 
@@ -46,9 +47,9 @@ def demo_engine(demo_core) -> MantisEngine:
 
 @pytest.fixture
 def demo_mda_sequence() -> MDASequence:
-    """Load the full demo MDA sequence from the project config."""
+    """Load the demo acquisition config, validating its shrimPy metadata."""
     assert DEMO_MDA_CONFIG.exists(), f"Demo config not found: {DEMO_MDA_CONFIG}"
-    return MDASequence.from_file(DEMO_MDA_CONFIG)
+    return load_config(DEMO_MDA_CONFIG)
 
 
 # ---------------------------------------------------------------------------
@@ -56,7 +57,7 @@ def demo_mda_sequence() -> MDASequence:
 # ---------------------------------------------------------------------------
 
 
-def test_setup_applies_demo_settings(demo_engine, demo_mda_sequence, mantis_metadata):
+def test_setup_applies_demo_settings(demo_engine, demo_mda_sequence, shrimpy_metadata):
     # setup_sequence should apply mantis-specific settings from demo.yaml.
     # ROI and device properties are now applied via a setup event in MDASequence,
     # not by MantisEngine.setup_sequence.
@@ -65,10 +66,10 @@ def test_setup_applies_demo_settings(demo_engine, demo_mda_sequence, mantis_meta
     # Autofocus should be enabled with demo-PFS method
     assert demo_engine._use_autofocus is True
     assert demo_engine._autofocus_method == DEMO_PFS_METHOD
-    assert demo_engine._autofocus_stage == mantis_metadata["autofocus"]["stage"]
+    assert demo_engine._autofocus_stage == shrimpy_metadata["autofocus"]["stage"]
 
 
-def test_pixel_size_is_read_after_the_setup_event(demo_engine, mantis_metadata, monkeypatch):
+def test_pixel_size_is_read_after_the_setup_event(demo_engine, shrimpy_metadata, monkeypatch):
     """The pixel size must be sampled after the setup event, not before.
 
     ``getPixelSizeUm()`` resolves from the pixel-size preset matching the
@@ -97,30 +98,28 @@ def test_pixel_size_is_read_after_the_setup_event(demo_engine, mantis_metadata, 
 
     seen: dict[str, float | None] = {}
 
-    def _record_pixel_size(meta, sequence, data_path=None, pixel_size_um=None):
+    def _record_pixel_size(config, sequence, data_path=None, pixel_size_um=None):
         seen["pixel_size_um"] = pixel_size_um
         return None
 
-    monkeypatch.setattr(DynaTrack, "from_metadata", staticmethod(_record_pixel_size))
+    monkeypatch.setattr(DynaTrack, "from_config", staticmethod(_record_pixel_size))
 
-    mantis_metadata["autofocus"]["enabled"] = False
+    shrimpy_metadata["autofocus"]["enabled"] = False
     demo_engine.setup_sequence(
-        MDASequence(
-            time_plan={"interval": 0, "loops": 1}, metadata={"mantis": mantis_metadata}
-        )
+        MDASequence(time_plan={"interval": 0, "loops": 1}, metadata=shrimpy_metadata)
     )
 
     assert seen["pixel_size_um"] == 0.1133
 
 
-def test_demo_acquisition_collects_frames(demo_engine, mantis_metadata):
+def test_demo_acquisition_collects_frames(demo_engine, shrimpy_metadata):
     # Run setup_sequence + iterate events to verify frames are produced.
     # This is a lighter-weight check than full acquire() — no file I/O.
     core = demo_engine.mmcore
-    mantis_metadata["autofocus"]["enabled"] = False
+    shrimpy_metadata["autofocus"]["enabled"] = False
     sequence = MDASequence(
         time_plan={"interval": 0, "loops": 10},
-        metadata={"mantis": mantis_metadata},
+        metadata=shrimpy_metadata,
     )
     demo_engine.setup_sequence(sequence)
 
@@ -234,12 +233,12 @@ def test_teardown_after_setup(demo_engine, demo_mda_sequence):
     assert core.getProperty("Z", "UseSequences") == "No"
 
 
-def test_timelapse_acquisition(demo_engine, mantis_metadata):
+def test_timelapse_acquisition(demo_engine, shrimpy_metadata):
     # Acquisition with a timelapse plan
-    mantis_metadata["autofocus"]["enabled"] = False
+    shrimpy_metadata["autofocus"]["enabled"] = False
     seq = MDASequence(
         time_plan={"interval": 0, "loops": 10},
-        metadata={"mantis": mantis_metadata},
+        metadata=shrimpy_metadata,
     )
 
     core = demo_engine.mmcore
@@ -256,13 +255,13 @@ def test_timelapse_acquisition(demo_engine, mantis_metadata):
     assert len(frames_collected) == 10, "No frames collected for timelapse acquisition"
 
 
-def test_autofocus_disabled_acquisition(demo_engine, mantis_metadata):
+def test_autofocus_disabled_acquisition(demo_engine, shrimpy_metadata):
     # Acquisition with autofocus disabled — all frames should succeed
-    mantis_metadata["autofocus"]["enabled"] = False
+    shrimpy_metadata["autofocus"]["enabled"] = False
     seq = MDASequence(
         channels=[{"config": "DAPI", "group": "Channel", "exposure": 5.0}],
         z_plan={"top": 15, "bottom": -15, "step": 15},
-        metadata={"mantis": mantis_metadata},
+        metadata=shrimpy_metadata,
     )
 
     core = demo_engine.mmcore
@@ -283,7 +282,7 @@ def test_autofocus_disabled_acquisition(demo_engine, mantis_metadata):
     )
 
 
-def test_autofocus_failure_pads_with_zeros(demo_engine, mantis_metadata, tmp_path):
+def test_autofocus_failure_pads_with_zeros(demo_engine, shrimpy_metadata, tmp_path):
     """Verify that when autofocus fails, the written zarr contains zero-padded data.
 
     Runs a 3-position, 5-timepoint acquisition with sequenced z-slices via
@@ -310,7 +309,7 @@ def test_autofocus_failure_pads_with_zeros(demo_engine, mantis_metadata, tmp_pat
         time_plan={"interval": 0, "loops": 5},
         channels=[{"config": "DAPI", "exposure": 1.0}],
         z_plan={"top": 15, "bottom": -15, "step": 15},  # 3 z-slices
-        metadata={"mantis": mantis_metadata},
+        metadata=shrimpy_metadata,
     )
 
     # Set deterministic autofocus failure directly on the engine

@@ -107,25 +107,37 @@ To add a new microscope:
 5. Create Qt widget for GUI (optional)
 
 #### 2. Metadata Propagation Pattern
-Configuration is passed through MDASequence metadata:
-```python
-sequence = MDASequence.from_file("config.yaml")
-sequence.metadata = {
-    "mantis": {
-        "roi": [x, y, width, height],
-        "z_stage": "AP Galvo",
-        "initialization_settings": [[device, property, value], ...],
-        "setup_hardware_sequencing_settings": [...],
-        "autofocus": {
-            "enabled": True,
-            "stage": "ZDrive",
-            "method": "PFS",  # Nikon Perfect Focus System
-            "wait_after_correction": 0.5,
-            "wait_before_acquire": 0.1,
-        },
-    }
-}
+An acquisition config file *is* an `MDASequence`; the microscope settings are
+folded directly into its `metadata`, which is how they reach the engine (the MDA
+runner passes only the sequence to `setup_sequence` / `teardown_sequence`, and
+`metadata` is also captured in the acquisition's summary metadata):
+
+```yaml
+setup: ...            # ROI, imaging path, device properties applied once
+channels: ...
+metadata:
+  autofocus: {enabled: true, method: PFS, stage: ZDrive}
+  reset_hardware_sequencing_settings:
+    - ['TS2_DAC03', 'Sequence', 'Off']
+  dynatrack: {enabled: true, input_channel: BF, tracking_channel: BF}
 ```
+
+`shrimpy/config.py` validates those sections with pydantic, so a mistyped
+setting fails before any hardware is touched:
+
+```python
+from shrimpy.config import ShrimpyMetadata, load_config
+
+sequence = load_config('config/mda/mantis/demo.yaml')  # validates on load
+meta = ShrimpyMetadata.from_sequence(sequence)         # engines read this
+meta.autofocus                                         # AutofocusSettings
+meta.reset_hardware_sequencing_settings                # [(device, property, value), ...]
+meta.dynatrack                                         # DynaTrackConfig | None
+```
+
+Validation is strict (`extra="forbid"`): an unknown metadata section, or an
+unknown key within one, is an error. A present-but-disabled `dynatrack` section
+is still fully validated — omit the section to disable tracking.
 
 #### 3. Logging Pattern
 Each microscope module uses a separate logger instance:
@@ -145,16 +157,22 @@ Use `logger.debug()` for detailed diagnostics (file only) and `logger.info()` fo
 
 ### Configuration Files
 
-Acquisitions are configured using YAML files that define MDASequence parameters plus microscope-specific metadata. Examples in `examples/acquisition_settings/`.
+Acquisitions are configured using YAML `MDASequence` files, validated by
+`shrimpy/config.py`. Examples in `config/mda/mantis/` (`demo.yaml`, `mantis.yaml`,
+`dynatrack_demo.yaml`, `replay_demo.yaml`).
 
 **Key Configuration Sections:**
+- `setup`: ROI, imaging path, and device properties applied once before the run
 - `time_plan`: Timepoint intervals and loops
 - `channels`: Channel configurations
 - `z_plan`: Z-stack range and step size
-- `stage_positions`: XY positions (optional)
-- `metadata.mantis`: Mantis-specific settings (ROI, autofocus, hardware sequencing)
+- `stage_positions`: XY positions or a well-plate plan (optional)
+- `metadata.autofocus`: `enabled`, `method` (`PFS` / `demo-PFS`), `stage`
+- `metadata.reset_hardware_sequencing_settings`: properties restored in teardown
+- `metadata.dynatrack`: DynaTrack position tracking (see `shrimpy/dynatrack/README.md`)
 
-See `examples/acquisition_settings/example_mda_sequence.yaml` for a minimal example.
+Configs with the settings nested one level deeper under `metadata.mantis` (the
+older layout) are rejected by `load_config` with a migration message.
 
 ### Widget Composition (Qt GUI)
 ```
@@ -168,7 +186,12 @@ MantisAcquisitionWidget (main container)
     └── MicroscopeSettingsWidget (focus device, autofocus, hardware sequencing)
 ```
 
-Widgets communicate via Qt signals/slots. Settings are propagated to MDASequence metadata before acquisition starts.
+Widgets communicate via Qt signals/slots.
+
+**`mantis_acquisition_widget.py` is deprecated** — do not update it. It still
+writes/reads the older `metadata['mantis']` nesting and has not been migrated to
+`shrimpy/config.py`, so its save/load and run paths are out of sync with the
+engine. Use the CLI (`shrimpy acquire mantis --mda-config <config.yaml>`) instead.
 
 ## Key Dependencies
 
