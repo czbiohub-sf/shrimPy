@@ -115,18 +115,14 @@ def _cm_panel(ax, cm, title):
     ax.set_title(title, fontsize=10)
 
 
-# the 10 base per-variant features (build_fov_feature_matrix.FEATURE_NAMES order)
+# the base per-variant features (feature_extraction.FEATURE_NAMES order)
 BASE_FEATURES = [
-    "object_count",
-    "objects_per_10um2",
     "coverage_frac",
-    "edge_frac",
-    "com_offset_norm",
     "nn_um_mean",
     "nn_cv",
-    "densest_grid_frac",
-    "eccentricity_mean",
-    "solidity_mean",
+    "empty_grid_frac",
+    "occupancy_entropy",
+    "max_radius_corner_to_edge",
 ]
 
 

@@ -71,6 +71,50 @@ def _make_fov() -> FovSelection:
     return fov
 
 
+# ---------------------------------------------------------------------------
+# Calibration mode plumbing
+# ---------------------------------------------------------------------------
+
+
+def _calibration_fov(tmp_path, config_extra=None):
+    """Build a coordinator directly (bypassing model validation) with a data_path."""
+    return FovSelection(
+        config={**META, **(config_extra or {})},
+        sequence=SEQUENCE,
+        pixel_size_um=0.1,
+        z_step_um=1.0,
+        data_path=tmp_path / "acq.ome.zarr",
+        decide_fn=_good_if_positive,
+    )
+
+
+def test_calibration_forces_save_decision_and_exposes_feature_matrix_csv(tmp_path):
+    # calibration_mode: True with NO save_decision key -> save_decision forced on, and the
+    # feature-viewer CSV path is <name>_fov_debug/<name>_fov_feature_matrix.csv.
+    fov = _calibration_fov(tmp_path, {"calibration_mode": True})
+    assert fov.calibration_mode is True
+    assert fov._save_decision is True
+    assert fov._matrix_stem == "acq_fov_feature_matrix"
+    assert (
+        fov.calibration_matrix_csv
+        == tmp_path / "acq_fov_debug" / "acq_fov_feature_matrix.csv"
+    )
+
+
+def test_non_calibration_has_no_feature_matrix_csv(tmp_path):
+    fov = _calibration_fov(tmp_path)  # calibration_mode absent -> False
+    assert fov.calibration_mode is False
+    assert fov._matrix_stem is None
+    assert fov.calibration_matrix_csv is None
+
+
+def test_calibration_finalize_debug_summary_is_a_noop(tmp_path):
+    # Calibration applies no selection, so finalize must not touch/require fov_summary.csv.
+    fov = _calibration_fov(tmp_path, {"calibration_mode": True})
+    (fov._debug_dir).mkdir(parents=True, exist_ok=True)
+    fov.finalize_debug_summary()  # must not raise despite there being no fov_summary.csv
+
+
 def test_from_metadata_disabled_returns_none():
     assert FovSelection.from_metadata({"enabled": False}, SEQUENCE, 0.1) is None
     assert FovSelection.from_metadata(None, SEQUENCE, 0.1) is None
@@ -192,6 +236,7 @@ class _StubSelection(FovSelection):
         self._debug_dir = debug_dir
         self._top_fov = top_fov
         self._passed = passed
+        self._calibration_mode = False
 
     def passed_position_names(self):
         return self._passed

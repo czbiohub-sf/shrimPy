@@ -29,27 +29,24 @@ def test_no_pipeline_returns_none():
 
 
 def test_pipeline_without_reconstruction_step_returns_none():
-    """A pipeline lacking both 'deskew' and 'phase' cannot reconstruct -> None.
+    """A pipeline with no reconstruction step (only projection/segmentation) -> None.
 
-    Also assert it warns. We attach a handler directly to the module logger
-    rather than using ``caplog`` (which captures at root): shrimpy's logging
-    config sets ``propagate=False`` on the ``shrimpy`` logger, so root-level
-    capture is unreliable when the full suite runs.
+    No step is mandatory: the caller uses the raw stack directly when nothing needs
+    reconstructing.
     """
-    import logging
+    assert build_preprocessor(ZYX, ["sum_projection"]) is None
+    assert build_preprocessor(ZYX, ["middle_slice_projection", "segmentation"]) is None
 
-    records: list[logging.LogRecord] = []
-    handler = logging.Handler()
-    handler.emit = records.append  # type: ignore[method-assign]
-    module_logger = logging.getLogger("shrimpy.preprocessing")
-    module_logger.addHandler(handler)
-    try:
-        assert build_preprocessor(ZYX, ["vs"]) is None
-        assert build_preprocessor(ZYX, ["sum_projection"]) is None
-    finally:
-        module_logger.removeHandler(handler)
 
-    assert any("requires a 'deskew' and/or 'phase' step" in r.getMessage() for r in records)
+def test_any_reconstruction_step_builds_a_preprocessor():
+    """flatfield / deskew / phase / vs each build a preprocessor, in any combination.
+
+    Presence of a step is data-driven -- deskew and phase are not individually required.
+    """
+    pytest.importorskip("torch")
+
+    for pipeline in (["flatfield"], ["deskew"], ["vs"], ["flatfield", "best_focus_z"]):
+        assert build_preprocessor(ZYX, pipeline) is not None, pipeline
 
 
 def test_settings_kwargs_filters_to_signature():

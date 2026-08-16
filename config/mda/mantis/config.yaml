@@ -344,12 +344,12 @@ metadata:
       #       onset: 0.549962            # d = 0; ideal > onset -> higher-is-better
       #       ideal: 0.712936            # d = 1
       #       weight: 1.0
-      #     max_empty_radius_norm:       # largest empty circle / half-diagonal; smaller = lower
+      #     max_radius_corner_to_centroid_norm:       # largest empty circle / half-diagonal; smaller = lower
       #       shape: linear
       #       onset: 0.736688
       #       ideal: 0.411649
       #       weight: 1.0
-      #     max_gap_um:                  # largest object-free region radius (um); smaller = lower
+      #     max_radius_corner_to_edge:                  # largest object-free region radius (um); smaller = lower
       #       shape: linear
       #       onset: 70.523688
       #       ideal: 30.587509
@@ -381,7 +381,7 @@ metadata:
       #               right-skewed bell for positive quantities (too-high is more forgiving).
       #   sigmoid   : `midpoint` (d=0.5) + `width` (10%->90% span) + `direction` -- a soft
       #               threshold ("more/less is better, but gently").
-      # (coverage_frac + max_gap_um below are the desirability_ranges_with_Sookie.json profile,
+      # (coverage_frac + max_radius_corner_to_edge below are the desirability_ranges_with_Sookie.json profile,
       # its +-1 sigma gaussian ranges expressed as center + fwhm.)
       model:
         type: ranking_by_defined_range
@@ -419,7 +419,7 @@ metadata:
             center: 0.68376            # peak desirability at this coverage
             fwhm: 0.17561              # desirability = 0.5 at center +- 0.0878
             weight: 1.0
-          max_gap_um:                  # largest object-free region radius (um) (gaussian bell)
+          max_radius_corner_to_edge:                  # largest object-free region radius (um) (gaussian bell)
             shape: gaussian
             center: 21.96101
             fwhm: 7.81154
