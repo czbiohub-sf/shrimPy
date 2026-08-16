@@ -8,6 +8,8 @@ VS volumes in 3D, plus the 2D projection + mask broadcast across Z) into one
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 
 from shrimpy.fov_selection import worker
@@ -79,3 +81,59 @@ def test_assemble_without_3d_stacks_returns_none():
     )
     assert names == []
     assert czyx is None
+
+
+# --------------------------------------------------------------------------
+# Calibration feature-viewer layout (_write_feature_viewer_artifacts)
+# --------------------------------------------------------------------------
+# The calibration pre-scan must write exactly what the feature viewer loads:
+# <stem>.csv with a `filename` column + sibling <stem>_png / <stem>_mask_png
+# folders whose PNG stems equal the CSV `filename`.
+
+
+def _fv_artifacts(fov_name):
+    import pandas as pd
+
+    rng = np.random.default_rng(abs(hash(fov_name)) % (2**32))
+    return {
+        "projections": {"brightfield": rng.normal(size=(4, 5)).astype(np.float32)},
+        "masks": {"brightfield": rng.integers(0, 4, size=(4, 5)).astype(np.uint32)},
+        "features": pd.DataFrame([{"coverage_frac": 0.3, "nn_um_mean": 12.0}]),
+    }
+
+
+def test_feature_viewer_layout_matches_standard(tmp_path):
+    import pandas as pd
+
+    stem = "acq_fov_feature_matrix"
+    for name in ("B4_0000", "B4/0001"):  # a slash must be sanitized to a safe stem
+        worker._write_feature_viewer_artifacts(tmp_path, stem, name, _fv_artifacts(name))
+
+    csv = tmp_path / f"{stem}.csv"
+    assert csv.exists()
+    df = pd.read_csv(csv)
+    # A `filename` column joins each row to its PNG; the ranking `proba` is NOT written.
+    assert "filename" in df.columns
+    assert "proba" not in df.columns
+    assert {"coverage_frac", "nn_um_mean"} <= set(df.columns)
+    assert sorted(df["filename"]) == ["B4_0000", "B4_0001"]
+
+    png_dir = tmp_path / f"{stem}_png"
+    mask_dir = tmp_path / f"{stem}_mask_png"
+    assert (png_dir / "B4_0000.png").exists() and (png_dir / "B4_0001.png").exists()
+    assert (mask_dir / "B4_0000.png").exists() and (mask_dir / "B4_0001.png").exists()
+
+
+def test_feature_viewer_layout_loads_in_the_viewer(tmp_path):
+    # The written layout must round-trip through the viewer's own loader with the
+    # brightfield PNG wired to each row.
+    from shrimpy.fov_selection.feature_viewer import data
+
+    stem = "acq_fov_feature_matrix"
+    for name in ("f0", "f1"):
+        worker._write_feature_viewer_artifacts(tmp_path, stem, name, _fv_artifacts(name))
+
+    df = data.load_matrices([tmp_path / f"{stem}.csv"])
+    assert len(df) == 2
+    assert all(png and Path(png).exists() for png in df["__png"])
+    assert "coverage_frac" in data.feature_columns(df)

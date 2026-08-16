@@ -119,20 +119,21 @@ metadata:
     # ---- Ranking model (gaussian bells; from config.yaml) ----
     model:
       type: ranking_by_defined_range
-      top_fov: 20                    # keep (pass) the 20 highest-ranked FOVs; required
+      top_fov: 5                     # keep (pass) the 5 highest-ranked FOVs; required
+      aggregation: gaussian
       features:
         coverage_frac:               # fraction of the FOV covered by objects (gaussian bell)
           shape: gaussian
-          center: 0.68376            # peak desirability at this coverage
-          fwhm: 0.17561              # desirability = 0.5 at center +- 0.0878
+          center: 0.6824             # peak desirability at this coverage
+          fwhm: 0.1415               # desirability = 0.5 at center +- fwhm/2
           weight: 1.0
-        max_gap_um:                  # largest object-free region radius (um) (gaussian bell)
+        nn_um_mean:                  # mean nearest-neighbour spacing, um (gaussian bell)
           shape: gaussian
-          center: 21.96101
-          fwhm: 7.81154
+          center: 24.86861
+          fwhm: 6.76067
           weight: 1.0
 
     # Debug outputs
-    save_pre_scan_omezarr: True  # per-step reconstruction -> <name>_prescan.ome.zarr
+    save_pre_scan_omezarr: False  # per-step reconstruction -> <name>_prescan.ome.zarr
                                  # (NOTE: the code reads this key, not `save_prescan`)
     save_decision: True          # per-FOV projection/mask PNGs + fov_summary.csv under <name>_fov_debug/
