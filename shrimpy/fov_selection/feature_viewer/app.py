@@ -85,7 +85,7 @@ def _internal_to_feature(shape, direction, lo, hi, curve_k, weight):
     """Internal (lo, hi, ...) bounds -> a config feature dict with the interpretable params.
     The math is :func:`fov_model.curve_params`; this only packages the result into the config
     schema (center/fwhm, center/fold, or midpoint/width) and drops params the shape ignores."""
-    p = FM.curve_params(shape, direction, lo, hi, curve_k)
+    p = FM.curve_params(shape, lo, hi, curve_k)
     feat = {"shape": shape}
     if shape == "gaussian":
         feat.update(center=p["center"], fwhm=p["fwhm"])
@@ -116,7 +116,7 @@ def _feature_to_internal(feat):
         )
     if dir_params is not None:
         direction, params = dir_params
-        lo, hi, ck = FM.curve_bounds(shape, direction, params)
+        lo, hi, ck = FM.curve_bounds(shape, params)
         return shape, direction, lo, hi, ck
     # Legacy fallback: `range` (or lo/hi) read straight as the internal bounds (e.g. an old
     # gaussian range = +-1 sigma, or a sigmoid range + curve_k).
@@ -2551,7 +2551,6 @@ class FeatureViewer(QtWidgets.QMainWindow):
         tbl = self.rank_table
         params = FM.curve_params(
             spec.get("shape", "gaussian"),
-            spec["direction"],
             spec["lo"],
             spec["hi"],
             spec.get("curve_k", 0.0),
@@ -2656,7 +2655,7 @@ class FeatureViewer(QtWidgets.QMainWindow):
                 if w is not None and getattr(w, "_param_key", None) is not None:
                     params[w._param_key] = w.value()
             try:
-                lo, hi, curve_k = FM.curve_bounds(shape, direction, params)
+                lo, hi, curve_k = FM.curve_bounds(shape, params)
             except (ValueError, KeyError):
                 lo, hi, curve_k = prev["lo"], prev["hi"], prev.get("curve_k", 0.0)
             weight = tbl.cellWidget(i, RCOL_WEIGHT).value()
@@ -3024,7 +3023,6 @@ class FeatureViewer(QtWidgets.QMainWindow):
         spec = self.rank_ranges[feature]
         params = FM.curve_params(
             spec.get("shape", "gaussian"),
-            spec["direction"],
             spec["lo"],
             spec["hi"],
             spec.get("curve_k", 0.0),

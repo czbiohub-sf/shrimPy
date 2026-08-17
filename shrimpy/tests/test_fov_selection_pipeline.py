@@ -63,7 +63,7 @@ def test_cheap_features_match_full_path():
     # from the former, mask_occupancy_entropy from the latter.
     full = FE.group_features(pd.DataFrame(rows))
     full.update(FE.mask_gap_features(mask, px))
-    cheap = pipeline._cheap_features(mask, px, set(pipeline.CHEAP_FEATURE_KEYS))
+    cheap = pipeline._cheap_features(mask, set(pipeline.CHEAP_FEATURE_KEYS))
 
     for key in pipeline.CHEAP_FEATURE_KEYS:
         assert np.isclose(cheap[key], full[key]), key
@@ -125,9 +125,9 @@ def test_cheap_features_empty_mask_reports_zero():
     # be reported as genuine zeros (so the model can act on an empty FOV) rather than
     # dropped -> NaN -> median-imputed to a typical FOV -> empty FOV misclassified good.
     empty = np.zeros((16, 16), np.uint32)
-    assert pipeline._cheap_features(empty, 0.1133, {"coverage_frac"}) == {"coverage_frac": 0.0}
+    assert pipeline._cheap_features(empty, {"coverage_frac"}) == {"coverage_frac": 0.0}
 
-    out = pipeline._cheap_features(empty, 0.1133, set(pipeline.CHEAP_FEATURE_KEYS))
+    out = pipeline._cheap_features(empty, set(pipeline.CHEAP_FEATURE_KEYS))
     assert set(out) == set(pipeline.CHEAP_FEATURE_KEYS)
     assert out["coverage_frac"] == 0.0
     # ...except mask_occupancy_entropy: the spread of a nonexistent foreground is genuinely
@@ -338,9 +338,9 @@ def test_angular_uniformity_ordering_uniform_beats_clustered():
     from shrimpy.fov_selection.feature_extraction import group_features
 
     uniform = group_features(_object_df(_ring_centroids(12)))["angular_uniformity"]
-    clustered = group_features(
-        _object_df(_ring_centroids(12, spread=np.deg2rad(30)))
-    )["angular_uniformity"]
+    clustered = group_features(_object_df(_ring_centroids(12, spread=np.deg2rad(30))))[
+        "angular_uniformity"
+    ]
     assert uniform > clustered
 
 

@@ -273,12 +273,8 @@ def _worker_loop(
             output_channel=recon.get("output_channel", "phase"),
             require_gpu=require_gpu,
         )
-        ### HARDCODE
-        # if preprocessor is None:
-        #     raise ValueError(
-        #         "fov_selection.reconstruction produced no preprocessor; a "
-        #         "'deskew'/'phase'/'vs' pipeline is required to make nuclei/membrane."
-        #     )
+        # preprocessor may be None: a pipeline with no reconstruction step (raw brightfield
+        # -> segment) is supported; decide_fov keys the raw stack as the single channel.
         segmenter = build_segmenter(segmentation)
         # Pluggable FOV model built from the config (trained .joblib via 'path', or a
         # hand-tuned 'type'); decide_fov calls model.predict, agnostic to the type.

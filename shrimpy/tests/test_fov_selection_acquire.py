@@ -399,7 +399,7 @@ def test_selected_fov_config_fills_stage_positions_and_reloads(tmp_path):
     # The starting config has stage_positions: []; the saved record must carry one entry per
     # SELECTED FOV (absolute XY + the well's ZDrive coarse focus + plate coords), named after
     # the experiment folder.
-    from shrimpy.engines.mantis_engine import MantisEngine
+    from shrimpy.fov_selection import artifacts as fov_artifacts
 
     cfg = _grid_fov_cfg()
     cfg["prescan_mda"]["stage_positions"] = [
@@ -417,13 +417,9 @@ def test_selected_fov_config_fills_stage_positions_and_reloads(tmp_path):
 
     timelapse = build_timelapse_sequence(seq, prescan, ["B2_0001", "B2_0003"])
 
-    class _Engine:
-        _run_index = None
-        _save_selected_fov_config = MantisEngine._save_selected_fov_config
-
     experiment_dir = tmp_path / "2026_08_04_my_experiment"
     experiment_dir.mkdir()
-    _Engine()._save_selected_fov_config(timelapse, experiment_dir)
+    fov_artifacts.save_selected_config(timelapse, experiment_dir, None)
 
     # named after the experiment FOLDER, beside the config.yaml it mirrors
     artifact = experiment_dir / "config_2026_08_04_my_experiment.yaml"
@@ -445,7 +441,7 @@ def test_selected_fov_config_fills_stage_positions_and_reloads(tmp_path):
 def test_selected_fov_config_appends_the_dedup_index(tmp_path):
     # A second acquisition in the same folder must not silently replace the first record --
     # the folder name alone does not distinguish them.
-    from shrimpy.engines.mantis_engine import MantisEngine
+    from shrimpy.fov_selection import artifacts as fov_artifacts
 
     seq = _sequence(metadata={"fov_selection": _grid_fov_cfg()})
     prescan = build_prescan_sequence(seq, fov_selection_config(seq))
@@ -454,15 +450,8 @@ def test_selected_fov_config_appends_the_dedup_index(tmp_path):
     experiment_dir = tmp_path / "expt"
     experiment_dir.mkdir()
 
-    class _Engine:
-        _run_index = None
-        _save_selected_fov_config = MantisEngine._save_selected_fov_config
-
-    first = _Engine()
-    first._save_selected_fov_config(timelapse, experiment_dir)
-    second = _Engine()
-    second._run_index = 1
-    second._save_selected_fov_config(timelapse, experiment_dir)
+    fov_artifacts.save_selected_config(timelapse, experiment_dir, None)
+    fov_artifacts.save_selected_config(timelapse, experiment_dir, 1)
 
     assert (experiment_dir / "config_expt.yaml").exists()
     assert (experiment_dir / "config_expt_1.yaml").exists()
@@ -471,18 +460,14 @@ def test_selected_fov_config_appends_the_dedup_index(tmp_path):
 def test_selected_fov_config_never_raises(tmp_path):
     # Written between the pre-scan and the timelapse: a filesystem failure must be logged,
     # not propagated.
-    from shrimpy.engines.mantis_engine import MantisEngine
+    from shrimpy.fov_selection import artifacts as fov_artifacts
 
     seq = _sequence(metadata={"fov_selection": _grid_fov_cfg()})
     prescan = build_prescan_sequence(seq, fov_selection_config(seq))
     timelapse = build_timelapse_sequence(seq, prescan, ["site0_0001"])
 
-    class _Engine:
-        _run_index = None
-        _save_selected_fov_config = MantisEngine._save_selected_fov_config
-
     experiment_dir = tmp_path / "expt"
     experiment_dir.mkdir()
     # a directory where the file should go -> write_text raises, must be swallowed
     (experiment_dir / "config_expt.yaml").mkdir()
-    _Engine()._save_selected_fov_config(timelapse, experiment_dir)
+    fov_artifacts.save_selected_config(timelapse, experiment_dir, None)

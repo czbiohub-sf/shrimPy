@@ -206,7 +206,7 @@ def _parse_needed_features(needed: list[str]) -> dict[tuple[str, str, str], set[
     return groups
 
 
-def _cheap_features(mask: np.ndarray, px_um: float, keys: set[str]) -> dict[str, float]:
+def _cheap_features(mask: np.ndarray, keys: set[str]) -> dict[str, float]:
     """Aggregate features for ``keys`` from the mask alone (no regionprops).
 
     Numerically identical to the full path for the cheap keys (``coverage_frac`` matches
@@ -264,7 +264,7 @@ def fov_feature_matrix(
                 continue  # this organelle contributes no needed feature
 
         if keys_needed is not None and keys_needed <= CHEAP_FEATURE_KEYS:
-            agg = _cheap_features(masks[organelle], px_um, keys_needed)
+            agg = _cheap_features(masks[organelle], keys_needed)
         else:
             rows = FeatureExtractor.object_feature_rows(
                 masks[organelle],
@@ -291,7 +291,7 @@ def fov_feature_matrix(
                     organelle,
                 )
                 cheap = keys_needed if keys_needed is not None else CHEAP_FEATURE_KEYS
-                agg = _cheap_features(masks[organelle], px_um, set(cheap) & CHEAP_FEATURE_KEYS)
+                agg = _cheap_features(masks[organelle], set(cheap) & CHEAP_FEATURE_KEYS)
             else:
                 agg = FeatureExtractor.group_features(pd.DataFrame(rows))
                 if keys_needed is None or (keys_needed & MASK_FEATURE_KEYS):
@@ -335,7 +335,7 @@ def flat_feature_matrix(
     keys_needed = set(needed) if needed is not None else None
 
     if keys_needed is not None and keys_needed <= CHEAP_FEATURE_KEYS:
-        agg = _cheap_features(mask, px_um, keys_needed)
+        agg = _cheap_features(mask, keys_needed)
     else:
         rows = FeatureExtractor.object_feature_rows(
             mask,
@@ -358,7 +358,7 @@ def flat_feature_matrix(
                 organelle,
             )
             cheap = keys_needed if keys_needed is not None else CHEAP_FEATURE_KEYS
-            agg = _cheap_features(mask, px_um, set(cheap) & CHEAP_FEATURE_KEYS)
+            agg = _cheap_features(mask, set(cheap) & CHEAP_FEATURE_KEYS)
         else:
             agg = FeatureExtractor.group_features(pd.DataFrame(rows))
             if keys_needed is None or (keys_needed & MASK_FEATURE_KEYS):

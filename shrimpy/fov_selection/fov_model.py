@@ -482,14 +482,8 @@ def build_fov_model(model_cfg: dict) -> FovModel:
 # These two functions map that to/from the interpretable per-shape parameters used in configs
 # (center/fwhm, center/fold, midpoint/width), so a GUI can show and edit the
 # SAME knobs the config uses. They are exact inverses (round-trip).
-def curve_params(
-    shape: str,
-    direction: str,
-    lo: float,
-    hi: float,
-    curve_k: float,
-) -> dict:
-    """Internal bounds -> ordered dict of interpretable params for ``shape`` / ``direction``."""
+def curve_params(shape: str, lo: float, hi: float, curve_k: float) -> dict:
+    """Internal bounds -> ordered dict of interpretable params for ``shape``."""
     if shape == "gaussian":
         return {"center": 0.5 * (lo + hi), "fwhm": (0.5 * (hi - lo)) / _FWHM_TO_SIGMA}
     if shape == "lognormal":
@@ -504,7 +498,7 @@ def curve_params(
     raise ValueError(f"unknown shape {shape!r}; expected one of {DesirabilityModel.SHAPES}")
 
 
-def curve_bounds(shape: str, direction: str, params: dict) -> tuple:
+def curve_bounds(shape: str, params: dict) -> tuple:
     """Inverse of :func:`curve_params`: interpretable params -> internal
     ``(lo, hi, curve_k)``. Raises on invalid values (e.g. fold<=1)."""
     if shape == "gaussian":

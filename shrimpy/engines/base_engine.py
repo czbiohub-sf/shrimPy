@@ -56,6 +56,7 @@ from shrimpy._logging import find_log_file
 from shrimpy.config import ShrimpyMetadata, load_config
 from shrimpy.dynatrack import DynaTrack
 from shrimpy.fov_selection import FovSelection
+from shrimpy.fov_selection import artifacts as fov_artifacts
 from shrimpy.fov_selection.sequences import (
     build_prescan_sequence,
     build_timelapse_sequence,
@@ -716,7 +717,9 @@ class BaseEngine(MDAEngine):
                     "FOV-selection calibration mode: skipping the timelapse run and "
                     "opening the feature viewer."
                 )
-                self._launch_feature_viewer(self._fov_calibration_csv, fov_cfg.get("model"))
+                fov_artifacts.launch_feature_viewer(
+                    self._fov_calibration_csv, fov_cfg.get("model")
+                )
                 logger.info("Calibration pre-scan completed successfully")
                 return
 
@@ -725,7 +728,7 @@ class BaseEngine(MDAEngine):
                 logger.warning("FOV selection: no FOVs passed; skipping the timelapse run.")
                 return
             timelapse_seq = build_timelapse_sequence(sequence, prescan_seq, passed)
-            self._save_selected_fov_config(timelapse_seq, output_dir)
+            fov_artifacts.save_selected_config(timelapse_seq, output_dir, self._run_index)
             self._run_mda(timelapse_seq, data_path, write_summary=True)
 
         logger.info("Acquisition completed successfully")
@@ -767,133 +770,6 @@ class BaseEngine(MDAEngine):
             dimension_overrides={"z": {"chunk_size": min(512, sequence.sizes["z"])}},
             overwrite=False,
         )
-
-    def _save_selected_fov_config(self, timelapse_seq: MDASequence, output_dir: Path) -> None:
-        """Record the acquisition config with the SELECTED FOVs in ``stage_positions``.
-
-        The config an FOV-selection experiment starts from leaves ``stage_positions``
-        empty -- the candidates live under ``fov_selection.prescan_mda`` and the real
-        positions are only known after the pre-scan. This writes the same sequence with
-        that gap filled: one entry per selected FOV carrying its absolute ``x``/``y``,
-        the well's ``ZDrive`` coarse focus, and its ``plate_row``/``plate_col``.
-
-        Saved as ``config_<experiment folder>.yaml`` in the experiment folder, beside
-        the hand-written ``config.yaml`` it mirrors. A purely descriptive record of what
-        the run chose -- nothing reads it back. Because the name follows the FOLDER
-        rather than the acquisition, a second acquisition in the same folder would land
-        on it; the run index is appended (``config_<folder>_1.yaml``) so an existing
-        record is not silently replaced.
-
-        ``exclude_defaults`` keeps the file close to the hand-written config rather than
-        expanding every useq default. The ``setup.action`` type discriminator is restored
-        by hand -- pydantic drops it as a default, and without it the emitted YAML would
-        not be valid against the ``Action`` union even for inspection.
-
-        Never raises -- this is a record written next to the data, and a failure to write
-        it must not take the acquisition down between the pre-scan and the timelapse.
-        """
-        import yaml
-
-        stem = f"config_{output_dir.name}"
-        if self._run_index is not None:
-            stem = f"{stem}_{self._run_index}"
-        path = output_dir / f"{stem}.yaml"
-        try:
-            data = timelapse_seq.model_dump(mode="json", exclude_defaults=True)
-            setup = data.get("setup")
-            if isinstance(setup, dict) and isinstance(setup.get("action"), dict):
-                setup["action"].setdefault("type", timelapse_seq.setup.action.type)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(
-                yaml.safe_dump(data, sort_keys=False, default_flow_style=False),
-                encoding="utf-8",
-            )
-        except Exception:
-            logger.exception(
-                "FOV selection: could not write the selected-FOV config to %s; the "
-                "acquisition is unaffected",
-                path,
-            )
-            return
-        logger.info(
-            "FOV selection: wrote the acquisition config with %d selected FOVs to %s",
-            len(timelapse_seq.stage_positions),
-            path,
-        )
-
-    def _launch_feature_viewer(
-        self, csv_path: Path | None, model_cfg: dict | None = None
-    ) -> None:
-        """Open the FOV feature viewer on a calibration pre-scan's feature matrix.
-
-        Launched as a detached subprocess (``python -m
-        shrimpy.fov_selection.feature_viewer <csv>``) so its Qt event loop stays clear
-        of the acquisition process. When ``model_cfg`` carries a ``features`` block, it
-        is written beside the CSV and passed via ``--rank-profile`` so the Rank tab opens
-        pre-populated with the config's ``fov_selection.model`` curves (merged over the
-        data-seeded defaults) rather than bare defaults. Never raises: the calibration
-        data is already on disk, so a failure to launch is logged with the manual command
-        rather than taking the run down.
-        """
-        if csv_path is None or not Path(csv_path).exists():
-            logger.warning(
-                "FOV-selection calibration: feature matrix %s was not written; open the "
-                "viewer manually once the CSV exists: "
-                "`python -m shrimpy.fov_selection.feature_viewer <csv>`.",
-                csv_path,
-            )
-            return
-        import subprocess
-        import sys
-
-        csv_path = Path(csv_path)
-        profile_path = self._write_rank_profile(csv_path, model_cfg)
-        logger.info("FOV-selection calibration: launching the feature viewer on %s", csv_path)
-        cmd = [
-            sys.executable,
-            "-m",
-            "shrimpy.fov_selection.feature_viewer",
-            "--start-tab",
-            "rank",
-        ]
-        if profile_path is not None:
-            cmd += ["--rank-profile", str(profile_path)]
-        cmd.append(str(csv_path))
-        try:
-            subprocess.Popen(cmd)
-        except Exception:
-            logger.exception(
-                "FOV-selection calibration: could not launch the feature viewer; open it "
-                "manually: `python -m shrimpy.fov_selection.feature_viewer %s`.",
-                csv_path,
-            )
-
-    @staticmethod
-    def _write_rank_profile(csv_path: Path, model_cfg: dict | None) -> Path | None:
-        """Write the config's ``model`` block beside the CSV so the viewer can seed the
-        Rank tab from it (``--rank-profile``). Returns the file path, or ``None`` when
-        there is nothing to seed (no model, or a model with no ``features`` mapping, e.g.
-        a trained-tree model loaded from a ``.joblib``). Never raises: seeding is a
-        convenience, so a write failure just falls back to the data-seeded defaults.
-        """
-        if not model_cfg or not model_cfg.get("features"):
-            return None
-        import yaml
-
-        profile_path = csv_path.with_name(csv_path.stem + "_config_ranking_profile.yaml")
-        try:
-            profile_path.write_text(
-                yaml.safe_dump(model_cfg, sort_keys=False, default_flow_style=False),
-                encoding="utf-8",
-            )
-        except Exception:
-            logger.exception(
-                "FOV-selection calibration: could not write the config ranking profile to "
-                "%s; the viewer will open with data-seeded defaults",
-                profile_path,
-            )
-            return None
-        return profile_path
 
 
 def _format_duration(seconds: float) -> str:

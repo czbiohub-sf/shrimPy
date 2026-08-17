@@ -377,98 +377,11 @@ class FeatureExtractor:
             "central_cov_ratio": central_cov_ratio,
         }
 
-    @classmethod
-    def mask_empty_circle_features(cls, mask: np.ndarray) -> dict:
-        """Largest object-free circle fit to CELL EDGES and fully INSIDE the FOV.
-
-        The largest empty circle that (a) contains no foreground and (b) lies entirely
-        within the image. At each candidate center the achievable radius is limited by BOTH the
-        nearest cell edge (background distance transform) AND the nearest image border, so
-        ``r(p) = min(dist_to_cell, dist_to_border)``; the circle is the max of ``r`` over the
-        FOV. This keeps the circle off the edges/corners (a circle centered at a corner is only
-        a quarter inside the image and is not a real "void inside the FOV").
-
-          max_radius_between_cells_norm       circle radius / half-diagonal (large -> big void)
-          max_radius_between_cells_offset_norm  signed clearance from the image center to the
-                                           circle's NEAR edge / half-diagonal. Higher better:
-                                           < 0 -> void engulfs the center; > 0 -> void at edge.
-        Empty mask -> both NaN.
-        """
-        fg = np.asarray(mask) > 0
-        keys = ("max_radius_between_cells_norm", "max_radius_between_cells_offset_norm")
-        if not fg.any():
-            return {k: float("nan") for k in keys}
-        dt = distance_transform_edt(
-            ~fg
-        )  # background -> nearest-foreground (cell-edge) distance
-        h, w = fg.shape
-        half = 0.5 * float(np.hypot(h, w))
-        # distance from each pixel to the nearest image border; the empty circle can be no
-        # bigger than this without spilling outside the FOV.
-        yy, xx = np.ogrid[0:h, 0:w]
-        border = np.minimum(np.minimum(xx, (w - 1) - xx), np.minimum(yy, (h - 1) - yy))
-        r_map = np.minimum(dt, border)  # largest circle fully inside the FOV at each center
-        vy, vx = np.unravel_index(int(np.argmax(r_map)), r_map.shape)
-        r = float(r_map[vy, vx])  # largest empty-and-contained circle radius (px)
-        center_to_void = float(np.hypot(vx - (w - 1) / 2.0, vy - (h - 1) / 2.0))
-        return {
-            "max_radius_between_cells_norm": r / half,
-            "max_radius_between_cells_offset_norm": (center_to_void - r) / half,
-        }
-
-    @classmethod
-    def mask_nn_distance_features(cls, mask: np.ndarray, px_um: float) -> dict:
-        """Nearest-neighbor distance between cell MASKS (edge-to-edge), not centroids.
-
-        Edge-to-edge counterpart of :meth:`group_features`' centroid ``nn_um_mean``: for each
-        cell, the distance to the NEAREST OTHER cell measured between their mask boundaries
-        (0 for touching cells), averaged over cells and converted to microns.
-
-        Uses the cells' generalized Voronoi tessellation: with ``dt`` = distance to the nearest
-        foreground pixel and ``nl`` = the label of that nearest cell at every pixel, two cells
-        meet along an ``nl`` boundary, and their edge-to-edge gap across it is ``dt`` on one
-        side plus ``dt`` on the other (0 where masks touch, since ``dt`` = 0 on foreground).
-        Per cell we take the min over its Voronoi boundaries; the FOV feature is the mean.
-
-          nn_mask_um_mean   mean per-cell nearest-neighbor edge-to-edge distance (um).
-        < 2 objects -> NaN.
-        """
-        m = np.asarray(mask)
-        labels = np.unique(m)
-        labels = labels[labels != 0]
-        if labels.size < 2:
-            return {"nn_mask_um_mean": float("nan")}
-        fg = m != 0
-        dt, (iy, ix) = distance_transform_edt(~fg, return_indices=True)
-        nl = m[
-            iy, ix
-        ]  # nearest-cell label at every pixel (foreground pixels map to themselves)
-        per_cell = np.full(int(m.max()) + 1, np.inf)
-
-        def _accumulate(a, b, da, db):
-            d = a != b  # a Voronoi boundary between two different cells
-            if d.any():
-                g = (da + db)[d]  # edge-to-edge gap estimate across the boundary
-                np.minimum.at(per_cell, a[d], g)
-                np.minimum.at(per_cell, b[d], g)
-
-        _accumulate(nl[:, :-1], nl[:, 1:], dt[:, :-1], dt[:, 1:])  # horizontal neighbours
-        _accumulate(nl[:-1, :], nl[1:, :], dt[:-1, :], dt[1:, :])  # vertical neighbours
-        vals = per_cell[labels]
-        vals = vals[np.isfinite(vals)]
-        return {
-            "nn_mask_um_mean": float(vals.mean()) * float(px_um) if vals.size else float("nan")
-        }
-
 
 # Module-level functional API: thin aliases to the FeatureExtractor class methods, for callers
 # that prefer plain functions and to keep import sites stable. The class remains the single,
 # cohesive home of the feature code -- these are just its bound methods re-exported here.
-object_feature_rows = FeatureExtractor.object_feature_rows
 group_features = FeatureExtractor.group_features
 mask_gap_features = FeatureExtractor.mask_gap_features
-mask_empty_circle_features = FeatureExtractor.mask_empty_circle_features
 mask_occupancy_entropy = FeatureExtractor.mask_occupancy_entropy
-mask_nn_distance_features = FeatureExtractor.mask_nn_distance_features
 edge_object_frac = FeatureExtractor.edge_object_frac
-edge_area_frac = FeatureExtractor.edge_area_frac

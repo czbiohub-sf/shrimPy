@@ -314,9 +314,10 @@ class FovSelection:
     ) -> FovSelection | None:
         """Build the coordinator from the ``fov_selection`` metadata block.
 
-        Returns ``None`` when FOV selection is disabled. Raises when it is
-        enabled but no usable model is configured (fail before acquiring) or
-        when the pixel size / z step needed for reconstruction are missing.
+        Returns ``None`` when FOV selection is disabled. Raises (fail before
+        acquiring) when it is enabled but no usable model is configured, the pixel
+        size is missing, or a deskew/phase reconstruction needs the Z step but the
+        sequence z_plan has none.
         """
         if not meta or not meta.get("enabled", False):
             return None
@@ -350,12 +351,16 @@ class FovSelection:
                 "0 or None); calibrate the pixel size in Micro-Manager."
             )
         z_step_um = getattr(sequence.z_plan, "step", None) if sequence.z_plan else None
-        ### HARDCODE
-        # if not z_step_um:
-        #     raise ValueError(
-        #         "FOV selection: the sequence z_plan has no step; a stepped z_plan is "
-        #         "required to derive the Z scale for reconstruction."
-        #     )
+        # Deskew and phase reconstruction need the Z step; other pipelines (raw -> segment,
+        # flatfield-only) do not, so only require it when a deskew/phase block is configured.
+        # _inject_scales feeds it into DeskewSettings.scan_step_um / PhaseSettings.z_pixel_size;
+        # a missing step would otherwise crash the worker mid-run (or, with a hand-set
+        # px_to_scan_ratio, silently use a wrong axial scale) and select nothing.
+        if (meta.get("deskew") or meta.get("phase")) and not z_step_um:
+            raise ValueError(
+                "FOV selection: reconstruction includes deskew/phase, which need the Z step, "
+                "but the sequence z_plan has no step. Add a stepped z_plan before acquiring."
+            )
         return cls(
             config=meta,
             sequence=sequence,
@@ -713,11 +718,6 @@ class FovSelection:
         ``passed_position_names`` is read to build the timelapse run.
         """
         self._await_pending(timeout=timeout)
-
-    def is_passed(self, name: str) -> bool:
-        """Whether ``name`` passed FOV selection (see :meth:`passed_position_names`).
-        Unknown/undecided names did not pass."""
-        return name in set(self.passed_position_names())
 
     def passed_position_names(self) -> list[str]:
         """Names of the FOVs that passed FOV selection (imaged in the timelapse run).
