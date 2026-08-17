@@ -716,7 +716,7 @@ class BaseEngine(MDAEngine):
                     "FOV-selection calibration mode: skipping the timelapse run and "
                     "opening the feature viewer."
                 )
-                self._launch_feature_viewer(self._fov_calibration_csv)
+                self._launch_feature_viewer(self._fov_calibration_csv, fov_cfg.get("model"))
                 logger.info("Calibration pre-scan completed successfully")
                 return
 
@@ -821,14 +821,19 @@ class BaseEngine(MDAEngine):
             path,
         )
 
-    def _launch_feature_viewer(self, csv_path: Path | None) -> None:
+    def _launch_feature_viewer(
+        self, csv_path: Path | None, model_cfg: dict | None = None
+    ) -> None:
         """Open the FOV feature viewer on a calibration pre-scan's feature matrix.
 
         Launched as a detached subprocess (``python -m
         shrimpy.fov_selection.feature_viewer <csv>``) so its Qt event loop stays clear
-        of the acquisition process. Never raises: the calibration data is already on
-        disk, so a failure to launch is logged with the manual command rather than
-        taking the run down.
+        of the acquisition process. When ``model_cfg`` carries a ``features`` block, it
+        is written beside the CSV and passed via ``--rank-profile`` so the Rank tab opens
+        pre-populated with the config's ``fov_selection.model`` curves (merged over the
+        data-seeded defaults) rather than bare defaults. Never raises: the calibration
+        data is already on disk, so a failure to launch is logged with the manual command
+        rather than taking the run down.
         """
         if csv_path is None or not Path(csv_path).exists():
             logger.warning(
@@ -842,24 +847,53 @@ class BaseEngine(MDAEngine):
         import sys
 
         csv_path = Path(csv_path)
+        profile_path = self._write_rank_profile(csv_path, model_cfg)
         logger.info("FOV-selection calibration: launching the feature viewer on %s", csv_path)
+        cmd = [
+            sys.executable,
+            "-m",
+            "shrimpy.fov_selection.feature_viewer",
+            "--start-tab",
+            "rank",
+        ]
+        if profile_path is not None:
+            cmd += ["--rank-profile", str(profile_path)]
+        cmd.append(str(csv_path))
         try:
-            subprocess.Popen(
-                [
-                    sys.executable,
-                    "-m",
-                    "shrimpy.fov_selection.feature_viewer",
-                    "--start-tab",
-                    "rank",
-                    str(csv_path),
-                ]
-            )
+            subprocess.Popen(cmd)
         except Exception:
             logger.exception(
                 "FOV-selection calibration: could not launch the feature viewer; open it "
                 "manually: `python -m shrimpy.fov_selection.feature_viewer %s`.",
                 csv_path,
             )
+
+    @staticmethod
+    def _write_rank_profile(csv_path: Path, model_cfg: dict | None) -> Path | None:
+        """Write the config's ``model`` block beside the CSV so the viewer can seed the
+        Rank tab from it (``--rank-profile``). Returns the file path, or ``None`` when
+        there is nothing to seed (no model, or a model with no ``features`` mapping, e.g.
+        a trained-tree model loaded from a ``.joblib``). Never raises: seeding is a
+        convenience, so a write failure just falls back to the data-seeded defaults.
+        """
+        if not model_cfg or not model_cfg.get("features"):
+            return None
+        import yaml
+
+        profile_path = csv_path.with_name(csv_path.stem + "_config_ranking_profile.yaml")
+        try:
+            profile_path.write_text(
+                yaml.safe_dump(model_cfg, sort_keys=False, default_flow_style=False),
+                encoding="utf-8",
+            )
+        except Exception:
+            logger.exception(
+                "FOV-selection calibration: could not write the config ranking profile to "
+                "%s; the viewer will open with data-seeded defaults",
+                profile_path,
+            )
+            return None
+        return profile_path
 
 
 def _format_duration(seconds: float) -> str:

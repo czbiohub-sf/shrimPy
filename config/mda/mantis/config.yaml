@@ -278,20 +278,15 @@ metadata:
     #
     #   ranking_by_defined_range               soft, weighted score (ranking "Model 1"):
     #       score = sum_j weight_j * desirability_j(x_j), desirability in [0, 1].
-    #       Per feature: `weight` and `shape` (linear|sigmoid|gaussian|lognormal -- ALWAYS
+    #       Per feature: `weight` and `shape` (sigmoid|gaussian|lognormal -- ALWAYS
     #       specify it explicitly). Every shape is set by interpretable "where it's best" +
     #       "how forgiving" numbers (no raw sigma / steepness):
-    #         - linear: monotonic ramp -> `onset` (d=0) + `ideal` (d=1); direction implied by
-    #           their order (ideal>onset = higher-is-better, else lower). OR target band ->
-    #           `range` [lo, hi] (plateau of d=1) + optional `soft` shoulders to 0 (scalar or
-    #           [left, right]).
-    #         - sigmoid: monotonic -> `midpoint` (d=0.5) + `width` (10%->90% span) +
-    #           `direction` (higher|lower). OR soft band -> `half_band` [lo, hi] (d=0.5 edges)
-    #           + `width`.
     #         - gaussian (symmetric bell): `center` (peak, d=1) + `fwhm` (d=0.5 at
     #           center +- fwhm/2).
     #         - lognormal (right-skewed bell, x>0): `center` (peak) + `fold` (d=0.5 at
     #           center*fold and center/fold).
+    #         - sigmoid (monotonic): `midpoint` (d=0.5) + `width` (10%->90% span) +
+    #           `direction` (higher|lower).
     #       A missing feature
     #       (could not be measured, e.g. too few objects) contributes 0 desirability
     #       regardless of direction, so it is penalized and never read as ideal; a FOV with
@@ -307,53 +302,6 @@ metadata:
     #       its `path`. Feature names are whatever it was trained on (e.g. the channel-
     #       prefixed nuclei_vs_sum__coverage_frac when trained on multi-channel features).
     #
-    # ---- ACTIVE: ranking by defined range ------------------------------------------
-    # 7-feature set (coverage + spacing + spatial-void features). Ranges are starting
-    # values seeded from the data quantiles across the bf-midslice datasets; tune them in
-    # the feature viewer Rank tab (drag the profile / edit the knobs), then Save… to a YAML
-    # file and paste its contents in as the `features:` block below.
-    # model:
-    #   type: ranking_by_defined_range
-    #   top_fov: 3                     # per position: keep the 3 best FOVs of each well /
-    #                                  # grid center; required
-    #   aggregation: gaussian          # gaussian | product | sum -- see the ACTIVE block below
-    #   features:                      # always specify `shape` explicitly (here: all linear)
-    #     coverage_frac:               # fraction of the FOV covered by objects (target band)
-    #       shape: linear              # target band: `range` = plateau (d=1), `soft` = shoulders
-    #       range: [0.526799, 0.731607]
-    #       soft: [0.294287, 0.204808]
-    #       weight: 1.0
-    #     nn_um_mean:                  # mean nearest-neighbour spacing, um (target band)
-    #       shape: linear
-    #       range: [22.349744, 31.211642]
-    #       soft: [8.861897, 3.29326]
-    #       weight: 1.0
-    #     nn_cv:                       # spacing variability (std/mean); even = lower is better
-    #       shape: linear              # monotonic ramp: d=0 at `onset`, d=1 at `ideal`
-    #       onset: 0.346142            # d = 0 (too variable)
-    #       ideal: 0.254418            # d = 1 (even spacing); ideal < onset -> lower-is-better
-    #       weight: 1.0
-    #     empty_grid_frac:             # fraction of empty grid cells; even coverage = lower
-    #       shape: linear
-    #       onset: 0.84375
-    #       ideal: 0.6875
-    #       weight: 1.0
-    #     occupancy_entropy:           # occupancy spread across the FOV; more spread = higher
-    #       shape: linear
-    #       onset: 0.549962            # d = 0; ideal > onset -> higher-is-better
-    #       ideal: 0.712936            # d = 1
-    #       weight: 1.0
-    #     max_radius_corner_to_centroid_norm:       # largest empty circle / half-diagonal; smaller = lower
-    #       shape: linear
-    #       onset: 0.736688
-    #       ideal: 0.411649
-    #       weight: 1.0
-    #     max_radius_corner_to_edge:                  # largest object-free region radius (um); smaller = lower
-    #       shape: linear
-    #       onset: 70.523688
-    #       ideal: 30.587509
-    #       weight: 1.0
-
     # ---- ALTERNATIVE 1: classification by thresholding (hard [lo, hi] box) ----------
     # model:
     #   type: classification_by_thresholding
@@ -372,9 +320,11 @@ metadata:
     #   # features the online pipeline must emit the same prefixed columns
     #   # (e.g. nuclei_vs_sum__coverage_frac) -> use a matching VS preprocessing.
 
-    # ---- ALTERNATIVE 3: ranking by defined range, NON-LINEAR shapes ----------------
-    # Same ranking_by_defined_range model, but with the smooth (non-linear) curves instead
-    # of the default flat-top linear band. Each shape is set by interpretable numbers:
+    # ---- ACTIVE: ranking by defined range -------------------------------------------
+    # The ranking_by_defined_range model with smooth per-feature curves. Starting values are
+    # seeded from the data quantiles; tune them in the feature viewer Rank tab (drag the
+    # profile / edit the knobs), then Save… to a YAML file and paste it in as `features:`.
+    # Each shape is set by interpretable numbers:
     #   gaussian  : `center` (peak, d=1) + `fwhm` (d=0.5 at center +- fwhm/2) -- symmetric bell.
     #   lognormal : `center` (peak) + `fold` (d=0.5 at center*fold and center/fold) -- a
     #               right-skewed bell for positive quantities (too-high is more forgiving).
@@ -401,9 +351,9 @@ metadata:
       #             feature at once. Distances are exact and unbounded, so FOVs far off-target
       #             are still ranked against each other; a feature that could not be measured
       #             at all counts as 10 sigma (DesirabilityModel.MISSING_Z2).
-      #             `linear`/`sigmoid` features have no sigma, so under this mode their
-      #             distance is derived from the desirability and capped at that same 10 sigma
-      #             -- prefer `gaussian`/`lognormal` shapes here.
+      #             `sigmoid` features have no sigma, so under this mode their distance is
+      #             derived from the desirability and capped at that same 10 sigma -- prefer
+      #             `gaussian`/`lognormal` shapes here.
       #   product   weighted geometric mean, (prod_j d_j^w_j)^(1/sum_j w_j). NON-COMPENSATORY:
       #             any single feature near 0 pulls the whole score toward 0 -- a gate feature
       #             acts as a veto -- but it decays more gently than gaussian.

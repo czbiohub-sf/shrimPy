@@ -94,21 +94,16 @@ class DesirabilityModel(FovModel):
     -- so a single weak feature vetoes the FOV. The other two ``aggregation`` modes instead
     reduce each feature to a scalar desirability (:meth:`_desirability`) and combine those:
     ``sum`` (compensatory weighted mean) or ``product`` (weighted geometric mean). See
-    :meth:`_aggregate`. ``shape`` (linear|sigmoid|gaussian|
-    lognormal -- see :attr:`SHAPES`) is REQUIRED per feature. Every shape is defined by
-    interpretable "where it's best" + "how forgiving" parameters (no raw sigma / steepness):
+    :meth:`_aggregate`. ``shape`` (sigmoid|gaussian|lognormal -- see :attr:`SHAPES`) is
+    REQUIRED per feature. Every shape is defined by interpretable "where it's best" + "how
+    forgiving" parameters (no raw sigma / steepness):
 
     - ``gaussian`` (symmetric bell): ``center`` (peak, desirability 1) + ``fwhm`` (full width
       at half maximum -- desirability 0.5 at ``center +- fwhm/2``).
     - ``lognormal`` (right-skewed bell, x>0): ``center`` (peak) + ``fold`` (multiplicative
       tolerance -- desirability 0.5 at ``center*fold`` and ``center/fold``).
-    - ``sigmoid`` (logistic): monotonic -- ``midpoint`` (desirability 0.5) + ``width`` (the
-      10%->90% transition span) + ``direction`` (higher|lower); OR a soft band --
-      ``half_band`` [lo, hi] (desirability 0.5 at each edge) + ``width``.
-    - ``linear`` (bounded, reaches exactly 0/1): monotonic ramp -- ``onset`` (desirability 0)
-      + ``ideal`` (desirability 1), direction implied by their order; OR a target band --
-      ``range`` [lo, hi] (plateau of 1) + optional ``soft`` (linear shoulder width to 0; a
-      scalar or ``[left, right]`` pair, ``soft_left``/``soft_right`` override either side).
+    - ``sigmoid`` (monotonic logistic): ``midpoint`` (desirability 0.5) + ``width`` (the
+      10%->90% transition span) + ``direction`` (higher|lower).
 
     Every feature also takes an optional ``weight`` (default 1.0).
 
@@ -126,12 +121,12 @@ class DesirabilityModel(FovModel):
     """
 
     DIRECTIONS = ("target", "higher", "lower")
-    # Curve family for the transition. 'linear' is bounded (finite shoulders / clipped ramp,
-    # reaches 0); the others have tails that never reach exactly 0. 'gaussian' is a normal bell
-    # set by center/fwhm (see _gaussian_bounds). 'curve_k' tunes the remaining two: sigmoid =
-    # logistic sharpness (def 6); lognormal = tail exponent beta (def 2) in log(x), a
-    # right-skewed bell with a long RIGHT tail (needs x>0). 'linear'/'gaussian' ignore curve_k.
-    SHAPES = ("linear", "sigmoid", "gaussian", "lognormal")
+    # Curve family for the transition; every shape has tails that never reach exactly 0.
+    # 'gaussian' is a normal bell set by center/fwhm (see _gaussian_bounds). 'curve_k' tunes
+    # the other two: sigmoid = logistic sharpness (def 6); lognormal = tail exponent beta
+    # (def 2) in log(x), a right-skewed bell with a long RIGHT tail (needs x>0). 'gaussian'
+    # ignores curve_k.
+    SHAPES = ("sigmoid", "gaussian", "lognormal")
 
     # Desirability of a missing (NaN) feature: 0 for every direction. A NaN means the feature
     # could not be measured (e.g. too few / no objects segmented) -- evidence of a degenerate
@@ -156,9 +151,7 @@ class DesirabilityModel(FovModel):
         lo: float,
         hi: float,
         direction: str,
-        soft_left: float,
-        soft_right: float,
-        shape: str = "linear",
+        shape: str = "gaussian",
         curve_k: float = 0.0,
     ) -> np.ndarray:
         """Per-value squared normalized distance from the ideal -- the ``z²`` of one axis of the
@@ -172,8 +165,8 @@ class DesirabilityModel(FovModel):
         ``gaussian``  ``|(x - center)/sigma|^beta`` -- the Mahalanobis distance of the bell
                       (``beta = 2`` gives the textbook ``z²``).
         ``lognormal`` the same in ``log(x)``; ``x <= 0`` is outside the support -> missing.
-        ``linear`` /  no scale parameter exists for these, so the equivalent distance is derived
-        ``sigmoid``   from the desirability and capped at :attr:`MISSING_Z2`.
+        ``sigmoid``   no scale parameter exists, so the equivalent distance is derived from the
+                      desirability and capped at :attr:`MISSING_Z2`.
 
         A missing (NaN) value gets :attr:`MISSING_Z2`.
         """
@@ -197,7 +190,7 @@ class DesirabilityModel(FovModel):
             z2[pos] = np.abs((np.log(x[pos]) - mu) / s) ** beta
             out[m] = z2
         else:
-            d = cls._desirability(x, lo, hi, direction, soft_left, soft_right, shape, curve_k)
+            d = cls._desirability(x, lo, hi, direction, shape, curve_k)
             with np.errstate(divide="ignore"):
                 out[m] = np.minimum(-2.0 * np.log(np.clip(d, 0.0, 1.0)), cls.MISSING_Z2)
         return out
@@ -258,7 +251,7 @@ class DesirabilityModel(FovModel):
                 f"ranking_by_defined_range 'aggregation' must be one of {self.AGGREGATIONS}; "
                 f"got {self._aggregation!r}"
             )
-        # (name, lo, hi, direction, soft_left, soft_right, weight)
+        # (name, lo, hi, direction, weight, shape, curve_k)
         self._specs: list[tuple] = []
         self.feature_names: list[str] = []
         total_weight = 0.0
@@ -277,10 +270,10 @@ class DesirabilityModel(FovModel):
                     f"feature {name!r} shape must be one of {self.SHAPES}; got {shape!r}"
                 )
             weight = float(cfg.get("weight", 1.0))
-            # Defaults; each shape overrides what it uses. soft_left/right apply only to a
-            # linear target band, curve_k only to sigmoid; both stay 0 otherwise. Every shape
-            # is stored as the internal (lo, hi, direction, ...) tuple :meth:`_desirability` reads.
-            direction, soft_left, soft_right, curve_k = "target", 0.0, 0.0, 0.0
+            # Defaults; each shape overrides what it uses. curve_k applies to sigmoid. Every
+            # shape is stored as the internal (lo, hi, direction, curve_k) tuple that
+            # :meth:`_desirability` reads.
+            direction, curve_k = "target", 0.0
 
             if shape == "gaussian":  # center (peak) + fwhm (width at half max)
                 center, fwhm = cfg.get("center"), cfg.get("fwhm")
@@ -298,73 +291,22 @@ class DesirabilityModel(FovModel):
                     )
                 lo, hi = self._lognormal_bounds(float(center), float(fold), name)
 
-            elif shape == "sigmoid":  # midpoint+width (monotonic) OR half_band+width (band)
+            elif shape == "sigmoid":  # monotonic: midpoint + width + direction (higher|lower)
                 width = cfg.get("width")
                 if width is None or float(width) <= 0:
                     raise ValueError(f"feature {name!r} sigmoid shape needs a 'width' > 0")
                 width = float(width)
-                if "half_band" in cfg:
-                    band = cfg["half_band"]
-                    if len(band) != 2 or float(band[1]) < float(band[0]):
-                        raise ValueError(
-                            f"feature {name!r} sigmoid 'half_band' must be [lo, hi] with hi>=lo"
-                        )
-                    lo, hi, direction = float(band[0]), float(band[1]), "target"
-                    curve_k = _SIGMOID_10_90 * (hi - lo) / width
-                elif "midpoint" in cfg:
-                    direction = cfg.get("direction")
-                    if direction not in ("higher", "lower"):
-                        raise ValueError(
-                            f"feature {name!r} sigmoid with 'midpoint' needs direction "
-                            "'higher' or 'lower'"
-                        )
-                    mid = float(cfg["midpoint"])
-                    lo, hi, curve_k = mid - 0.5 * width, mid + 0.5 * width, _SIGMOID_10_90
-                else:
+                if "midpoint" not in cfg:
+                    raise ValueError(f"feature {name!r} sigmoid shape needs a 'midpoint'")
+                direction = cfg.get("direction")
+                if direction not in ("higher", "lower"):
                     raise ValueError(
-                        f"feature {name!r} sigmoid shape needs 'midpoint' (+direction) for a "
-                        "monotonic curve or 'half_band' for a soft band"
+                        f"feature {name!r} sigmoid needs direction 'higher' or 'lower'"
                     )
+                mid = float(cfg["midpoint"])
+                lo, hi, curve_k = mid - 0.5 * width, mid + 0.5 * width, _SIGMOID_10_90
 
-            else:  # linear: onset/ideal ramp (monotonic) OR range+soft band (target)
-                if "onset" in cfg or "ideal" in cfg:
-                    onset, ideal = cfg.get("onset"), cfg.get("ideal")
-                    if onset is None or ideal is None:
-                        raise ValueError(
-                            f"feature {name!r} linear ramp needs both 'onset' and 'ideal'"
-                        )
-                    onset, ideal = float(onset), float(ideal)
-                    if onset == ideal:
-                        raise ValueError(
-                            f"feature {name!r} linear 'onset' and 'ideal' must differ"
-                        )
-                    if ideal > onset:  # higher-is-better: 0 at onset, 1 at ideal
-                        direction, lo, hi = "higher", onset, ideal
-                    else:  # lower-is-better: 1 at ideal, 0 at onset
-                        direction, lo, hi = "lower", ideal, onset
-                else:
-                    rng = cfg.get("range")
-                    if rng is None or len(rng) != 2:
-                        raise ValueError(
-                            f"feature {name!r} linear shape needs 'range' [lo, hi] (target "
-                            "band) or 'onset'/'ideal' (monotonic ramp)"
-                        )
-                    lo, hi = float(rng[0]), float(rng[1])
-                    if hi < lo:
-                        raise ValueError(f"feature {name!r} range has hi < lo: {rng}")
-                    # `soft` (shoulder) may be a scalar (both sides) or a [left, right] pair;
-                    # `soft_left`/`soft_right` override either side. Default: the band width.
-                    soft = cfg.get("soft")
-                    if isinstance(soft, (list, tuple)):
-                        soft_left, soft_right = float(soft[0]), float(soft[1])
-                    else:
-                        base = float(soft) if soft else max(hi - lo, 1e-9)
-                        soft_left = float(cfg.get("soft_left", base))
-                        soft_right = float(cfg.get("soft_right", base))
-
-            self._specs.append(
-                (name, lo, hi, direction, soft_left, soft_right, weight, shape, curve_k)
-            )
+            self._specs.append((name, lo, hi, direction, weight, shape, curve_k))
             self.feature_names.append(name)
             total_weight += weight
         self._total_weight = total_weight or 1.0
@@ -376,25 +318,20 @@ class DesirabilityModel(FovModel):
         lo: float,
         hi: float,
         direction: str,
-        soft_left: float,
-        soft_right: float,
-        shape: str = "linear",
+        shape: str = "gaussian",
         curve_k: float = 0.0,
     ) -> np.ndarray:
         """Per-value desirability in ``[0, 1]`` for one feature, with a selectable curve shape.
 
-        linear      : BOUNDED. target = plateau 1 in ``[lo, hi]`` with finite linear shoulders
-                      of width ``soft_left`` / ``soft_right`` reaching exactly 0; higher/lower
-                      ramp linearly across ``[lo, hi]`` and clip to 0/1 beyond. Only this shape
-                      uses the shoulder widths.
         gaussian    : generalized-gaussian bell (``lo``/``hi`` are the +-1 sigma points);
                       ``curve_k`` = tail exponent (2 normal, 1 Laplace/long, <1 longer). Tails
                       approach 0 but never reach it. Direction ignored.
         lognormal   : gaussian in ``log(x)`` -- a right-skewed bell with a long RIGHT tail
                       (needs ``x>0``; peak at the geometric mean ``sqrt(lo*hi)``, ``lo``/``hi``
                       the +-1 sigma points in log-space, ``curve_k`` the tail exponent). x<=0 -> 0.
-        sigmoid     : logistic across the range (crossover at the midpoint, width ``hi - lo``,
-                      sharpness ``curve_k`` [default 6]); asymptotic tails -- never exactly 0/1.
+        sigmoid     : monotonic logistic (``direction`` higher|lower) with the crossover at the
+                      midpoint, width ``hi - lo``, sharpness ``curve_k`` [default 6]; asymptotic
+                      tails -- never exactly 0/1.
 
         A missing (NaN) value contributes 0 desirability (see :attr:`MISSING_DESIRABILITY`).
         """
@@ -422,23 +359,10 @@ class DesirabilityModel(FovModel):
             d = np.zeros_like(x)
             pos = x > 0
             d[pos] = np.exp(-0.5 * np.abs((np.log(x[pos]) - mu) / s) ** beta)
-        elif shape == "sigmoid":  # logistic; asymptotic tails, never exactly 0/1
+        else:  # sigmoid: monotonic logistic; asymptotic tails, never exactly 0/1
             k = curve_k or 6.0
-            if direction == "target":
-                up = 1.0 / (1.0 + np.exp(-k * (x - lo) / span))
-                down = 1.0 / (1.0 + np.exp(k * (x - hi) / span))
-                d = up * down
-            else:
-                s = 1.0 / (1.0 + np.exp(-k * (x - 0.5 * (lo + hi)) / span))
-                d = s if direction == "higher" else 1.0 - s
-        elif direction == "higher":  # linear, bounded
-            d = np.clip((x - lo) / span, 0.0, 1.0)
-        elif direction == "lower":
-            d = np.clip(1.0 - (x - lo) / span, 0.0, 1.0)
-        else:  # linear target: finite linear shoulders (the only shape that uses `soft`)
-            rising = np.clip(1.0 - (lo - x) / (soft_left or 1e-9), 0.0, 1.0)
-            falling = np.clip(1.0 - (x - hi) / (soft_right or 1e-9), 0.0, 1.0)
-            d = np.minimum(rising, falling)
+            s = 1.0 / (1.0 + np.exp(-k * (x - 0.5 * (lo + hi)) / span))
+            d = s if direction == "higher" else 1.0 - s
         out[m] = np.clip(d, 0.0, 1.0)
         return out
 
@@ -449,23 +373,13 @@ class DesirabilityModel(FovModel):
         # per-feature scores, so it needs each feature's exact squared distance instead.
         joint_gaussian = self._aggregation == "gaussian"
         rows, dists, weights = [], [], []
-        for (
-            name,
-            lo,
-            hi,
-            direction,
-            soft_left,
-            soft_right,
-            weight,
-            shape,
-            curve_k,
-        ) in self._specs:
+        for name, lo, hi, direction, weight, shape, curve_k in self._specs:
             col = (
                 matrix_df[name].to_numpy(float)
                 if name in matrix_df.columns
                 else np.full(n, np.nan)
             )
-            args = (col, lo, hi, direction, soft_left, soft_right, shape, curve_k)
+            args = (col, lo, hi, direction, shape, curve_k)
             rows.append(self._desirability(*args))
             if joint_gaussian:
                 dists.append(self._squared_distance(*args))
@@ -564,17 +478,15 @@ def build_fov_model(model_cfg: dict) -> FovModel:
 
 
 # --- interpretable <-> internal parameter conversions (for editors like the feature viewer) --
-# The DesirabilityModel stores every shape as internal (lo, hi, direction, soft_left,
-# soft_right, curve_k) bounds. These two functions map that to/from the interpretable per-shape
-# parameters used in configs (center/fwhm, center/fold, midpoint/width, onset/ideal, ...), so a
-# GUI can show and edit the SAME knobs the config uses. They are exact inverses (round-trip).
+# The DesirabilityModel stores every shape as internal (lo, hi, direction, curve_k) bounds.
+# These two functions map that to/from the interpretable per-shape parameters used in configs
+# (center/fwhm, center/fold, midpoint/width), so a GUI can show and edit the
+# SAME knobs the config uses. They are exact inverses (round-trip).
 def curve_params(
     shape: str,
     direction: str,
     lo: float,
     hi: float,
-    soft_left: float,
-    soft_right: float,
     curve_k: float,
 ) -> dict:
     """Internal bounds -> ordered dict of interpretable params for ``shape`` / ``direction``."""
@@ -588,52 +500,20 @@ def curve_params(
         }
     if shape == "sigmoid":
         width = _SIGMOID_10_90 * (hi - lo) / (curve_k or 6.0)
-        if direction == "target":
-            return {"half_band_lo": lo, "half_band_hi": hi, "width": width}
         return {"midpoint": 0.5 * (lo + hi), "width": width}
-    if direction == "target":  # linear target band
-        return {
-            "range_lo": lo,
-            "range_hi": hi,
-            "soft_left": soft_left,
-            "soft_right": soft_right,
-        }
-    onset, ideal = (lo, hi) if direction == "higher" else (hi, lo)  # linear monotonic ramp
-    return {"onset": onset, "ideal": ideal}
+    raise ValueError(f"unknown shape {shape!r}; expected one of {DesirabilityModel.SHAPES}")
 
 
 def curve_bounds(shape: str, direction: str, params: dict) -> tuple:
     """Inverse of :func:`curve_params`: interpretable params -> internal
-    ``(lo, hi, soft_left, soft_right, curve_k)``. Raises on invalid values (e.g. fold<=1)."""
+    ``(lo, hi, curve_k)``. Raises on invalid values (e.g. fold<=1)."""
     if shape == "gaussian":
         lo, hi = DesirabilityModel._gaussian_bounds(params["center"], params["fwhm"])
-        return lo, hi, 0.0, 0.0, 0.0
+        return lo, hi, 0.0
     if shape == "lognormal":
         lo, hi = DesirabilityModel._lognormal_bounds(params["center"], params["fold"])
-        return lo, hi, 0.0, 0.0, 0.0
+        return lo, hi, 0.0
     if shape == "sigmoid":
-        if direction == "target":
-            lo, hi = float(params["half_band_lo"]), float(params["half_band_hi"])
-            return (
-                lo,
-                hi,
-                0.0,
-                0.0,
-                _SIGMOID_10_90 * (hi - lo) / (float(params["width"]) or 1e-9),
-            )
         mid, w = float(params["midpoint"]), float(params["width"])
-        return mid - 0.5 * w, mid + 0.5 * w, 0.0, 0.0, _SIGMOID_10_90
-    if direction == "target":  # linear target band
-        return (
-            float(params["range_lo"]),
-            float(params["range_hi"]),
-            float(params["soft_left"]),
-            float(params["soft_right"]),
-            0.0,
-        )
-    onset, ideal = float(params["onset"]), float(params["ideal"])  # linear monotonic ramp
-    return (
-        (onset, ideal, 0.0, 0.0, 0.0)
-        if direction == "higher"
-        else (ideal, onset, 0.0, 0.0, 0.0)
-    )
+        return mid - 0.5 * w, mid + 0.5 * w, _SIGMOID_10_90
+    raise ValueError(f"unknown shape {shape!r}; expected one of {DesirabilityModel.SHAPES}")

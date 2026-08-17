@@ -41,7 +41,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-# The per-feature desirability CURVES (linear / sigmoid / gaussian / lognormal)
+# The per-feature desirability CURVES (sigmoid / gaussian / lognormal)
 # are shared with the online model, so Model 1 here and the acquisition-time DesirabilityModel
 # score every shape identically -- one implementation, no drift. (fov_model is numpy-only, so
 # this keeps ranking.py headless / Qt-free.)
@@ -66,7 +66,7 @@ except Exception:  # noqa: BLE001
 MODELS = ("desirability", "prototype", "linear", "ebm", "gbm")
 
 # Desirability directions a feature can take (Model 1). "target" is the non-monotone one:
-# a plateau of full desirability in [lo, hi] with soft linear shoulders on each side.
+# a peak of full desirability on the band [lo, hi] that fades on each side.
 DIRECTIONS = ("higher", "lower", "target")
 
 # Default desirability direction per feature-name suffix (the token after "__", or the whole
@@ -99,7 +99,7 @@ class RankingProfile:
     features       : feature columns the profile ranks on (order == parameter order).
     normalization  : feature -> {q05,q25,q50,q75,q95}, frozen on a reference pool so scores
                      are comparable across acquisitions.
-    desirability   : feature -> {"type": higher|lower|target, "lo","hi","soft", and optional
+    desirability   : feature -> {"type": higher|lower|target, "lo","hi", and optional
                      "shape","curve_k" for the transition curve} (Model 1; see `desirability`).
     prior_weights  : feature -> knob weight; the L2 prior for Model 1's learned weights.
     model          : the fitted head, e.g. {"kind": "desirability", "weights": [...]},
@@ -196,7 +196,7 @@ def default_profile(
     df: pd.DataFrame, features: list[str], name: str = "default"
 ) -> RankingProfile:
     """A fresh profile: robust normalization + suffix-seeded desirability directions + equal
-    knob weights. `target` bands default to the feature's [q25, q75] with an IQR shoulder."""
+    knob weights. `target` bands default to the feature's [q25, q75]."""
     norm = fit_normalization(df, features)
     desirability: dict[str, dict] = {}
     for f in features:
@@ -204,7 +204,7 @@ def default_profile(
         spec: dict = {"type": direction}
         if direction == "target":
             n = norm[f]
-            spec.update(lo=n["q25"], hi=n["q75"], soft=max(n["q75"] - n["q25"], 1e-9))
+            spec.update(lo=n["q25"], hi=n["q75"])
         desirability[f] = spec
     prior = {f: 1.0 for f in features}
     return RankingProfile(name, list(features), norm, desirability, prior)
@@ -219,10 +219,9 @@ def desirability(value: float, spec: dict, norm: dict[str, float]) -> float:
     DIRECTION (``type``; alias ``direction``) -- which way is good:
         higher : desirability rises across the robust range [q05, q95];
         lower  : desirability falls across that range;
-        target : peaks on the band [lo, hi] (alias ``range``: [lo, hi]), fading over the
-                 shoulder(s) ``soft`` (a scalar, or a [left, right] pair).
-    SHAPE (``shape``, default ``linear``) -- the transition CURVE across that range:
-        linear|sigmoid|gaussian|lognormal (see :attr:`DesirabilityModel.SHAPES`). ``gaussian``
+        target : peaks on the band [lo, hi] (alias ``range``: [lo, hi]), fading on each side.
+    SHAPE (``shape``, default ``gaussian``) -- the transition CURVE across that range:
+        sigmoid|gaussian|lognormal (see :attr:`DesirabilityModel.SHAPES`). ``gaussian``
         is an interpretable bell defined by ``center`` (peak) + ``fwhm`` (width at half max),
         ignoring direction/range; ``sigmoid``/``lognormal`` use ``curve_k`` for steepness/tail.
 
@@ -232,7 +231,7 @@ def desirability(value: float, spec: dict, norm: dict[str, float]) -> float:
     kind = spec.get("type", spec.get("direction", "higher"))
     if kind not in DIRECTIONS:
         raise ValueError(f"unknown desirability type {kind!r}")
-    shape = spec.get("shape", "linear")
+    shape = spec.get("shape", "gaussian")
     if shape not in DesirabilityModel.SHAPES:
         raise ValueError(f"unknown desirability shape {shape!r}")
     if shape == "gaussian":
@@ -242,35 +241,26 @@ def desirability(value: float, spec: dict, norm: dict[str, float]) -> float:
             raise ValueError("gaussian desirability needs 'center' and 'fwhm'")
         lo, hi = DesirabilityModel._gaussian_bounds(float(center), float(fwhm))
         d = DesirabilityModel._desirability(
-            np.asarray([value], float), lo, hi, "target", 0.0, 0.0, "gaussian", 0.0
+            np.asarray([value], float), lo, hi, "target", "gaussian", 0.0
         )
         return float(d[0])
     curve_k = float(spec.get("curve_k", 0.0))
-    span = (norm["q95"] - norm["q05"]) or 1.0  # guard a flat feature against divide-by-zero
     rng = spec.get("range")
     if kind == "target":
-        # target band [lo, hi] with finite shoulders (only the linear shape uses the widths).
+        # target band [lo, hi].
         if rng is not None and len(rng) == 2:
             lo, hi = float(rng[0]), float(rng[1])
         else:
             lo, hi = float(spec.get("lo", norm["q50"])), float(spec.get("hi", norm["q50"]))
-        soft = spec.get("soft")
-        if isinstance(soft, (list, tuple)):
-            soft_left, soft_right = float(soft[0]), float(soft[1])
-        else:
-            shoulder = float(soft) if soft else (span * 0.5) or 1.0
-            soft_left = float(spec.get("soft_left", shoulder))
-            soft_right = float(spec.get("soft_right", shoulder))
     else:
         # higher / lower: the curve spans the robust range [q05, q95] (or an explicit `range`).
         if rng is not None and len(rng) == 2:
             lo, hi = float(rng[0]), float(rng[1])
         else:
             lo, hi = float(norm["q05"]), float(norm["q95"])
-        soft_left = soft_right = (hi - lo) or 1.0
     # Delegate the actual curve to the shared implementation (a 1-element array in / out).
     d = DesirabilityModel._desirability(
-        np.asarray([value], float), lo, hi, kind, soft_left, soft_right, shape, curve_k
+        np.asarray([value], float), lo, hi, kind, shape, curve_k
     )
     return float(d[0])
 
