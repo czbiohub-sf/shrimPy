@@ -33,14 +33,14 @@ class Segmenter:
     """Interface: segment one 2D projection into a uint32 instance-label mask.
 
     Subclasses are constructed from the ``fov_selection.segmentation`` config block (which
-    they retain), so :meth:`segment` needs only the image, its organelle, and the pixel size.
+    they retain), so :meth:`segment` needs only the image, its channel, and the pixel size.
     """
 
     def __init__(self, config: dict | None = None) -> None:
         self._config = config or {}
 
     def segment(
-        self, img2d: np.ndarray, organelle: str, px_um: float | None = None
+        self, img2d: np.ndarray, channel: str, pixel_size_um: float | None = None
     ) -> np.ndarray:  # pragma: no cover - interface
         raise NotImplementedError
 
@@ -55,7 +55,7 @@ class OtsuSegmenter(Segmenter):
     """
 
     def segment(
-        self, img2d: np.ndarray, organelle: str = "", px_um: float | None = None
+        self, img2d: np.ndarray, channel: str = "", pixel_size_um: float | None = None
     ) -> np.ndarray:
         from scipy.ndimage import binary_fill_holes
         from skimage.filters import threshold_otsu
@@ -88,7 +88,7 @@ class OtsuSegmenter(Segmenter):
 class CellposeSegmenter(Segmenter):
     """A loaded Cellpose model (e.g. cpdino) run one image at a time.
 
-    The Cellpose diameter is per organelle: an explicit ``segmentation.diameters[organelle]``
+    The Cellpose diameter is per channel: an explicit ``segmentation.diameters[channel]``
     wins, else membrane channels get :attr:`MEMBRANE_DIAMETER` (whole-cell badly under-covers
     on auto-scale) and everything else (nuclei) auto-scales (:attr:`NUCLEI_DIAMETER` = None).
     """
@@ -111,17 +111,17 @@ class CellposeSegmenter(Segmenter):
         logger.info("FOV selection: loading Cellpose model %r (gpu=%s)", name, gpu)
         self.model = models.CellposeModel(gpu=gpu, pretrained_model=name)
 
-    def _diameter_for(self, organelle: str) -> float | None:
-        """Per-organelle Cellpose diameter (microns); ``None`` means auto-scale."""
+    def _diameter_for(self, channel: str) -> float | None:
+        """Per-channel Cellpose diameter (microns); ``None`` means auto-scale."""
         diameters = self._config.get("diameters") or {}
-        if organelle in diameters:
-            return diameters[organelle]
-        if self.MEMBRANE_HINT in (organelle or "").lower():
+        if channel in diameters:
+            return diameters[channel]
+        if self.MEMBRANE_HINT in (channel or "").lower():
             return self.MEMBRANE_DIAMETER
         return self.NUCLEI_DIAMETER
 
     def segment(
-        self, img2d: np.ndarray, organelle: str, px_um: float | None = None
+        self, img2d: np.ndarray, channel: str, pixel_size_um: float | None = None
     ) -> np.ndarray:
         seg = self._config
         kwargs = {
@@ -131,7 +131,7 @@ class CellposeSegmenter(Segmenter):
             "min_size": seg.get("min_size", self.MIN_SIZE),
             "normalize": True,
         }
-        diam = self._diameter_for(organelle)
+        diam = self._diameter_for(channel)
         if diam is not None:
             kwargs["diameter"] = diam
         # eval returns (masks, flows, styles); masks is a list (one per input image). We pass
@@ -266,7 +266,7 @@ class InstansegSegmenter(Segmenter):
         return None
 
     def segment(
-        self, img2d: np.ndarray, organelle: str = "", px_um: float | None = None
+        self, img2d: np.ndarray, channel: str = "", pixel_size_um: float | None = None
     ) -> np.ndarray:
         """Segment one 2D projection with InstanSeg into a uint32 label mask.
 
@@ -295,7 +295,11 @@ class InstansegSegmenter(Segmenter):
 
         x = torch.from_numpy(img)[None, None].to(self.device)
 
-        scale = (px_um / self.pixel_size_um) if (px_um and self.pixel_size_um) else 1.0
+        scale = (
+            (pixel_size_um / self.pixel_size_um)
+            if (pixel_size_um and self.pixel_size_um)
+            else 1.0
+        )
         if not np.isclose(scale, 1.0):
             new_h = max(int(round(orig_h * scale)), self.MIN_SIZE_PX)
             new_w = max(int(round(orig_w * scale)), self.MIN_SIZE_PX)
@@ -306,7 +310,7 @@ class InstansegSegmenter(Segmenter):
                 "InstanSeg: rescaled %s -> %s (%.4f -> %.4f um/px)",
                 (orig_h, orig_w),
                 (new_h, new_w),
-                px_um,
+                pixel_size_um,
                 self.pixel_size_um,
             )
 

@@ -96,10 +96,10 @@ def test_rdf_pixel_size_missing_or_malformed_returns_none():
 
 def test_mask_returned_on_the_original_pixel_grid():
     # Downstream features (coverage_frac, max_radius_corner_to_edge) are computed against the acquisition
-    # px_um, so the mask must come back at the input's shape no matter how it was rescaled.
+    # pixel_size_um, so the mask must come back at the input's shape no matter how it was rescaled.
     seg = _fake_segmenter(pixel_size_um=0.35)
     img = np.random.default_rng(0).normal(300, 40, (512, 400)).astype(np.float32)
-    mask = seg.segment(img, "brightfield", px_um=0.1133)
+    mask = seg.segment(img, "brightfield", pixel_size_um=0.1133)
 
     assert mask.shape == img.shape
     assert mask.dtype == np.uint32
@@ -113,7 +113,7 @@ def test_input_is_float32_not_promoted_by_percentile():
     seg = _fake_segmenter(pixel_size_um=0.35)
     img = np.ones((64, 64), np.float32)
     img[:32] = 5.0
-    seg.segment(img, "brightfield", px_um=0.35)
+    seg.segment(img, "brightfield", pixel_size_um=0.35)
     assert seg.module.calls[0]["dtype"] == torch.float32
 
 
@@ -121,15 +121,15 @@ def test_no_rescale_when_pixel_sizes_match_or_are_unknown():
     img = np.random.default_rng(1).normal(0, 1, (64, 80)).astype(np.float32)
 
     same = _fake_segmenter(pixel_size_um=0.35)
-    same.segment(img, "brightfield", px_um=0.35)
+    same.segment(img, "brightfield", pixel_size_um=0.35)
     assert same.module.calls[0]["shape"] == (1, 1, 64, 80)
 
     unknown = _fake_segmenter(pixel_size_um=None)  # bare .pt with no model_pixel_size_um
-    unknown.segment(img, "brightfield", px_um=0.1133)
+    unknown.segment(img, "brightfield", pixel_size_um=0.1133)
     assert unknown.module.calls[0]["shape"] == (1, 1, 64, 80)
 
-    no_px = _fake_segmenter(pixel_size_um=0.35)  # px_um not supplied by the caller
-    no_px.segment(img, "brightfield", px_um=None)
+    no_px = _fake_segmenter(pixel_size_um=0.35)  # pixel_size_um not supplied by the caller
+    no_px.segment(img, "brightfield", pixel_size_um=None)
     assert no_px.module.calls[0]["shape"] == (1, 1, 64, 80)
 
 
@@ -138,7 +138,7 @@ def test_rescale_never_shrinks_below_model_minimum():
     # 32 px minimum input and fail inside TorchScript.
     seg = _fake_segmenter(pixel_size_um=0.35)
     img = np.zeros((40, 40), np.float32)
-    seg.segment(img, "brightfield", px_um=0.01)
+    seg.segment(img, "brightfield", pixel_size_um=0.01)
     assert seg.module.calls[0]["shape"][-2:] == (
         InstansegSegmenter.MIN_SIZE_PX,
         InstansegSegmenter.MIN_SIZE_PX,
@@ -149,7 +149,7 @@ def test_target_selects_the_output_head():
     img = np.zeros((64, 64), np.float32)
     for target, expected in (("nuclei", [1, 0]), ("cells", [0, 1])):
         seg = _fake_segmenter({"target": target}, pixel_size_um=0.35)
-        seg.segment(img, "brightfield", px_um=0.35)
+        seg.segment(img, "brightfield", pixel_size_um=0.35)
         sel = seg.module.calls[0]["target_segmentation"]
         assert sel.tolist() == expected
 
@@ -157,7 +157,7 @@ def test_target_selects_the_output_head():
 def test_unknown_target_raises():
     seg = _fake_segmenter({"target": "mitochondria"})
     with pytest.raises(ValueError, match="segmentation.target"):
-        seg.segment(np.zeros((64, 64), np.float32), "brightfield", px_um=0.35)
+        seg.segment(np.zeros((64, 64), np.float32), "brightfield", pixel_size_um=0.35)
 
 
 def test_forward_kwargs_are_coerced_to_the_types_torchscript_demands():
@@ -171,7 +171,7 @@ def test_forward_kwargs_are_coerced_to_the_types_torchscript_demands():
         },
         pixel_size_um=0.35,
     )
-    seg.segment(np.zeros((64, 64), np.float32), "brightfield", px_um=0.35)
+    seg.segment(np.zeros((64, 64), np.float32), "brightfield", pixel_size_um=0.35)
 
     kwargs = seg.module.calls[0]["kwargs"]
     assert isinstance(kwargs["min_size"], int) and kwargs["min_size"] == 20
@@ -208,7 +208,7 @@ def test_real_checkpoint_round_trip():
     assert seg.pixel_size_um == pytest.approx(0.35)
 
     img = np.random.default_rng(0).normal(300, 40, (256, 256)).astype(np.float32)
-    mask = seg.segment(img, "brightfield", px_um=0.35)
+    mask = seg.segment(img, "brightfield", pixel_size_um=0.35)
     assert mask.shape == img.shape and mask.dtype == np.uint32
 
 
@@ -224,7 +224,7 @@ def test_real_checkpoint_is_scale_invariant():
     with zipfile.ZipFile(Path(REAL_CKPT)) as zf:
         img = np.load(io.BytesIO(zf.read("test-input.npy")))[0, 0]
 
-    native = seg.segment(img, "bf", px_um=0.35)
-    upscaled = seg.segment(np.repeat(np.repeat(img, 2, 0), 2, 1), "bf", px_um=0.175)
+    native = seg.segment(img, "bf", pixel_size_um=0.35)
+    upscaled = seg.segment(np.repeat(np.repeat(img, 2, 0), 2, 1), "bf", pixel_size_um=0.175)
     assert int(np.unique(native).size) == int(np.unique(upscaled).size)
     assert (native > 0).mean() == pytest.approx((upscaled > 0).mean(), abs=0.01)

@@ -45,19 +45,7 @@ def test_cheap_features_match_full_path():
     inten = np.random.default_rng(1).normal(50, 10, mask.shape).astype(np.float32)
     px = 0.1133
 
-    rows = FE.object_feature_rows(
-        mask,
-        inten,
-        px,
-        dataset_tag="live",
-        well_row="",
-        well_col="",
-        fov="",
-        timepoint=0,
-        channel="nuclei",
-        source="vs",
-        projection_type="sum",
-    )
+    rows = FE.object_feature_rows(mask, inten, px)
     # Mirror what the full path assembles: group_features (per-object aggregates) updated
     # with mask_gap_features (mask-derived). Cheap keys are drawn from BOTH -- coverage_frac
     # from the former, mask_occupancy_entropy from the latter.
@@ -143,7 +131,7 @@ def test_matrix_empty_mask_reports_zero_density():
     matrix = pipeline.fov_feature_matrix(
         {"nuclei": proj},
         {"nuclei": empty},
-        px_um=0.1133,
+        pixel_size_um=0.1133,
         projection="sum",
         source="vs",
         needed=["nuclei_vs_sum__object_count"],
@@ -159,7 +147,7 @@ def test_matrix_with_needed_computes_only_requested_columns():
     matrix = pipeline.fov_feature_matrix(
         {"nuclei": proj, "membrane": proj},
         {"nuclei": mask, "membrane": mask},
-        px_um=0.1133,
+        pixel_size_um=0.1133,
         projection="sum",
         source="vs",
         needed=needed,
@@ -215,7 +203,7 @@ def test_decide_fov_default_extracts_only_model_features():
         _two_blob_stack(),
         target_channels=["brightfield"],
         projection="middle",
-        px_um=0.1,
+        pixel_size_um=0.1,
         return_artifacts=True,
     )
     assert list(art["features"].columns) == ["coverage_frac"]
@@ -234,7 +222,7 @@ def test_decide_fov_extract_all_ignores_model_feature_names():
         _two_blob_stack(),
         target_channels=["brightfield"],
         projection="middle",
-        px_um=0.1,
+        pixel_size_um=0.1,
         return_artifacts=True,
         extract_all=True,
     )
@@ -287,7 +275,7 @@ def test_edge_frac_is_a_producible_mask_feature():
     mask = np.zeros((64, 64), np.uint32)
     mask[0:6, 0:6] = 1
     mask[30:40, 30:40] = 2
-    feats = mask_gap_features(mask, px_um=0.1)
+    feats = mask_gap_features(mask, pixel_size_um=0.1)
     assert "edge_frac" in feats and feats["edge_frac"] == 0.5
 
 

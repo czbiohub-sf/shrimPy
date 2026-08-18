@@ -93,34 +93,13 @@ class FeatureExtractor:
     # non-uniformity. Over foreground PIXELS, so it is well defined even for a single blob.
     MASK_OCCUPANCY_GRID = 8
 
-    # ------------------------------------------------------------------ helpers
-    @staticmethod
-    def organelle_label(channel: str) -> str:
-        """Organelle the channel labels: 'nuclei_GFP_maxproj' -> 'nuclei',
-        'membrane_prediction_sumproj' -> 'membrane' (first underscore-delimited token)."""
-        return (channel or "").split("_")[0]
-
     # -------------------------------------------------------------- object level
     @classmethod
-    def object_feature_rows(
-        cls,
-        lbl,
-        intensity,
-        px_um,
-        *,
-        dataset_tag,
-        well_row,
-        well_col,
-        fov,
-        timepoint,
-        channel,
-        source,
-        projection_type,
-    ):
-        """Per-object feature rows from a single (label mask, intensity) pair.
+    def object_feature_rows(cls, lbl, intensity, pixel_size_um):
+        """Per-object measurement rows from a single (label mask, intensity) pair.
 
-        Array-based core shared by the batch driver and the online FOV-selection decision,
-        so both compute identical features.
+        One dict per object with the geometric / intensity measurements that
+        :meth:`group_features` aggregates into FOV-level features.
 
         Parameters
         ----------
@@ -128,10 +107,8 @@ class FeatureExtractor:
             2D instance-label mask (Y, X), integer ids (0 = background).
         intensity : np.ndarray | None
             2D intensity image (Y, X) the mask was segmented from, or None.
-        px_um : float
+        pixel_size_um : float
             XY pixel size in microns (isotropic).
-        channel : str
-            Organelle/channel label, e.g. ``'nuclei'`` / ``'membrane'``.
         """
         out: list[dict] = []
         lbl = np.asarray(lbl).astype(np.uint32)
@@ -141,7 +118,7 @@ class FeatureExtractor:
         intensity = np.asarray(intensity, np.float32) if intensity is not None else None
         p = regionprops_table(lbl, intensity_image=intensity, properties=cls.PROPS)
         cy, cx = p["centroid-0"], p["centroid-1"]
-        # nearest-neighbor distance among same-channel centroids (px -> um)
+        # nearest-neighbor distance among object centroids (px -> um)
         if len(cy) >= 2:
             d, _ = cKDTree(np.column_stack([cy, cx])).query(np.column_stack([cy, cx]), k=2)
             nn_px = d[:, 1]
@@ -151,28 +128,20 @@ class FeatureExtractor:
             cyk, cxk = float(cy[k]), float(cx[k])
             out.append(
                 {
-                    "dataset": dataset_tag,
-                    "well_row": well_row,
-                    "well_col": well_col,
-                    "fov": fov,
-                    "timepoint": timepoint,
-                    "channel": channel,
-                    "organelle": cls.organelle_label(channel),
-                    "segmentation_source": source,
-                    "projection_type": projection_type,
                     "label_id": int(p["label"][k]),
                     "centroid_x_norm": cxk / img_w,
                     "centroid_y_norm": cyk / img_h,
                     "area_px": int(p["area"][k]),
-                    "area_um2": float(p["area"][k]) * px_um * px_um,
-                    "equivalent_diameter_um": float(p["equivalent_diameter_area"][k]) * px_um,
+                    "area_um2": float(p["area"][k]) * pixel_size_um * pixel_size_um,
+                    "equivalent_diameter_um": float(p["equivalent_diameter_area"][k])
+                    * pixel_size_um,
                     "extent": float(p["extent"][k]),
                     "intensity_mean": float(p["intensity_mean"][k]),
                     "intensity_max": float(p["intensity_max"][k]),
-                    "nearest_neighbor_dist_um": float(nn_px[k]) * px_um,
+                    "nearest_neighbor_dist_um": float(nn_px[k]) * pixel_size_um,
                     "image_width_px": img_w,
                     "image_height_px": img_h,
-                    "pixel_size_um": px_um,
+                    "pixel_size_um": pixel_size_um,
                 }
             )
         return out
@@ -338,7 +307,7 @@ class FeatureExtractor:
         return float(edge_area / total_area)
 
     @classmethod
-    def mask_gap_features(cls, mask: np.ndarray, px_um: float) -> dict:
+    def mask_gap_features(cls, mask: np.ndarray, pixel_size_um: float) -> dict:
         """Spatial features that need the mask itself (not just centroids).
 
         ``max_radius_corner_to_edge``: radius (um) of the largest object-free region (max over background
@@ -371,7 +340,7 @@ class FeatureExtractor:
         central_cov = float(fg[central].mean()) if central.any() else float("nan")
         central_cov_ratio = central_cov / overall if overall > 0 else float("nan")
         return {
-            "max_radius_corner_to_edge": float(dt.max()) * float(px_um),
+            "max_radius_corner_to_edge": float(dt.max()) * float(pixel_size_um),
             "mask_occupancy_entropy": cls.mask_occupancy_entropy(fg),
             "edge_frac": cls.edge_area_frac(m),
             "central_cov_ratio": central_cov_ratio,

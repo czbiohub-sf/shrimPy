@@ -48,7 +48,7 @@ class FovSelectionWorker:
     target_channels : list[str]
         Reconstructed channels to segment/feature (e.g. ``['nuclei', 'membrane']``).
     segmentation : dict
-        Segmentation config block (model, thresholds, per-organelle diameters).
+        Segmentation config block (model, thresholds, per-channel diameters).
     model_cfg : dict
         The ``fov_selection.model`` config block, passed to
         :func:`shrimpy.fov_selection.fov_model.build_fov_model`. Its ``type`` (one of
@@ -58,7 +58,7 @@ class FovSelectionWorker:
         Projection method (``'sum'`` / ``'max'``).
     threshold : float
         P(good) cutoff.
-    px_um : float
+    pixel_size_um : float
         XY pixel size in microns.
     zyx_shape : tuple[int, int, int]
         Acquired (Z, Y, X) stack shape (for the phase transfer function).
@@ -81,7 +81,7 @@ class FovSelectionWorker:
         model_cfg: dict,
         projection: str,
         threshold: float,
-        px_um: float,
+        pixel_size_um: float,
         zyx_shape: tuple[int, int, int],
         log_file_path: Path | None = None,
         debug_dir: Path | None = None,
@@ -100,7 +100,7 @@ class FovSelectionWorker:
         self._model_cfg = model_cfg
         self._projection = projection
         self._threshold = threshold
-        self._px_um = px_um
+        self._px_um = pixel_size_um
         self._zyx_shape = zyx_shape
         self._log_file_path = log_file_path
         # When set, the lightweight per-FOV debug artifacts (projection/mask PNGs +
@@ -220,7 +220,7 @@ def _worker_loop(
     model_cfg: dict,
     projection: str,
     threshold: float,
-    px_um: float,
+    pixel_size_um: float,
     zyx_shape: tuple[int, int, int],
     input_queue: mp.Queue,
     output_queue: mp.Queue,
@@ -327,7 +327,7 @@ def _worker_loop(
                     bf_zyx,
                     target_channels=target_channels,
                     projection=projection,
-                    px_um=px_um,
+                    pixel_size_um=pixel_size_um,
                     threshold=threshold,
                     best_focus_z=best_focus_z,
                     return_artifacts=need_artifacts,
@@ -663,12 +663,12 @@ def _assemble_debug_channels(artifacts: dict) -> tuple[list[str], np.ndarray | N
     for key in ("deskew", "phase"):
         if key in stacks:
             _add_3d(key, stacks[key])
-    for organelle in (k for k in stacks if k not in ("deskew", "phase")):
-        _add_3d(f"{organelle}_vs", stacks[organelle])
-    for organelle, proj in projections.items():
-        _add_2d_broadcast(f"{organelle}_projection", proj)
-    for organelle, mask in masks.items():
-        _add_2d_broadcast(f"{organelle}_mask", mask)
+    for channel in (k for k in stacks if k not in ("deskew", "phase")):
+        _add_3d(f"{channel}_vs", stacks[channel])
+    for channel, proj in projections.items():
+        _add_2d_broadcast(f"{channel}_projection", proj)
+    for channel, mask in masks.items():
+        _add_2d_broadcast(f"{channel}_mask", mask)
 
     return names, np.stack(arrays, axis=0)
 

@@ -9,7 +9,7 @@ features match training exactly. Feature extraction is decoupled from the model:
       -> per-object features          [FeatureExtractor.object_feature_rows]
       -> per-FOV aggregation          [FeatureExtractor.group_features]
       -> named feature table          [extract_features: plain names for one channel,
-                                        <organelle>_vs_<projection>__ prefixed for many]
+                                        <channel>_vs_<projection>__ prefixed for many]
       -> verdict                      [FovModel.predict, fov_model.py]
 
 The model (thresholding / desirability / trained tree / ...) reads the feature table
@@ -71,15 +71,15 @@ def save_mask_overlay_png(
 
 def project_zyx(
     zyx: np.ndarray,
-    method: str = "sum",
+    projection: str = "sum",
     *,
-    px_um: float | None = None,
+    pixel_size_um: float | None = None,
     best_focus_z: dict | None = None,
     return_index: bool = False,
 ) -> np.ndarray:
     """Reduce a ``(Z, Y, X)`` volume to a 2D ``(Y, X)`` float32 image.
 
-    ``method``:
+    ``projection``:
       ``'sum'``             -- sum over Z (trained model default, ``*_sum__*`` features);
       ``'max'``             -- max over Z;
       ``'middle'``          -- the single middle Z slice (``zyx[Z // 2]``);
@@ -89,7 +89,7 @@ def project_zyx(
                                sum or middle slice carries little signal.
       ``'best_focus_z'`` -- the single IN-FOCUS Z slice, found by waveorder's transverse-band
                                focus metric (:func:`waveorder.focus.focus_from_transverse_band`).
-                               Needs ``px_um`` and ``best_focus_z`` optics
+                               Needs ``pixel_size_um`` and ``best_focus_z`` optics
                                (``numerical_aperture_detection`` + ``wavelength_illumination``);
                                see :func:`_best_focus_z`.
 
@@ -105,39 +105,39 @@ def project_zyx(
     zyx = np.asarray(zyx)
     if zyx.ndim == 2:
         # Already a 2D (Y, X) image: there is no Z axis to project over, so return it
-        # unchanged for every method. Lets an already-projected / single-slice input go
+        # unchanged for every projection. Lets an already-projected / single-slice input go
         # straight to segmentation without a projection step.
         img = np.asarray(zyx, np.float32)
         return (img, None) if return_index else img
-    if method == "middle":
+    if projection == "middle":
         idx = zyx.shape[0] // 2
         img = np.asarray(zyx[idx], np.float32)
         return (img, idx) if return_index else img
-    if method == "best_focus_z":
-        img, idx = _best_focus_z(zyx, px_um, best_focus_z)
+    if projection == "best_focus_z":
+        img, idx = _best_focus_z(zyx, pixel_size_um, best_focus_z)
         return (img, idx) if return_index else img
-    if method == "logstd":
+    if projection == "logstd":
         std = zyx.astype(np.float32).std(axis=0)
         img = np.log1p(std - std.min()).astype(np.float32)
         return (img, None) if return_index else img
-    reduce = np.max if method == "max" else np.sum
+    reduce = np.max if projection == "max" else np.sum
     img = reduce(zyx, axis=0).astype(np.float32)
     return (img, None) if return_index else img
 
 
 def _best_focus_z(
-    zyx: np.ndarray, px_um: float | None, best_focus_z: dict | None
+    zyx: np.ndarray, pixel_size_um: float | None, best_focus_z: dict | None
 ) -> tuple[np.ndarray, int]:
     """The single best-focus Z slice, via waveorder's transverse-band focus metric.
 
     :func:`waveorder.focus.focus_from_transverse_band` scores each Z slice by the power in a
     mid spatial-frequency band (set by the detection NA / wavelength / pixel size) and returns
-    the index of the extreme (in-focus) slice. Requires ``px_um`` (object-space pixel size, um)
+    the index of the extreme (in-focus) slice. Requires ``pixel_size_um`` (object-space pixel size, um)
     plus ``best_focus_z`` optics -- ``numerical_aperture_detection`` and ``wavelength_illumination``
-    (um, matching ``px_um``); optional ``mode`` ('max'|'min') and ``midband_fractions``.
+    (um, matching ``pixel_size_um``); optional ``mode`` ('max'|'min') and ``midband_fractions``.
 
     Two distinct failure modes, handled differently:
-      * MISSING optics (``px_um`` / NA / wavelength) -> :class:`ValueError` (abort). The focus
+      * MISSING optics (``pixel_size_um`` / NA / wavelength) -> :class:`ValueError` (abort). The focus
         metric is meaningless without them, so we refuse rather than silently mis-project.
       * optics present but NO confident in-focus slice -> fall back to the middle slice with a
         warning (a legitimately flat/empty stack should not crash the scan).
@@ -150,7 +150,7 @@ def _best_focus_z(
     missing = [
         name
         for name, val in (
-            ("px_um", px_um),
+            ("pixel_size_um", pixel_size_um),
             ("best_focus_z.numerical_aperture_detection", na_det),
             ("best_focus_z.wavelength_illumination", lambda_ill),
         )
@@ -169,7 +169,7 @@ def _best_focus_z(
         zyx,
         NA_det=float(na_det),
         lambda_ill=float(lambda_ill),
-        pixel_size=float(px_um),
+        pixel_size=float(pixel_size_um),
         mode=best_focus_z.get("mode", "max"),
         midband_fractions=tuple(best_focus_z.get("midband_fractions", (0.125, 0.25))),
     )
@@ -189,11 +189,11 @@ CHEAP_FEATURE_KEYS = frozenset({"coverage_frac", "mask_occupancy_entropy"})
 
 
 def _parse_needed_features(needed: list[str]) -> dict[tuple[str, str, str], set[str]]:
-    """Group model feature columns by ``(organelle, source, projection)`` prefix.
+    """Group model feature columns by ``(channel, source, projection)`` prefix.
 
-    Column convention: ``<organelle>_<source>_<projection>__<key>``. The last two
+    Column convention: ``<channel>_<source>_<projection>__<key>``. The last two
     underscore tokens of the prefix are source/projection; the rest is the
-    organelle (which may itself contain underscores).
+    channel (which may itself contain underscores).
     """
     groups: dict[tuple[str, str, str], set[str]] = {}
     for col in needed:
@@ -201,8 +201,8 @@ def _parse_needed_features(needed: list[str]) -> dict[tuple[str, str, str], set[
         parts = prefix.split("_")
         if len(parts) < 3:
             continue
-        organelle = "_".join(parts[:-2])
-        groups.setdefault((organelle, parts[-2], parts[-1]), set()).add(key)
+        channel = "_".join(parts[:-2])
+        groups.setdefault((channel, parts[-2], parts[-1]), set()).add(key)
     return groups
 
 
@@ -231,16 +231,16 @@ def _cheap_features(mask: np.ndarray, keys: set[str]) -> dict[str, float]:
 def fov_feature_matrix(
     projections: dict[str, np.ndarray],
     masks: dict[str, np.ndarray],
-    px_um: float,
+    pixel_size_um: float,
     projection: str = "sum",
     source: str = "vs",
     needed: list[str] | None = None,
 ):
     """Build a 1-row feature matrix (variant-prefixed columns) for one FOV.
 
-    ``projections`` / ``masks`` map organelle name (``'nuclei'``, ``'membrane'``)
+    ``projections`` / ``masks`` map channel name (``'nuclei'``, ``'membrane'``)
     to its 2D projection / label mask. Column names follow the training
-    convention ``<organelle>_<source>_<projection>__<feature>`` (e.g.
+    convention ``<channel>_<source>_<projection>__<feature>`` (e.g.
     ``nuclei_vs_sum__coverage_frac``), computed via the shared
     ``object_feature_rows`` + ``group_features``.
 
@@ -255,47 +255,37 @@ def fov_feature_matrix(
     groups = _parse_needed_features(needed) if needed is not None else None
 
     feat: dict[str, float] = {}
-    for organelle, proj in projections.items():
-        prefix = f"{organelle}_{source}_{projection}"
+    for channel, proj in projections.items():
+        prefix = f"{channel}_{source}_{projection}"
         keys_needed = None
         if groups is not None:
-            keys_needed = groups.get((organelle, source, projection))
+            keys_needed = groups.get((channel, source, projection))
             if not keys_needed:
-                continue  # this organelle contributes no needed feature
+                continue  # this channel contributes no needed feature
 
         if keys_needed is not None and keys_needed <= CHEAP_FEATURE_KEYS:
-            agg = _cheap_features(masks[organelle], keys_needed)
+            agg = _cheap_features(masks[channel], keys_needed)
         else:
-            rows = FeatureExtractor.object_feature_rows(
-                masks[organelle],
-                proj,
-                px_um,
-                dataset_tag="live",
-                well_row="",
-                well_col="",
-                fov="",
-                timepoint=0,
-                channel=organelle,
-                source=source,
-                projection_type=projection,
-            )
+            rows = FeatureExtractor.object_feature_rows(masks[channel], proj, pixel_size_um)
             if not rows:
                 # No objects segmented: faithfully report coverage_frac as a real zero
-                # so the model can act on an empty FOV, instead of dropping the organelle
+                # so the model can act on an empty FOV, instead of dropping the channel
                 # entirely -> every column NaN -> median-imputed to a typical FOV ->
                 # empty FOV misclassified good. Spatial features are genuinely undefined
                 # with no objects, so they stay absent -> NaN.
                 logger.warning(
                     "FOV selection: no %s objects segmented; density features -> 0, "
                     "shape/spatial features -> NaN",
-                    organelle,
+                    channel,
                 )
                 cheap = keys_needed if keys_needed is not None else CHEAP_FEATURE_KEYS
-                agg = _cheap_features(masks[organelle], set(cheap) & CHEAP_FEATURE_KEYS)
+                agg = _cheap_features(masks[channel], set(cheap) & CHEAP_FEATURE_KEYS)
             else:
                 agg = FeatureExtractor.group_features(pd.DataFrame(rows))
                 if keys_needed is None or (keys_needed & MASK_FEATURE_KEYS):
-                    agg.update(FeatureExtractor.mask_gap_features(masks[organelle], px_um))
+                    agg.update(
+                        FeatureExtractor.mask_gap_features(masks[channel], pixel_size_um)
+                    )
 
         for k, v in agg.items():
             if keys_needed is None or k in keys_needed:
@@ -306,11 +296,11 @@ def fov_feature_matrix(
 def flat_feature_matrix(
     projections: dict[str, np.ndarray],
     masks: dict[str, np.ndarray],
-    px_um: float,
+    pixel_size_um: float,
     needed: list[str] | None = None,
 ):
     """One-row matrix with PLAIN feature-name columns (``coverage_frac``, ``nn_um_mean``,
-    ...), i.e. WITHOUT the ``<organelle>_<source>_<projection>__`` prefix that
+    ...), i.e. WITHOUT the ``<channel>_<source>_<projection>__`` prefix that
     :func:`fov_feature_matrix` adds.
 
     Feature names are then independent of which preprocessing-output channel was
@@ -330,39 +320,27 @@ def flat_feature_matrix(
             "channel-independent (flat) feature naming requires exactly one "
             f"segmented channel; got {list(projections)}."
         )
-    ((organelle, proj),) = projections.items()
-    mask = masks[organelle]
+    ((channel, proj),) = projections.items()
+    mask = masks[channel]
     keys_needed = set(needed) if needed is not None else None
 
     if keys_needed is not None and keys_needed <= CHEAP_FEATURE_KEYS:
         agg = _cheap_features(mask, keys_needed)
     else:
-        rows = FeatureExtractor.object_feature_rows(
-            mask,
-            proj,
-            px_um,
-            dataset_tag="live",
-            well_row="",
-            well_col="",
-            fov="",
-            timepoint=0,
-            channel=organelle,
-            source="live",
-            projection_type="proj",
-        )
+        rows = FeatureExtractor.object_feature_rows(mask, proj, pixel_size_um)
         if not rows:
             # No objects: report density features as a real zero (see fov_feature_matrix).
             logger.warning(
                 "FOV selection: no %s objects segmented; density features -> 0, "
                 "shape/spatial features -> NaN",
-                organelle,
+                channel,
             )
             cheap = keys_needed if keys_needed is not None else CHEAP_FEATURE_KEYS
             agg = _cheap_features(mask, set(cheap) & CHEAP_FEATURE_KEYS)
         else:
             agg = FeatureExtractor.group_features(pd.DataFrame(rows))
             if keys_needed is None or (keys_needed & MASK_FEATURE_KEYS):
-                agg.update(FeatureExtractor.mask_gap_features(mask, px_um))
+                agg.update(FeatureExtractor.mask_gap_features(mask, pixel_size_um))
 
     feat = {k: v for k, v in agg.items() if keys_needed is None or k in keys_needed}
     return pd.DataFrame([feat])
@@ -371,7 +349,7 @@ def flat_feature_matrix(
 def extract_features(
     projections: dict[str, np.ndarray],
     masks: dict[str, np.ndarray],
-    px_um: float,
+    pixel_size_um: float,
     projection: str = "sum",
     needed: list[str] | None = None,
 ):
@@ -381,7 +359,7 @@ def extract_features(
 
       one channel   -> PLAIN, channel-independent names (``coverage_frac``, ...) via
                        :func:`flat_feature_matrix`.
-      many channels -> ``<organelle>_vs_<projection>__<feature>`` prefixed names via
+      many channels -> ``<channel>_vs_<projection>__<feature>`` prefixed names via
                        :func:`fov_feature_matrix`, so same-named features from different
                        channels stay distinct.
 
@@ -389,9 +367,9 @@ def extract_features(
     sees which channel produced a feature. ``needed`` restricts the computed columns.
     """
     if len(projections) == 1:
-        return flat_feature_matrix(projections, masks, px_um, needed=needed)
+        return flat_feature_matrix(projections, masks, pixel_size_um, needed=needed)
     return fov_feature_matrix(
-        projections, masks, px_um, projection, source="vs", needed=needed
+        projections, masks, pixel_size_um, projection, source="vs", needed=needed
     )
 
 
@@ -408,7 +386,7 @@ def decide_fov(
     *,
     target_channels: list[str],
     projection: str = "sum",
-    px_um: float,
+    pixel_size_um: float,
     threshold: float = 0.5,
     best_focus_z: dict | None = None,
     return_artifacts: bool = False,
@@ -453,7 +431,7 @@ def decide_fov(
         ``'sum'`` (trained default), ``'max'``, ``'middle'`` (middle-slice), ``'logstd'``
         (log-normalized per-pixel std over Z), or ``'best_focus_z'`` (the in-focus slice
         picked by waveorder; needs ``best_focus_z`` optics -- see :func:`project_zyx`).
-    px_um : float
+    pixel_size_um : float
         XY pixel size in microns (physical feature units; also the focus pixel size).
     threshold : float
         P(good) cutoff.
@@ -507,27 +485,31 @@ def decide_fov(
     # For the 'best_focus_z' projection, remember which Z slice each channel was
     # projected from (and the stack depth) so the worker can log it for debugging.
     best_focus_index: dict[str, dict[str, int]] = {}
-    for organelle in target_channels:
-        vol = _to_numpy(channels[organelle])
+    for channel in target_channels:
+        vol = _to_numpy(channels[channel])
         if return_stacks:
-            stacks[organelle] = vol
+            stacks[channel] = vol
         proj, z_idx = project_zyx(
-            vol, projection, px_um=px_um, best_focus_z=best_focus_z, return_index=True
+            vol,
+            projection,
+            pixel_size_um=pixel_size_um,
+            best_focus_z=best_focus_z,
+            return_index=True,
         )
         if z_idx is not None:
-            best_focus_index[organelle] = {"slice": int(z_idx), "n_slices": int(vol.shape[0])}
-        projections[organelle] = proj
+            best_focus_index[channel] = {"slice": int(z_idx), "n_slices": int(vol.shape[0])}
+        projections[channel] = proj
         try:
-            mask = segmenter.segment(proj, organelle, px_um=px_um)
+            mask = segmenter.segment(proj, channel, pixel_size_um=pixel_size_um)
         except Exception as exc:
-            logger.error("%ssegment %s FAILED: %s", pfx, organelle, exc)
+            logger.error("%ssegment %s FAILED: %s", pfx, channel, exc)
             raise
-        masks[organelle] = mask
+        masks[channel] = mask
         n_objects = int((np.unique(mask) != 0).sum())
-        logger.info("%ssegment %s ok (%d objects)", pfx, organelle, n_objects)
+        logger.info("%ssegment %s ok (%d objects)", pfx, channel, n_objects)
 
     needed = None if extract_all else model.feature_names
-    matrix = extract_features(projections, masks, px_um, projection, needed=needed)
+    matrix = extract_features(projections, masks, pixel_size_um, projection, needed=needed)
     proba, good = model.predict(matrix, threshold)
     if return_artifacts:
         artifacts = {

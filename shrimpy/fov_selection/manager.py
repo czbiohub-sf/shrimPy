@@ -419,7 +419,7 @@ class FovSelection:
 
         Naming mirrors :func:`shrimpy.fov_selection.pipeline.extract_features`: with a single
         segmented channel the columns are the plain feature keys (``coverage_frac``, ...);
-        with several (VS targets) they are ``<organelle>_vs_<projection>__<key>``.
+        with several (VS targets) they are ``<channel>_vs_<projection>__<key>``.
         """
         from shrimpy.fov_selection.feature_extraction import (
             FEATURE_NAMES,
@@ -430,8 +430,8 @@ class FovSelection:
         if len(self._target_channels) == 1:  # flat_feature_matrix -> plain names
             return keys
         return {
-            f"{organelle}_vs_{self._projection}__{key}"
-            for organelle in self._target_channels
+            f"{channel}_vs_{self._projection}__{key}"
+            for channel in self._target_channels
             for key in keys
         }
 
@@ -596,7 +596,7 @@ class FovSelection:
                 model_cfg=self.config.get("model", {}) or {},
                 projection=self._projection,
                 threshold=self._threshold,
-                px_um=self._pixel_size_um,
+                pixel_size_um=self._pixel_size_um,
                 zyx_shape=zyx_shape,
                 log_file_path=log_file_path,
                 debug_dir=self._debug_dir,
