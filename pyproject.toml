@@ -169,15 +169,17 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# The feature viewer is a single-file Qt app whose conventions the repo-wide `N` rules do not
-# fit (the global ignores above already exempt N802/N815 for the same reason):
+# The feature viewer is a multi-file Qt app (app.py, the per-tab modules, _common.py, and
+# data.py) whose conventions the repo-wide `N` rules do not fit (the global ignores above
+# already exempt N802/N815 for the same reason):
 #   N812  module imported under a short uppercase alias (fov_model as FM, data as D, ...) --
-#         renaming is a 30-site same-file churn with no behavioural gain.
-#   N806  local Qt layout variables named colA/colB/colC to mirror the sections they hold.
+#         the established repo alias; renaming is same-file churn with no behavioural gain.
+#   N803/N806  local Qt layout variables named colA/colB/colC (mirroring the sections they
+#         hold) and the sklearn-style feature matrix `X` in data.run_reduction.
 #   B008  `parent=QtCore.QModelIndex()` on QAbstractTableModel.rowCount/columnCount -- this
 #         mirrors Qt's own C++ default and is the canonical PyQt signature; QModelIndex() is a
 #         cheap immutable sentinel, not the mutable default B008 targets.
-"shrimpy/fov_selection/feature_viewer/app.py" = ["N812", "N806", "B008"]
+"shrimpy/fov_selection/feature_viewer/*.py" = ["N812", "N803", "N806", "B008"]
 
 [tool.ruff.lint.isort]
 # Match current isort settings
