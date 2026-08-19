@@ -121,8 +121,10 @@ def test_from_metadata_disabled_returns_none():
 
 
 def test_from_metadata_requires_model_path():
-    with pytest.raises(ValueError, match="model.path"):
-        FovSelection.from_metadata({"enabled": True}, SEQUENCE, 0.1)
+    # A classification_tree model needs a trained .joblib 'path'; omitting it aborts.
+    meta = {**META, "model": {"type": "classification_tree"}}  # path dropped
+    with pytest.raises(ValueError, match="requires a 'path'"):
+        FovSelection.from_metadata(meta, SEQUENCE, 0.1)
 
 
 def test_from_metadata_requires_pixel_size():
@@ -144,10 +146,11 @@ def test_streaming_decision_partitions_good_and_bad():
         fov.drain()
 
         assert fov.num_decided == 3
-        assert set(fov.good_position_names()) == {"good0", "good1"}
-        assert fov.is_good("good0")
-        assert not fov.is_good("bad0")
-        assert not fov.is_good("unseen")  # undecided -> bad
+        # Non-ranking model (top_fov None): passed == the FOVs decided good.
+        passed = set(fov.passed_position_names())
+        assert passed == {"good0", "good1"}
+        assert "bad0" not in passed
+        assert "unseen" not in passed  # undecided -> not selected
     finally:
         fov.shutdown()
 

@@ -229,10 +229,12 @@ def test_edge_frac_is_a_producible_mask_feature():
 
     assert "edge_frac" in MASK_FEATURE_KEYS
     mask = np.zeros((64, 64), np.uint32)
-    mask[0:6, 0:6] = 1
-    mask[30:40, 30:40] = 2
+    mask[0:6, 0:6] = 1  # 36 px, touches the top-left corner -> an edge object
+    mask[30:40, 30:40] = 2  # 100 px, interior -> not an edge object
     feats = mask_gap_features(mask, pixel_size_um=0.1)
-    assert "edge_frac" in feats and feats["edge_frac"] == 0.5
+    # edge_frac is AREA-weighted: edge-object area / total mask area = 36 / (36 + 100).
+    # (A count-based metric would instead give 1 of 2 objects = 0.5.)
+    assert "edge_frac" in feats and feats["edge_frac"] == pytest.approx(36 / 136)
 
 
 # ---------------------------------------------------------------------------
