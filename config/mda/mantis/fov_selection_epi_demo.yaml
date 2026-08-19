@@ -1,0 +1,162 @@
+# Setup
+setup:
+  roi: [100, 1030, 1664, 256]
+  channel:
+    config: Right
+    group: Imaging Path
+  properties:
+    - ['LS Position Galvo', 'Position', '0.116']
+    - ['LS Angle Galvo', 'Position', '-0.24']
+    - ['Prime BSI Express', 'ReadoutRate', '100MHz 16bit']
+    - ['Prime BSI Express', 'Gain', '2-CMS']
+    - ['Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter']
+    - ['TS2_TTL1-8', 'Sequence', 'Off']
+    - ['TS2_TTL1-8', 'Blanking', 'On']
+    - ['TS2_DAC03', 'Sequence', 'On']
+
+# Define stage positions
+stage_positions: []
+
+# Define time plan
+time_plan:
+  prioritize_duration: true
+  interval: "00:30:00"
+  duration: "33:00:00"
+  # loops: 0
+
+# Define z plan
+z_plan:
+  top: 70
+  bottom: -90
+  step: 0.15
+  # step: 15  # DEBUG
+  go_up: true
+
+# Define channels
+channels:
+- config: BF
+  group: Channels - Right
+  exposure: 5.0
+  do_stack: true
+  z_offset: 0.0
+  acquire_every: 1
+  camera: null
+  # 3 mW 488 laser power
+- config: GFP EX488 EM525-45
+  group: Channels - Right
+  exposure: 10.0
+  do_stack: true
+  z_offset: 0.0
+  acquire_every: 1
+  camera: null
+
+autofocus_plan: null
+keep_shutter_open_across: []
+
+# Define metadata per microscope
+metadata:
+  pymmcore_widgets:
+    version: 0.10.2.dev23+g22b8c0aff.d20260106
+  reset_hardware_sequencing_settings:
+    - ['TS2_TTL1-8', 'Blanking', 'Off']
+    - ['TS2_DAC03', 'Sequence', 'Off']
+    - ['XYStage:XY:31', 'MotorSpeedX-S(mm/s)', '5.75']
+    - ['XYStage:XY:31', 'MotorSpeedY-S(mm/s)', '5.75']
+  autofocus:
+    enabled: true
+    method: PFS
+    stage: ZDrive
+
+  fov_selection:
+    enabled: true
+    calibration_mode: False
+
+    # ---- Pre-scan MDASequence ----
+    prescan_mda:
+      setup:
+        # roi: [100, 1030, 1664, 256]
+        channel:
+          config: Left
+          group: Imaging Path
+      stage_positions:
+        # a1_center_xy: [-23500, 33132]
+        # plate:
+        #   rows: 4
+        #   columns: 6
+        #   name: 24-well
+        #   well_size: [15.6, 15.6]
+        #   well_spacing: [19.0, 19.0]
+        # selected_wells:
+        #   - [1, 1, 1]
+        #   - [1, 2, 3]
+        # well_points_plan:
+        #   rows: 8           # 7x7 = 49 FOVs/well; B/3,B/4,B/5 -> 147 total
+        #   columns: 8
+        #   fov_height: 180.0
+        #   fov_width: 180.0
+        - x: -4900
+          y: 13500
+          properties:
+          - ['ZDrive', 'Position', 4510]
+          plate_row: 1
+          plate_col: 1
+        - x: 13000
+          y: 13500
+          properties:
+          - ['ZDrive', 'Position', 4555]
+          plate_row: 1
+          plate_col: 2
+        - x: 32850
+          y: 13500
+          properties:
+          - ['ZDrive', 'Position', 4586]
+          plate_row: 1
+          plate_col: 3
+      grid_plan:
+        rows: 12
+        columns: 12
+        fov_height: 180.0
+        fov_width: 180.0
+      time_plan:
+        loops: 1            # single pre-scan timepoint (validated)
+        interval: 0
+      z_plan:
+        top: 0.0
+        bottom: 0.0
+        step: 0.15
+        go_up: true
+      channels:
+        - config: GFP EX466-40 EM525-50
+          group: Channels - Left
+          exposure: 200.0
+
+    # Acquired channel fed to reconstruction (must be one of prescan_mda.channels).
+    fov_selection_channel: "GFP EX466-40 EM525-50"
+    target: nuclei
+    preprocessing: ['segmentation']
+
+    segmentation:
+      model: instanseg
+      path: C:\Users\labelfree\Documents\instanseg_34532446.zip
+      gpu: true
+
+    model:
+      type: ranking_by_defined_range
+      top_fov: 25
+      aggregation: gaussian
+      features:
+        coverage_frac:
+          shape: gaussian
+          center: 0.12288
+          fwhm: 0.08885000000000001
+          weight: 1.0
+        max_radius_corner_to_edge:
+          shape: gaussian
+          center: 49.80718
+          fwhm: 25.977580000000003
+          weight: 1.0
+
+    # FOV selection decision
+    # Debug outputs (off by default):
+    save_pre_scan_omezarr: False   # write the pre-scan run to <name>_prescan.ome.zarr
+    save_decision: True  # per-FOV masks/features/goodness under <name>_fov_debug/
