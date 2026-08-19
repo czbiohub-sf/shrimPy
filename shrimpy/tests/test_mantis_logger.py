@@ -68,7 +68,7 @@ def test_logger_hierarchy(config_file, temp_log_dir):
 
     # Get loggers from the shrimpy hierarchy
     cli_logger = logging.getLogger("shrimpy.cli.acquire")
-    mantis_logger = logging.getLogger("shrimpy.mantis.mantis_engine")
+    mantis_logger = logging.getLogger("shrimpy.engines.mantis_engine")
 
     # Both should be configured through the hierarchy
     assert cli_logger.isEnabledFor(logging.INFO)
@@ -104,7 +104,7 @@ def test_logger_writes_to_file(config_file, temp_log_dir):
     configure_logging(config_file, output_dir, "test_acquisition")
 
     # Get a logger and write messages
-    logger = logging.getLogger("shrimpy.mantis.mantis_engine")
+    logger = logging.getLogger("shrimpy.engines.mantis_engine")
     logger.debug("Test DEBUG message")
     logger.info("Test INFO message")
     logger.warning("Test WARNING message")
@@ -282,7 +282,7 @@ def test_detailed_formatter(config_file, temp_log_dir):
     configure_logging(config_file, temp_log_dir, "test_acquisition")
 
     # Get a logger and write a message
-    logger = logging.getLogger("shrimpy.mantis.mantis_engine")
+    logger = logging.getLogger("shrimpy.engines.mantis_engine")
     logger.info("Test message with detailed format")
 
     # Flush handlers
@@ -296,6 +296,6 @@ def test_detailed_formatter(config_file, temp_log_dir):
     log_content = log_files[0].read_text()
 
     # Should include logger name, module, and function
-    assert "shrimpy.mantis.mantis_engine" in log_content
+    assert "shrimpy.engines.mantis_engine" in log_content
     assert "test_mantis_logger" in log_content  # module name
     assert "test_detailed_formatter" in log_content  # function name
