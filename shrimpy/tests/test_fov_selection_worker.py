@@ -1,4 +1,4 @@
-"""Tests for the FOV-selection worker's debug-artifact assembly.
+"""Tests for FOV-selection debug-artifact assembly (shrimpy.fov_selection.debug_artifacts).
 
 `_assemble_debug_channels` stacks every reconstruction stage (deskew / phase /
 VS volumes in 3D, plus the 2D projection + mask broadcast across Z) into one
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from shrimpy.fov_selection import worker
+from shrimpy.fov_selection import debug_artifacts
 
 
 def _artifacts(nz=3, ny=4, nx=5):
@@ -36,7 +36,7 @@ def _artifacts(nz=3, ny=4, nx=5):
 
 
 def test_assemble_channel_order_and_shape():
-    names, czyx = worker._assemble_debug_channels(_artifacts())
+    names, czyx = debug_artifacts._assemble_debug_channels(_artifacts())
     assert names == [
         "deskew",
         "phase",
@@ -53,7 +53,7 @@ def test_assemble_channel_order_and_shape():
 
 def test_assemble_broadcasts_2d_across_z():
     art = _artifacts()
-    names, czyx = worker._assemble_debug_channels(art)
+    names, czyx = debug_artifacts._assemble_debug_channels(art)
 
     # The projection/mask channels are the same 2D plane on every Z slice.
     proj_idx = names.index("nuclei_projection")
@@ -67,7 +67,7 @@ def test_assemble_broadcasts_2d_across_z():
 
 def test_assemble_casts_mask_labels_to_float():
     art = _artifacts()
-    names, czyx = worker._assemble_debug_channels(art)
+    names, czyx = debug_artifacts._assemble_debug_channels(art)
     mask_idx = names.index("membrane_mask")
     np.testing.assert_array_equal(
         czyx[mask_idx, 0], art["masks"]["membrane"].astype(np.float32)
@@ -76,7 +76,7 @@ def test_assemble_casts_mask_labels_to_float():
 
 def test_assemble_without_3d_stacks_returns_none():
     # No 3D stack -> nothing to anchor the (Z, Y, X) grid -> skip the store.
-    names, czyx = worker._assemble_debug_channels(
+    names, czyx = debug_artifacts._assemble_debug_channels(
         {"stacks": {}, "projections": {}, "masks": {}}
     )
     assert names == []
@@ -84,7 +84,7 @@ def test_assemble_without_3d_stacks_returns_none():
 
 
 # --------------------------------------------------------------------------
-# Calibration feature-viewer layout (_write_feature_viewer_artifacts)
+# Calibration feature-viewer layout (write_feature_viewer_artifacts)
 # --------------------------------------------------------------------------
 # The calibration pre-scan must write exactly what the feature viewer loads:
 # <stem>.csv with a `filename` column + sibling <stem>_png / <stem>_mask_png
@@ -107,7 +107,9 @@ def test_feature_viewer_layout_matches_standard(tmp_path):
 
     stem = "acq_fov_feature_matrix"
     for name in ("B4_0000", "B4/0001"):  # a slash must be sanitized to a safe stem
-        worker._write_feature_viewer_artifacts(tmp_path, stem, name, _fv_artifacts(name))
+        debug_artifacts.write_feature_viewer_artifacts(
+            tmp_path, stem, name, _fv_artifacts(name)
+        )
 
     csv = tmp_path / f"{stem}.csv"
     assert csv.exists()
@@ -131,7 +133,9 @@ def test_feature_viewer_layout_loads_in_the_viewer(tmp_path):
 
     stem = "acq_fov_feature_matrix"
     for name in ("f0", "f1"):
-        worker._write_feature_viewer_artifacts(tmp_path, stem, name, _fv_artifacts(name))
+        debug_artifacts.write_feature_viewer_artifacts(
+            tmp_path, stem, name, _fv_artifacts(name)
+        )
 
     df = data.load_matrices([tmp_path / f"{stem}.csv"])
     assert len(df) == 2

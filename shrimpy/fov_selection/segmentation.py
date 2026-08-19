@@ -33,14 +33,15 @@ class Segmenter:
     """Interface: segment one 2D projection into a uint32 instance-label mask.
 
     Subclasses are constructed from the ``fov_selection.segmentation`` config block (which
-    they retain), so :meth:`segment` needs only the image, its channel, and the pixel size.
+    they retain), so :meth:`segment` needs only the image, the ``target`` object it is
+    segmenting (``'cells'`` | ``'nuclei'``), and the pixel size.
     """
 
     def __init__(self, config: dict | None = None) -> None:
         self._config = config or {}
 
     def segment(
-        self, img2d: np.ndarray, channel: str, pixel_size_um: float | None = None
+        self, img2d: np.ndarray, target: str, pixel_size_um: float | None = None
     ) -> np.ndarray:  # pragma: no cover - interface
         raise NotImplementedError
 
@@ -55,7 +56,7 @@ class OtsuSegmenter(Segmenter):
     """
 
     def segment(
-        self, img2d: np.ndarray, channel: str = "", pixel_size_um: float | None = None
+        self, img2d: np.ndarray, target: str = "", pixel_size_um: float | None = None
     ) -> np.ndarray:
         from scipy.ndimage import binary_fill_holes
         from skimage.filters import threshold_otsu
@@ -88,9 +89,9 @@ class OtsuSegmenter(Segmenter):
 class CellposeSegmenter(Segmenter):
     """A loaded Cellpose model (e.g. cpdino) run one image at a time.
 
-    The Cellpose diameter is per channel: an explicit ``segmentation.diameters[channel]``
-    wins, else membrane channels get :attr:`MEMBRANE_DIAMETER` (whole-cell badly under-covers
-    on auto-scale) and everything else (nuclei) auto-scales (:attr:`NUCLEI_DIAMETER` = None).
+    The Cellpose diameter is per target: an explicit ``segmentation.diameters[target]``
+    wins, else ``cells`` (whole cells) get :attr:`MEMBRANE_DIAMETER` (whole-cell badly
+    under-covers on auto-scale) and ``nuclei`` auto-scales (:attr:`NUCLEI_DIAMETER` = None).
     """
 
     MODEL_NAME = "cpdino"  # Cellpose-DINO (fastest; quality ties cyto3/cpsam)
@@ -110,7 +111,7 @@ class CellposeSegmenter(Segmenter):
         logger.info("FOV selection: loading Cellpose model %r (gpu=%s)", name, gpu)
         self.model = models.CellposeModel(gpu=gpu, pretrained_model=name)
 
-    def _diameter_for(self, channel: str) -> float | None:
+    def _diameter_for(self, target: str) -> float | None:
         """Cellpose diameter (microns) for the target; ``None`` means auto-scale.
 
         ``nuclei`` auto-scales (correct for nuclei); ``cells`` (whole cells) needs an explicit
@@ -118,14 +119,14 @@ class CellposeSegmenter(Segmenter):
         in the config overrides either.
         """
         diameters = self._config.get("diameters") or {}
-        if channel in diameters:
-            return diameters[channel]
-        if channel == "nuclei":
+        if target in diameters:
+            return diameters[target]
+        if target == "nuclei":
             return self.NUCLEI_DIAMETER
         return self.MEMBRANE_DIAMETER
 
     def segment(
-        self, img2d: np.ndarray, channel: str, pixel_size_um: float | None = None
+        self, img2d: np.ndarray, target: str, pixel_size_um: float | None = None
     ) -> np.ndarray:
         seg = self._config
         kwargs = {
@@ -135,7 +136,7 @@ class CellposeSegmenter(Segmenter):
             "min_size": seg.get("min_size", self.MIN_SIZE),
             "normalize": True,
         }
-        diam = self._diameter_for(channel)
+        diam = self._diameter_for(target)
         if diam is not None:
             kwargs["diameter"] = diam
         # eval returns (masks, flows, styles); masks is a list (one per input image). We pass
@@ -270,7 +271,7 @@ class InstansegSegmenter(Segmenter):
         return None
 
     def segment(
-        self, img2d: np.ndarray, channel: str = "", pixel_size_um: float | None = None
+        self, img2d: np.ndarray, target: str = "", pixel_size_um: float | None = None
     ) -> np.ndarray:
         """Segment one 2D projection with InstanSeg into a uint32 label mask.
 
@@ -282,6 +283,9 @@ class InstansegSegmenter(Segmenter):
         import torch
 
         seg = self._config
+        # InstanSeg selects its output head from the CONFIG target (validated at build time);
+        # the positional `target` argument the pipeline passes is the same value, so it is not
+        # re-read here (this keeps the shared Segmenter.segment signature).
         target = seg.get("target", INSTANSEG_TARGETS[0])
         if target not in INSTANSEG_TARGETS:
             raise ValueError(

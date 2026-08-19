@@ -30,8 +30,8 @@ REDUCED_RE = re.compile(r"^(PCA|TSNE|UMAP)\d+$")
 # NUMERIC columns that are identifiers, labels, or model/acquisition outputs, never
 # reduction features. Only numeric non-features need listing here: feature_columns already
 # drops string columns (filename, well_row, dataset) and internal "__"-prefixed columns
-# (__dataset, __png, __src, __png_<channel>). Per-variant feature columns (e.g.
-# nuclei_vs_max__coverage_frac) are the actual features and are NOT listed. These columns
+# (__dataset, __png, __src, __png_<channel>). The feature columns themselves are plain
+# single-mask keys (e.g. coverage_frac, nn_um_mean) and are NOT listed. These columns
 # stay in the frame as filterable metadata, just kept off the plot axes.
 META_BLACKLIST = {
     "well_col",  # FOV identity (integer-valued, but an ID)

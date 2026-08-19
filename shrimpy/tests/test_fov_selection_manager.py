@@ -223,13 +223,18 @@ def test_target_nuclei_reconstructs_nuclei_only():
 
 
 class _StubSelection(FovSelection):
-    """Bare FovSelection exposing only what finalize_debug_summary touches."""
+    """Bare FovSelection exposing only what finalize_debug_summary touches.
 
-    def __init__(self, debug_dir, top_fov, passed):
+    ``fov_group`` maps every candidate name to a position; the default puts the four
+    ``_summary`` FOVs in ONE position, so ``rank`` is a single global ordering.
+    """
+
+    def __init__(self, debug_dir, top_fov, passed, fov_group=None):
         self._debug_dir = debug_dir
         self._top_fov = top_fov
         self._passed = passed
         self._calibration_mode = False
+        self._fov_group = fov_group if fov_group is not None else dict.fromkeys("ABCD", "P")
 
     def passed_position_names(self):
         return self._passed
@@ -253,8 +258,9 @@ def test_finalize_adds_selected_and_rank_for_a_ranking_model(tmp_path):
     _StubSelection(tmp_path, top_fov=2, passed=["B", "C"]).finalize_debug_summary()
 
     df = pd.read_csv(csv)
-    assert list(df.columns)[:4] == ["name", "proba", "selected", "rank"]
+    assert list(df.columns)[:5] == ["name", "proba", "selected", "position", "rank"]
     assert df.set_index("name")["selected"].to_dict() == {"A": 0, "B": 1, "C": 1, "D": 0}
+    # all four FOVs are in one position (stub default), so rank is a single global ordering;
     # method='first' -> ties get distinct consecutive ranks, not 3.5/3.5.
     assert df.set_index("name")["rank"].to_dict() == {"A": 4.0, "B": 1.0, "C": 2.0, "D": 3.0}
 

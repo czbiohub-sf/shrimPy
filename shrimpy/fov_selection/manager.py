@@ -591,30 +591,32 @@ class FovSelection:
         setup has applied the ROI.
         """
         if self._decide_fn is None:
-            from shrimpy.fov_selection.worker import FovSelectionWorker
+            from shrimpy.fov_selection.worker import FovSelectionWorker, WorkerConfig
 
             recon = self._inject_scales(self._recon_config())
             logger.info("FOV selection: starting worker process for shape %s", zyx_shape)
             self._worker = FovSelectionWorker(
-                recon=recon,
-                target=self._target,
-                recon_channels=self._recon_channels,
-                segmentation=self._segmentation,
-                model_cfg=self.config.get("model", {}) or {},
-                projection=self._projection,
-                threshold=self._threshold,
-                pixel_size_um=self._pixel_size_um,
-                zyx_shape=zyx_shape,
-                log_file_path=log_file_path,
-                debug_dir=self._debug_dir,
-                recon_zarr_path=self._recon_zarr_path,
-                require_gpu=self._require_gpu,
-                calibration_mode=self._calibration_mode,
-                matrix_stem=self._matrix_stem,
-                best_focus_z=self._best_focus_z,
-                z_step_um=self._z_step_um,
-                save_best_focus_z=self._save_best_focus_z,
-                write_debug_artifacts=self._save_decision,
+                WorkerConfig(
+                    recon=recon,
+                    target=self._target,
+                    recon_channels=self._recon_channels,
+                    segmentation=self._segmentation,
+                    model_cfg=self.config.get("model", {}) or {},
+                    projection=self._projection,
+                    threshold=self._threshold,
+                    pixel_size_um=self._pixel_size_um,
+                    zyx_shape=zyx_shape,
+                    log_file_path=log_file_path,
+                    debug_dir=self._debug_dir,
+                    recon_zarr_path=self._recon_zarr_path,
+                    require_gpu=self._require_gpu,
+                    calibration_mode=self._calibration_mode,
+                    matrix_stem=self._matrix_stem,
+                    best_focus_z=self._best_focus_z,
+                    z_step_um=self._z_step_um,
+                    save_best_focus_z=self._save_best_focus_z,
+                    write_debug_artifacts=self._save_decision,
+                )
             )
             self._worker.start()
         self._executor = ThreadPoolExecutor(max_workers=1)
@@ -790,12 +792,14 @@ class FovSelection:
                        ranking models; for the threshold/tree model types selection is a
                        per-FOV pass/fail with no ordering, so ``rank`` is left NaN.
 
-        A no-op when ``save_decision`` is off or the CSV was never written. Every
-        filesystem step is guarded: this is debug output written at the very end of the
+        A no-op when ``save_decision`` is off or the CSV was never written. The CSV
+        mechanics live in :func:`shrimpy.fov_selection.debug_artifacts.finalize_summary_csv`;
+        this method supplies the whole-run selection (passed set, groups, quota). Every
+        filesystem step there is guarded: this is debug output written at the very end of the
         pre-scan, and it must not be able to raise out of ``teardown_sequence`` and take
         the acquisition down with it.
         """
-        from shrimpy.fov_selection.worker import SUMMARY_CSV_NAME
+        from shrimpy.fov_selection import debug_artifacts
 
         # Calibration writes the feature-viewer CSV (not fov_summary.csv) and applies no
         # selection at all -- there is no timelapse -- so there is nothing to finalize.
@@ -803,71 +807,15 @@ class FovSelection:
             return
         if self._debug_dir is None:
             return
-        summary_path = Path(self._debug_dir) / SUMMARY_CSV_NAME
+        summary_path = Path(self._debug_dir) / debug_artifacts.SUMMARY_CSV_NAME
         if not summary_path.exists():
             return
 
-        import pandas as pd
-
-        try:
-            df = pd.read_csv(summary_path)
-        except Exception:
-            logger.exception("FOV selection: could not read %s to finalize", summary_path)
-            return
-        if "name" not in df.columns:
-            logger.warning("FOV selection: %s has no 'name' column; skipping", summary_path)
-            return
-
-        passed = set(self.passed_position_names())
-        df = df.drop(
-            columns=[c for c in ("selected", "rank", "position", "good") if c in df.columns]
-        )
-        names = df["name"].astype(str)
-        selected = names.isin(passed).astype(int)
-        position = names.map(lambda n: self._fov_group.get(n, n))
-        if self._top_fov is not None:
-            # Rank WITHIN each position, matching the per-position top_fov quota, so that
-            # `selected == (rank <= top_fov)` holds inside every position. method='first' so
-            # ties resolve to distinct consecutive integers (a dense/average rank would emit
-            # 1.5-style values); NaN scores rank last.
-            rank = df.groupby(position)["proba"].rank(ascending=False, method="first")
-        else:
-            rank = pd.Series(np.nan, index=df.index)
-        df.insert(2, "rank", rank)
-        df.insert(2, "position", position)
-        df.insert(2, "selected", selected)
-
-        try:
-            df.to_csv(summary_path, index=False)
-        except OSError as exc:
-            # Typically the file is locked by a spreadsheet app watching the run (Windows
-            # gives PermissionError). Don't lose the columns: write them beside the original
-            # so the selection is still recoverable, and say plainly what happened.
-            fallback = summary_path.with_name(f"{summary_path.stem}_selected.csv")
-            try:
-                df.to_csv(fallback, index=False)
-            except OSError:
-                logger.exception(
-                    "FOV selection: could not write selected/rank to %s or %s; the "
-                    "per-FOV scores in the log are the only record of the selection",
-                    summary_path,
-                    fallback,
-                )
-                return
-            logger.warning(
-                "FOV selection: could not write %s (%s) -- is it open in another program? "
-                "Wrote the selected/rank table to %s instead.",
-                summary_path,
-                exc,
-                fallback,
-            )
-            summary_path = fallback
-
-        logger.info(
-            "FOV selection: wrote selected/rank for %d FOVs (%d selected) to %s",
-            len(df),
-            int(selected.sum()),
+        debug_artifacts.finalize_summary_csv(
             summary_path,
+            passed=set(self.passed_position_names()),
+            fov_group=self._fov_group,
+            top_fov=self._top_fov,
         )
 
     @property

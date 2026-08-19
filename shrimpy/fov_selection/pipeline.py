@@ -30,45 +30,6 @@ from shrimpy.fov_selection.feature_extraction import MASK_FEATURE_KEYS, FeatureE
 logger = logging.getLogger(__name__)
 
 
-def save_mask_overlay_png(
-    path,
-    image: np.ndarray,
-    mask: np.ndarray,
-    color: tuple = (255, 0, 255),
-    thickness: int = 2,
-) -> None:
-    """Save a PNG of ``image`` (contrast-stretched grayscale) with the ``mask`` object
-    OUTLINES drawn on top as a bright border (default magenta), so the segmentation is
-    visible without covering the cells it segments.
-
-    The image is 1-99 percentile stretched to 8-bit grayscale (as the plain projection PNG
-    is), converted to RGB, and each object's boundary pixels are painted ``color``.
-    ``thickness`` px wide boundary (dilated for visibility). Shared by the live FOV-selection
-    worker and the offline PNG exporter so both produce identical overlays.
-    """
-    import imageio.v3 as iio
-
-    from skimage.segmentation import find_boundaries
-
-    img = np.asarray(image, np.float32)
-    finite = img[np.isfinite(img)]
-    if finite.size:
-        lo, hi = np.percentile(finite, (1.0, 99.0))
-    else:
-        lo, hi = 0.0, 1.0
-    if hi <= lo:
-        lo, hi = float(img.min()), float(img.max())
-    gray = np.zeros_like(img) if hi <= lo else np.clip((img - lo) / (hi - lo), 0.0, 1.0)
-    rgb = np.repeat((gray * 255).astype(np.uint8)[..., None], 3, axis=2)
-    boundaries = find_boundaries(np.asarray(mask), mode="outer")
-    if thickness > 1 and boundaries.any():
-        from scipy.ndimage import binary_dilation
-
-        boundaries = binary_dilation(boundaries, iterations=int(thickness) - 1)
-    rgb[boundaries] = np.asarray(color, np.uint8)
-    iio.imwrite(path, rgb)
-
-
 def project_zyx(
     zyx: np.ndarray,
     projection: str = "sum",
@@ -289,7 +250,7 @@ def decide_fov(
     bf_zyx: np.ndarray,
     *,
     target: str,
-    target_channels: list[str],
+    recon_channels: list[str],
     projection: str = "sum",
     pixel_size_um: float,
     threshold: float = 0.5,
@@ -302,7 +263,7 @@ def decide_fov(
     """Run one FOV's good/bad decision end to end.
 
     Reconstructs the input z-stack (``preprocessor``), projects and segments each
-    ``target_channels`` channel, extracts a named feature table, and asks ``model``
+    ``recon_channels`` channel, extracts a named feature table, and asks ``model``
     (any :class:`~shrimpy.fov_selection.fov_model.FovModel`) for the verdict. Feature
     extraction is model-agnostic (see :func:`extract_features`) and the model reads only
     feature names, so any model type pairs with any preprocessing. Shared by the streaming
@@ -329,9 +290,10 @@ def decide_fov(
         trained tree, ...); consumes the extracted features by name.
     bf_zyx : np.ndarray
         Raw input-channel z-stack ``(Z, Y, X)``.
-    target_channels : list[str]
-        Reconstructed channels to segment/feature (e.g. ``['nuclei', 'membrane']`` or a
-        single ``['brightfield']``).
+    recon_channels : list[str]
+        Reconstructed channels to project (e.g. ``['nuclei', 'membrane']`` or a
+        single ``['brightfield']``); reduced to ONE segmentation input by ``target``
+        (see :func:`_resolve_seg_input`).
     projection : str
         ``'sum'`` (trained default), ``'max'``, ``'middle'`` (middle-slice), ``'logstd'``
         (log-normalized per-pixel std over Z), or ``'best_focus_z'`` (the in-focus slice
@@ -366,16 +328,17 @@ def decide_fov(
     # the reconstruction store, which is expensive to build and write -- so pull
     # them only when return_stacks is set. return_artifacts alone (projections /
     # masks / features for the lightweight PNG/CSV debug) stays cheap.
-    ### HACK
+    #
+    # `preprocessor` is None for a pipeline with no reconstruction step (raw stack ->
+    # segment; build_preprocessor returns None in that case). The raw input stack is then
+    # the single channel, keyed by the caller's chosen channel name (recon_channels[0]) so
+    # the same label reaches the segmenter (which picks the Cellpose diameter from it).
     if preprocessor:
         channels = preprocessor(
             bf_zyx, label=label, return_intermediates=return_stacks
         )  # {'nuclei', 'membrane', 'phase', ('deskew')}
     else:
-        # No reconstruction: the raw input stack is the single channel. Key it by the
-        # label the caller chose (target_channels[0]) so the same label reaches the
-        # segmenter (which picks the Cellpose diameter from it) downstream.
-        channels = {target_channels[0]: bf_zyx}
+        channels = {recon_channels[0]: bf_zyx}
 
     # Per-step 3D stacks for the reconstruction store (deskew, phase, and each VS
     # target volume); only populated when return_stacks is set.
@@ -389,7 +352,7 @@ def decide_fov(
     # which Z slice each came from (and the stack depth) so the worker can log it.
     content_proj: dict[str, np.ndarray] = {}
     best_focus_index: dict[str, dict[str, int]] = {}
-    for channel in target_channels:
+    for channel in recon_channels:
         vol = _to_numpy(channels[channel])
         if return_stacks:
             stacks[channel] = vol
