@@ -1,9 +1,10 @@
-"""Tests for the FOV-selection feature pipeline fast path.
+"""Tests for the FOV-selection feature pipeline.
 
-The trained tree only needs a couple of "cheap" aggregate features (object
-count / coverage), so ``fov_feature_matrix(..., needed=...)`` skips the
-expensive per-object ``regionprops`` extraction. These tests pin the fast path
-to be numerically identical to the full path and to compute only what's needed.
+FOV selection segments ONE mask (the target) and emits plain feature keys via
+``extract_features``; when a model needs only the "cheap" aggregate features (coverage,
+count) the expensive per-object ``regionprops`` extraction is skipped. These tests pin the
+cheap path to be numerically identical to the full path, plus the target -> segmentation-input
+resolution and the calibration extract-all behavior.
 """
 
 from __future__ import annotations
@@ -28,16 +29,6 @@ def _blob_mask(n: int = 40, size: int = 256, seed: int = 0) -> np.ndarray:
         rr, cc = disk((cy, cx), int(rng.integers(4, 12)), shape=mask.shape)
         mask[rr, cc] = lab
     return mask
-
-
-def test_parse_needed_features_groups_by_prefix():
-    groups = pipeline._parse_needed_features(
-        ["nuclei_vs_sum__coverage_frac", "membrane_vs_sum__objects_per_10um2"]
-    )
-    assert groups == {
-        ("nuclei", "vs", "sum"): {"coverage_frac"},
-        ("membrane", "vs", "sum"): {"objects_per_10um2"},
-    }
 
 
 def test_cheap_features_match_full_path():
@@ -123,51 +114,28 @@ def test_cheap_features_empty_mask_reports_zero():
     assert np.isnan(out["mask_occupancy_entropy"])
 
 
-def test_matrix_empty_mask_reports_zero_density():
-    # An FOV with no segmented objects must produce object_count=0 (not a missing
-    # column) so the loaded model, not a hardcoded rule, decides it is bad.
+def test_extract_features_empty_mask_reports_zero_coverage():
+    # An FOV with no segmented objects must report coverage as a real 0.0 (not a missing
+    # column / NaN) so the loaded model, not a hardcoded rule, decides it is bad.
     empty = np.zeros((256, 256), np.uint32)
     proj = np.zeros((256, 256), np.float32)
-    matrix = pipeline.fov_feature_matrix(
-        {"nuclei": proj},
-        {"nuclei": empty},
-        pixel_size_um=0.1133,
-        projection="sum",
-        source="vs",
-        needed=["nuclei_vs_sum__object_count"],
+    matrix = pipeline.extract_features(
+        {"cells": proj}, {"cells": empty}, pixel_size_um=0.1133, needed=["coverage_frac"]
     )
-    assert matrix["nuclei_vs_sum__object_count"].iloc[0] == 0
+    assert matrix["coverage_frac"].iloc[0] == 0.0
 
 
-def test_matrix_with_needed_computes_only_requested_columns():
+def test_extract_features_needed_matches_full_values():
+    # `needed` restricts to just those plain-key columns, and their values equal the full
+    # (all-feature) matrix values -- the cheap-path speed-up is numerically identical.
     mask = _blob_mask()
     proj = mask.astype(np.float32)
-    needed = ["nuclei_vs_sum__coverage_frac", "membrane_vs_sum__objects_per_10um2"]
-
-    matrix = pipeline.fov_feature_matrix(
-        {"nuclei": proj, "membrane": proj},
-        {"nuclei": mask, "membrane": mask},
-        pixel_size_um=0.1133,
-        projection="sum",
-        source="vs",
-        needed=needed,
-    )
-    assert sorted(matrix.columns) == sorted(needed)
-
-
-def test_matrix_needed_matches_full_matrix_values():
-    # The needed-column values must equal the full (all-feature) matrix values.
-    mask = _blob_mask()
-    proj = mask.astype(np.float32)
-    masks = {"nuclei": mask, "membrane": mask}
-    projs = {"nuclei": proj, "membrane": proj}
-
-    full = pipeline.fov_feature_matrix(projs, masks, 0.1133, "sum", "vs")
-    needed = ["nuclei_vs_sum__coverage_frac", "membrane_vs_sum__objects_per_10um2"]
-    fast = pipeline.fov_feature_matrix(projs, masks, 0.1133, "sum", "vs", needed=needed)
-
+    full = pipeline.extract_features({"cells": proj}, {"cells": mask}, 0.1133)
+    needed = ["coverage_frac", "nn_um_mean"]
+    fast = pipeline.extract_features({"cells": proj}, {"cells": mask}, 0.1133, needed=needed)
+    assert sorted(fast.columns) == sorted(needed)
     for col in needed:
-        assert np.isclose(fast[col].iloc[0], full[col].iloc[0]), col
+        assert np.isclose(fast[col].iloc[0], full[col].iloc[0], equal_nan=True), col
 
 
 # ---------------------------------------------------------------------------
@@ -201,6 +169,7 @@ def test_decide_fov_default_extracts_only_model_features():
         build_segmenter({"model": "otsu"}),
         _StubModel(),
         _two_blob_stack(),
+        target="cells",
         target_channels=["brightfield"],
         projection="middle",
         pixel_size_um=0.1,
@@ -220,6 +189,7 @@ def test_decide_fov_extract_all_ignores_model_feature_names():
         build_segmenter({"model": "otsu"}),
         _StubModel(),
         _two_blob_stack(),
+        target="cells",
         target_channels=["brightfield"],
         projection="middle",
         pixel_size_um=0.1,
@@ -231,38 +201,24 @@ def test_decide_fov_extract_all_ignores_model_feature_names():
     assert set(FEATURE_NAMES) | set(MASK_FEATURE_KEYS) <= produced
 
 
+def test_resolve_seg_input_reduces_to_one_image_by_target():
+    n = np.ones((4, 4), np.float32)
+    m = np.full((4, 4), 2.0, np.float32)
+    # VS 'cells' -> combined nuclei+membrane; 'nuclei' -> nuclei only.
+    assert np.array_equal(
+        pipeline._resolve_seg_input("cells", {"nuclei": n, "membrane": m}), n + m
+    )
+    assert np.array_equal(
+        pipeline._resolve_seg_input("nuclei", {"nuclei": n, "membrane": m}), n
+    )
+    # single reconstructed channel -> that channel, regardless of target.
+    assert np.array_equal(pipeline._resolve_seg_input("cells", {"brightfield": m}), m)
+    assert np.array_equal(pipeline._resolve_seg_input("nuclei", {"brightfield": m}), m)
+
+
 # ---------------------------------------------------------------------------
-# edge_frac -- fraction of objects stuck to the image-edge border band
+# edge_frac -- mask-area share of objects stuck to the image-edge border band
 # ---------------------------------------------------------------------------
-
-
-def test_edge_object_frac_counts_border_objects():
-    from shrimpy.fov_selection.feature_extraction import edge_object_frac
-
-    # 100x100 image, 10% band -> outer 10px on each side. Object 1 sits in the top-left
-    # corner (in the band); object 2 is centered (interior). -> 1 of 2 objects is an edge.
-    mask = np.zeros((100, 100), np.uint32)
-    mask[0:8, 0:8] = 1  # corner object -> touches the band
-    mask[45:55, 45:55] = 2  # centered object -> interior
-    assert edge_object_frac(mask) == 0.5
-
-
-def test_edge_object_frac_all_and_none():
-    from shrimpy.fov_selection.feature_extraction import edge_object_frac
-
-    interior = np.zeros((100, 100), np.uint32)
-    interior[45:55, 45:55] = 1
-    assert edge_object_frac(interior) == 0.0
-
-    touching = np.zeros((100, 100), np.uint32)
-    touching[45:55, 0:5] = 1  # reaches the left edge
-    assert edge_object_frac(touching) == 1.0
-
-
-def test_edge_object_frac_empty_mask_is_nan():
-    from shrimpy.fov_selection.feature_extraction import edge_object_frac
-
-    assert np.isnan(edge_object_frac(np.zeros((32, 32), np.uint32)))
 
 
 def test_edge_frac_is_a_producible_mask_feature():

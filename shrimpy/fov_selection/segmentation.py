@@ -99,8 +99,7 @@ class CellposeSegmenter(Segmenter):
     BATCH_SIZE = 64  # cellpose tiles per forward pass
     MIN_SIZE = 15  # drop masks smaller than this many px
     NUCLEI_DIAMETER: float | None = None  # None = auto-scale (correct for nuclei)
-    MEMBRANE_DIAMETER: float | None = 120.0  # whole-cell needs an explicit diameter
-    MEMBRANE_HINT = "membrane"  # channels containing this use MEMBRANE_DIAMETER
+    MEMBRANE_DIAMETER: float | None = 120.0  # whole-cell ('cells') needs an explicit diameter
 
     def __init__(self, config: dict | None = None) -> None:
         super().__init__(config)
@@ -112,13 +111,18 @@ class CellposeSegmenter(Segmenter):
         self.model = models.CellposeModel(gpu=gpu, pretrained_model=name)
 
     def _diameter_for(self, channel: str) -> float | None:
-        """Per-channel Cellpose diameter (microns); ``None`` means auto-scale."""
+        """Cellpose diameter (microns) for the target; ``None`` means auto-scale.
+
+        ``nuclei`` auto-scales (correct for nuclei); ``cells`` (whole cells) needs an explicit
+        diameter, since auto-scale under-covers whole cells. An explicit ``diameters[target]``
+        in the config overrides either.
+        """
         diameters = self._config.get("diameters") or {}
         if channel in diameters:
             return diameters[channel]
-        if self.MEMBRANE_HINT in (channel or "").lower():
-            return self.MEMBRANE_DIAMETER
-        return self.NUCLEI_DIAMETER
+        if channel == "nuclei":
+            return self.NUCLEI_DIAMETER
+        return self.MEMBRANE_DIAMETER
 
     def segment(
         self, img2d: np.ndarray, channel: str, pixel_size_um: float | None = None

@@ -34,6 +34,7 @@ META = {
     "enabled": True,
     "model": {"type": "classification_tree", "path": "dummy.joblib"},
     "fov_selection_channel": "BF",
+    "target": "cells",
     "preprocessing": ["deskew", "phase", "vs", "sum_projection", "segmentation"],
 }
 
@@ -96,8 +97,7 @@ def test_calibration_forces_save_decision_and_exposes_feature_matrix_csv(tmp_pat
     assert fov._save_decision is True
     assert fov._matrix_stem == "acq_fov_feature_matrix"
     assert (
-        fov.calibration_matrix_csv
-        == tmp_path / "acq_fov_debug" / "acq_fov_feature_matrix.csv"
+        fov.calibration_matrix_csv == tmp_path / "acq_fov_debug" / "acq_fov_feature_matrix.csv"
     )
 
 
@@ -179,48 +179,41 @@ def test_non_input_channel_and_later_timepoints_ignored():
 
 
 # ---------------------------------------------------------------------------
-# fov_selection_channels_type validation
+# target (cells | nuclei) validation
 # ---------------------------------------------------------------------------
 
 
-def test_channels_type_defaults_to_vs_and_requires_vs_step():
-    """Default type 'vs' with a 'vs' step is accepted."""
-    fov = FovSelection.from_metadata(
-        META, SEQUENCE, pixel_size_um=0.1, decide_fn=_good_if_positive
-    )
-    assert fov is not None
+def test_target_cells_and_nuclei_accepted():
+    for t in ("cells", "nuclei"):
+        fov = FovSelection.from_metadata(
+            {**META, "target": t}, SEQUENCE, pixel_size_um=0.1, decide_fn=_good_if_positive
+        )
+        assert fov is not None
 
 
-def test_channels_type_vs_without_vs_step_raises():
-    meta = {
-        **META,
-        "fov_selection_channels_type": "vs",
-        "preprocessing": ["deskew", "phase", "sum_projection", "segmentation"],
-    }
-    with pytest.raises(ValueError, match="requires a 'vs' step"):
+def test_target_invalid_raises():
+    with pytest.raises(ValueError, match="target must be one of"):
         FovSelection.from_metadata(
-            meta, SEQUENCE, pixel_size_um=0.1, decide_fn=_good_if_positive
+            {**META, "target": "brightfield"}, SEQUENCE, 0.1, decide_fn=_good_if_positive
         )
 
 
-def test_channels_type_fluor_does_not_require_vs_step():
-    meta = {
-        **META,
-        "fov_selection_channels_type": "fluor",
-        "preprocessing": ["deskew", "phase", "sum_projection", "segmentation"],
-    }
+def test_target_missing_raises():
+    meta = {k: v for k, v in META.items() if k != "target"}
+    with pytest.raises(ValueError, match="target must be one of"):
+        FovSelection.from_metadata(meta, SEQUENCE, 0.1, decide_fn=_good_if_positive)
+
+
+def test_target_nuclei_reconstructs_nuclei_only():
+    # VS + nuclei -> only the nuclei channel is reconstructed (membrane not predicted).
     fov = FovSelection.from_metadata(
-        meta, SEQUENCE, pixel_size_um=0.1, decide_fn=_good_if_positive
+        {**META, "target": "nuclei"}, SEQUENCE, 0.1, decide_fn=_good_if_positive
     )
-    assert fov is not None
-
-
-def test_channels_type_invalid_raises():
-    meta = {**META, "fov_selection_channels_type": "brightfield"}
-    with pytest.raises(ValueError, match="must be one of"):
-        FovSelection.from_metadata(
-            meta, SEQUENCE, pixel_size_um=0.1, decide_fn=_good_if_positive
-        )
+    assert fov._recon_channels == ["nuclei"]
+    fov_cells = FovSelection.from_metadata(
+        {**META, "target": "cells"}, SEQUENCE, 0.1, decide_fn=_good_if_positive
+    )
+    assert fov_cells._recon_channels == ["nuclei", "membrane"]
 
 
 # --- debug-summary finalisation ------------------------------------------------------

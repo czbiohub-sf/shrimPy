@@ -45,15 +45,8 @@ logger = logging.getLogger(__name__)
 # Anchored and 4-digit so it only strips a real field suffix (see _build_fov_groups).
 _FOV_FIELD_SUFFIX = re.compile(r"_\d{4}$")
 
-# Channels the decision needs (segmented + fed to the model).
-DEFAULT_TARGET_CHANNELS = ["nuclei", "membrane"]
-
-# Without a 'vs' step the decision runs on a single reconstructed channel. The label does
-# not reach the feature names (single channel mode yields channel-independent names) but it
-# IS passed to the segmenter, whose MEMBRANE_HINT match picks the Cellpose diameter. A single
-# brightfield/phase channel is segmented as whole cells, so default to 'membrane' to get the
-# whole-cell diameter (auto-scale under-covers whole cells).
-SINGLE_CHANNEL_LABEL = "membrane"
+# The object FOV selection segments and scores; also the InstanSeg head name.
+TARGETS = ("cells", "nuclei")
 
 # Timepoint used for the pre-scan (first timepoint of the run).
 PRESCAN_TIMEPOINT = 0
@@ -194,16 +187,31 @@ class FovSelection:
         self._top_fov = int(top_fov) if top_fov is not None else None
         # FOV name -> the position it belongs to, so top_fov is applied within each position.
         self._fov_group = self._build_fov_groups(sequence)
-        # Channels segmented + fed to the model, inferred from the preprocessing: the VS
-        # targets when there is a 'vs' step, else the single reconstructed channel.
         self._is_vs = "vs" in self._steps
-        vs_cfg = config.get("virtual_staining", {}) or {}
+        # `target` (cells | nuclei) is the ONE object FOV selection segments and scores. It
+        # drives: (a) how the reconstruction outputs are reduced to a single segmentation
+        # input (pipeline._resolve_seg_input), (b) the InstanSeg head (below), and (c) which
+        # channels VS must predict. Selection always produces ONE mask -> single-channel
+        # (plain) feature names, so `target` is recorded as run metadata, not in column names.
+        self._target = str(config.get("target", "")).lower()
+        if self._target not in TARGETS:
+            raise ValueError(
+                "fov_selection.target must be one of "
+                f"{TARGETS} (the object to segment and score); got {config.get('target')!r}. "
+                "Aborting before acquisition."
+            )
+        # Reconstruction output channels to project. VS 'cells' combines nuclei+membrane into
+        # one grayscale, so both are predicted; VS 'nuclei' segments the nuclei channel only,
+        # so membrane is not predicted. Non-VS is the single reconstructed channel.
         if self._is_vs:
-            self._target_channels = list(
-                vs_cfg.get("target_channels") or DEFAULT_TARGET_CHANNELS
+            self._recon_channels = (
+                ["nuclei", "membrane"] if self._target == "cells" else ["nuclei"]
             )
         else:
-            self._target_channels = [SINGLE_CHANNEL_LABEL]
+            self._recon_channels = [self._target]
+        # Drive the InstanSeg head from the single `target` field (cells|nuclei match the
+        # InstanSeg heads), so the segmentation block does not carry a second source of truth.
+        self._segmentation = {**self._segmentation, "target": self._target}
 
         self._validate_fov_selection_channel(sequence)
         self._require_segmentation_step()
@@ -417,23 +425,15 @@ class FovSelection:
     def _producible_feature_names(self) -> set[str]:
         """Every feature-column name the configured preprocessing/segmentation can emit.
 
-        Naming mirrors :func:`shrimpy.fov_selection.pipeline.extract_features`: with a single
-        segmented channel the columns are the plain feature keys (``coverage_frac``, ...);
-        with several (VS targets) they are ``<channel>_vs_<projection>__<key>``.
+        FOV selection segments exactly ONE mask (the ``target``), so the columns are always
+        the plain feature keys (``coverage_frac``, ...) -- no channel prefix.
         """
         from shrimpy.fov_selection.feature_extraction import (
             FEATURE_NAMES,
             MASK_FEATURE_KEYS,
         )
 
-        keys = set(FEATURE_NAMES) | set(MASK_FEATURE_KEYS)
-        if len(self._target_channels) == 1:  # flat_feature_matrix -> plain names
-            return keys
-        return {
-            f"{channel}_vs_{self._projection}__{key}"
-            for channel in self._target_channels
-            for key in keys
-        }
+        return set(FEATURE_NAMES) | set(MASK_FEATURE_KEYS)
 
     def _validate_feature_names(self, model_cfg: dict) -> None:
         """Fail before acquiring if the model asks for a feature the pipeline cannot produce.
@@ -456,8 +456,8 @@ class FovSelection:
             raise ValueError(
                 "FOV selection: model requests feature name(s) the configured preprocessing "
                 f"cannot produce: {unknown}. Available feature names: {sorted(producible)}. "
-                "Fix the names under fov_selection.model.features (or the preprocessing / "
-                "virtual_staining.target_channels). Aborting before acquisition."
+                "Fix the names under fov_selection.model.features (feature keys are plain, "
+                "e.g. 'coverage_frac' -- no channel prefix). Aborting before acquisition."
             )
 
     def _validate_segmentation(self) -> None:
@@ -549,9 +549,15 @@ class FovSelection:
             "phase": self.config.get("phase"),
             "virtual_staining": self.config.get("virtual_staining"),
         }
-        # Non-VS: name the single preprocessor output after our one channel.
-        if not self._is_vs:
-            recon["output_channel"] = self._target_channels[0]
+        if self._is_vs:
+            # VS predicts exactly the channels the target needs ('cells' -> nuclei+membrane,
+            # 'nuclei' -> nuclei only), so a nuclei-only run does not pay for membrane VS.
+            vs = dict(recon.get("virtual_staining") or {})
+            vs["target_channels"] = self._recon_channels
+            recon["virtual_staining"] = vs
+        else:
+            # Non-VS: name the single preprocessor output after our one channel.
+            recon["output_channel"] = self._recon_channels[0]
         return recon
 
     def _inject_scales(self, recon: dict) -> dict:
@@ -591,7 +597,8 @@ class FovSelection:
             logger.info("FOV selection: starting worker process for shape %s", zyx_shape)
             self._worker = FovSelectionWorker(
                 recon=recon,
-                target_channels=self._target_channels,
+                target=self._target,
+                recon_channels=self._recon_channels,
                 segmentation=self._segmentation,
                 model_cfg=self.config.get("model", {}) or {},
                 projection=self._projection,

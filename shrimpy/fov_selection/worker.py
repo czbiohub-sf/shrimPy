@@ -45,8 +45,12 @@ class FovSelectionWorker:
     recon : dict
         Scale-injected reconstruction sub-config (``preprocessing``, ``deskew``,
         ``phase``, ``virtual_staining``) for :func:`shrimpy.preprocessing.build_preprocessor`.
-    target_channels : list[str]
-        Reconstructed channels to segment/feature (e.g. ``['nuclei', 'membrane']``).
+    target : str
+        The object to segment and score (``'cells'`` | ``'nuclei'``); also the InstanSeg head.
+    recon_channels : list[str]
+        Reconstruction output channels to project (e.g. ``['nuclei', 'membrane']`` for a VS
+        ``cells`` run, ``['nuclei']`` for VS ``nuclei``, or a single label-free channel);
+        reduced to ONE segmentation input by the target (see pipeline._resolve_seg_input).
     segmentation : dict
         Segmentation config block (model, thresholds, per-channel diameters).
     model_cfg : dict
@@ -76,7 +80,8 @@ class FovSelectionWorker:
     def __init__(
         self,
         recon: dict,
-        target_channels: list[str],
+        target: str,
+        recon_channels: list[str],
         segmentation: dict,
         model_cfg: dict,
         projection: str,
@@ -95,7 +100,8 @@ class FovSelectionWorker:
         write_debug_artifacts: bool = True,
     ) -> None:
         self._recon = recon
-        self._target_channels = target_channels
+        self._target = target
+        self._recon_channels = recon_channels
         self._segmentation = segmentation
         self._model_cfg = model_cfg
         self._projection = projection
@@ -145,7 +151,8 @@ class FovSelectionWorker:
             target=_worker_loop,
             args=(
                 self._recon,
-                self._target_channels,
+                self._target,
+                self._recon_channels,
                 self._segmentation,
                 self._model_cfg,
                 self._projection,
@@ -215,7 +222,8 @@ class FovSelectionWorker:
 
 def _worker_loop(
     recon: dict,
-    target_channels: list[str],
+    target: str,
+    recon_channels: list[str],
     segmentation: dict,
     model_cfg: dict,
     projection: str,
@@ -325,7 +333,8 @@ def _worker_loop(
                     segmenter,
                     model,
                     bf_zyx,
-                    target_channels=target_channels,
+                    target=target,
+                    target_channels=recon_channels,
                     projection=projection,
                     pixel_size_um=pixel_size_um,
                     threshold=threshold,

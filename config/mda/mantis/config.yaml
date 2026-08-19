@@ -142,6 +142,11 @@ metadata:
 
     # Acquired channel fed to reconstruction (must be one of prescan_mda.channels).
     fov_selection_channel: "BF - Oblique"
+    # The object FOV selection segments and scores: 'cells' or 'nuclei'. Drives segmentation
+    # (VS 'cells' combines nuclei+membrane into one grayscale; 'nuclei' uses the nuclei VS
+    # channel only), the InstanSeg head, and which VS channels are predicted. Selection always
+    # produces ONE mask, so feature columns are plain keys (e.g. coverage_frac).
+    target: cells
 
     # Ordered preprocessing steps. Available steps:
     #   reconstruction: flatfield, deskew, phase, vs
@@ -269,7 +274,7 @@ metadata:
       model: instanseg
       path: E:\2026_07_28_smart_fov_selection_test\instanseg_34532446.zip
       gpu: true
-      target: cells         # which output head to keep: nuclei | cells
+      # InstanSeg head (nuclei | cells) is derived from fov_selection.target above.
 
     # FOV-goodness model (pluggable -- see shrimpy/fov_selection/fov_model.py). Pick ONE
     # `model:` block. The model reads features by NAME only, so it is independent of which

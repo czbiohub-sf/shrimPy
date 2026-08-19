@@ -105,6 +105,10 @@ metadata:
     # Acquired channel imaged during the pre-scan and fed to reconstruction (must be one
     # of prescan_mda.channels). The A549 store's brightfield channel.
     fov_selection_channel: "BF - Oblique"
+    # Object to segment and score: 'cells' or 'nuclei'. Drives segmentation input (VS 'cells'
+    # combines nuclei+membrane; 'nuclei' uses the nuclei channel only), the InstanSeg head, and
+    # which VS channels are predicted. Feature columns are plain keys (one mask).
+    target: cells
 
     # Ordered preprocessing steps. The XY pixel size and Z step are NOT set here -- they
     # are fetched from the Core (core.getPixelSizeUm()) and z_plan.step at runtime and
@@ -178,7 +182,7 @@ metadata:
       model: instanseg
       path: /hpc/projects/comp.micro/microscope_dev/smart_fov_selection/models/instanseg_34532446.zip
       gpu: true
-      target: cells         # which output head to keep: nuclei | cells
+      # InstanSeg head (nuclei | cells) is derived from fov_selection.target above.
 
     # FOV-goodness model. In calibration mode this is NOT used to pick which features to
     # extract (all are extracted) and no selection is applied, but a valid model block is

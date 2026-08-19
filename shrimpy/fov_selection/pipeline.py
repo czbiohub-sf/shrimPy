@@ -5,11 +5,11 @@ features match training exactly. Feature extraction is decoupled from the model:
 
     preprocessing output channel(s)
       -> project (sum / max / middle / logstd) [project_zyx]
+      -> reduce to ONE segmentation input by the target [_resolve_seg_input]
       -> segment (cellpose / instanseg / otsu) [Segmenter, from segmentation.py]
       -> per-object features          [FeatureExtractor.object_feature_rows]
       -> per-FOV aggregation          [FeatureExtractor.group_features]
-      -> named feature table          [extract_features: plain names for one channel,
-                                        <channel>_vs_<projection>__ prefixed for many]
+      -> named feature table          [extract_features: plain feature keys, one mask]
       -> verdict                      [FovModel.predict, fov_model.py]
 
 The model (thresholding / desirability / trained tree / ...) reads the feature table
@@ -188,24 +188,6 @@ def _best_focus_z(
 CHEAP_FEATURE_KEYS = frozenset({"coverage_frac", "mask_occupancy_entropy"})
 
 
-def _parse_needed_features(needed: list[str]) -> dict[tuple[str, str, str], set[str]]:
-    """Group model feature columns by ``(channel, source, projection)`` prefix.
-
-    Column convention: ``<channel>_<source>_<projection>__<key>``. The last two
-    underscore tokens of the prefix are source/projection; the rest is the
-    channel (which may itself contain underscores).
-    """
-    groups: dict[tuple[str, str, str], set[str]] = {}
-    for col in needed:
-        prefix, _, key = col.partition("__")
-        parts = prefix.split("_")
-        if len(parts) < 3:
-            continue
-        channel = "_".join(parts[:-2])
-        groups.setdefault((channel, parts[-2], parts[-1]), set()).add(key)
-    return groups
-
-
 def _cheap_features(mask: np.ndarray, keys: set[str]) -> dict[str, float]:
     """Aggregate features for ``keys`` from the mask alone (no regionprops).
 
@@ -228,90 +210,21 @@ def _cheap_features(mask: np.ndarray, keys: set[str]) -> dict[str, float]:
     return out
 
 
-def fov_feature_matrix(
-    projections: dict[str, np.ndarray],
-    masks: dict[str, np.ndarray],
-    pixel_size_um: float,
-    projection: str = "sum",
-    source: str = "vs",
-    needed: list[str] | None = None,
-):
-    """Build a 1-row feature matrix (variant-prefixed columns) for one FOV.
-
-    ``projections`` / ``masks`` map channel name (``'nuclei'``, ``'membrane'``)
-    to its 2D projection / label mask. Column names follow the training
-    convention ``<channel>_<source>_<projection>__<feature>`` (e.g.
-    ``nuclei_vs_sum__coverage_frac``), computed via the shared
-    ``object_feature_rows`` + ``group_features``.
-
-    When ``needed`` (the trained model's feature list) is given, only those
-    columns are computed: organelles that contribute no needed feature are
-    skipped, and organelles whose needed features are all cheap
-    (:data:`CHEAP_FEATURE_KEYS`) skip the expensive per-object extraction. This
-    is a pure speed-up -- the computed values are identical to the full path.
-    """
-    import pandas as pd
-
-    groups = _parse_needed_features(needed) if needed is not None else None
-
-    feat: dict[str, float] = {}
-    for channel, proj in projections.items():
-        prefix = f"{channel}_{source}_{projection}"
-        keys_needed = None
-        if groups is not None:
-            keys_needed = groups.get((channel, source, projection))
-            if not keys_needed:
-                continue  # this channel contributes no needed feature
-
-        if keys_needed is not None and keys_needed <= CHEAP_FEATURE_KEYS:
-            agg = _cheap_features(masks[channel], keys_needed)
-        else:
-            rows = FeatureExtractor.object_feature_rows(masks[channel], proj, pixel_size_um)
-            if not rows:
-                # No objects segmented: faithfully report coverage_frac as a real zero
-                # so the model can act on an empty FOV, instead of dropping the channel
-                # entirely -> every column NaN -> median-imputed to a typical FOV ->
-                # empty FOV misclassified good. Spatial features are genuinely undefined
-                # with no objects, so they stay absent -> NaN.
-                logger.warning(
-                    "FOV selection: no %s objects segmented; density features -> 0, "
-                    "shape/spatial features -> NaN",
-                    channel,
-                )
-                cheap = keys_needed if keys_needed is not None else CHEAP_FEATURE_KEYS
-                agg = _cheap_features(masks[channel], set(cheap) & CHEAP_FEATURE_KEYS)
-            else:
-                agg = FeatureExtractor.group_features(pd.DataFrame(rows))
-                if keys_needed is None or (keys_needed & MASK_FEATURE_KEYS):
-                    agg.update(
-                        FeatureExtractor.mask_gap_features(masks[channel], pixel_size_um)
-                    )
-
-        for k, v in agg.items():
-            if keys_needed is None or k in keys_needed:
-                feat[f"{prefix}__{k}"] = v
-    return pd.DataFrame([feat])
-
-
-def flat_feature_matrix(
+def extract_features(
     projections: dict[str, np.ndarray],
     masks: dict[str, np.ndarray],
     pixel_size_um: float,
     needed: list[str] | None = None,
 ):
-    """One-row matrix with PLAIN feature-name columns (``coverage_frac``, ``nn_um_mean``,
-    ...), i.e. WITHOUT the ``<channel>_<source>_<projection>__`` prefix that
-    :func:`fov_feature_matrix` adds.
+    """One-row feature matrix with PLAIN feature-name columns (``coverage_frac``,
+    ``nn_um_mean``, ...) from the ONE segmented mask FOV selection produces.
 
-    Feature names are then independent of which preprocessing-output channel was
-    segmented, so a single config model / ranking profile applies no matter what channel
-    (deskewed brightfield, phase, a VS target, ...) produced the mask. Because plain names
-    cannot disambiguate multiple channels, exactly one channel must be present (a non-VS
-    preprocessing emits a single reconstructed channel).
+    Feature names are independent of which channel was segmented (the ``target`` -- combined
+    VS, nuclei VS, or a single label-free channel), so a single config model / ranking profile
+    applies no matter what produced the mask. Exactly one channel must be present.
 
     ``needed`` restricts the computed columns (the config model's feature keys); when all
     needed keys are cheap (:data:`CHEAP_FEATURE_KEYS`) the per-object extraction is skipped.
-    Values match :func:`fov_feature_matrix` (same ``group_features`` / ``_cheap_features``).
     """
     import pandas as pd
 
@@ -329,7 +242,9 @@ def flat_feature_matrix(
     else:
         rows = FeatureExtractor.object_feature_rows(mask, proj, pixel_size_um)
         if not rows:
-            # No objects: report density features as a real zero (see fov_feature_matrix).
+            # No objects: report density features (coverage) as a real zero so the model can
+            # act on an empty FOV, instead of dropping to NaN (median-imputed -> looks good);
+            # shape/spatial features are genuinely undefined with no objects, so stay NaN.
             logger.warning(
                 "FOV selection: no %s objects segmented; density features -> 0, "
                 "shape/spatial features -> NaN",
@@ -346,36 +261,25 @@ def flat_feature_matrix(
     return pd.DataFrame([feat])
 
 
-def extract_features(
-    projections: dict[str, np.ndarray],
-    masks: dict[str, np.ndarray],
-    pixel_size_um: float,
-    projection: str = "sum",
-    needed: list[str] | None = None,
-):
-    """Model-agnostic per-FOV feature table (preprocessing/segmentation -> named features).
-
-    Naming is decided by the number of segmented channels, NOT by the model:
-
-      one channel   -> PLAIN, channel-independent names (``coverage_frac``, ...) via
-                       :func:`flat_feature_matrix`.
-      many channels -> ``<channel>_vs_<projection>__<feature>`` prefixed names via
-                       :func:`fov_feature_matrix`, so same-named features from different
-                       channels stay distinct.
-
-    Either way the model consumes columns by name (``FovModel.feature_names``); it never
-    sees which channel produced a feature. ``needed`` restricts the computed columns.
-    """
-    if len(projections) == 1:
-        return flat_feature_matrix(projections, masks, pixel_size_um, needed=needed)
-    return fov_feature_matrix(
-        projections, masks, pixel_size_um, projection, source="vs", needed=needed
-    )
-
-
 def _to_numpy(x) -> np.ndarray:
     """Detach a torch tensor (or pass through an array) to a numpy array."""
     return x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)
+
+
+def _resolve_seg_input(target: str, projections: dict[str, np.ndarray]) -> np.ndarray:
+    """Reduce the reconstruction-output projections to the ONE 2D image to segment.
+
+    - virtual staining + ``target='cells'``: sum nuclei + membrane into one grayscale (the
+      whole cell body); the InstanSeg 'cells' head then separates touching cells.
+    - virtual staining + ``target='nuclei'``: the nuclei channel only.
+    - single reconstructed channel (label-free): that channel, whatever the target.
+    """
+    if target == "cells" and "nuclei" in projections and "membrane" in projections:
+        return projections["nuclei"] + projections["membrane"]
+    if "nuclei" in projections:
+        return projections["nuclei"]
+    (only,) = projections.values()
+    return only
 
 
 def decide_fov(
@@ -384,6 +288,7 @@ def decide_fov(
     model,
     bf_zyx: np.ndarray,
     *,
+    target: str,
     target_channels: list[str],
     projection: str = "sum",
     pixel_size_um: float,
@@ -480,10 +385,9 @@ def decide_fov(
             if key in channels:
                 stacks[key] = _to_numpy(channels[key])
 
-    projections: dict[str, np.ndarray] = {}
-    masks: dict[str, np.ndarray] = {}
-    # For the 'best_focus_z' projection, remember which Z slice each channel was
-    # projected from (and the stack depth) so the worker can log it for debugging.
+    # Project each reconstruction-output channel; for the 'best_focus_z' projection remember
+    # which Z slice each came from (and the stack depth) so the worker can log it.
+    content_proj: dict[str, np.ndarray] = {}
     best_focus_index: dict[str, dict[str, int]] = {}
     for channel in target_channels:
         vol = _to_numpy(channels[channel])
@@ -498,18 +402,24 @@ def decide_fov(
         )
         if z_idx is not None:
             best_focus_index[channel] = {"slice": int(z_idx), "n_slices": int(vol.shape[0])}
-        projections[channel] = proj
-        try:
-            mask = segmenter.segment(proj, channel, pixel_size_um=pixel_size_um)
-        except Exception as exc:
-            logger.error("%ssegment %s FAILED: %s", pfx, channel, exc)
-            raise
-        masks[channel] = mask
-        n_objects = int((np.unique(mask) != 0).sum())
-        logger.info("%ssegment %s ok (%d objects)", pfx, channel, n_objects)
+        content_proj[channel] = proj
+
+    # FOV selection segments exactly ONE mask: the `target` reduces the reconstruction
+    # outputs to a single 2D input (combined nuclei+membrane for 'cells', nuclei-only for
+    # 'nuclei', or the single label-free channel). Features are then single-channel (plain
+    # keys), so projections/masks are keyed by the target, not per reconstruction channel.
+    seg_input = _resolve_seg_input(target, content_proj)
+    try:
+        mask = segmenter.segment(seg_input, target, pixel_size_um=pixel_size_um)
+    except Exception as exc:
+        logger.error("%ssegment %s FAILED: %s", pfx, target, exc)
+        raise
+    logger.info("%ssegment %s ok (%d objects)", pfx, target, int((np.unique(mask) != 0).sum()))
+    projections = {target: seg_input}
+    masks = {target: mask}
 
     needed = None if extract_all else model.feature_names
-    matrix = extract_features(projections, masks, pixel_size_um, projection, needed=needed)
+    matrix = extract_features(projections, masks, pixel_size_um, needed=needed)
     proba, good = model.predict(matrix, threshold)
     if return_artifacts:
         artifacts = {

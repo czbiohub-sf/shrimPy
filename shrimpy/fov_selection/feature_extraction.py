@@ -239,42 +239,12 @@ class FeatureExtractor:
         return float(-(p * np.log(p)).sum() / np.log(g * g))
 
     @classmethod
-    def edge_object_frac(cls, mask: np.ndarray, band_frac: float | None = None) -> float:
-        """Fraction of segmented objects touching the image-edge border band.
-
-        An object is an "edge" object if ANY of its pixels lie within ``band_frac`` of the
-        image width from the left/right edge OR of the image height from the top/bottom edge.
-        Returns ``n_edge_objects / n_objects`` in ``[0, 1]`` (NaN for an empty mask). The
-        default band is :attr:`EDGE_BAND_FRAC` of each dimension.
-        """
-        if band_frac is None:
-            band_frac = cls.EDGE_BAND_FRAC
-        m = np.asarray(mask)
-        labels = np.unique(m)
-        labels = labels[labels != 0]
-        if labels.size == 0:
-            return float("nan")
-        h, w = m.shape
-        mx = int(round(band_frac * w))
-        my = int(round(band_frac * h))
-        border = np.zeros(m.shape, bool)
-        if mx > 0:
-            border[:, :mx] = True
-            border[:, w - mx :] = True
-        if my > 0:
-            border[:my, :] = True
-            border[h - my :, :] = True
-        edge_labels = np.unique(m[border])
-        edge_labels = edge_labels[edge_labels != 0]
-        return float(edge_labels.size / labels.size)
-
-    @classmethod
     def edge_area_frac(cls, mask: np.ndarray, band_frac: float | None = None) -> float:
         """Mask-AREA fraction contributed by objects touching the image-edge border band.
 
-        Like :meth:`edge_object_frac`, an object is an "edge" object if ANY of its pixels lie
-        within ``band_frac`` of the image width from the left/right edge OR of the image height
-        from the top/bottom edge. But instead of counting objects, this weights by area:
+        An object is an "edge" object if ANY of its pixels lie within ``band_frac`` of the
+        image width from the left/right edge OR of the image height from the top/bottom edge.
+        Instead of counting objects, this weights by area:
 
             edge_area_frac = (total mask area of edge objects) / (total mask area of all objects)
 
@@ -353,4 +323,3 @@ class FeatureExtractor:
 group_features = FeatureExtractor.group_features
 mask_gap_features = FeatureExtractor.mask_gap_features
 mask_occupancy_entropy = FeatureExtractor.mask_occupancy_entropy
-edge_object_frac = FeatureExtractor.edge_object_frac

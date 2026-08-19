@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import re
 
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -195,35 +194,6 @@ def feature_columns(df: pd.DataFrame) -> list[str]:
         dataset: group[candidates].notna().any() for dataset, group in df.groupby("__dataset")
     }
     return [col for col in candidates if all(has[col] for has in computed_in.values())]
-
-
-@dataclass
-class Filter:
-    column: str
-    kind: str  # "range" (numeric) or "isin" (categorical)
-    lo: float = 0.0
-    hi: float = 0.0
-    values: tuple = ()
-
-    def mask(self, df: pd.DataFrame) -> np.ndarray:
-        if self.kind == "range":
-            v = df[self.column].to_numpy(float)
-            return (v >= self.lo) & (v <= self.hi)
-        return df[self.column].astype(str).isin([str(x) for x in self.values]).to_numpy()
-
-    def label(self) -> str:
-        if self.kind == "range":
-            return f"{self.column} in [{self.lo:g}, {self.hi:g}]"
-        vals = ", ".join(map(str, self.values))
-        return f"{self.column} = {{{vals}}}"
-
-
-def apply_filters(df: pd.DataFrame, filters: list[Filter]) -> np.ndarray:
-    """Positional indices (into df) passing ALL filters."""
-    mask = np.ones(len(df), bool)
-    for f in filters:
-        mask &= f.mask(df)
-    return np.where(mask)[0]
 
 
 # ============================================================= dimensionality reduction

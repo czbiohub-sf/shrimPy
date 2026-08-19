@@ -95,6 +95,9 @@ metadata:
 
     # Acquired channel fed to reconstruction (must be one of prescan_mda.channels).
     fov_selection_channel: "BF - Oblique"
+    # Object to segment and score: 'cells' or 'nuclei' (drives segmentation + which VS channels
+    # are predicted; one mask -> plain feature keys).
+    target: cells
 
     # ---- Feature-extraction pipeline A: middle-slice brightfield + Cellpose-DINO ----
     preprocessing: ['flatfield', 'deskew', 'middle_slice_projection', 'segmentation']

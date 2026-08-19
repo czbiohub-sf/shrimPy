@@ -53,7 +53,6 @@ from mpl_toolkits.mplot3d import proj3d
 from shrimpy.fov_selection import fov_model as FM
 
 from . import data as D
-from . import ranking as RANK
 
 DEFAULT_DIR = os.environ.get(
     "FOV_VIEWER_DIR",
@@ -1432,13 +1431,10 @@ class FeatureViewer(QtWidgets.QMainWindow):
         else:
             default_order = axis_opts
 
-        # Preferred default axis for a combo when the column is present (matched by feature
-        # suffix so a prefixed multi-channel column like nuclei_vs_sum__nn_um_mean also counts);
-        # otherwise fall back to the best-covered order.
+        # Preferred default axis for a combo when the column is present; otherwise fall back
+        # to the best-covered order.
         def _pref_col(name):
-            if name in axis_opts:
-                return name
-            return next((c for c in axis_opts if RANK._feature_suffix(c) == name), None)
+            return name if name in axis_opts else None
 
         preferred = {id(self.cb_y): "nn_um_mean"}
         for cb, dflt in [(self.cb_x, 0), (self.cb_y, 1), (self.cb_z, 2)]:
@@ -2462,9 +2458,8 @@ class FeatureViewer(QtWidgets.QMainWindow):
         ranges = {}
         feats = self._rank_feature_list()
         # Default selection: only coverage_frac is checked (feeds the score); the user enables
-        # the rest as needed. Match by suffix so a prefixed name (nuclei_vs_sum__coverage_frac)
-        # also counts; fall back to the first feature if coverage_frac is absent.
-        default_on = {f for f in feats if RANK._feature_suffix(f) == "coverage_frac"}
+        # the rest as needed. Fall back to the first feature if coverage_frac is absent.
+        default_on = {f for f in feats if f == "coverage_frac"}
         if not default_on and feats:
             default_on = {feats[0]}
         for f in feats:
