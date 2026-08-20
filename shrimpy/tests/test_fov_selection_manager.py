@@ -125,6 +125,31 @@ def test_from_metadata_requires_model_path():
         FovSelection.from_metadata(meta, SEQUENCE, 0.1)
 
 
+_RANKING_FEATURES = {"coverage_frac": {"shape": "gaussian", "center": 0.5, "fwhm": 0.2}}
+
+
+def test_from_metadata_ranking_requires_top_fov():
+    # ranking_by_defined_range selects purely by top_fov, so omitting it aborts before acquiring.
+    meta = {**META, "model": {"type": "ranking_by_defined_range", "features": _RANKING_FEATURES}}
+    with pytest.raises(ValueError, match="top_fov"):
+        FovSelection.from_metadata(meta, SEQUENCE, 0.1, decide_fn=_good_if_positive)
+
+
+def test_from_metadata_thresholding_does_not_require_top_fov():
+    # classification_by_thresholding selects by its per-FOV good box, so top_fov is not needed.
+    meta = {
+        **META,
+        "model": {
+            "type": "classification_by_thresholding",
+            "features": {"coverage_frac": {"range": [0.0, 1.0]}},
+        },
+    }
+    fov = FovSelection.from_metadata(meta, SEQUENCE, 0.1, decide_fn=_good_if_positive)
+    assert fov is not None
+    assert fov._model_type == "classification_by_thresholding"
+    assert fov._top_fov is None
+
+
 def test_from_metadata_requires_pixel_size():
     with pytest.raises(ValueError, match="pixel size"):
         FovSelection.from_metadata(META, SEQUENCE, pixel_size_um=0.0)

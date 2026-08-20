@@ -46,8 +46,11 @@ class FovModel:
     """Interface: a FOV-goodness model over a named feature table.
 
     Subclasses set :attr:`feature_names` (the columns the model reads) and implement
-    :meth:`predict`. ``predict`` returns ``(proba, good)`` where ``proba`` is a per-row
-    array in ``[0, 1]`` and ``good`` a list of bools.
+    :meth:`predict`. ``predict`` returns ``(proba, good)`` where ``proba`` is a per-row array
+    in ``[0, 1]`` and ``good`` is either a list of per-FOV bools (the CLASSIFICATION verdict,
+    selected on directly) or ``None`` for a pure RANKING model, whose selection is a top-K over
+    ``proba`` and which therefore has no per-FOV good/bad notion. ``threshold`` is a
+    classification-only knob (see :class:`TrainedTreeModel`); ranking ignores it.
     """
 
     feature_names: list[str] = []
@@ -113,11 +116,13 @@ class DesirabilityModel(FovModel):
     imputed to a raw value of 0 (which for a "lower"-is-better feature would wrongly read as
     ideal). See :attr:`MISSING_DESIRABILITY`.
 
-    Selection is pure ranking (no threshold): the manager keeps the ``model.top_fov``
-    highest-scoring FOVs across the whole pre-scan (see
-    :meth:`shrimpy.fov_selection.manager.FovSelection.passed_position_names`). The ``good``
-    flag returned by :meth:`predict` (``proba >= threshold``) is therefore unused by the
-    ranking selection and left only for standalone / test use.
+    Selection is pure ranking: the manager keeps the ``model.top_fov`` highest-scoring FOVs
+    per position across the whole pre-scan (see
+    :meth:`shrimpy.fov_selection.manager.FovSelection.passed_position_names`). ``top_fov`` is
+    therefore REQUIRED (validated here and in
+    :meth:`shrimpy.fov_selection.manager.FovSelection.from_metadata`), and there is no per-FOV
+    good/bad notion: :meth:`predict` returns ``good=None`` and ignores ``threshold`` (a
+    classification-only knob).
     """
 
     DIRECTIONS = ("target", "higher", "lower")
@@ -243,6 +248,16 @@ class DesirabilityModel(FovModel):
         feats = model_cfg.get("features") or {}
         if not feats:
             raise ValueError("ranking_by_defined_range model has no 'features'")
+        # top_fov is REQUIRED: this model selects purely by ranking (top-K per position), so
+        # without a quota there is nothing to select on. Also enforced pre-hardware in
+        # FovSelection.from_metadata; duplicated here so building the model directly (tests,
+        # offline use) cannot produce a ranking model that silently has no selection rule.
+        top_fov = model_cfg.get("top_fov")
+        if top_fov is None or int(top_fov) < 1:
+            raise ValueError(
+                "ranking_by_defined_range requires 'top_fov' (a positive int): the N "
+                f"highest-ranked FOVs per position pass. Got {top_fov!r}."
+            )
         self._aggregation = str(
             model_cfg.get("aggregation") or self.DEFAULT_AGGREGATION
         ).lower()
@@ -389,7 +404,9 @@ class DesirabilityModel(FovModel):
             np.asarray(weights, float),
             np.vstack(dists) if joint_gaussian else None,
         )
-        return proba, [bool(p >= threshold) for p in proba]
+        # Ranking model: proba IS the ranking key; there is no per-FOV good/bad verdict
+        # (selection is top_fov per position, in the manager). `threshold` is ignored.
+        return proba, None
 
     def _aggregate(
         self, d: np.ndarray, w: np.ndarray, z2: np.ndarray | None = None

@@ -180,10 +180,17 @@ class FovSelection:
             self._validate_best_focus_z()
         self._segmentation = config.get("segmentation", {}) or {}
         model_cfg = config.get("model", {}) or {}
+        # threshold is a classification-only knob: TrainedTreeModel uses it (proba >= threshold);
+        # the thresholding box and the ranking model both ignore it.
         self._threshold = float(model_cfg.get("threshold", 0.5))
+        # The model type drives the SELECTION rule (see passed_position_names): the ranking
+        # model selects by top_fov per position, every classification model by its per-FOV
+        # `good` verdict. Keyed on the type, not on whether top_fov happens to be set, so a
+        # classification model never needs top_fov.
+        self._model_type = model_cfg.get("type")
         # top_fov (ranking_by_defined_range): keep the N highest-proba FOVs PER POSITION (per
-        # well / per grid center -- see _build_fov_groups), instead of thresholding each FOV.
-        # None -> threshold mode.
+        # well / per grid center -- see _build_fov_groups). Required for ranking (validated in
+        # from_metadata / the model), unused by the classification models.
         top_fov = model_cfg.get("top_fov")
         self._top_fov = int(top_fov) if top_fov is not None else None
         # FOV name -> the position it belongs to, so top_fov is applied within each position.
@@ -226,8 +233,9 @@ class FovSelection:
         self._names: dict[int, str] = {}
 
         # Verdicts, keyed by position name. Written from the executor thread,
-        # read from the acquisition thread -> guarded by a lock.
-        self._verdicts: dict[str, tuple[float, bool]] = {}
+        # read from the acquisition thread -> guarded by a lock. `good` is None for the
+        # ranking model (no per-FOV verdict; selection is top_fov).
+        self._verdicts: dict[str, tuple[float, bool | None]] = {}
         self._verdicts_lock = threading.Lock()
 
         # Timing: when each FOV's z-stack finished acquiring (set in
@@ -722,9 +730,9 @@ class FovSelection:
             return
         self._record(name, result["proba"], result["good"])
 
-    def _record(self, name: str, proba: float, good: bool) -> None:
+    def _record(self, name: str, proba: float, good: bool | None) -> None:
         with self._verdicts_lock:
-            self._verdicts[name] = (float(proba), bool(good))
+            self._verdicts[name] = (float(proba), None if good is None else bool(good))
         started = self._stack_done_at.pop(name, None)
         latency = time.monotonic() - started if started is not None else None
         if latency is not None:
@@ -763,19 +771,22 @@ class FovSelection:
     def passed_position_names(self) -> list[str]:
         """Names of the FOVs that passed FOV selection (imaged in the timelapse run).
 
-        ``ranking_by_defined_range`` (``model.top_fov`` set): the ``top_fov`` highest-scoring
-        FOVs **of each position** -- the quota is per well / per grid center, not across the
-        whole pre-scan, so every position contributes its own best FOVs and a dense well cannot
-        crowd out a sparser one. With ``top_fov: 3`` and 4 positions you get up to 12 FOVs.
-        Ordering is still globally best-first (ties broken by decision order); ranking is pure,
-        so a passing FOV is only the best available in its position, not necessarily "good".
+        The selection rule is chosen by MODEL TYPE, not by whether ``top_fov`` is set:
 
-        Other model types: every FOV the model decided good (its per-FOV verdict), in decision
-        order -- a per-FOV pass/fail, so ``top_fov`` does not apply.
+        ``ranking_by_defined_range``: the ``top_fov`` highest-scoring FOVs **of each position**
+        -- the quota is per well / per grid center, not across the whole pre-scan, so every
+        position contributes its own best FOVs and a dense well cannot crowd out a sparser one.
+        With ``top_fov: 3`` and 4 positions you get up to 12 FOVs. Ordering is still globally
+        best-first (ties broken by decision order); ranking is pure, so a passing FOV is only
+        the best available in its position, not necessarily "good".
+
+        Classification models (``classification_by_thresholding`` / ``classification_tree``):
+        every FOV the model decided good (its per-FOV verdict), in decision order -- a per-FOV
+        pass/fail, so ``top_fov`` does not apply and is not needed.
         """
         with self._verdicts_lock:
             items = list(self._verdicts.items())
-        if self._top_fov is None:
+        if self._model_type != "ranking_by_defined_range":
             return [name for name, (_p, good) in items if good]
         ranked = sorted(items, key=lambda kv: kv[1][0], reverse=True)
         kept: list[str] = []

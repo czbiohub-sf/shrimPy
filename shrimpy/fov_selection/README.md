@@ -80,8 +80,8 @@ Set `model.type` to one of:
 
 | `type` | Class | How it selects |
 |--------|-------|----------------|
-| `ranking_by_defined_range` | `DesirabilityModel` | per-feature desirability curves (`gaussian` / `lognormal` / `sigmoid`) combined into one score (`aggregation`: `gaussian` / `sum` / `product`); keeps the `top_fov` highest-scoring FOVs **per position** (per well / grid center) |
-| `classification_by_thresholding` | `ThresholdingModel` | hard `[lo, hi]` box: a FOV passes only if every feature is in range |
+| `ranking_by_defined_range` | `DesirabilityModel` | per-feature desirability curves (`gaussian` / `lognormal` / `sigmoid`) combined into one score (`aggregation`: `gaussian` / `sum` / `product`); keeps the `top_fov` highest-scoring FOVs **per position** (per well / grid center). `top_fov` is **required** (pure ranking, no per-FOV pass/fail); `threshold` does not apply |
+| `classification_by_thresholding` | `ThresholdingModel` | hard `[lo, hi]` box: a FOV passes only if every feature is in range. Per-FOV pass/fail, so no `top_fov` is needed |
 | `classification_tree` | `TrainedTreeModel` | a trained `.joblib` (median imputer + decision tree) loaded from `model.path` |
 
 Curve parameters are interpretable (`center`/`fwhm`, `center`/`fold`, `midpoint`/`width`),

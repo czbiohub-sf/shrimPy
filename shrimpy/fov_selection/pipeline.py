@@ -317,10 +317,11 @@ def decide_fov(
 
     Returns
     -------
-    tuple[float, bool]
+    tuple[float, bool | None]
         ``(proba, good)`` for this FOV -- ``proba`` is the model score (the ranking key for
-        ``ranking_by_defined_range``); ``good`` is the model's per-FOV verdict (unused by the
-        ranking selection, which is top-K over all FOVs -- see the manager).
+        ``ranking_by_defined_range``); ``good`` is the classification models' per-FOV verdict,
+        or ``None`` for the ranking model (which has no per-FOV good/bad notion -- selection is
+        top-K per position, see the manager).
     """
     pfx = f"[{label}] " if label else ""
     bf_zyx = np.asarray(bf_zyx)
@@ -384,6 +385,9 @@ def decide_fov(
     needed = None if extract_all else model.feature_names
     matrix = extract_features(projections, masks, pixel_size_um, needed=needed)
     proba, good = model.predict(matrix, threshold)
+    # `good` is None for a pure-ranking model (no per-FOV verdict; selection is top_fov in the
+    # manager) and a per-FOV bool list for the classification models.
+    good_val = None if good is None else bool(good[0])
     if return_artifacts:
         artifacts = {
             "stacks": stacks,
@@ -392,5 +396,5 @@ def decide_fov(
             "features": matrix,
             "best_focus_index": best_focus_index,
         }
-        return float(proba[0]), bool(good[0]), artifacts
-    return float(proba[0]), bool(good[0])
+        return float(proba[0]), good_val, artifacts
+    return float(proba[0]), good_val
