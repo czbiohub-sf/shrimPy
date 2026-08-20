@@ -1,4 +1,5 @@
 # %% on Dragonfly microscope works with pycromanager==0.19.2 and ndtiff==1.3.9
+# %% on Dragonfly2 microscope works with pycromanager==1.0.2 and ndstorage==0.1.18
 import logging
 import time
 from pathlib import Path
@@ -28,32 +29,33 @@ NUM_RETRY = 3
 BRUNO_DST = Path(r"Z:\OPS")
 mmc = Core()
 
-acquisition_directory = Path(r'G:\OPS')
-acquisition_name = 'OPS0151'
-start_time = '2026-04-14 04:15:00'
-# start_time = 'now'
+acquisition_directory = Path(r'D:\Ivan\2026_08_19_ops_testing')
+acquisition_name = 'test_OPS0000'
+# start_time = '2026-04-14 04:15:00'
+start_time = 'now'
 well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
+# well_diameter = 3000
 min_fov_distance_from_well_edge = 800  # in um
 well_centers = {
-    'A1': (1489, -9, 6353),
-    'A2': (40829, -9, 6368),
-    'A3': (80169, -9, 6424),
+    'A1': (-49160, -16300, 7917),
+    'A2': (-10100, -16000, 7915),
+    'A3': (28800, -16000, 7944),
 }  # (x, y, z) in um
 
 phenotyping_magnification = 20
 tracking_magnification = 5
 percent_overlap = 8
 
-image_size = (2048, 2048)
+image_size = (2048, 2046)
 pixel_size = 6.5  # in um
 
 phenotyping_channel_group = 'Channels'
 # phenotyping_channel = '5-MultiCam_DAPI_mCherry_BF'
 # phenotyping_channel = '5-MultiCam_GFP_Cy5_BF'
 # phenotyping_channel = '5-MultiCam_GFP_mCherry_BF'
-# phenotyping_channel = '4-MultiCam_GFP_BF'
+phenotyping_channel = '4-MultiCam_GFP_BF'
 # phenotyping_channel = '4-MultiCam_CL488_BF'
-phenotyping_channel = '4-MultiCam_mCherry_BF'
+# phenotyping_channel = '4-MultiCam_mCherry_BF'
 # phenotyping_channel = '4-MultiCam_Cy5_BF'
 # phenotyping_channel = '1-Zyla_BF'
 tracking_channel_group = 'Channels'
@@ -111,7 +113,7 @@ def change_magnification_phenotyping():
         else:
             mmc.set_property('Core', 'Focus', 'TS_PiezoZ')
             # mmc.set_property('Core', 'Focus', 'PiezoZ')
-        mmc.set_property('ObjectiveTurret', 'Label', '3-20x'); time.sleep(5)
+        mmc.set_property('ObjectiveTurret', 'Label', '3-20x 0.55na'); time.sleep(5)
         mmc.set_property('TL-ApertureDiaphragm', 'Position', ap_stop_position); time.sleep(1)
         # turn AFC back on
         mmc.set_property('Adaptive Focus Control', 'DichroicMirrorIn', '1'); time.sleep(5)
@@ -135,7 +137,7 @@ def change_magnification_tracking():
     else:
         ap_stop_position = '4'
         mmc.set_property('Core', 'Focus', 'FocusDrive')
-        mmc.set_property('ObjectiveTurret', 'Label', '1-5x'); time.sleep(5)
+        mmc.set_property('ObjectiveTurret', 'Label', '1-5x 0.15na'); time.sleep(5)
         mmc.set_property('TL-ApertureDiaphragm', 'Position', ap_stop_position); time.sleep(1)
         # DEBUG, set it twice for good measure
         mmc.set_property('TL-ApertureDiaphragm', 'Position', ap_stop_position); time.sleep(1)
@@ -160,15 +162,9 @@ def setup_acquisition():
     # Set autofocus time to 0.1s
     mmc.set_property('Adaptive Focus Control', 'FullFocusTime', '100')
 
-    # Turn off camera denoising
-    mmc.set_property('Prime', 'PP  1   ENABLED', 'No')
-    mmc.set_property('Prime', 'PP  2   ENABLED', 'No')
-    mmc.set_property('Prime', 'PP  3   ENABLED', 'No')
-    mmc.set_property('Prime', 'PP  4   ENABLED', 'No')
-    mmc.set_property('BSI_Express', 'PP  1   ENABLED', 'No')
-    mmc.set_property('BSI_Express', 'PP  2   ENABLED', 'No')
-    mmc.set_property('BSI_Express', 'PP  3   ENABLED', 'No')
-    mmc.set_property('BSI_Express', 'PP  4   ENABLED', 'No')
+    # Turn off autoshutter - controlled by blanking
+    mmc.set_auto_shutter(False)
+    mmc.set_shutter_open(True)
 
     if USE_HW_SEQUENCING:
         logger.info(f'Setting up for hardware sequencing')
@@ -209,15 +205,9 @@ def reset_acquisition():
     # Reset autofocus
     mmc.set_property('Adaptive Focus Control', 'FullFocusTime', '300')
 
-    # Reset camera denoising
-    mmc.set_property('Prime', 'PP  1   ENABLED', 'Yes')
-    mmc.set_property('Prime', 'PP  2   ENABLED', 'Yes')
-    mmc.set_property('Prime', 'PP  3   ENABLED', 'Yes')
-    mmc.set_property('Prime', 'PP  4   ENABLED', 'Yes')
-    mmc.set_property('BSI_Express', 'PP  1   ENABLED', 'Yes')
-    mmc.set_property('BSI_Express', 'PP  2   ENABLED', 'Yes')
-    mmc.set_property('BSI_Express', 'PP  3   ENABLED', 'Yes')
-    mmc.set_property('BSI_Express', 'PP  4   ENABLED', 'Yes')
+    # Turn off autoshutter - controlled by blanking
+    mmc.set_shutter_open(False)
+    mmc.set_auto_shutter(True)
 
     if USE_HW_SEQUENCING:
         logger.info(f'Resetting after hardware sequencing')
@@ -405,10 +395,12 @@ try:
             z_end=z_end,
             z_step=z_step,
             xy_positions=pheno_positions[i, :, :2],  # select XY positions only
-            keep_shutter_open_between_z_steps=True,
+            # keep_shutter_open_between_z_steps=True,
         )
         last_img_idx = dict(events[-1]['axes'])
-        last_img_idx.update({'channel': num_phenotyping_channel-1})
+        # last_img_idx.update({'channel': num_phenotyping_channel-1})
+        # TODO: Remove hardcode
+        last_img_idx.update({'camera': "Sona-Long"})
         logger.info(f'Acquiring phenotyping at well {well_name}')
         acq = Acquisition(
             directory=str(acq_dir),
@@ -421,7 +413,6 @@ try:
         while not acq_finished:
             time.sleep(1)
         acq.await_completion()
-        mmc.set_shutter_open(False)  # pycromanager leaves it open
 
         # Track cells
         if i < num_wells-1:  # no need to track after the last well has been phenotyped
@@ -432,13 +423,12 @@ try:
                 z_end=100,
                 z_step=25,
                 xyz_positions=tracking_positions[0:i+1].reshape(-1, 3),  # combine all positions in one array
-                keep_shutter_open_between_z_steps=True,
+                # keep_shutter_open_between_z_steps=True,
                 # position_labels=tracking_position_labels,
             )
             logger.info(f'Acquiring tracking at wells {well_names[0:i+1]}')
             with Acquisition(directory=str(acq_dir), name='tracking') as acq:
                 acq.acquire(events)
-            mmc.set_shutter_open(False)  # pycromanager leaves it open
     logger.info(f'Acquisition finished')
 
 finally:
