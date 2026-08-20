@@ -64,7 +64,7 @@ Everything lives under `metadata.fov_selection` in the acquisition YAML. See
 | `best_focus_z` | optics for the `best_focus_z` projection (detection NA, illumination wavelength) |
 | `segmentation` | backend `cellpose` / `instanseg` / `otsu`, plus `path`, `diameters`, thresholds |
 | `model` | the selection model (see below) |
-| `save_decision` | write per-FOV projection/mask PNGs and `fov_summary.csv` under `<name>_fov_debug/` |
+| `save_decision` | write per-FOV projection/mask PNGs (`prescan_fov/`, `prescan_mask/`) and `fov_summary.csv` under `<name>_fov_debug/`; after the drain, the selected FOVs' projections are also gathered into `selected_fov/`. Same folder structure in normal and calibration mode |
 | `save_pre_scan_omezarr` | write the full per-step reconstruction to `<name>_prescan.ome.zarr` |
 | `require_gpu` | fail fast if reconstruction cannot run on a GPU (default true) |
 
@@ -110,16 +110,21 @@ A Qt GUI to explore FOV-level features, label FOVs, and tune the ranking model, 
 FOV shown as an image thumbnail. Tabs:
 
 - **Analysis**: interactive 2D/3D scatter (PCA / t-SNE / UMAP) with per-feature threshold
-  filters; selected FOVs shown as a thumbnail grid.
+  filters; selected FOVs shown as a thumbnail grid, grouped by well when the CSV carries
+  `well_row` / `well_col` (the pre-scan writes these for plate-based candidates).
 - **Label**: FOVs grouped into per-goodness-class panels; drag a thumbnail to relabel, save
   writes the `goodness` column back to the CSV.
 - **Rank**: per-feature value histograms with the desirability curve overlaid, a knob table,
   and a Re-rank button; FOVs listed best-first by score. Save/load ranking profiles as YAML
-  (paste one into `model.features`).
+  (paste one into `model.features`). A **Write proba/rank to CSV** button writes the current
+  ranking's score (as `proba`) and best-first `rank` back to each FOV's source CSV, so a
+  calibration `fov_summary.csv` ends up carrying the selection tuned here.
 - **Score map**: 2D desirability heatmaps over pairs of features.
 
-A calibration pre-scan launches this automatically on `--start-tab rank`, seeded from the
-config's `model` block.
+A calibration pre-scan launches this automatically on `--start-tab rank`, seeding the Rank
+tab from the config's `model` block (passed inline, so no profile file is written) and
+falling back to data-seeded defaults when the config defines no model. Use the Rank tab's
+Save button to write a ranking profile once tuned.
 
 ## Package layout
 
@@ -133,8 +138,8 @@ fov_selection/
 ├── fov_model.py          pluggable models + interpretable curve conversions
 ├── segmentation.py       Cellpose / InstanSeg / Otsu backends
 ├── feature_extraction.py FeatureExtractor (object-level and FOV-level features)
-├── debug_artifacts.py    per-FOV PNG / CSV / OME-Zarr debug writers + finalize
-├── artifacts.py          acquisition artifacts (selected-FOV config, viewer launch)
+├── prescan_artifacts.py     per-FOV pre-scan PNG / CSV / OME-Zarr writers + finalize
+├── acquisition_artifacts.py once-per-run records (recovery config, viewer launch)
 ├── plate_naming.py       plate labels and path-name sanitizers
 └── feature_viewer/       Qt GUI
     ├── app.py            main window, Analysis tab, and the `main()` entry point

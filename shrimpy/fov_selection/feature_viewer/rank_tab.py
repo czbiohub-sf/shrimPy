@@ -122,6 +122,14 @@ class RankTabMixin:
         self.rank_agg_combo.currentTextChanged.connect(lambda *_: self._rerank())
         act.addWidget(self.rank_agg_combo)
         act.addStretch(1)
+        write_scores = QtWidgets.QPushButton("Write proba/rank to CSV")
+        write_scores.setToolTip(
+            "Write the current ranking's score (as `proba`) and best-first `rank` back to "
+            "each loaded FOV's source CSV, so the calibration matrix carries the tuned "
+            "selection. Re-ranks first if needed."
+        )
+        write_scores.clicked.connect(self._on_rank_write_scores)
+        act.addWidget(write_scores)
         lv.addLayout(act)
         self.rank_status = QtWidgets.QLabel("load data to tune the desirability ranges")
         self.rank_status.setWordWrap(True)
@@ -990,6 +998,88 @@ class RankTabMixin:
             "(paste under fov_selection.model.features in the config)"
         )
 
+    def _on_rank_write_scores(self):
+        """Write the current ranking's ``proba`` (score) and ``rank`` back to each loaded FOV's
+        source CSV, so the calibration matrix carries the tuned selection. Bound to the
+        "Write proba/rank to CSV" button.
+
+        Re-ranks first when no score exists yet. ``rank`` is global, best-first (1 = highest
+        score, ties broken by row order so ranks are distinct consecutive ints), NaN scores
+        last -- matching the best-first order shown on the right. The columns are named
+        ``proba`` / ``rank`` so the calibration CSV lines up with the normal-mode
+        ``fov_summary.csv`` and the viewer keeps them off the feature axes (META_BLACKLIST).
+        """
+        import pandas as pd
+
+        if self.df is None or not self.rank_ranges:
+            self.rank_status.setText("no data to score; load a matrix first")
+            return
+        if "score" not in self.df.columns:
+            self._rerank()
+            if "score" not in self.df.columns:
+                return  # _rerank already reported why (e.g. no checked features)
+        scores = self.df["score"].to_numpy(float)
+        # method='first' -> ties resolve to distinct consecutive ranks; NaN scores rank last.
+        rank = pd.Series(scores, index=self.df.index).rank(ascending=False, method="first")
+        self.df["proba"] = scores
+        self.df["rank"] = rank.to_numpy(float)
+        saved, matched = self._persist_scores()
+        if saved:
+            self.rank_status.setText(
+                f"wrote proba/rank for {matched} FOV(s) to {saved} CSV(s)"
+            )
+
+    def _persist_scores(self):
+        """Write the in-memory ``proba`` / ``rank`` columns back to each row's source CSV.
+
+        Rows are grouped by ``__src`` so multiple loaded datasets each save to the right file,
+        and matched by FOV identity (``filename`` etc.) so the on-disk row order is irrelevant
+        -- the same join the Label tab uses (:meth:`_persist_changes`). Never raises: a
+        per-file failure is reported in the status line and skipped. Returns (files, rows)."""
+        import pandas as pd
+
+        if "__src" not in self.df.columns:
+            return 0, 0
+        src_i = self.df.columns.get_loc("__src")
+        by_src: dict[str, list[int]] = {}
+        for pos in range(len(self.df)):
+            by_src.setdefault(self.df.iat[pos, src_i], []).append(pos)
+        saved = matched = 0
+        for src, rows in by_src.items():
+            if not src:
+                continue
+            try:
+                disk = pd.read_csv(src)
+            except Exception as e:  # noqa: BLE001
+                self.rank_status.setText(f"read failed: {Path(src).name}: {e}")
+                continue
+            keycols = [
+                c
+                for c in ("filename", "well_row", "well_col", "fov", "timepoint")
+                if c in disk.columns and c in self.df.columns
+            ]
+            if not keycols:
+                continue
+            lookup = {
+                k: i for i, k in enumerate(disk[keycols].astype(str).agg("\x1f".join, axis=1))
+            }
+            lc = [self.df.columns.get_loc(c) for c in keycols]
+            for col in ("proba", "rank"):
+                if col not in disk.columns:
+                    disk[col] = np.nan
+            pi, ri = disk.columns.get_loc("proba"), disk.columns.get_loc("rank")
+            spi, sri = self.df.columns.get_loc("proba"), self.df.columns.get_loc("rank")
+            for pos in rows:
+                k = "\x1f".join(str(self.df.iat[pos, c]) for c in lc)
+                j = lookup.get(k)
+                if j is not None:
+                    disk.iat[j, pi] = self.df.iat[pos, spi]
+                    disk.iat[j, ri] = self.df.iat[pos, sri]
+                    matched += 1
+            disk.to_csv(src, index=False)
+            saved += 1
+        return saved, matched
+
     def _on_rank_load(self):
         """Load a desirability profile (YAML or legacy JSON), merging its (checked) features over the data-seeded (unchecked) ones, then re-rank; caveat: accepts either a bare features mapping or a full model dict, and legacy `range`-style profiles are still parsed."""
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -1003,20 +1093,34 @@ class RankTabMixin:
         self._apply_rank_profile(path)
 
     def _apply_rank_profile(self, path, *, source=None):
-        """Merge a desirability profile file over the data-seeded ranges, then re-rank.
+        """Merge a desirability profile FILE over the data-seeded ranges, then re-rank.
 
-        Shared by the Rank-tab Load button and the ``--rank-profile`` launch flag (a
-        calibration pre-scan seeds the viewer straight from the config's
-        ``fov_selection.model.features``). Accepts a YAML/JSON file holding either a bare
-        features mapping or a full model dict (``{type, features, ...}``); legacy
-        ``range``-style profiles are still parsed. ``source`` overrides the file name shown
-        in the status line. Never raises: a bad/absent file is reported in the status line.
+        Used by the Rank-tab Load button and the ``--rank-profile`` launch flag. Reads a
+        YAML/JSON file holding either a bare features mapping or a full model dict, then
+        delegates to :meth:`_apply_rank_profile_cfg`. ``source`` overrides the name shown in
+        the status line. Never raises: a bad/absent file is reported in the status line.
         """
         import yaml
 
         source = source or Path(path).name
         try:
             cfg = yaml.safe_load(Path(path).read_text())  # YAML is a superset of JSON
+        except Exception as e:  # noqa: BLE001
+            self.rank_status.setText(f"load failed: {e}")
+            return
+        self._apply_rank_profile_cfg(cfg, source=source)
+
+    def _apply_rank_profile_cfg(self, cfg, *, source):
+        """Merge an already-parsed desirability profile over the data-seeded ranges, re-rank.
+
+        Shared by :meth:`_apply_rank_profile` (file load) and the ``--rank-profile-json``
+        launch flag (a calibration pre-scan seeds the viewer straight from the config's
+        ``fov_selection.model``, passed inline so no profile file is written to disk).
+        Accepts either a bare features mapping or a full model dict (``{type, features,
+        ...}``); legacy ``range``-style profiles are still parsed. Never raises: a malformed
+        profile is reported in the status line.
+        """
+        try:
             feats = cfg.get("features", cfg) if isinstance(cfg, dict) else {}
             loaded = {}
             for f, feat_cfg in feats.items():

@@ -1,4 +1,4 @@
-"""Tests for FOV-selection debug-artifact assembly (shrimpy.fov_selection.debug_artifacts).
+"""Tests for FOV-selection pre-scan artifact assembly (shrimpy.fov_selection.prescan_artifacts).
 
 `_assemble_debug_channels` stacks every reconstruction stage (deskew / phase /
 VS volumes in 3D, plus the 2D projection + mask broadcast across Z) into one
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from shrimpy.fov_selection import debug_artifacts
+from shrimpy.fov_selection import prescan_artifacts
 
 
 def _artifacts(nz=3, ny=4, nx=5):
@@ -36,7 +36,7 @@ def _artifacts(nz=3, ny=4, nx=5):
 
 
 def test_assemble_channel_order_and_shape():
-    names, czyx = debug_artifacts._assemble_debug_channels(_artifacts())
+    names, czyx = prescan_artifacts._assemble_debug_channels(_artifacts())
     assert names == [
         "deskew",
         "phase",
@@ -53,7 +53,7 @@ def test_assemble_channel_order_and_shape():
 
 def test_assemble_broadcasts_2d_across_z():
     art = _artifacts()
-    names, czyx = debug_artifacts._assemble_debug_channels(art)
+    names, czyx = prescan_artifacts._assemble_debug_channels(art)
 
     # The projection/mask channels are the same 2D plane on every Z slice.
     proj_idx = names.index("nuclei_projection")
@@ -67,7 +67,7 @@ def test_assemble_broadcasts_2d_across_z():
 
 def test_assemble_casts_mask_labels_to_float():
     art = _artifacts()
-    names, czyx = debug_artifacts._assemble_debug_channels(art)
+    names, czyx = prescan_artifacts._assemble_debug_channels(art)
     mask_idx = names.index("membrane_mask")
     np.testing.assert_array_equal(
         czyx[mask_idx, 0], art["masks"]["membrane"].astype(np.float32)
@@ -76,7 +76,7 @@ def test_assemble_casts_mask_labels_to_float():
 
 def test_assemble_without_3d_stacks_returns_none():
     # No 3D stack -> nothing to anchor the (Z, Y, X) grid -> skip the store.
-    names, czyx = debug_artifacts._assemble_debug_channels(
+    names, czyx = prescan_artifacts._assemble_debug_channels(
         {"stacks": {}, "projections": {}, "masks": {}}
     )
     assert names == []
@@ -87,7 +87,7 @@ def test_assemble_without_3d_stacks_returns_none():
 # Calibration feature-viewer layout (write_feature_viewer_artifacts)
 # --------------------------------------------------------------------------
 # The calibration pre-scan must write exactly what the feature viewer loads:
-# <stem>.csv with a `filename` column + sibling <stem>_png / <stem>_mask_png
+# <stem>.csv with a `filename` column + sibling prescan_fov / prescan_mask
 # folders whose PNG stems equal the CSV `filename`.
 
 
@@ -105,13 +105,11 @@ def _fv_artifacts(fov_name):
 def test_feature_viewer_layout_matches_standard(tmp_path):
     import pandas as pd
 
-    stem = "acq_fov_feature_matrix"
     for name in ("B4_0000", "B4/0001"):  # a slash must be sanitized to a safe stem
-        debug_artifacts.write_feature_viewer_artifacts(
-            tmp_path, stem, name, _fv_artifacts(name)
-        )
+        prescan_artifacts.write_feature_viewer_artifacts(tmp_path, name, _fv_artifacts(name))
 
-    csv = tmp_path / f"{stem}.csv"
+    # calibration shares the fixed fov_summary.csv name with normal mode
+    csv = tmp_path / prescan_artifacts.SUMMARY_CSV_NAME
     assert csv.exists()
     df = pd.read_csv(csv)
     # A `filename` column joins each row to its PNG; the ranking `proba` is NOT written.
@@ -120,8 +118,8 @@ def test_feature_viewer_layout_matches_standard(tmp_path):
     assert {"coverage_frac", "nn_um_mean"} <= set(df.columns)
     assert sorted(df["filename"]) == ["B4_0000", "B4_0001"]
 
-    png_dir = tmp_path / f"{stem}_png"
-    mask_dir = tmp_path / f"{stem}_mask_png"
+    png_dir = tmp_path / "prescan_fov"
+    mask_dir = tmp_path / "prescan_mask"
     assert (png_dir / "B4_0000.png").exists() and (png_dir / "B4_0001.png").exists()
     assert (mask_dir / "B4_0000.png").exists() and (mask_dir / "B4_0001.png").exists()
 
@@ -131,13 +129,73 @@ def test_feature_viewer_layout_loads_in_the_viewer(tmp_path):
     # brightfield PNG wired to each row.
     from shrimpy.fov_selection.feature_viewer import data
 
-    stem = "acq_fov_feature_matrix"
     for name in ("f0", "f1"):
-        debug_artifacts.write_feature_viewer_artifacts(
-            tmp_path, stem, name, _fv_artifacts(name)
-        )
+        prescan_artifacts.write_feature_viewer_artifacts(tmp_path, name, _fv_artifacts(name))
 
-    df = data.load_matrices([tmp_path / f"{stem}.csv"])
+    df = data.load_matrices([tmp_path / prescan_artifacts.SUMMARY_CSV_NAME])
     assert len(df) == 2
     assert all(png and Path(png).exists() for png in df["__png"])
     assert "coverage_frac" in data.feature_columns(df)
+
+
+def test_normal_mode_fov_summary_loads_in_the_viewer(tmp_path):
+    # fov_summary.csv (save_decision, normal mode) must load in the viewer just like the
+    # calibration matrix: it carries a `filename` join column and its images live in the same
+    # prescan_fov/ folder, while the decision outputs (proba/selected/rank) stay off the axes.
+    import pandas as pd
+
+    from shrimpy.fov_selection.feature_viewer import data
+
+    for name, proba in (("f0", 0.2), ("f1", 0.9)):
+        prescan_artifacts.write_decision_artifacts(tmp_path, name, proba, _fv_artifacts(name))
+    # stamp the whole-run selection columns, as the manager does post-drain
+    prescan_artifacts.finalize_summary_csv(
+        tmp_path / prescan_artifacts.SUMMARY_CSV_NAME,
+        passed={"f1"},
+        fov_group={"f0": "P", "f1": "P"},
+        top_fov=1,
+    )
+
+    csv = tmp_path / prescan_artifacts.SUMMARY_CSV_NAME
+    assert {"name", "filename", "proba", "selected", "rank"} <= set(pd.read_csv(csv).columns)
+
+    df = data.load_matrices([csv])
+    assert len(df) == 2
+    assert all(png and Path(png).exists() for png in df["__png"])  # wired to prescan_fov/
+    feats = data.feature_columns(df)
+    assert "coverage_frac" in feats
+    assert not ({"proba", "selected", "rank"} & set(feats))  # decision outputs are not axes
+
+
+# --------------------------------------------------------------------------
+# Well columns (stamp_well_columns) -> the viewer groups a pre-scan by well
+# --------------------------------------------------------------------------
+
+
+def test_stamp_well_columns_joins_by_filename(tmp_path):
+    import pandas as pd
+
+    csv = tmp_path / prescan_artifacts.SUMMARY_CSV_NAME
+    pd.DataFrame(
+        {"filename": ["A1_0000", "A1_0001", "B2_0000"], "coverage_frac": [0.1, 0.2, 0.3]}
+    ).to_csv(csv, index=False)
+
+    prescan_artifacts.stamp_well_columns(
+        csv, {"A1_0000": ("A", 1), "A1_0001": ("A", 1), "B2_0000": ("B", 2)}
+    )
+
+    df = pd.read_csv(csv).set_index("filename")
+    # well_row is the letter label, well_col the one-based int -> "Well B/2" in the viewer
+    assert list(df.loc["A1_0000", ["well_row", "well_col"]]) == ["A", 1]
+    assert list(df.loc["B2_0000", ["well_row", "well_col"]]) == ["B", 2]
+
+
+def test_stamp_well_columns_is_a_noop_without_coords_or_filename(tmp_path):
+    import pandas as pd
+
+    csv = tmp_path / prescan_artifacts.SUMMARY_CSV_NAME
+    pd.DataFrame({"name": ["x"], "coverage_frac": [0.1]}).to_csv(csv, index=False)
+
+    prescan_artifacts.stamp_well_columns(csv, {})  # no coords (off-plate) -> no-op
+    prescan_artifacts.stamp_well_columns(csv, {"x": ("A", 1)})  # no filename column -> skip
+    assert "well_row" not in pd.read_csv(csv).columns

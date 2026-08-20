@@ -17,9 +17,11 @@ Tabs
             FOVs as thumbnails ordered best-first by the resulting score.
 
 Data wiring
-  Each *_fov_feature_matrix.csv is one row per FOV and must carry a `filename` column.
-  data.load_matrices resolves each row to its PNG in the sibling <stem>[_<channel>]_png/
-  folder next to the CSV (strict filename match) and stores it as __png / __png_<channel>.
+  Each feature CSV (fov_summary.csv, or a legacy *_fov_feature_matrix.csv) is one row per
+  FOV and must carry a `filename` column.
+  data.load_matrices resolves each row to its PNG in the sibling prescan_fov/ (brightfield),
+  prescan_mask/, prescan_fluor/ folder next to the CSV (strict filename match; legacy
+  <stem>[_<channel>]_png/ folders still open) and stores it as __png / __png_<channel>.
 
 Run:  python -m shrimpy.fov_selection.feature_viewer
 """
@@ -999,13 +1001,13 @@ def main():
         action="append",
         default=[],
         help="override folder of that matrix's brightfield PNGs (repeatable; paired with "
-        "--csv). Omit to use the sibling <stem>_png/ folder next to the CSV.",
+        "--csv). Omit to use the sibling prescan_fov/ folder next to the CSV.",
     )
     ap.add_argument(
         "csvs",
         nargs="*",
-        help="feature CSV(s) to auto-load; images come from sibling <stem>[_<channel>]_png/ "
-        "folders next to each CSV",
+        help="feature CSV(s) to auto-load; images come from sibling prescan_fov/ "
+        "(prescan_mask/, prescan_fluor/) folders next to each CSV",
     )
     ap.add_argument(
         "--start-tab",
@@ -1017,8 +1019,14 @@ def main():
         "--rank-profile",
         default=None,
         help="YAML/JSON desirability profile (a bare features mapping or a full model "
-        "dict) to seed the Rank tab on launch, merged over the data-seeded defaults; a "
-        "calibration pre-scan passes the config's fov_selection.model here",
+        "dict) to seed the Rank tab on launch, merged over the data-seeded defaults",
+    )
+    ap.add_argument(
+        "--rank-profile-json",
+        default=None,
+        help="same as --rank-profile but the profile is passed inline as a JSON string "
+        "rather than a file path (a calibration pre-scan passes the config's "
+        "fov_selection.model here, so no profile file is written to disk)",
     )
     args = ap.parse_args()
 
@@ -1050,6 +1058,15 @@ def main():
     # Seed the Rank tab from a profile (after loading, so data features are merged in).
     if args.rank_profile:
         win._apply_rank_profile(str(Path(args.rank_profile)))
+    elif args.rank_profile_json:
+        import json
+
+        try:
+            cfg = json.loads(args.rank_profile_json)
+        except Exception:  # noqa: BLE001
+            cfg = None
+        if cfg:
+            win._apply_rank_profile_cfg(cfg, source="config model")
     # Open the requested tab (after loading, so the Rank tab has data to lay out).
     tab_index = {
         "analysis": 0,

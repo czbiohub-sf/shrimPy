@@ -106,27 +106,30 @@ metadata:
           - ['TS2_DAC03', 'Sequence', 'On']
       stage_positions:
         # a1_center_xy: [21080, 24030]
-        # plate:
-        #   rows: 4
-        #   columns: 6
-        #   name: 24-well
-        #   well_size: [15.6, 15.6]
-        #   well_spacing: [19.0, 19.0]
-        # selected_wells:
-        #   - [0]
-        #   - [0]
-        # well_points_plan:
-        #   rows: 3           # 7x7 = 49 FOVs/well; B/3,B/4,B/5 -> 147 total
-        #   columns: 3
-        #   fov_height: 180.0
-        #   fov_width: 180.0
-        - x: 21080
-          y: 24030
-      grid_plan:
-        rows: 8
-        columns: 8
-        fov_height: 180.0
-        fov_width: 180.0
+        plate:
+          rows: 4
+          columns: 6
+          name: 24-well
+          well_size: [15.6, 15.6]
+          well_spacing: [19.0, 19.0]
+        selected_wells:
+          - [0]
+          - [0]
+        well_points_plan:
+          rows: 3           # 7x7 = 49 FOVs/well; B/3,B/4,B/5 -> 147 total
+          columns: 3
+          fov_height: 180.0
+          fov_width: 180.0
+        # - x: 21080
+        #   y: 24030
+        #   plate_row: 0
+        #   plate_col: 0
+
+      # grid_plan:
+      #   rows: 8
+      #   columns: 8
+      #   fov_height: 180.0
+      #   fov_width: 180.0
       time_plan:
         loops: 1            # single pre-scan timepoint (validated)
         interval: 0

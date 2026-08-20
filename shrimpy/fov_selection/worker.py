@@ -22,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
-from shrimpy.fov_selection import debug_artifacts
+from shrimpy.fov_selection import prescan_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -74,11 +74,12 @@ class WorkerConfig:
         Fail fast if the reconstruction cannot run on a GPU (``fov_selection.require_gpu``).
     calibration_mode : bool
         Extract every producible feature (not just the model's) and write the debug artifacts
-        in the feature viewer's standard layout (``<matrix_stem>.csv`` + sibling PNG folders),
-        so the pre-scan output loads straight into the viewer.
+        in the feature viewer's standard layout (the fixed ``fov_summary.csv`` + the shared
+        ``prescan_fov`` / ``prescan_mask`` folders), so the pre-scan output loads straight into
+        the viewer.
     matrix_stem : str | None
-        CSV / PNG-folder stem for the calibration feature-viewer output, e.g.
-        ``"<acq>_fov_feature_matrix"``.
+        Stem for the optional best-focus-Z debug CSV (``<stem>_best_focus_z.csv``), e.g.
+        ``"<acq>_fov_feature_matrix"``; ``None`` outside calibration.
     best_focus_z : dict | None
         Optics for the ``'best_focus_z'`` projection; ``None`` for the other methods.
     z_step_um : float
@@ -86,7 +87,7 @@ class WorkerConfig:
     save_best_focus_z : bool
         Append the detected best-focus slice / depth per FOV to a debug CSV
         (``save_best_focus_z_for_debug``); only meaningful with the ``best_focus_z`` projection.
-    write_debug_artifacts : bool
+    write_prescan_artifacts : bool
         Write the standard PNG/feature debug artifacts (``save_decision`` / calibration). Kept
         separate from ``save_best_focus_z`` so the focus CSV can be requested on its own.
     """
@@ -109,7 +110,7 @@ class WorkerConfig:
     best_focus_z: dict | None = None
     z_step_um: float = 1.0
     save_best_focus_z: bool = False
-    write_debug_artifacts: bool = True
+    write_prescan_artifacts: bool = True
 
 
 class FovSelectionWorker:
@@ -209,7 +210,7 @@ def _worker_loop(
     best_focus_z = config.best_focus_z
     z_step_um = config.z_step_um
     save_best_focus_z = config.save_best_focus_z
-    write_debug_artifacts = config.write_debug_artifacts
+    write_prescan_artifacts = config.write_prescan_artifacts
 
     # Mirror DynaTrack's subprocess logging: file handler to the parent's log
     # file plus a console handler for live visibility.
@@ -321,7 +322,7 @@ def _worker_loop(
                     # to enough FOVs, leave nothing to image. Log and carry on instead.
                     if recon_zarr_path is not None:
                         try:
-                            debug_artifacts.write_reconstruction_zarr(
+                            prescan_artifacts.write_reconstruction_zarr(
                                 recon_zarr_path, p_idx, name, artifacts
                             )
                         except Exception:
@@ -332,7 +333,7 @@ def _worker_loop(
                             )
                     if debug_dir is not None and save_best_focus_z:
                         try:
-                            debug_artifacts.append_best_focus_z_row(
+                            prescan_artifacts.append_best_focus_z_row(
                                 debug_dir, matrix_stem, name, z_step_um, artifacts
                             )
                         except Exception:
@@ -341,14 +342,14 @@ def _worker_loop(
                                 "debug CSV for %s; the decision is unaffected",
                                 name,
                             )
-                    if debug_dir is not None and write_debug_artifacts:
+                    if debug_dir is not None and write_prescan_artifacts:
                         try:
                             if calibration_mode:
-                                debug_artifacts.write_feature_viewer_artifacts(
-                                    debug_dir, matrix_stem, name, artifacts
+                                prescan_artifacts.write_feature_viewer_artifacts(
+                                    debug_dir, name, artifacts
                                 )
                             else:
-                                debug_artifacts.write_decision_artifacts(
+                                prescan_artifacts.write_decision_artifacts(
                                     debug_dir, name, proba, artifacts
                                 )
                         except Exception:
@@ -357,7 +358,7 @@ def _worker_loop(
                                 "%s (is %s open in another program?); the decision is "
                                 "unaffected",
                                 name,
-                                Path(debug_dir) / debug_artifacts.SUMMARY_CSV_NAME,
+                                Path(debug_dir) / prescan_artifacts.SUMMARY_CSV_NAME,
                             )
                 else:
                     proba, good = result

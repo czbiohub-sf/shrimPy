@@ -5,10 +5,18 @@ GUI so it can be tested headless.
 
 Standard layout (one CSV per dataset, sibling PNG folders next to it):
 
-    <name>_fov_feature_matrix.csv          # one row per FOV; MUST have a `filename` column
-    <name>_fov_feature_matrix_png/         # brightfield image per FOV, named <filename>.png
-    <name>_fov_feature_matrix_mask_png/    # optional mask channel
-    <name>_fov_feature_matrix_fluor_png/   # optional fluorescence channel
+    fov_summary.csv    # one row per FOV; MUST have a `filename` column
+    prescan_fov/       # brightfield image per FOV, named <filename>.png
+    prescan_mask/      # optional mask channel
+    prescan_fluor/     # optional fluorescence channel
+
+The live pre-scan writes ``fov_summary.csv`` in both normal and calibration mode; any CSV
+with a ``filename`` column loads (older datasets used ``<name>_fov_feature_matrix.csv``).
+
+The image folders are the fixed ``prescan_*`` names written by both the live save_decision
+and calibration pre-scans (see prescan_artifacts.py). Legacy datasets that used the older
+stem-prefixed folders (``<stem>_png`` / ``<stem>_<channel>_png``) still open: each channel
+falls back to that name when its fixed folder is absent.
 
 Wiring is a strict 1:1 join: the CSV `filename` column equals the PNG stem.
 """
@@ -40,6 +48,12 @@ META_BLACKLIST = {
     "goodness",  # ground-truth label (from CSV; also editable in the Label tab)
     "goodness_probability",  # classifier output P(good); a label/output, not a reduction input
     "score",  # ranking-model output (produced in the Rank tab, not read from CSV)
+    # Decision outputs written by the normal-mode fov_summary.csv (prescan_artifacts.py): the
+    # model score and the whole-run selection, kept as filterable metadata but never a
+    # reduction/plot axis, so that CSV loads in the viewer just like the calibration matrix.
+    "proba",
+    "selected",
+    "rank",
     "image_width_px",  # acquisition metadata
     "image_height_px",
     "pixel_size_um",
@@ -57,6 +71,15 @@ METHODS = ["PCA", "t-SNE"] + (["UMAP"] if HAS_UMAP else [])
 
 # ============================================================= image wiring
 CHANNELS = ("brightfield", "mask", "fluor")  # FOV thumbnail channels (viewer toggle)
+
+# Fixed image-folder name per channel, written by the pre-scan (prescan_artifacts.py). The
+# brightfield slot holds the projection; `selected_fov` is deliberately absent -- the viewer
+# shows the full candidate set, never the chosen subset.
+_CHANNEL_DIRNAME = {
+    "brightfield": "prescan_fov",
+    "mask": "prescan_mask",
+    "fluor": "prescan_fluor",
+}
 
 
 def _index_by_stem(folder: str | Path) -> dict[str, str]:
@@ -83,8 +106,16 @@ def wire_folder(df: pd.DataFrame, png_folder: str | Path) -> list[str]:
 
 
 def _channel_png_folder(csv_path, channel):
-    """Sibling PNG folder for a channel: <stem>_png (brightfield) / <stem>_<channel>_png."""
+    """Sibling PNG folder for a channel, next to the CSV.
+
+    Prefers the fixed ``prescan_*`` folder the live pre-scan writes (``prescan_fov`` /
+    ``prescan_mask`` / ``prescan_fluor``); falls back to the legacy stem-prefixed name
+    (``<stem>_png`` / ``<stem>_<channel>_png``) when that fixed folder is absent, so existing
+    offline datasets still open."""
     csv_path = Path(csv_path)
+    fixed = csv_path.with_name(_CHANNEL_DIRNAME[channel])
+    if fixed.is_dir():
+        return fixed
     suffix = "_png" if channel == "brightfield" else f"_{channel}_png"
     return csv_path.with_name(csv_path.stem + suffix)
 

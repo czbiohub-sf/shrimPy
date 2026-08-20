@@ -91,14 +91,12 @@ def _calibration_fov(tmp_path, config_extra=None):
 
 def test_calibration_forces_save_decision_and_exposes_feature_matrix_csv(tmp_path):
     # calibration_mode: True with NO save_decision key -> save_decision forced on, and the
-    # feature-viewer CSV path is <name>_fov_debug/<name>_fov_feature_matrix.csv.
+    # feature-viewer CSV path is the fixed <name>_fov_debug/fov_summary.csv (shared with
+    # normal mode).
     fov = _calibration_fov(tmp_path, {"calibration_mode": True})
     assert fov.calibration_mode is True
     assert fov._save_decision is True
-    assert fov._matrix_stem == "acq_fov_feature_matrix"
-    assert (
-        fov.calibration_matrix_csv == tmp_path / "acq_fov_debug" / "acq_fov_feature_matrix.csv"
-    )
+    assert fov.calibration_matrix_csv == tmp_path / "acq_fov_debug" / "fov_summary.csv"
 
 
 def test_non_calibration_has_no_feature_matrix_csv(tmp_path):
@@ -232,12 +230,15 @@ class _StubSelection(FovSelection):
     ``_summary`` FOVs in ONE position, so ``rank`` is a single global ordering.
     """
 
-    def __init__(self, debug_dir, top_fov, passed, fov_group=None):
+    def __init__(
+        self, debug_dir, top_fov, passed, fov_group=None, well_coords=None, calibration_mode=False
+    ):
         self._debug_dir = debug_dir
         self._top_fov = top_fov
         self._passed = passed
-        self._calibration_mode = False
+        self._calibration_mode = calibration_mode
         self._fov_group = fov_group if fov_group is not None else dict.fromkeys("ABCD", "P")
+        self._well_coords = well_coords or {}
 
     def passed_position_names(self):
         return self._passed
@@ -266,6 +267,91 @@ def test_finalize_adds_selected_and_rank_for_a_ranking_model(tmp_path):
     # all four FOVs are in one position (stub default), so rank is a single global ordering;
     # method='first' -> ties get distinct consecutive ranks, not 3.5/3.5.
     assert df.set_index("name")["rank"].to_dict() == {"A": 4.0, "B": 1.0, "C": 2.0, "D": 3.0}
+
+
+def _summary_with_filenames(tmp_path):
+    import pandas as pd
+
+    (tmp_path / "fov_summary.csv").write_text(
+        pd.DataFrame(
+            {
+                "name": ["A1_0000", "A1_0001", "B2_0000"],
+                "filename": ["A1_0000", "A1_0001", "B2_0000"],
+                "proba": [0.1, 0.9, 0.5],
+            }
+        ).to_csv(index=False)
+    )
+    return tmp_path / "fov_summary.csv"
+
+
+_WELLS = {"A1_0000": ("A", 1), "A1_0001": ("A", 1), "B2_0000": ("B", 2)}
+
+
+def test_finalize_stamps_well_columns_in_normal_mode(tmp_path):
+    # well_row/well_col are joined onto the CSV by filename so the viewer can group by well;
+    # the selection columns are still added in normal mode.
+    import pandas as pd
+
+    csv = _summary_with_filenames(tmp_path)
+    _StubSelection(
+        tmp_path,
+        top_fov=1,
+        passed=["A1_0001", "B2_0000"],
+        fov_group={"A1_0000": "A1", "A1_0001": "A1", "B2_0000": "B2"},
+        well_coords=_WELLS,
+    ).finalize_debug_summary()
+
+    df = pd.read_csv(csv).set_index("filename")
+    assert df.loc["A1_0000", "well_row"] == "A" and int(df.loc["A1_0000", "well_col"]) == 1
+    assert df.loc["B2_0000", "well_row"] == "B" and int(df.loc["B2_0000", "well_col"]) == 2
+    assert {"selected", "rank", "position"} <= set(df.columns)  # selection still stamped
+
+
+def test_finalize_stamps_well_columns_in_calibration_mode(tmp_path):
+    # calibration runs no selection, but the well columns must still be stamped so the viewer
+    # can group the calibration matrix by well.
+    import pandas as pd
+
+    csv = _summary_with_filenames(tmp_path)
+    _StubSelection(
+        tmp_path, top_fov=None, passed=[], well_coords=_WELLS, calibration_mode=True
+    ).finalize_debug_summary()
+
+    df = pd.read_csv(csv)
+    assert {"well_row", "well_col"} <= set(df.columns)
+    assert "selected" not in df.columns  # no timelapse -> no selection columns
+
+
+def test_finalize_gathers_only_selected_projection_pngs(tmp_path):
+    # save_decision writes every FOV's projection to prescan_fov/; finalize copies just the
+    # selected ones into selected_fov/, prefixed by position, so the fields the timelapse
+    # will image can be browsed on their own.
+    from shrimpy.fov_selection.plate_naming import file_stem_name
+
+    _summary(tmp_path)
+    proj_dir = tmp_path / "prescan_fov"
+    proj_dir.mkdir()
+    for name in ["A", "B", "C", "D"]:
+        (proj_dir / f"{file_stem_name(name)}.png").write_bytes(b"png")
+
+    _StubSelection(tmp_path, top_fov=2, passed=["B", "C"]).finalize_debug_summary()
+
+    sel_dir = tmp_path / "selected_fov"
+    got = sorted(p.name for p in sel_dir.iterdir())
+    # position "P" for all (stub default): files are prefixed by well then FOV name.
+    assert got == sorted(
+        f"{file_stem_name('P')}__{file_stem_name(n)}.png" for n in ("B", "C")
+    )
+    # the unselected FOVs are not copied over.
+    assert not (sel_dir / f"{file_stem_name('P')}__{file_stem_name('A')}.png").exists()
+
+
+def test_finalize_skips_selected_pngs_when_no_projection_folder(tmp_path):
+    # save_decision off (or the projections were never written): no folder is created and
+    # finalize still succeeds.
+    _summary(tmp_path)
+    _StubSelection(tmp_path, top_fov=2, passed=["B", "C"]).finalize_debug_summary()
+    assert not (tmp_path / "selected_fov").exists()
 
 
 def test_finalize_leaves_rank_nan_for_non_ranking_models(tmp_path):

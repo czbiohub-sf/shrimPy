@@ -399,7 +399,7 @@ def test_selected_fov_config_fills_stage_positions_and_reloads(tmp_path):
     # The starting config has stage_positions: []; the saved record must carry one entry per
     # SELECTED FOV (absolute XY + the well's ZDrive coarse focus + plate coords), named after
     # the experiment folder.
-    from shrimpy.fov_selection import artifacts as fov_artifacts
+    from shrimpy.fov_selection import acquisition_artifacts as fov_artifacts
 
     cfg = _grid_fov_cfg()
     cfg["prescan_mda"]["stage_positions"] = [
@@ -421,8 +421,8 @@ def test_selected_fov_config_fills_stage_positions_and_reloads(tmp_path):
     experiment_dir.mkdir()
     fov_artifacts.save_selected_config(timelapse, experiment_dir, None)
 
-    # named after the experiment FOLDER, beside the config.yaml it mirrors
-    artifact = experiment_dir / "config_2026_08_04_my_experiment.yaml"
+    # fixed recovery-config name, beside the config.yaml it mirrors
+    artifact = experiment_dir / "config_for_recovery.yaml"
     assert artifact.exists()
 
     written = MDASequence.from_file(artifact)  # a valid sequence, though nothing reloads it
@@ -440,8 +440,8 @@ def test_selected_fov_config_fills_stage_positions_and_reloads(tmp_path):
 
 def test_selected_fov_config_appends_the_dedup_index(tmp_path):
     # A second acquisition in the same folder must not silently replace the first record --
-    # the folder name alone does not distinguish them.
-    from shrimpy.fov_selection import artifacts as fov_artifacts
+    # run_index is appended only once the fixed name is already taken.
+    from shrimpy.fov_selection import acquisition_artifacts as fov_artifacts
 
     seq = _sequence(metadata={"fov_selection": _grid_fov_cfg()})
     prescan = build_prescan_sequence(seq, fov_selection_config(seq))
@@ -450,17 +450,17 @@ def test_selected_fov_config_appends_the_dedup_index(tmp_path):
     experiment_dir = tmp_path / "expt"
     experiment_dir.mkdir()
 
-    fov_artifacts.save_selected_config(timelapse, experiment_dir, None)
-    fov_artifacts.save_selected_config(timelapse, experiment_dir, 1)
+    fov_artifacts.save_selected_config(timelapse, experiment_dir, None)  # -> config_for_recovery.yaml
+    fov_artifacts.save_selected_config(timelapse, experiment_dir, 1)  # name taken -> _1
 
-    assert (experiment_dir / "config_expt.yaml").exists()
-    assert (experiment_dir / "config_expt_1.yaml").exists()
+    assert (experiment_dir / "config_for_recovery.yaml").exists()
+    assert (experiment_dir / "config_for_recovery_1.yaml").exists()
 
 
 def test_selected_fov_config_never_raises(tmp_path):
     # Written between the pre-scan and the timelapse: a filesystem failure must be logged,
     # not propagated.
-    from shrimpy.fov_selection import artifacts as fov_artifacts
+    from shrimpy.fov_selection import acquisition_artifacts as fov_artifacts
 
     seq = _sequence(metadata={"fov_selection": _grid_fov_cfg()})
     prescan = build_prescan_sequence(seq, fov_selection_config(seq))
@@ -469,5 +469,5 @@ def test_selected_fov_config_never_raises(tmp_path):
     experiment_dir = tmp_path / "expt"
     experiment_dir.mkdir()
     # a directory where the file should go -> write_text raises, must be swallowed
-    (experiment_dir / "config_expt.yaml").mkdir()
+    (experiment_dir / "config_for_recovery.yaml").mkdir()
     fov_artifacts.save_selected_config(timelapse, experiment_dir, None)

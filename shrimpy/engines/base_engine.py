@@ -56,7 +56,7 @@ from shrimpy._logging import find_log_file
 from shrimpy.config import ShrimpyMetadata, load_config
 from shrimpy.dynatrack import DynaTrack
 from shrimpy.fov_selection import FovSelection
-from shrimpy.fov_selection import artifacts as fov_artifacts
+from shrimpy.fov_selection import acquisition_artifacts as fov_artifacts
 from shrimpy.fov_selection.sequences import (
     build_prescan_sequence,
     build_timelapse_sequence,

@@ -1,22 +1,28 @@
-"""FOV-selection debug artifacts: the PNG / CSV / OME-Zarr traces of a pre-scan.
+"""FOV-selection pre-scan artifacts: the PNG / CSV / OME-Zarr outputs of a pre-scan.
 
 Separated from the worker's process orchestration (:mod:`shrimpy.fov_selection.worker`) so
-all the "what a pre-scan writes to disk, and in what layout" logic lives in one place. Three
-kinds of output, all optional:
+all the "what a pre-scan writes to disk, and in what layout" logic lives in one place. This
+is the pre-scan data plane, written per FOV in the worker subprocess and finalized in the
+manager; the once-per-run acquisition records live in
+:mod:`shrimpy.fov_selection.acquisition_artifacts`. Three kinds of output, all optional:
 
-- lightweight per-FOV debug (``save_decision``): a projection PNG, a magenta mask-overlay
-  PNG, and one row appended to ``fov_summary.csv`` -- :func:`write_decision_artifacts`.
-- calibration feature-viewer layout: the same images under the ``<stem>``-prefixed folder
-  names and a ``<stem>.csv`` with a ``filename`` join column that
+- lightweight per-FOV output (``save_decision``): a projection PNG in ``prescan_fov/``, a
+  magenta mask-overlay PNG in ``prescan_mask/``, and one row appended to ``fov_summary.csv``
+  -- :func:`write_decision_artifacts`.
+- calibration feature-viewer layout: the SAME images in the SAME ``prescan_fov`` /
+  ``prescan_mask`` folders, plus a ``fov_summary.csv`` with a ``filename`` join column that
   :mod:`shrimpy.fov_selection.feature_viewer.data` loads directly --
-  :func:`write_feature_viewer_artifacts`.
+  :func:`write_feature_viewer_artifacts`. So ``save_decision`` output has one folder
+  structure in both normal and calibration mode; only the CSV columns differ.
 - the full per-step reconstruction OME-Zarr (``save_pre_scan_omezarr``): every
   reconstruction stage (deskew / phase / VS volumes in 3D + the projection / mask broadcast
   across Z) as one HCS store -- :func:`write_reconstruction_zarr`.
 
 Plus :func:`finalize_summary_csv`, which stamps the whole-run ``selected`` / ``position`` /
-``rank`` columns onto ``fov_summary.csv`` after every FOV is scored, and
-:func:`save_mask_overlay_png`, the shared magenta-outline renderer.
+``rank`` columns onto ``fov_summary.csv`` after every FOV is scored;
+:func:`save_selected_fov_pngs`, which gathers the selected FOVs' projections into
+``selected_fov/`` (never loaded by the viewer); and :func:`save_mask_overlay_png`, the
+shared magenta-outline renderer.
 
 FOV selection segments exactly ONE mask (the ``target``), so the ``projections`` / ``masks``
 that :func:`shrimpy.fov_selection.pipeline.decide_fov` returns each hold a single channel;
@@ -24,7 +30,7 @@ the per-FOV writers below are single-channel accordingly. Only the reconstructio
 multi-channel (its 3D ``stacks`` still carry deskew / phase / nuclei / membrane).
 
 The writers run in the worker subprocess one FOV at a time, so every CSV/store
-read-append-write is unsynchronized-safe. Every call site guards these functions: debug I/O
+read-append-write is unsynchronized-safe. Every call site guards these functions: this I/O
 must never invalidate an already-computed decision.
 """
 
@@ -45,11 +51,17 @@ logger = logging.getLogger(__name__)
 # selected/rank columns (see finalize_summary_csv).
 SUMMARY_CSV_NAME = "fov_summary.csv"
 
-# Fallback stem for the calibration feature-viewer CSV / PNG folders when the manager did
-# not pass one. The viewer derives the sibling PNG folders from the CSV stem
-# (<stem>_png / <stem>_mask_png -- see feature_viewer/data.py), so the CSV name and the
-# folder names all share this stem.
-DEFAULT_MATRIX_STEM = "fov_feature_matrix"
+# Pre-scan FOV image folders (under debug_dir), FIXED names shared by both the save_decision
+# layout and the calibration feature-viewer layout, so the feature viewer loads one known
+# pair of folders (see feature_viewer/data.py). Their PNG stems equal the sanitized FOV name
+# (== the CSV `filename` join column for the calibration CSV).
+PRESCAN_FOV_DIRNAME = "prescan_fov"  # projection (brightfield slot) PNG per FOV
+PRESCAN_MASK_DIRNAME = "prescan_mask"  # segmentation-mask overlay PNG per FOV
+
+# Subfolder the SELECTED FOVs' projection PNGs are gathered into after the pre-scan drains,
+# so the fields the timelapse will actually image can be browsed on their own. The viewer
+# must NOT load this -- it is the chosen subset, not the full candidate set.
+SELECTED_FOV_DIRNAME = "selected_fov"
 
 
 def save_mask_overlay_png(
@@ -112,15 +124,18 @@ def write_decision_artifacts(
     """Persist one FOV's lightweight decision artifacts (save_decision).
 
     Layout -- one folder per image kind so the projections and mask overlays can be flipped
-    through separately::
+    through separately. The image folders are the SAME fixed names the calibration layout
+    uses (:func:`write_feature_viewer_artifacts`), so ``save_decision`` output has one
+    structure in both modes::
 
-        <debug_dir>/projection_png/<name>.png   # grayscale, min/max stretched
-        <debug_dir>/mask_png/<name>.png         # magenta segmentation outline over it
-        <debug_dir>/fov_summary.csv             # one row per FOV
+        <debug_dir>/prescan_fov/<name>.png    # grayscale, min/max stretched
+        <debug_dir>/prescan_mask/<name>.png   # magenta segmentation outline over it
+        <debug_dir>/fov_summary.csv           # one row per FOV
 
     The combined ``fov_summary.csv`` gets a row per FOV -- ``name, proba`` followed by every
     feature column. The ``selected`` / ``position`` / ``rank`` decision columns are added
-    post-drain by the manager (via :func:`finalize_summary_csv`).
+    post-drain by the manager (via :func:`finalize_summary_csv`), which also gathers just the
+    selected FOVs' projections into ``selected_fov/`` (:func:`save_selected_fov_pngs`).
 
     The full per-step 3D reconstruction is written separately (see
     :func:`write_reconstruction_zarr`, gated by ``save_pre_scan_omezarr``).
@@ -132,9 +147,9 @@ def write_decision_artifacts(
     proj = _single(artifacts.get("projections"))
     mask = _single(artifacts.get("masks"))
     if proj is not None:
-        _save_projection_png(_fov_png_path(debug_dir, "projection_png", safe), proj[1])
+        _save_projection_png(_fov_png_path(debug_dir, PRESCAN_FOV_DIRNAME, safe), proj[1])
     if mask is not None:
-        mask_path = _fov_png_path(debug_dir, "mask_png", safe)
+        mask_path = _fov_png_path(debug_dir, PRESCAN_MASK_DIRNAME, safe)
         # magenta segmentation outline over the projection it segments (cells stay visible);
         # fall back to a colorized label map if the projection is somehow missing.
         if proj is not None:
@@ -147,45 +162,44 @@ def write_decision_artifacts(
 
 def write_feature_viewer_artifacts(
     debug_dir: Path,
-    matrix_stem: str | None,
     name: str,
     artifacts: dict,
 ) -> None:
     """Persist one FOV's artifacts in the feature viewer's STANDARD layout (calibration).
 
-    Same images as :func:`write_decision_artifacts`, but under the ``<stem>``-prefixed folder
-    names and with the ``filename`` join column that
+    Same images and same fixed image folders as :func:`write_decision_artifacts`
+    (``prescan_fov`` / ``prescan_mask``), plus the ``filename`` join column that
     :mod:`shrimpy.fov_selection.feature_viewer.data` requires, so a calibration pre-scan drops
     straight into the viewer with no conversion::
 
-        <debug_dir>/<stem>.csv            # one row per FOV; carries a `filename` column
-        <debug_dir>/<stem>_png/           # projection (brightfield slot) PNG per FOV
-        <debug_dir>/<stem>_mask_png/      # segmentation-mask PNG per FOV
+        <debug_dir>/fov_summary.csv       # one row per FOV; carries a `filename` column
+        <debug_dir>/prescan_fov/          # projection (brightfield slot) PNG per FOV
+        <debug_dir>/prescan_mask/         # segmentation-mask PNG per FOV
 
-    where ``<stem>`` is ``matrix_stem`` (e.g. ``<acq>_fov_feature_matrix``). The CSV
-    ``filename`` column equals each PNG's stem (the sanitized FOV name), the strict 1:1 join
-    the viewer relies on. Every producible feature column is written (the worker ran with
-    ``extract_all``); the ranking ``proba`` is deliberately omitted so it does not show up as
-    a pseudo-feature axis in the viewer. The single segmented channel's projection wires to
-    the viewer's default (brightfield) thumbnail slot.
+    The CSV shares the fixed ``fov_summary.csv`` name with the normal-mode decision table, so
+    calibration and normal output have one file-name format. The CSV ``filename`` column
+    equals each PNG's stem (the sanitized FOV name), the strict 1:1 join the viewer relies on.
+    Every producible feature column is written (the worker ran with ``extract_all``); the
+    ranking ``proba`` is deliberately omitted so it does not show up as a pseudo-feature axis
+    in the viewer (it is filled in later, from the viewer's Rank tab). The single segmented
+    channel's projection wires to the viewer's default (brightfield) thumbnail slot.
     """
     debug_dir = Path(debug_dir)
     debug_dir.mkdir(parents=True, exist_ok=True)
-    stem = matrix_stem or DEFAULT_MATRIX_STEM
     safe = file_stem_name(name)
 
     proj = _single(artifacts.get("projections"))
     masks = artifacts.get("masks") or {}
     if proj is not None:
         channel, proj_img = proj
-        _save_projection_png(_fov_png_path(debug_dir, f"{stem}_png", safe), proj_img)
+        _save_projection_png(_fov_png_path(debug_dir, PRESCAN_FOV_DIRNAME, safe), proj_img)
         if channel in masks:
             # magenta segmentation outline over the projection (cells stay visible)
             save_mask_overlay_png(
-                _fov_png_path(debug_dir, f"{stem}_mask_png", safe), proj_img, masks[channel]
+                _fov_png_path(debug_dir, PRESCAN_MASK_DIRNAME, safe), proj_img, masks[channel]
             )
 
-    _append_feature_viewer_row(debug_dir, stem, safe, artifacts.get("features"))
+    _append_feature_viewer_row(debug_dir, safe, artifacts.get("features"))
 
 
 def _fov_png_path(debug_dir: Path, subfolder: str, safe_name: str) -> Path:
@@ -195,20 +209,22 @@ def _fov_png_path(debug_dir: Path, subfolder: str, safe_name: str) -> Path:
     return folder / f"{safe_name}.png"
 
 
-def _append_feature_viewer_row(debug_dir: Path, stem: str, filename: str, features) -> None:
-    """Append one FOV's row (``filename`` + all feature columns) to ``<stem>.csv``.
+def _append_feature_viewer_row(debug_dir: Path, filename: str, features) -> None:
+    """Append one FOV's row (``filename`` + all feature columns) to ``fov_summary.csv``.
 
     Uses pandas concat so FOVs with different feature columns (e.g. no objects -> only the
     cheap features) still align, missing columns filled with NaN -- the viewer treats an
     all-NaN column within a dataset as absent. ``filename`` (== the PNG stem) is inserted
-    first so the viewer's 1:1 CSV-to-image join works.
+    first so the viewer's 1:1 CSV-to-image join works. The CSV shares the fixed
+    ``fov_summary.csv`` name with the normal-mode decision table, so calibration and normal
+    output have one file-name format.
     """
     import pandas as pd
 
     row = features.copy() if features is not None else pd.DataFrame([{}])
     row.insert(0, "filename", filename)
 
-    csv_path = debug_dir / f"{stem}.csv"
+    csv_path = debug_dir / SUMMARY_CSV_NAME
     if csv_path.exists():
         row = pd.concat([pd.read_csv(csv_path), row], ignore_index=True)
     row.to_csv(csv_path, index=False)
@@ -362,10 +378,14 @@ def write_reconstruction_zarr(zarr_path: Path, p_idx: int, name: str, artifacts:
 
 
 def _append_summary_row(debug_dir: Path, name: str, proba: float, features) -> None:
-    """Append one FOV's row (name, proba, + all features) to fov_summary.csv.
+    """Append one FOV's row (name, filename, proba, + all features) to fov_summary.csv.
 
     Uses pandas concat so FOVs with different feature columns (e.g. no objects) still align
     -- missing columns are filled with NaN.
+
+    ``filename`` is the sanitized FOV name (== the PNG stem in ``prescan_fov/``), the strict
+    1:1 join the feature viewer relies on, so ``fov_summary.csv`` loads in the viewer exactly
+    like the calibration ``<stem>.csv`` does. ``name`` keeps the raw label for the record.
 
     The ``selected`` / ``position`` / ``rank`` columns are NOT written here: they are
     properties of the whole pre-scan (a per-position top-K ranking), not of one FOV, and
@@ -378,6 +398,7 @@ def _append_summary_row(debug_dir: Path, name: str, proba: float, features) -> N
 
     row = features.copy() if features is not None else pd.DataFrame([{}])
     row.insert(0, "proba", float(proba))
+    row.insert(0, "filename", file_stem_name(name))
     row.insert(0, "name", name)
 
     summary_path = debug_dir / SUMMARY_CSV_NAME
@@ -469,6 +490,115 @@ def finalize_summary_csv(
         len(df),
         int(selected.sum()),
         summary_path,
+    )
+
+
+def stamp_well_columns(summary_path: Path, well_coords: dict[str, tuple[str, int]]) -> None:
+    """Add ``well_row`` / ``well_col`` columns to ``fov_summary.csv`` by joining each row's
+    ``filename`` to ``well_coords`` (see :meth:`FovSelection._build_well_coords`).
+
+    The feature viewer groups FOVs by ``(well_row, well_col)``
+    (:meth:`FeatureViewer._group_positions_by_well`), so this is what lets a pre-scan CSV
+    group by well in the viewer -- written in BOTH normal and calibration mode. ``well_row``
+    is the letter label (``"B"``), ``well_col`` the one-based int (``4``), matching the plate
+    form used elsewhere so the viewer's "Well B/4" headers read naturally.
+
+    Columns are appended (existing ones dropped first, so it is idempotent), leaving the
+    decision columns :func:`finalize_summary_csv` inserts up front untouched. A no-op when the
+    plate coordinates are unknown (off-plate grid candidates) or the CSV has no ``filename``
+    column. Never raises: like the other finalizers it runs at the very end of the pre-scan
+    and must not escape into ``teardown_sequence``.
+    """
+    if not well_coords:
+        return
+
+    import pandas as pd
+
+    summary_path = Path(summary_path)
+    try:
+        df = pd.read_csv(summary_path)
+    except Exception:
+        logger.exception("FOV selection: could not read %s to add well columns", summary_path)
+        return
+    if "filename" not in df.columns:
+        logger.warning(
+            "FOV selection: %s has no 'filename' column; skipping well columns", summary_path
+        )
+        return
+
+    df = df.drop(columns=[c for c in ("well_row", "well_col") if c in df.columns])
+    filenames = df["filename"].astype(str)
+    df["well_row"] = filenames.map(lambda f: well_coords.get(f, (None, None))[0])
+    df["well_col"] = filenames.map(lambda f: well_coords.get(f, (None, None))[1])
+
+    try:
+        df.to_csv(summary_path, index=False)
+    except OSError:
+        logger.exception(
+            "FOV selection: could not write well columns to %s; the viewer will fall back "
+            "to a single 'All FOVs' group",
+            summary_path,
+        )
+        return
+    logger.info(
+        "FOV selection: wrote well_row/well_col for %d FOVs to %s", len(df), summary_path
+    )
+
+
+def save_selected_fov_pngs(
+    debug_dir: Path, passed: set[str], fov_group: dict[str, str]
+) -> None:
+    """Gather the SELECTED FOVs' projection PNGs into ``<debug_dir>/selected_fov/``.
+
+    ``save_decision`` writes every scanned FOV's projection to ``prescan_fov/<name>.png``;
+    which of them the timelapse will actually image is only known once the whole pre-scan has
+    drained (the per-position top-K cut). This copies just the winners into one folder so the
+    fields about to be acquired can be browsed on their own. Each copy is named
+    ``<position>__<name>.png`` (the position prefix dropped when the group is unknown) so the
+    selections group by well / grid center.
+
+    Best-effort, called from :meth:`FovSelection.finalize_debug_summary` alongside
+    :func:`finalize_summary_csv`: it runs at the end of the pre-scan and must never raise out
+    of ``teardown_sequence``. A no-op when ``prescan_fov/`` was never written (e.g.
+    ``save_decision`` off); a per-file copy failure is logged and skipped.
+    """
+    import shutil
+
+    debug_dir = Path(debug_dir)
+    src_dir = debug_dir / PRESCAN_FOV_DIRNAME
+    if not src_dir.is_dir():
+        return
+    dst_dir = debug_dir / SELECTED_FOV_DIRNAME
+    dst_dir.mkdir(parents=True, exist_ok=True)
+
+    copied = 0
+    for name in passed:
+        safe = file_stem_name(name)
+        src = src_dir / f"{safe}.png"
+        if not src.exists():
+            logger.warning(
+                "FOV selection: selected FOV %s has no projection PNG at %s; skipping",
+                name,
+                src,
+            )
+            continue
+        position = fov_group.get(name)
+        prefix = f"{file_stem_name(position)}__" if position else ""
+        dst = dst_dir / f"{prefix}{safe}.png"
+        try:
+            shutil.copy2(src, dst)
+            copied += 1
+        except OSError:
+            logger.exception(
+                "FOV selection: could not copy selected-FOV PNG %s -> %s; continuing",
+                src,
+                dst,
+            )
+    logger.info(
+        "FOV selection: gathered %d of %d selected-FOV projection PNG(s) into %s",
+        copied,
+        len(passed),
+        dst_dir,
     )
 
 

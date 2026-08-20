@@ -2,13 +2,15 @@
 
 These helpers are called by :meth:`shrimpy.engines.base_engine.BaseEngine.acquire`
 between the pre-scan and the timelapse, but the logic is pure FOV-selection domain (no
-engine state), so it lives here beside the rest of the package rather than on the engine:
+engine state), so it lives here beside the rest of the package rather than on the engine.
+They are the once-per-run acquisition records/actions; the per-FOV pre-scan data traces
+(PNGs, feature CSV, reconstruction zarr) live in
+:mod:`shrimpy.fov_selection.prescan_artifacts`.
 
 - :func:`save_selected_config` records the acquisition config with the SELECTED FOVs
   filled into ``stage_positions`` (a descriptive record; nothing reads it back).
-- :func:`launch_feature_viewer` opens the feature viewer on a calibration pre-scan.
-- :func:`write_rank_profile` dumps the config's ``model`` block beside the feature CSV so
-  the viewer's Rank tab can seed from it.
+- :func:`launch_feature_viewer` opens the feature viewer on a calibration pre-scan,
+  seeding its Rank tab inline from the config's ``model`` block (no file written).
 
 Every function is best-effort: a failure to write/launch an artifact is logged, never
 raised, so it cannot take the acquisition down between the two runs.
@@ -36,11 +38,11 @@ def save_selected_config(
     that gap filled: one entry per selected FOV carrying its absolute ``x``/``y``,
     the well's ``ZDrive`` coarse focus, and its ``plate_row``/``plate_col``.
 
-    Saved as ``config_<experiment folder>.yaml`` in the experiment folder, beside
-    the hand-written ``config.yaml`` it mirrors. A purely descriptive record of what
-    the run chose -- nothing reads it back. Because the name follows the FOLDER
-    rather than the acquisition, a second acquisition in the same folder would land
-    on it; ``run_index`` is appended (``config_<folder>_1.yaml``) so an existing
+    Saved as ``config_for_recovery.yaml`` in the experiment folder, beside the
+    hand-written ``config.yaml`` it mirrors. A purely descriptive record of what the
+    run chose (a config you could re-run to reacquire the same FOVs) -- nothing reads
+    it back. Only when that name is already taken (a second acquisition in the same
+    folder) is ``run_index`` appended (``config_for_recovery_1.yaml``), so an existing
     record is not silently replaced.
 
     ``exclude_defaults`` keeps the file close to the hand-written config rather than
@@ -53,10 +55,9 @@ def save_selected_config(
     """
     import yaml
 
-    stem = f"config_{output_dir.name}"
-    if run_index is not None:
-        stem = f"{stem}_{run_index}"
-    path = output_dir / f"{stem}.yaml"
+    path = output_dir / "config_for_recovery.yaml"
+    if path.exists() and run_index is not None:
+        path = output_dir / f"config_for_recovery_{run_index}.yaml"
     try:
         data = timelapse_seq.model_dump(mode="json", exclude_defaults=True)
         setup = data.get("setup")
@@ -86,12 +87,13 @@ def launch_feature_viewer(csv_path: Path | None, model_cfg: dict | None = None) 
 
     Launched as a detached subprocess (``python -m
     shrimpy.fov_selection.feature_viewer <csv>``) so its Qt event loop stays clear
-    of the acquisition process. When ``model_cfg`` carries a ``features`` block, it
-    is written beside the CSV and passed via ``--rank-profile`` so the Rank tab opens
-    pre-populated with the config's ``fov_selection.model`` curves (merged over the
-    data-seeded defaults) rather than bare defaults. Never raises: the calibration
-    data is already on disk, so a failure to launch is logged with the manual command
-    rather than taking the run down.
+    of the acquisition process. When the config's ``model_cfg`` carries a ``features``
+    block, it is passed INLINE (``--rank-profile-json``, no file written to disk) so the
+    Rank tab opens pre-populated with the config's ``fov_selection.model`` curves (merged
+    over the data-seeded defaults). A model with no ``features`` mapping (e.g. a trained
+    tree loaded from a ``.joblib``) has no curves to show, so the viewer falls back to the
+    data-seeded defaults. Never raises: the calibration data is already on disk, so a
+    failure to launch is logged with the manual command rather than taking the run down.
     """
     if csv_path is None or not Path(csv_path).exists():
         logger.warning(
@@ -101,11 +103,11 @@ def launch_feature_viewer(csv_path: Path | None, model_cfg: dict | None = None) 
             csv_path,
         )
         return
+    import json
     import subprocess
     import sys
 
     csv_path = Path(csv_path)
-    profile_path = write_rank_profile(csv_path, model_cfg)
     logger.info("FOV-selection calibration: launching the feature viewer on %s", csv_path)
     cmd = [
         sys.executable,
@@ -114,8 +116,10 @@ def launch_feature_viewer(csv_path: Path | None, model_cfg: dict | None = None) 
         "--start-tab",
         "rank",
     ]
-    if profile_path is not None:
-        cmd += ["--rank-profile", str(profile_path)]
+    if model_cfg and model_cfg.get("features"):
+        # Seed the Rank tab straight from the config's model, without writing a profile
+        # file beside the data -- the user saves one from the viewer if they want it.
+        cmd += ["--rank-profile-json", json.dumps(model_cfg)]
     cmd.append(str(csv_path))
     try:
         subprocess.Popen(cmd)
@@ -125,30 +129,3 @@ def launch_feature_viewer(csv_path: Path | None, model_cfg: dict | None = None) 
             "manually: `python -m shrimpy.fov_selection.feature_viewer %s`.",
             csv_path,
         )
-
-
-def write_rank_profile(csv_path: Path, model_cfg: dict | None) -> Path | None:
-    """Write the config's ``model`` block beside the CSV so the viewer can seed the
-    Rank tab from it (``--rank-profile``). Returns the file path, or ``None`` when
-    there is nothing to seed (no model, or a model with no ``features`` mapping, e.g.
-    a trained-tree model loaded from a ``.joblib``). Never raises: seeding is a
-    convenience, so a write failure just falls back to the data-seeded defaults.
-    """
-    if not model_cfg or not model_cfg.get("features"):
-        return None
-    import yaml
-
-    profile_path = csv_path.with_name(csv_path.stem + "_config_ranking_profile.yaml")
-    try:
-        profile_path.write_text(
-            yaml.safe_dump(model_cfg, sort_keys=False, default_flow_style=False),
-            encoding="utf-8",
-        )
-    except Exception:
-        logger.exception(
-            "FOV-selection calibration: could not write the config ranking profile to "
-            "%s; the viewer will open with data-seeded defaults",
-            profile_path,
-        )
-        return None
-    return profile_path

@@ -32,7 +32,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from shrimpy.fov_selection.plate_naming import plate_labels
+from shrimpy.fov_selection import prescan_artifacts
+from shrimpy.fov_selection.plate_naming import file_stem_name, plate_labels
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -61,9 +62,9 @@ def sibling_artifact_paths(data_path: Path | None, run_index: int | None = None)
     ``<name>.ome.zarr`` is still free, the next run picks the same name, and its worker
     appends to the dead run's ``fov_summary.csv``.
 
-    The selected-FOV config artifact is deliberately NOT here: it is named after the
-    experiment FOLDER, not the acquisition, so it does not vary with the candidate name --
-    including it would make every candidate look taken.
+    The selected-FOV config artifact is deliberately NOT here: it uses the fixed
+    ``config_for_recovery.yaml`` name, not the acquisition's, so it does not vary with the
+    candidate name -- including it would make every candidate look taken.
     """
     if data_path is None:
         return []
@@ -187,6 +188,9 @@ class FovSelection:
         self._top_fov = int(top_fov) if top_fov is not None else None
         # FOV name -> the position it belongs to, so top_fov is applied within each position.
         self._fov_group = self._build_fov_groups(sequence)
+        # FOV filename -> (well_row, well_col) labels, stamped onto fov_summary.csv so the
+        # feature viewer can group the pre-scan FOVs by well (see _build_well_coords).
+        self._well_coords = self._build_well_coords(sequence)
         self._is_vs = "vs" in self._steps
         # `target` (cells | nuclei) is the ONE object FOV selection segments and scores. It
         # drives: (a) how the reconstruction outputs are reduced to a single segmentation
@@ -288,10 +292,11 @@ class FovSelection:
 
     @staticmethod
     def _matrix_stem_for(data_path: Path | None) -> str | None:
-        """Feature-viewer CSV / PNG-folder stem, ``<acq>_fov_feature_matrix``.
+        """Stem for the optional best-focus-Z debug CSV, ``<acq>_fov_feature_matrix``.
 
-        Derived from the output store name (``<acq>.ome.zarr`` -> ``<acq>``) so the
-        calibration CSV and its sibling image folders share the stem the viewer expects.
+        Derived from the output store name (``<acq>.ome.zarr`` -> ``<acq>``). The main
+        calibration table and its image folders now use fixed names (``fov_summary.csv`` /
+        ``prescan_fov`` / ``prescan_mask``); this stem only labels the best-focus-Z CSV.
         """
         if data_path is None:
             return None
@@ -405,6 +410,33 @@ class FovSelection:
             else:
                 groups[name] = _FOV_FIELD_SUFFIX.sub("", name) or name
         return groups
+
+    @staticmethod
+    def _build_well_coords(sequence: MDASequence) -> dict[str, tuple[str, int]]:
+        """Map each candidate FOV's *filename* -> its ``(well_row, well_col)`` plate labels.
+
+        The feature viewer groups FOVs by the ``well_row`` / ``well_col`` columns
+        (:meth:`FeatureViewer._group_positions_by_well`), so writing them onto
+        ``fov_summary.csv`` (:func:`shrimpy.fov_selection.prescan_artifacts.stamp_well_columns`)
+        lets the viewer group a pre-scan by well. The labels are the human plate form the rest
+        of the codebase uses -- ``well_row`` a letter (``"B"``), ``well_col`` a one-based int
+        (``4``) -- so the viewer's "Well B/4" headers match the ``position`` column and the
+        OME-Zarr paths.
+
+        Keyed by ``filename`` (``file_stem_name(name)``, the CSV's join column and the PNG
+        stem) so it lines up with both the normal and calibration CSV regardless of how a name
+        sanitizes. Only positions on a plate (carrying ``plate_row``/``plate_col``) are
+        included; off-plate grid candidates have no well and are omitted, so the viewer falls
+        back to a single "All FOVs" group for them.
+        """
+        coords: dict[str, tuple[str, int]] = {}
+        for idx, pos in enumerate(sequence.stage_positions):
+            well = plate_labels(pos)
+            if well is None:
+                continue
+            name = pos.name or f"p{idx}"
+            coords[file_stem_name(name)] = (well[0], int(well[1]))
+        return coords
 
     def _validate_fov_selection_channel(self, sequence: MDASequence) -> None:
         names = [ch.config for ch in sequence.channels]
@@ -615,7 +647,7 @@ class FovSelection:
                     best_focus_z=self._best_focus_z,
                     z_step_um=self._z_step_um,
                     save_best_focus_z=self._save_best_focus_z,
-                    write_debug_artifacts=self._save_decision,
+                    write_prescan_artifacts=self._save_decision,
                 )
             )
             self._worker.start()
@@ -775,16 +807,17 @@ class FovSelection:
             )
 
     def finalize_debug_summary(self) -> None:
-        """Add the ``selected`` / ``rank`` columns to ``fov_summary.csv`` (call after drain).
+        """Stamp the whole-run columns onto ``fov_summary.csv`` (call after the drain).
 
-        The worker appends one row per FOV as it is decided (``name, proba, <features>``),
-        but whether a FOV is actually imaged is a whole-run property: for
-        ``ranking_by_defined_range`` it is the top-``top_fov`` cut over every score, which
-        does not exist until the last FOV is scored. So the two decision columns are
-        written here, once, over the finished table:
+        The worker appends one row per FOV as it is decided (``name, filename, proba,
+        <features>``); a few columns are properties of the WHOLE pre-scan and can only be
+        written once every FOV is scored, so they are added here, over the finished table:
 
+        ``well_row`` / ``well_col`` : the FOV's plate well (:meth:`_build_well_coords`), written
+                       in BOTH normal and calibration mode so the feature viewer can group the
+                       pre-scan FOVs by well.
         ``selected`` : 1 for the FOVs the timelapse images (:meth:`passed_position_names`),
-                       0 otherwise -- for every model type.
+                       0 otherwise -- for every model type (normal mode only).
         ``position`` : the well / grid center the FOV belongs to (:meth:`_build_fov_groups`) --
                        the group ``rank`` and the ``top_fov`` quota are computed within.
         ``rank``     : 1 = highest score WITHIN its position, ties broken by score order (so
@@ -792,31 +825,41 @@ class FovSelection:
                        ranking models; for the threshold/tree model types selection is a
                        per-FOV pass/fail with no ordering, so ``rank`` is left NaN.
 
-        A no-op when ``save_decision`` is off or the CSV was never written. The CSV
-        mechanics live in :func:`shrimpy.fov_selection.debug_artifacts.finalize_summary_csv`;
-        this method supplies the whole-run selection (passed set, groups, quota). Every
-        filesystem step there is guarded: this is debug output written at the very end of the
-        pre-scan, and it must not be able to raise out of ``teardown_sequence`` and take
-        the acquisition down with it.
-        """
-        from shrimpy.fov_selection import debug_artifacts
+        It then gathers just the selected FOVs' projection PNGs into ``selected_fov/``
+        (:func:`shrimpy.fov_selection.prescan_artifacts.save_selected_fov_pngs`) so the fields
+        the timelapse will image can be browsed on their own.
 
-        # Calibration writes the feature-viewer CSV (not fov_summary.csv) and applies no
-        # selection at all -- there is no timelapse -- so there is nothing to finalize.
-        if self._calibration_mode:
-            return
+        A no-op when ``save_decision`` is off or the CSV was never written. The selection
+        columns are skipped in calibration mode -- there is no timelapse, so nothing is
+        "selected"; its scores are filled in later from the viewer's Rank tab. The CSV
+        mechanics live in :mod:`shrimpy.fov_selection.prescan_artifacts`; this method supplies
+        the whole-run inputs (well labels, passed set, groups, quota). Every filesystem step
+        there is guarded: this is written at the very end of the pre-scan, and it must not be
+        able to raise out of ``teardown_sequence`` and take the acquisition down with it.
+        """
         if self._debug_dir is None:
             return
-        summary_path = Path(self._debug_dir) / debug_artifacts.SUMMARY_CSV_NAME
+        summary_path = Path(self._debug_dir) / prescan_artifacts.SUMMARY_CSV_NAME
         if not summary_path.exists():
             return
 
-        debug_artifacts.finalize_summary_csv(
+        # well_row/well_col first, in BOTH modes, so the viewer's per-well grouping works.
+        prescan_artifacts.stamp_well_columns(summary_path, self._well_coords)
+
+        # Calibration applies no selection (no timelapse), so there is nothing more to add.
+        if self._calibration_mode:
+            return
+
+        passed = set(self.passed_position_names())
+        prescan_artifacts.finalize_summary_csv(
             summary_path,
-            passed=set(self.passed_position_names()),
+            passed=passed,
             fov_group=self._fov_group,
             top_fov=self._top_fov,
         )
+        # Gather the selected FOVs' projection PNGs into their own folder so the fields the
+        # timelapse will image can be browsed without hunting through every candidate.
+        prescan_artifacts.save_selected_fov_pngs(self._debug_dir, passed, self._fov_group)
 
     @property
     def calibration_mode(self) -> bool:
@@ -827,10 +870,11 @@ class FovSelection:
     @property
     def calibration_matrix_csv(self) -> Path | None:
         """Feature-viewer CSV the calibration pre-scan writes (``None`` outside calibration
-        or when no debug directory is set). The engine opens the viewer on this file."""
-        if not self._calibration_mode or self._debug_dir is None or self._matrix_stem is None:
+        or when no debug directory is set). The engine opens the viewer on this file. Shares
+        the fixed ``fov_summary.csv`` name with the normal-mode decision table."""
+        if not self._calibration_mode or self._debug_dir is None:
             return None
-        return Path(self._debug_dir) / f"{self._matrix_stem}.csv"
+        return Path(self._debug_dir) / prescan_artifacts.SUMMARY_CSV_NAME
 
     @property
     def fov_selection_channel(self) -> str:
