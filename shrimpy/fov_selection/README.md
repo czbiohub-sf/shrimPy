@@ -182,6 +182,13 @@ and its `proba` / `rank` are filled in later from the viewer's Rank tab. Both ca
 | normal | the acquisition config with the selected FOVs filled into `stage_positions` | `config_for_recovery.yaml` (a `_<run_index>` suffix is appended only if that name is already taken) |
 | calibration | the feature viewer, launched on `fov_summary.csv` with the Rank tab seeded from the config's `model` | no file written |
 
+**Skipped FOVs.** A candidate whose autofocus fails is skipped entirely (`setup_event` raises
+`SkipEvent`, so no frames are acquired), so it is never decided and gets NO row in
+`fov_summary.csv` (not a zero/NaN row). This does not shift the other FOVs: every row is keyed
+by the event's own position index and `pos_name`, so a skip leaves a gap, never an off-by-one.
+An imaged FOV with nothing segmented is different: it does get a row, with `coverage_frac` and
+`object_counts` as real zeros and the shape/spatial features as NaN.
+
 ## Feature viewer
 
 ```bash
