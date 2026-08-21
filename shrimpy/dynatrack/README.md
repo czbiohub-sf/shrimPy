@@ -158,7 +158,7 @@ if self._dynatrack is not None:
 
 # in the event iterator:
 if last_t is not None and t_idx != last_t:
-    self._dynatrack.drain_pending()          # backpressure at timepoint boundary
+    self._dynatrack.drain_pending()  # backpressure at timepoint boundary
 event = self._dynatrack.apply_position_update(event)
 
 # in teardown_sequence:

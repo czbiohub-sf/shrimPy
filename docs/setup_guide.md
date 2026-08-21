@@ -36,6 +36,7 @@ The Micro-manager nightly build tested and recommended for the mantis acquisitio
 
 ```python
 import mantis
+
 print(mantis.__mm_version__)
 ```
 

@@ -99,7 +99,7 @@ local_scheme = "no-local-version"
 packages = ["shrimpy"]
 
 [tool.uv.sources]
-pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "dev" }
+pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "main" }
 # plate_row/plate_col are `int | None` on main (0-based indices), not the string well
 # labels the `add-plate-row-col` branch allowed. Configs and plate naming use ints.
 ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }

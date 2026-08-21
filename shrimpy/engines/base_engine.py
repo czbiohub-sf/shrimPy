@@ -32,7 +32,6 @@ See :mod:`shrimpy.engines.mantis_engine` for the reference implementation.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import time
@@ -49,7 +48,6 @@ from pymmcore_plus.core._constants import Keyword
 from pymmcore_plus.core._sequencing import SequencedEvent
 from pymmcore_plus.mda import MDAEngine, SkipEvent
 from pymmcore_plus.metadata import SummaryMetaV1
-from pymmcore_plus.metadata.serialize import to_builtins
 from useq import MDAEvent, MDASequence
 
 from shrimpy._logging import find_log_file
@@ -680,7 +678,7 @@ class BaseEngine(MDAEngine):
         if not fov_cfg.get("enabled", False):
             # FOV selection is off -> ordinary single-run acquisition.
             logger.info(f"Starting acquisition: {name}")
-            self._run_mda(sequence, data_path, write_summary=True)
+            self._run_mda(sequence, data_path)
         else:
             # FOV selection is on -> adaptive two-run acquisition: a pre-scan run
             # decides which candidate FOVs pass selection (self._fov_passed_names,
@@ -698,7 +696,7 @@ class BaseEngine(MDAEngine):
             # reconstruction/segmentation/scoring -- i.e. the real cost of the pre-scan,
             # not just the stage-and-camera time.
             prescan_started = time.monotonic()
-            self._run_mda(prescan_seq, None, write_summary=False)
+            self._run_mda(prescan_seq, None)
             prescan_elapsed = time.monotonic() - prescan_started
             logger.info(
                 "FOV-selection pre-scan finished in %s (%d FOVs, %.1f s/FOV)",
@@ -728,7 +726,7 @@ class BaseEngine(MDAEngine):
                 return
             timelapse_seq = build_timelapse_sequence(sequence, prescan_seq, passed)
             fov_artifacts.save_selected_config(timelapse_seq, output_dir, self._run_index)
-            self._run_mda(timelapse_seq, data_path, write_summary=True)
+            self._run_mda(timelapse_seq, data_path)
 
         logger.info("Acquisition completed successfully")
 
@@ -736,8 +734,6 @@ class BaseEngine(MDAEngine):
         self,
         sequence: MDASequence,
         output: Path | None,
-        *,
-        write_summary: bool,
     ) -> None:
         """Run one ``core.mda.run``. ``output=None`` writes nothing to disk.
 
@@ -750,18 +746,8 @@ class BaseEngine(MDAEngine):
                 root_path=output, compression="blosc-zstd", format="acquire-zarr"
             )
 
-        # Write summary metadata after the zarr store is created.
-        # TODO: remove once ome-writers supports root-level metadata natively.
-        if write_summary and output is not None:
-
-            def _write_summary_metadata(_seq: MDASequence, meta: object) -> None:
-                self.mmcore.mda.events.sequenceStarted.disconnect(_write_summary_metadata)
-                if meta and isinstance(meta, dict):
-                    (output / "summary_metadata.json").write_text(
-                        json.dumps(to_builtins(meta), indent=2, default=str) + "\n"
-                    )
-
-            self.mmcore.mda.events.sequenceStarted.connect(_write_summary_metadata)
+        # Summary metadata is written by pymmcore-plus into the zarr root group's
+        # attributes, under `attributes.pymmcore_plus.summary_metadata`.
 
         self.mmcore.mda.run(
             sequence,

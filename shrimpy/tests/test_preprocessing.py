@@ -123,7 +123,9 @@ def test_call_vs_pipeline_assembles_target_channels(monkeypatch):
 def test_require_gpu_raises_when_device_is_cpu(monkeypatch):
     """FOV selection (require_gpu=True) must fail fast on a CPU-only machine."""
     torch = pytest.importorskip("torch")
-    monkeypatch.setattr("shrimpy.preprocessing._resolve_device", lambda: torch.device("cpu"))
+    monkeypatch.setattr(
+        "shrimpy.preprocessing._resolve_device", lambda *a, **k: torch.device("cpu")
+    )
 
     with pytest.raises(RuntimeError, match="GPU required but none detected"):
         build_preprocessor(ZYX, ["phase"], require_gpu=True)
@@ -132,7 +134,9 @@ def test_require_gpu_raises_when_device_is_cpu(monkeypatch):
 def test_require_gpu_false_allows_cpu(monkeypatch):
     """DynaTrack / default callers keep working on CPU (no fail-fast)."""
     torch = pytest.importorskip("torch")
-    monkeypatch.setattr("shrimpy.preprocessing._resolve_device", lambda: torch.device("cpu"))
+    monkeypatch.setattr(
+        "shrimpy.preprocessing._resolve_device", lambda *a, **k: torch.device("cpu")
+    )
 
     # Default require_gpu=False: builds without raising on CPU.
     assert build_preprocessor(ZYX, ["phase"], require_gpu=False) is not None
@@ -156,3 +160,61 @@ def test_flat_field_bf_matches_biahub_reference():
     out = pre._flat_field_BF(torch.as_tensor(vol, dtype=torch.float32)).numpy()
 
     assert np.allclose(ref, out, atol=1e-2)
+
+
+def test_no_phase_step_does_not_import_waveorder(monkeypatch):
+    """A pipeline without phase must build without waveorder installed.
+
+    waveorder is a heavy optional dependency and only phase reconstruction calls
+    into it -- flat-field is pure torch, deskew is biahub, VS is cytoland. Before
+    this was split out, ``warm_up`` resolved the device through waveorder
+    unconditionally, so a flat-field-only pipeline raised ModuleNotFoundError on
+    an install that legitimately lacked it.
+    """
+    pytest.importorskip("torch")
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _no_waveorder(name, *args, **kwargs):
+        if name.startswith("waveorder"):
+            raise ModuleNotFoundError(f"No module named {name!r}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _no_waveorder)
+
+    assert build_preprocessor(ZYX, ["flatfield"]) is not None
+
+
+def test_warm_up_defers_to_waveorder_only_for_phase(monkeypatch):
+    """With phase configured, waveorder owns the device choice.
+
+    The transfer function and the inverse must land on the device waveorder
+    picked, so the phase path keeps deferring to it; every other pipeline
+    resolves the device with torch directly.
+    """
+    torch = pytest.importorskip("torch")
+    calls: list[bool] = []
+
+    def _fake_resolve(use_waveorder=True):
+        calls.append(use_waveorder)
+        return torch.device("cpu")
+
+    monkeypatch.setattr("shrimpy.preprocessing._resolve_device", _fake_resolve)
+    monkeypatch.setattr(
+        "shrimpy.preprocessing._LabelfreePreprocessor._compute_transfer_function",
+        lambda self: None,
+    )
+
+    _bare_preprocessor(phase_settings=object()).warm_up()
+    assert calls == [True]
+
+    calls.clear()
+    _bare_preprocessor(apply_flatfield=True).warm_up()
+    assert calls == [False]
+
+
+def test_needs_waveorder_tracks_the_phase_step():
+    assert _bare_preprocessor(phase_settings=object())._needs_waveorder is True
+    assert _bare_preprocessor(apply_flatfield=True)._needs_waveorder is False
+    assert _bare_preprocessor(vs_config={"m": 1})._needs_waveorder is False

@@ -56,11 +56,28 @@ def _settings_kwargs(func: Callable, settings: Any) -> dict[str, Any]:
     return {k: v for k, v in settings.model_dump().items() if k in accepted}
 
 
-def _resolve_device() -> torch.device:
-    """Return the best available torch device (lazy import)."""
-    from waveorder.device import resolve_device
+def _resolve_device(use_waveorder: bool = True) -> torch.device:
+    """Return the best available torch device (lazy import).
 
-    device = resolve_device("auto")
+    ``waveorder`` owns the device choice when phase reconstruction runs, so the
+    transfer function and the inverse both land where waveorder expects. It is a
+    heavy optional dependency though, and a pipeline of flat-field / deskew /
+    virtual-staining steps never calls into it -- so for those the device is
+    resolved with torch directly and waveorder is not imported at all. Pass
+    ``use_waveorder=False`` to force the torch-only path.
+    """
+    if use_waveorder:
+        from waveorder.device import resolve_device
+
+        device = resolve_device("auto")
+    else:
+        import torch
+
+        # CUDA or CPU only -- deliberately not MPS. The steps on this path are
+        # biahub's deskew and cytoland's VS, neither of which is tested against
+        # the Metal backend; silently moving a Mac run onto MPS trades a working
+        # CPU run for an unsupported-operator failure deep in a dependency.
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info("Preprocessing compute device: %s", device)
     return device
 
@@ -178,13 +195,24 @@ class _LabelfreePreprocessor:
         self._vs_target_channels: list[str] = ["nuclei", "membrane"]
         self._vs_step: int = 1
 
+    @property
+    def _needs_waveorder(self) -> bool:
+        """Whether this pipeline calls into waveorder at all.
+
+        Only phase reconstruction does. Flat-field is pure torch, deskew is
+        biahub, and virtual staining is cytoland -- so a pipeline without a
+        phase step must not import waveorder, which is a heavy optional
+        dependency (and absent from a `fov`-only install).
+        """
+        return self._phase_settings is not None
+
     def warm_up(self) -> None:
         """Pre-compute the transfer function and load the VS model.
 
         Called before acquisition starts so the first reconstruction doesn't
         pay the initialization cost.
         """
-        self._device = _resolve_device()
+        self._device = _resolve_device(self._needs_waveorder)
         if self._require_gpu and self._device.type == "cpu":
             raise RuntimeError(
                 "GPU required but none detected: the preprocessing compute device "
