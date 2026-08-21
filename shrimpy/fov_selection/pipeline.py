@@ -146,13 +146,13 @@ def _best_focus_z(
 # spread), i.e. WITHOUT regionprops shape props or cKDTree spacing. When the model only needs
 # these, the expensive per-object extraction is skipped. Values are identical to the ones the
 # full path produces (group_features / mask_gap_features call the same code).
-CHEAP_FEATURE_KEYS = frozenset({"coverage_frac", "object_counts", "mask_occupancy_entropy"})
+MASK_ONLY_FEATURE_KEYS = frozenset({"coverage_frac", "object_counts", "mask_occupancy_entropy"})
 
 
-def _cheap_features(mask: np.ndarray, keys: set[str]) -> dict[str, float]:
+def _mask_only_features(mask: np.ndarray, keys: set[str]) -> dict[str, float]:
     """Aggregate features for ``keys`` from the mask alone (no regionprops).
 
-    Numerically identical to the full path for the cheap keys (``coverage_frac`` matches
+    Numerically identical to the full path for the mask-only keys (``coverage_frac`` matches
     ``group_features``; ``object_counts`` counts distinct labels, the same as the length of
     the per-object table; ``mask_occupancy_entropy`` calls the same function
     ``mask_gap_features`` does). An empty mask yields a genuine zero for ``coverage_frac`` and
@@ -189,7 +189,8 @@ def extract_features(
     applies no matter what produced the mask. Exactly one channel must be present.
 
     ``needed`` restricts the computed columns (the config model's feature keys); when all
-    needed keys are cheap (:data:`CHEAP_FEATURE_KEYS`) the per-object extraction is skipped.
+    needed keys are mask-only (:data:`MASK_ONLY_FEATURE_KEYS`) the per-object extraction is
+    skipped.
     """
     import pandas as pd
 
@@ -202,8 +203,8 @@ def extract_features(
     mask = masks[channel]
     keys_needed = set(needed) if needed is not None else None
 
-    if keys_needed is not None and keys_needed <= CHEAP_FEATURE_KEYS:
-        agg = _cheap_features(mask, keys_needed)
+    if keys_needed is not None and keys_needed <= MASK_ONLY_FEATURE_KEYS:
+        agg = _mask_only_features(mask, keys_needed)
     else:
         rows = FeatureExtractor.object_feature_rows(mask, proj, pixel_size_um)
         if not rows:
@@ -215,8 +216,8 @@ def extract_features(
                 "shape/spatial features -> NaN",
                 channel,
             )
-            cheap = keys_needed if keys_needed is not None else CHEAP_FEATURE_KEYS
-            agg = _cheap_features(mask, set(cheap) & CHEAP_FEATURE_KEYS)
+            mask_only = keys_needed if keys_needed is not None else MASK_ONLY_FEATURE_KEYS
+            agg = _mask_only_features(mask, set(mask_only) & MASK_ONLY_FEATURE_KEYS)
         else:
             agg = FeatureExtractor.group_features(pd.DataFrame(rows))
             if keys_needed is None or (keys_needed & MASK_FEATURE_KEYS):

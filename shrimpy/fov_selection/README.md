@@ -116,16 +116,33 @@ the same knobs the feature viewer's Rank tab edits.
 
 ## Feature schema
 
-FOV selection segments one mask, so every feature is a plain key. Two groups
-(`feature_extraction.py`):
+FOV selection segments one mask, so every feature is a plain key. Features are split into
+three categories by **what input each one needs** (`feature_extraction.py`). That is a real
+distinction, not cosmetic: it is what decides how much work a per-FOV decision costs.
 
-- **FOV-level** (`FeatureExtractor.group_features`, from the per-object table):
-  `coverage_frac`, `object_counts`, `average_object_intensity`, `nn_um_mean`,
-  `nn_cv`, `com_offset_norm`, `mean_distance_to_center_fov`, `empty_grid_frac`,
-  `occupancy_entropy`, `angular_uniformity`.
-- **Mask-derived** (`FeatureExtractor.mask_gap_features`, need the label mask itself):
-  `max_empty_radius`, `mask_occupancy_entropy`, `edge_frac`,
-  `central_cov_ratio`.
+1. **Object-level** (`FeatureExtractor.object_feature_rows`): one row per segmented object
+   (area, shape, intensity, nearest-neighbor spacing). These are not model features on their
+   own; they are the intermediate per-object table that the FOV-level aggregates are computed
+   from. Building it runs `regionprops` + a KD-tree, which is the expensive part of a decision.
+2. **FOV-level aggregates** (`FeatureExtractor.group_features`, from that per-object table):
+   `coverage_frac`, `object_counts`, `average_object_intensity`, `nn_um_mean`, `nn_cv`,
+   `com_offset_norm`, `mean_distance_to_center_fov`, `empty_grid_frac`, `occupancy_entropy`,
+   `angular_uniformity`. Each is a summary of the object table, so this level needs level 1
+   first.
+3. **Mask-derived** (`FeatureExtractor.mask_gap_features`, from the label-mask pixels):
+   `max_empty_radius`, `mask_occupancy_entropy`, `edge_frac`, `central_cov_ratio`. These
+   describe the spatial layout of the foreground and cannot be recovered from object centroids,
+   so they read the mask directly rather than the object table.
+
+**Why the split matters.** A few keys are computable from the mask alone, with no object table
+at all: `coverage_frac`, `object_counts`, and `mask_occupancy_entropy` (the
+`MASK_ONLY_FEATURE_KEYS` set in `pipeline.py`). When the model only asks for those,
+`extract_features` takes a mask-only fast path and skips the `regionprops` / KD-tree extraction
+entirely; otherwise it builds the per-object table once, and both the aggregates and the
+mask-derived features draw from it. Categorizing by input dependency is what lets the pipeline
+do the minimum work for the features a given model actually requests, and it keeps the
+mask-derived features (which centroids cannot express) cleanly separate from the per-object
+aggregates.
 
 ## Feature viewer
 

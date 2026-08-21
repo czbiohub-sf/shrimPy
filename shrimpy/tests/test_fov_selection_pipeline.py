@@ -1,10 +1,10 @@
 """Tests for the FOV-selection feature pipeline.
 
 FOV selection segments ONE mask (the target) and emits plain feature keys via
-``extract_features``; when a model needs only the "cheap" aggregate features (coverage,
+``extract_features``; when a model needs only the mask-only aggregate features (coverage,
 count) the expensive per-object ``regionprops`` extraction is skipped. These tests pin the
-cheap path to be numerically identical to the full path, plus the target -> segmentation-input
-resolution and the calibration extract-all behavior.
+mask-only path to be numerically identical to the full path, plus the target ->
+segmentation-input resolution and the calibration extract-all behavior.
 """
 
 from __future__ import annotations
@@ -31,21 +31,21 @@ def _blob_mask(n: int = 40, size: int = 256, seed: int = 0) -> np.ndarray:
     return mask
 
 
-def test_cheap_features_match_full_path():
+def test_mask_only_features_match_full_path():
     mask = _blob_mask()
     inten = np.random.default_rng(1).normal(50, 10, mask.shape).astype(np.float32)
     px = 0.1133
 
     rows = FE.object_feature_rows(mask, inten, px)
     # Mirror what the full path assembles: group_features (per-object aggregates) updated
-    # with mask_gap_features (mask-derived). Cheap keys are drawn from BOTH -- coverage_frac
+    # with mask_gap_features (mask-derived). Mask-only keys are drawn from BOTH -- coverage_frac
     # from the former, mask_occupancy_entropy from the latter.
     full = FE.group_features(pd.DataFrame(rows))
     full.update(FE.mask_gap_features(mask, px))
-    cheap = pipeline._cheap_features(mask, set(pipeline.CHEAP_FEATURE_KEYS))
+    mask_only = pipeline._mask_only_features(mask, set(pipeline.MASK_ONLY_FEATURE_KEYS))
 
-    for key in pipeline.CHEAP_FEATURE_KEYS:
-        assert np.isclose(cheap[key], full[key]), key
+    for key in pipeline.MASK_ONLY_FEATURE_KEYS:
+        assert np.isclose(mask_only[key], full[key]), key
 
 
 def test_mask_occupancy_entropy_bounds_and_ordering():
@@ -96,18 +96,18 @@ def test_mask_occupancy_entropy_is_a_producible_feature_name():
     from shrimpy.fov_selection.feature_extraction import MASK_FEATURE_KEYS
 
     assert "mask_occupancy_entropy" in MASK_FEATURE_KEYS
-    assert "mask_occupancy_entropy" in pipeline.CHEAP_FEATURE_KEYS
+    assert "mask_occupancy_entropy" in pipeline.MASK_ONLY_FEATURE_KEYS
 
 
-def test_cheap_features_empty_mask_reports_zero():
+def test_mask_only_features_empty_mask_reports_zero():
     # No objects is a real measurement, not missing data: the density features must
     # be reported as genuine zeros (so the model can act on an empty FOV) rather than
     # dropped -> NaN -> median-imputed to a typical FOV -> empty FOV misclassified good.
     empty = np.zeros((16, 16), np.uint32)
-    assert pipeline._cheap_features(empty, {"coverage_frac"}) == {"coverage_frac": 0.0}
+    assert pipeline._mask_only_features(empty, {"coverage_frac"}) == {"coverage_frac": 0.0}
 
-    out = pipeline._cheap_features(empty, set(pipeline.CHEAP_FEATURE_KEYS))
-    assert set(out) == set(pipeline.CHEAP_FEATURE_KEYS)
+    out = pipeline._mask_only_features(empty, set(pipeline.MASK_ONLY_FEATURE_KEYS))
+    assert set(out) == set(pipeline.MASK_ONLY_FEATURE_KEYS)
     assert out["coverage_frac"] == 0.0
     assert out["object_counts"] == 0  # no objects is a real zero, like coverage
     # ...except mask_occupancy_entropy: the spread of a nonexistent foreground is genuinely
@@ -132,13 +132,13 @@ def test_object_counts_and_average_object_intensity():
     assert rec["average_object_intensity"] == pytest.approx(20.0)  # mean of 10 and 30
 
 
-def test_object_counts_is_cheap_and_matches_full_path():
-    # object_counts is computable from the mask alone (distinct labels), so it is a cheap key
-    # and equals the length of the per-object table on a populated mask.
-    assert "object_counts" in pipeline.CHEAP_FEATURE_KEYS
+def test_object_counts_is_mask_only_and_matches_full_path():
+    # object_counts is computable from the mask alone (distinct labels), so it is a mask-only
+    # key and equals the length of the per-object table on a populated mask.
+    assert "object_counts" in pipeline.MASK_ONLY_FEATURE_KEYS
     mask = _blob_mask()
     full = FE.group_features(pd.DataFrame(FE.object_feature_rows(mask, mask.astype(np.float32), 0.1)))
-    assert pipeline._cheap_features(mask, {"object_counts"})["object_counts"] == full["object_counts"]
+    assert pipeline._mask_only_features(mask, {"object_counts"})["object_counts"] == full["object_counts"]
 
 
 def test_extract_features_empty_mask_reports_zero_coverage():
@@ -154,7 +154,7 @@ def test_extract_features_empty_mask_reports_zero_coverage():
 
 def test_extract_features_needed_matches_full_values():
     # `needed` restricts to just those plain-key columns, and their values equal the full
-    # (all-feature) matrix values -- the cheap-path speed-up is numerically identical.
+    # (all-feature) matrix values -- the mask-only-path speed-up is numerically identical.
     mask = _blob_mask()
     proj = mask.astype(np.float32)
     full = pipeline.extract_features({"cells": proj}, {"cells": mask}, 0.1133)

@@ -213,7 +213,7 @@ def _append_feature_viewer_row(debug_dir: Path, filename: str, features) -> None
     """Append one FOV's row (``filename`` + all feature columns) to ``fov_summary.csv``.
 
     Uses pandas concat so FOVs with different feature columns (e.g. no objects -> only the
-    cheap features) still align, missing columns filled with NaN -- the viewer treats an
+    mask-only features) still align, missing columns filled with NaN -- the viewer treats an
     all-NaN column within a dataset as absent. ``filename`` (== the PNG stem) is inserted
     first so the viewer's 1:1 CSV-to-image join works. The CSV shares the fixed
     ``fov_summary.csv`` name with the normal-mode decision table, so calibration and normal
