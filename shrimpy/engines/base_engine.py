@@ -576,8 +576,8 @@ class BaseEngine(MDAEngine):
         # coordinator, so the branch is decided by config alone.
         calibration_mode = bool(fov_selection_config(sequence).get("calibration_mode", False))
         if calibration_mode:
-            # Calibration pre-scan: no selection / no timelapse. Capture the
-            # feature-viewer CSV so acquire() can open the viewer on it.
+            # Calibration pre-scan: no timelapse. Capture the feature-viewer CSV so acquire()
+            # can open the viewer on it; there is no selection to hand to a timelapse.
             self._fov_calibration_csv = self._fov.calibration_matrix_csv
             self._fov_passed_names = []
             logger.info(
@@ -588,22 +588,20 @@ class BaseEngine(MDAEngine):
                 self._fov_calibration_csv,
             )
         else:
-            # Capture the selection FIRST, before anything that touches the filesystem.
-            # Ordering matters: this used to run after finalize_debug_summary(), so a
-            # PermissionError writing the debug CSV (a spreadsheet app holding it open)
-            # aborted teardown before _fov_passed_names was ever assigned -- the timelapse
-            # was then skipped for "no FOVs passed" despite a perfectly good selection.
-            # The debug writers are individually guarded now; this ordering makes the
-            # science independent of them regardless.
+            # Capture the selection FIRST, before the filesystem writes below. Ordering
+            # matters: finalize_debug_summary() used to run before _fov_passed_names was
+            # assigned, so a PermissionError writing the debug CSV (a spreadsheet app holding
+            # it open) aborted teardown with the list empty -- the timelapse was then skipped
+            # for "no FOVs passed" despite a perfectly good selection. The debug writers are
+            # individually guarded now; this ordering makes the science independent of them.
             self._fov_passed_names = self._fov.passed_position_names()
-            logger.info(
-                "FOV selection: %d/%d FOVs passed: %s",
-                len(self._fov_passed_names),
-                len(sequence.stage_positions),
-                self._fov_passed_names,
-            )
-            self._fov.log_selection_summary()
-            self._fov.finalize_debug_summary()
+
+        # Post-drain logging + CSV finalize run in EVERY mode: the selection summary (which
+        # FOVs the model selected) and the well / decision columns on fov_summary.csv are
+        # recorded whether or not a timelapse follows -- calibration reports what WOULD be
+        # selected. Both are individually guarded, so a failure here cannot lose the selection.
+        self._fov.log_selection_summary()
+        self._fov.finalize_debug_summary()
         self.mmcore.mda.events.frameReady.disconnect(self._fov.on_frame_ready)
         self._fov.shutdown()
         self._fov = None

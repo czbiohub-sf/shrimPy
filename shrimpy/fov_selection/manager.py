@@ -800,22 +800,30 @@ class FovSelection:
         return kept
 
     def log_selection_summary(self) -> None:
-        """Log every decided FOV as Passed/Skipped by the final selection (call after drain).
+        """Log the final selection after the drain (call in EVERY mode).
 
-        The Passed/Skipped verdict for ``ranking_by_defined_range`` is the per-position top-K
-        ranking outcome, known only once every FOV has been scored -- hence a post-drain
-        summary rather than a per-FOV verdict at decision time.
+        One INFO line with the count and the PASSED FOV names, then each SKIPPED FOV (with its
+        score) at DEBUG. The per-FOV scores are already logged at decision time
+        (:meth:`_record`), so this does not repeat every score at INFO -- it records which FOVs
+        the selection kept. In calibration mode there is no timelapse, but this still reports
+        which FOVs the current model WOULD select, so the summary is meaningful in every mode.
+
+        The Passed/Skipped split for ``ranking_by_defined_range`` is the per-position top-K
+        outcome, known only once every FOV has been scored -- hence a post-drain summary.
         """
-        passed = set(self.passed_position_names())
+        passed = self.passed_position_names()
+        passed_set = set(passed)
         with self._verdicts_lock:
             items = sorted(self._verdicts.items(), key=lambda kv: kv[1][0], reverse=True)
+        logger.info(
+            "FOV selection: %d/%d FOVs passed selection: %s",
+            len(passed_set),
+            len(items),
+            passed,
+        )
         for name, (proba, _good) in items:
-            logger.info(
-                "FOV selection: %s -> score=%.3f %s",
-                name,
-                proba,
-                "Passed" if name in passed else "Skipped",
-            )
+            if name not in passed_set:
+                logger.debug("FOV selection: %s -> score=%.3f Skipped", name, proba)
 
     def finalize_debug_summary(self) -> None:
         """Stamp the whole-run columns onto ``fov_summary.csv`` (call after the drain).

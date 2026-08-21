@@ -374,8 +374,11 @@ def _worker_loop(
                         "elapsed": elapsed,
                     }
                 )
-                log.info(
-                    "FOV-selection worker: %s -> score=%.3f (%.1fs)",
+                # DEBUG, not INFO: the manager logs the same score with the more useful
+                # acquired->decision latency in the main process (see FovSelection._record),
+                # so logging it again here at INFO would just duplicate every FOV's score.
+                log.debug(
+                    "FOV-selection worker: %s -> score=%.3f (compute %.1fs)",
                     name,
                     proba,
                     elapsed,

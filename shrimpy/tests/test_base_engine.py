@@ -788,6 +788,33 @@ def test_teardown_captures_selection_before_debug_writes():
     assert engine._fov_passed_names == ["p0_0019", "p0_0021", "p0_0016"]
 
 
+def test_calibration_teardown_still_logs_selection_and_finalizes():
+    """Calibration mode must run the post-drain summary + CSV finalize too, not only the
+    normal path -- so the log records which FOVs the model would select and the well columns
+    are stamped even when no timelapse follows."""
+    engine = BaseEngine.__new__(BaseEngine)
+    engine._dynatrack = None
+    engine._fov_passed_names = None
+    core = MagicMock()
+    engine._mmcore_ref = weakref.ref(core)
+
+    fov = MagicMock()
+    fov.num_decided = 3
+    fov.calibration_matrix_csv = "run/acq_fov_debug/fov_summary.csv"
+    engine._fov = fov
+
+    sequence = MDASequence(
+        stage_positions=[{"x": 0, "y": 0}],
+        metadata={"fov_selection": {"calibration_mode": True}},
+    )
+    with patch.object(MDAEngine, "teardown_sequence"):
+        engine.teardown_sequence(sequence)
+
+    fov.log_selection_summary.assert_called_once()
+    fov.finalize_debug_summary.assert_called_once()
+    assert engine._fov_passed_names == []  # no timelapse selection in calibration
+
+
 # ---------------------------------------------------------------------------
 # _get_next_acquisition_name() — leftovers from crashed runs
 # ---------------------------------------------------------------------------
