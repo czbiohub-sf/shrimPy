@@ -148,9 +148,9 @@ metadata:
     #   ranking_by_defined_range: soft desirability score; `top_fov: N` is REQUIRED (keeps the
     #   N highest-scoring FOVs per position). Each feature needs a `shape`
     #   (gaussian|lognormal|sigmoid) + optional `weight`. Feature keys are plain (no channel
-    #   prefix); available: coverage_frac, nn_um_mean, nn_cv, com_offset_norm,
+    #   prefix); available: coverage_frac, object_counts, average_object_intensity, nn_um_mean, nn_cv, com_offset_norm,
     #   mean_distance_to_center_fov, empty_grid_frac, occupancy_entropy, angular_uniformity,
-    #   max_radius_corner_to_edge, mask_occupancy_entropy, edge_frac, central_cov_ratio.
+    #   max_empty_radius, mask_occupancy_entropy, edge_frac, central_cov_ratio.
     model:
       type: ranking_by_defined_range
       top_fov: 25
@@ -161,7 +161,7 @@ metadata:
           center: 0.12288
           fwhm: 0.08885000000000001
           weight: 1.0
-        max_radius_corner_to_edge:
+        max_empty_radius:
           shape: gaussian
           center: 49.80718
           fwhm: 25.977580000000003

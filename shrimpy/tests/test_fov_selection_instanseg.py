@@ -95,7 +95,7 @@ def test_rdf_pixel_size_missing_or_malformed_returns_none():
 
 
 def test_mask_returned_on_the_original_pixel_grid():
-    # Downstream features (coverage_frac, max_radius_corner_to_edge) are computed against the acquisition
+    # Downstream features (coverage_frac, max_empty_radius) are computed against the acquisition
     # pixel_size_um, so the mask must come back at the input's shape no matter how it was rescaled.
     seg = _fake_segmenter(pixel_size_um=0.35)
     img = np.random.default_rng(0).normal(300, 40, (512, 400)).astype(np.float32)

@@ -109,9 +109,36 @@ def test_cheap_features_empty_mask_reports_zero():
     out = pipeline._cheap_features(empty, set(pipeline.CHEAP_FEATURE_KEYS))
     assert set(out) == set(pipeline.CHEAP_FEATURE_KEYS)
     assert out["coverage_frac"] == 0.0
+    assert out["object_counts"] == 0  # no objects is a real zero, like coverage
     # ...except mask_occupancy_entropy: the spread of a nonexistent foreground is genuinely
     # undefined, so NaN is the honest value (there is nothing for a model to act on).
     assert np.isnan(out["mask_occupancy_entropy"])
+
+
+def test_object_counts_and_average_object_intensity():
+    # object_counts = number of segmented objects; average_object_intensity = mean over
+    # objects of each object's mean-under-mask intensity.
+    from shrimpy.fov_selection.feature_extraction import group_features
+
+    mask = np.zeros((64, 64), np.uint32)
+    mask[8:16, 8:16] = 1
+    mask[40:48, 40:48] = 2
+    inten = np.zeros((64, 64), np.float32)
+    inten[8:16, 8:16] = 10.0
+    inten[40:48, 40:48] = 30.0
+
+    rec = group_features(pd.DataFrame(FE.object_feature_rows(mask, inten, 0.1)))
+    assert rec["object_counts"] == 2
+    assert rec["average_object_intensity"] == pytest.approx(20.0)  # mean of 10 and 30
+
+
+def test_object_counts_is_cheap_and_matches_full_path():
+    # object_counts is computable from the mask alone (distinct labels), so it is a cheap key
+    # and equals the length of the per-object table on a populated mask.
+    assert "object_counts" in pipeline.CHEAP_FEATURE_KEYS
+    mask = _blob_mask()
+    full = FE.group_features(pd.DataFrame(FE.object_feature_rows(mask, mask.astype(np.float32), 0.1)))
+    assert pipeline._cheap_features(mask, {"object_counts"})["object_counts"] == full["object_counts"]
 
 
 def test_extract_features_empty_mask_reports_zero_coverage():

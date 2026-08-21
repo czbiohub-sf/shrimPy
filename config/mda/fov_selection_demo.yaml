@@ -221,10 +221,10 @@ metadata:
     # FOV-goodness model (see shrimpy/fov_selection/fov_model.py). Pick ONE `model:` block.
     # Models read features by NAME only; keys are plain (selection segments ONE mask, no
     # channel prefix). Available features:
-    #   FOV-level    : coverage_frac, nn_um_mean, nn_cv, com_offset_norm,
+    #   FOV-level    : coverage_frac, object_counts, average_object_intensity, nn_um_mean, nn_cv, com_offset_norm,
     #                  mean_distance_to_center_fov, empty_grid_frac, occupancy_entropy,
     #                  angular_uniformity
-    #   mask-derived : max_radius_corner_to_edge, mask_occupancy_entropy, edge_frac,
+    #   mask-derived : max_empty_radius, mask_occupancy_entropy, edge_frac,
     #                  central_cov_ratio
     # One block is active below; the other two are commented alternatives.
 
@@ -263,7 +263,7 @@ metadata:
           center: 0.68376
           fwhm: 0.17561
           weight: 1.0
-        max_radius_corner_to_edge:
+        max_empty_radius:
           shape: gaussian
           center: 21.96101
           fwhm: 7.81154

@@ -146,26 +146,30 @@ def _best_focus_z(
 # spread), i.e. WITHOUT regionprops shape props or cKDTree spacing. When the model only needs
 # these, the expensive per-object extraction is skipped. Values are identical to the ones the
 # full path produces (group_features / mask_gap_features call the same code).
-CHEAP_FEATURE_KEYS = frozenset({"coverage_frac", "mask_occupancy_entropy"})
+CHEAP_FEATURE_KEYS = frozenset({"coverage_frac", "object_counts", "mask_occupancy_entropy"})
 
 
 def _cheap_features(mask: np.ndarray, keys: set[str]) -> dict[str, float]:
     """Aggregate features for ``keys`` from the mask alone (no regionprops).
 
     Numerically identical to the full path for the cheap keys (``coverage_frac`` matches
-    ``group_features``; ``mask_occupancy_entropy`` calls the same function
-    ``mask_gap_features`` does). An empty mask yields a genuine zero for
-    ``coverage_frac``: "no objects" is a real measurement, not missing data, so it is
-    reported faithfully for the model to act on -- NOT dropped to NaN, which the median
-    imputer would then fill with a typical FOV's value and make an empty FOV look good.
-    ``mask_occupancy_entropy`` is NaN on an empty mask, because the spread of a
-    nonexistent foreground is genuinely undefined rather than "perfectly concentrated".
+    ``group_features``; ``object_counts`` counts distinct labels, the same as the length of
+    the per-object table; ``mask_occupancy_entropy`` calls the same function
+    ``mask_gap_features`` does). An empty mask yields a genuine zero for ``coverage_frac`` and
+    ``object_counts``: "no objects" is a real measurement, not missing data, so it is reported
+    faithfully for the model to act on -- NOT dropped to NaN, which the median imputer would
+    then fill with a typical FOV's value and make an empty FOV look good.
+    ``mask_occupancy_entropy`` is NaN on an empty mask, because the spread of a nonexistent
+    foreground is genuinely undefined rather than "perfectly concentrated".
     """
     m = np.asarray(mask)
     h, w = m.shape
     out: dict[str, float] = {}
     if "coverage_frac" in keys:
         out["coverage_frac"] = float(np.count_nonzero(m) / (w * h))
+    if "object_counts" in keys:
+        ids = np.unique(m)
+        out["object_counts"] = int(ids[ids != 0].size)
     if "mask_occupancy_entropy" in keys:
         out["mask_occupancy_entropy"] = FeatureExtractor.mask_occupancy_entropy(m)
     return out

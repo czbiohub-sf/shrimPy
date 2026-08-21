@@ -95,7 +95,7 @@ metadata:
           center: 25.79625
           fwhm: 5.124979999999999
           weight: 1.0
-        max_radius_corner_to_edge:
+        max_empty_radius:
           shape: gaussian
           center: 25.0
           fwhm: 10.0

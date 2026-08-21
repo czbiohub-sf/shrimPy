@@ -122,7 +122,7 @@ BASE_FEATURES = [
     "nn_cv",
     "empty_grid_frac",
     "occupancy_entropy",
-    "max_radius_corner_to_edge",
+    "max_empty_radius",
 ]
 
 

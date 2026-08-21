@@ -32,18 +32,21 @@ from skimage.measure import regionprops_table
 # produced by mask_gap_features(), so they are NOT in FEATURE_NAMES (the group_features set).
 MASK_FEATURE_KEYS = frozenset(
     {
-        "max_radius_corner_to_edge",
+        "max_empty_radius",
         "mask_occupancy_entropy",
         "edge_frac",
         "central_cov_ratio",
     }
 )
 
-# The per-variant features produced by group_features(), in output order. Coverage +
-# spacing + large-scale-void / non-uniformity features (an empty center, ring, or single
-# clump that COM / local-NN features miss). max_radius_corner_to_edge is mask-derived (mask_gap_features).
+# The per-variant features produced by group_features(), in output order: coverage, object
+# count, mean object intensity, spacing, and large-scale-void / non-uniformity features (an
+# empty center, ring, or single clump that COM / local-NN features miss). max_empty_radius is
+# mask-derived (mask_gap_features), not listed here.
 FEATURE_NAMES = [
     "coverage_frac",
+    "object_counts",
+    "average_object_intensity",
     "nn_um_mean",
     "nn_cv",
     "com_offset_norm",
@@ -160,6 +163,11 @@ class FeatureExtractor:
         rec = {
             "coverage_frac": float(g["area_px"].sum() / (width * height)),
         }
+        # Object count and the mean of the per-object mean-under-mask intensities.
+        rec["object_counts"] = int(n)
+        rec["average_object_intensity"] = (
+            float(g["intensity_mean"].mean()) if "intensity_mean" in g.columns else np.nan
+        )
         # Nearest-neighbor spacing in PHYSICAL units (um) so it is invariant to
         # magnification (pixel size); NN distance is a local density measure, so it is
         # independent of FOV size too. nn_cv (std/mean) is a unitless ratio.
@@ -280,7 +288,7 @@ class FeatureExtractor:
     def mask_gap_features(cls, mask: np.ndarray, pixel_size_um: float) -> dict:
         """Spatial features that need the mask itself (not just centroids).
 
-        ``max_radius_corner_to_edge``: radius (um) of the largest object-free region (max over background
+        ``max_empty_radius``: radius (um) of the largest object-free region (max over background
         pixels of the distance to the nearest foreground pixel). Empty mask -> NaN.
         ``mask_occupancy_entropy``: foreground-pixel spread (see :meth:`mask_occupancy_entropy`).
         ``edge_frac``: mask-area share of objects stuck to the border band (see :meth:`edge_area_frac`).
@@ -290,7 +298,7 @@ class FeatureExtractor:
         m = np.asarray(mask)
         fg = m > 0
         keys = (
-            "max_radius_corner_to_edge",
+            "max_empty_radius",
             "mask_occupancy_entropy",
             "edge_frac",
             "central_cov_ratio",
@@ -310,7 +318,7 @@ class FeatureExtractor:
         central_cov = float(fg[central].mean()) if central.any() else float("nan")
         central_cov_ratio = central_cov / overall if overall > 0 else float("nan")
         return {
-            "max_radius_corner_to_edge": float(dt.max()) * float(pixel_size_um),
+            "max_empty_radius": float(dt.max()) * float(pixel_size_um),
             "mask_occupancy_entropy": cls.mask_occupancy_entropy(fg),
             "edge_frac": cls.edge_area_frac(m),
             "central_cov_ratio": central_cov_ratio,

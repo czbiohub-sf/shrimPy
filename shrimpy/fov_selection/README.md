@@ -120,11 +120,11 @@ FOV selection segments one mask, so every feature is a plain key. Two groups
 (`feature_extraction.py`):
 
 - **FOV-level** (`FeatureExtractor.group_features`, from the per-object table):
-  `coverage_frac`, `nn_um_mean`, `nn_cv`, `com_offset_norm`,
-  `mean_distance_to_center_fov`, `empty_grid_frac`, `occupancy_entropy`,
-  `angular_uniformity`.
+  `coverage_frac`, `object_counts`, `average_object_intensity`, `nn_um_mean`,
+  `nn_cv`, `com_offset_norm`, `mean_distance_to_center_fov`, `empty_grid_frac`,
+  `occupancy_entropy`, `angular_uniformity`.
 - **Mask-derived** (`FeatureExtractor.mask_gap_features`, need the label mask itself):
-  `max_radius_corner_to_edge`, `mask_occupancy_entropy`, `edge_frac`,
+  `max_empty_radius`, `mask_occupancy_entropy`, `edge_frac`,
   `central_cov_ratio`.
 
 ## Feature viewer
