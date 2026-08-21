@@ -146,6 +146,59 @@ do the minimum work for the features a given model actually requests, and it kee
 mask-derived features (which centroids cannot express) cleanly separate from the per-object
 aggregates.
 
+### Feature reference
+
+Together the features describe *how much* is in the FOV, *how many* objects there are, and
+*how they are arranged*. `image_for_slides/feature_visualization/` has a per-feature panel
+overlaid on one example FOV.
+
+**Object-level (from the per-object table)**
+
+- `coverage_frac` — fraction of the FOV occupied by objects (total object area / image area),
+  in `[0, 1]`. The most direct density measure: low is sparse/empty, very high is confluent.
+- `object_counts` — number of distinct segmented objects (an integer). Where `coverage_frac`
+  measures area, this measures cardinality; one big clump and many small cells can share a
+  coverage but differ greatly in count.
+- `average_object_intensity` — mean over objects of each object's mean-under-mask intensity (in
+  the projection's units). Tracks staining / signal strength and flags under- or over-exposed
+  fields.
+- `nn_um_mean` — mean nearest-neighbor distance between object centroids, in microns. A local
+  density measure; being in physical units, it is invariant to magnification and pixel size.
+- `nn_cv` — coefficient of variation (std / mean) of those nearest-neighbor distances
+  (unitless). Captures the regularity of spacing: near 0 is evenly spaced, large is a mix of
+  tight clusters and isolated objects.
+- `com_offset_norm` — distance from the mean object centroid to the FOV center, normalized by
+  the half-diagonal. 0 = objects balanced around the center, approaching 1 = skewed to one
+  side / corner (off-center or partially populated).
+- `mean_distance_to_center_fov` — mean radial distance of each centroid from the FOV center,
+  normalized by the half-diagonal. Asymmetric counterpart to `com_offset_norm`: two clusters in
+  opposite corners cancel in the center-of-mass measure but both score high here, so this
+  detects hollow-center arrangements.
+- `empty_grid_frac` — over a fixed 8x8 grid, the fraction of cells containing no object
+  centroid. High for large-scale voids (empty center, ring, single clump) that local
+  nearest-neighbor statistics miss.
+- `occupancy_entropy` — normalized Shannon entropy of object-centroid counts across that 8x8
+  grid: 1 = spread evenly across cells, 0 = concentrated in one cell.
+- `angular_uniformity` — normalized Shannon entropy of centroid *angles* around the FOV center
+  (12 sectors): 1 = objects surround the center evenly in all directions, 0 = all clustered in
+  one direction.
+
+**Mask-derived (from the foreground pixels)**
+
+- `max_empty_radius` — radius (microns) of the largest object-free region: the maximum over
+  background pixels of the distance to the nearest foreground pixel (the biggest empty circle
+  that fits). Large = a substantial gap.
+- `mask_occupancy_entropy` — normalized Shannon entropy of foreground *pixels* over an 8x8 grid
+  (1 = spread evenly, 0 = concentrated). The pixel-based analogue of `occupancy_entropy`, and
+  unlike it, independent of object count: a single large blob is still scored by how its area
+  is spread.
+- `edge_frac` — fraction of total mask area belonging to objects touching the image border
+  (within 2% of an edge), area-weighted. High = much of the segmented material is clipped by
+  the field boundary (partial objects).
+- `central_cov_ratio` — coverage inside a central disk (radius 40% of the half-diagonal)
+  divided by whole-FOV coverage. Independent of absolute coverage; reports only *where* material
+  sits: ~1 = uniform, < 1 = central void / edge ring, > 1 = center-heavy.
+
 ## Artifacts
 
 Everything lands next to the acquisition. Debug outputs live under `<name>_fov_debug/` and are
