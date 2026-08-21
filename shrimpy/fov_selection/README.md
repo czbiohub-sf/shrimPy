@@ -91,8 +91,9 @@ Everything lives under `metadata.fov_selection` in the acquisition YAML. See
 | `best_focus_z` | optics for the `best_focus_z` projection (detection NA, illumination wavelength) |
 | `segmentation` | backend `cellpose` / `instanseg` / `otsu`, plus `path`, `diameters`, thresholds |
 | `model` | the selection model (see below) |
-| `save_decision` | write per-FOV projection/mask PNGs (`prescan_fov/`, `prescan_mask/`) and `fov_summary.csv` under `<name>_fov_debug/`; after the drain, the selected FOVs' projections are also gathered into `selected_fov/`. Same folder structure in normal and calibration mode |
-| `save_pre_scan_omezarr` | write the full per-step reconstruction to `<name>_prescan.ome.zarr` |
+| `save_decision` | write the per-FOV debug outputs (projection/mask PNGs + `fov_summary.csv`); see [Artifacts](#artifacts) |
+| `save_pre_scan_omezarr` | write the full per-step reconstruction to `<name>_prescan.ome.zarr` (see [Artifacts](#artifacts)) |
+| `save_best_focus_z_for_debug` | write the detected best-focus slice/depth per FOV (only with the `best_focus_z` projection; see [Artifacts](#artifacts)) |
 | `require_gpu` | fail fast if reconstruction cannot run on a GPU (default true) |
 
 The block itself is validated by `FovSelection.from_metadata` and the coordinator when they
@@ -143,6 +144,43 @@ mask-derived features draw from it. Categorizing by input dependency is what let
 do the minimum work for the features a given model actually requests, and it keeps the
 mask-derived features (which centroids cannot express) cleanly separate from the per-object
 aggregates.
+
+## Artifacts
+
+Everything lands next to the acquisition. Debug outputs live under `<name>_fov_debug/` and are
+gated by flags in `metadata.fov_selection`; `calibration_mode` forces `save_decision` on. The
+image folders and the `fov_summary.csv` name are the SAME in both modes, so a run's output
+loads in the feature viewer either way. With no debug flags a normal run writes only
+`config_for_recovery.yaml`.
+
+**Per FOV, during the pre-scan** (written by the worker):
+
+| Flag | Artifact | Path |
+|------|----------|------|
+| `save_decision` (forced on in calibration) | projection PNG per FOV | `<name>_fov_debug/prescan_fov/<fov>.png` |
+| `save_decision` (forced on in calibration) | magenta mask-overlay PNG per FOV | `<name>_fov_debug/prescan_mask/<fov>.png` |
+| `save_decision` (forced on in calibration) | one row per FOV | `<name>_fov_debug/fov_summary.csv` |
+| `save_pre_scan_omezarr` | full per-step 3D reconstruction, one position per FOV | `<name>_prescan.ome.zarr` |
+| `save_best_focus_z_for_debug` | detected best-focus slice/depth per FOV (only with the `best_focus_z` projection) | `<name>_fov_debug/<stem>_best_focus_z.csv` |
+
+**After the drain** (written by the manager):
+
+- Both modes: `fov_summary.csv` gets `well_row` / `well_col` stamped, so the viewer can group
+  by well.
+- Normal mode only: `selected` / `position` / `rank` columns are stamped, and the selected
+  FOVs' projections are gathered into `<name>_fov_debug/selected_fov/`.
+
+The CSV columns differ by mode: normal writes `name, filename, proba, <model features>` plus
+the post-drain `selected` / `position` / `rank`; calibration writes `filename, <all features>`
+and its `proba` / `rank` are filled in later from the viewer's Rank tab. Both carry
+`well_row` / `well_col`.
+
+**Once per run** (written by the engine, between the two passes):
+
+| Mode | Artifact | Path / notes |
+|------|----------|--------------|
+| normal | the acquisition config with the selected FOVs filled into `stage_positions` | `config_for_recovery.yaml` (a `_<run_index>` suffix is appended only if that name is already taken) |
+| calibration | the feature viewer, launched on `fov_summary.csv` with the Rank tab seeded from the config's `model` | no file written |
 
 ## Feature viewer
 
