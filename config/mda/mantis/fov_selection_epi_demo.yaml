@@ -170,4 +170,5 @@ metadata:
     # FOV selection decision
     # Debug outputs (off by default):
     save_pre_scan_omezarr: False   # write the pre-scan run to <name>_prescan.ome.zarr
+    save_pre_scan_nd: False
     save_decision: True  # per-FOV masks/features/goodness under <name>_fov_debug/

@@ -125,11 +125,17 @@ class FovSelection:
         # producible feature (not just the model's) and writes the debug artifacts in the
         # viewer's standard layout, so save_decision is forced on regardless of config.
         self._calibration_mode = bool(config.get("calibration_mode", False))
+        # Optional AnnData/zarr export of the feature matrix for Embedding Atlas (nd_export).
+        # It reads fov_summary.csv after the drain, so it forces save_decision on (the CSV must
+        # exist); the export itself runs post-drain in export_prescan_nd().
+        self._save_pre_scan_nd = bool(config.get("save_pre_scan_nd", False))
         # Optional lightweight per-FOV debug artifacts (projection/mask PNGs +
         # fov_summary.csv), written by the worker to a sibling directory next to
-        # the output store. Always on in calibration mode.
+        # the output store. Always on in calibration mode and when save_pre_scan_nd is set.
         self._save_decision = (
-            bool(config.get("save_decision", False)) or self._calibration_mode
+            bool(config.get("save_decision", False))
+            or self._calibration_mode
+            or self._save_pre_scan_nd
         )
         # Optional per-FOV best-focus-Z debug CSV (detected slice + depth), written by the
         # worker only when the projection is 'best_focus_z'. Independent of save_decision, but
@@ -879,6 +885,35 @@ class FovSelection:
         # Gather the selected FOVs' projection PNGs into their own folder so the fields the
         # timelapse will image can be browsed without hunting through every candidate.
         prescan_artifacts.save_selected_fov_pngs(self._debug_dir, passed, self._fov_group)
+
+    def export_prescan_nd(self) -> None:
+        """Export ``fov_summary.csv`` to an AnnData zarr for Embedding Atlas (call post-drain).
+
+        Gated by ``fov_selection.save_pre_scan_nd`` (which forces ``save_decision`` on so the
+        CSV exists). Runs in every mode, after :meth:`finalize_debug_summary` so the CSV carries
+        the well and (normal-mode) decision columns. Best-effort: a missing optional dependency
+        (anndata) or a write failure is logged, never raised, so it cannot take the acquisition
+        down.
+        """
+        if not self._save_pre_scan_nd or self._debug_dir is None:
+            return
+        summary_path = Path(self._debug_dir) / prescan_artifacts.SUMMARY_CSV_NAME
+        if not summary_path.exists():
+            logger.warning(
+                "FOV selection: %s not found; skipping the ND (Embedding Atlas) export",
+                summary_path,
+            )
+            return
+        try:
+            from shrimpy.fov_selection import nd_export
+
+            out = nd_export.write_feature_anndata(summary_path)
+            logger.info("FOV selection: wrote the ND feature export to %s", out)
+        except Exception:
+            logger.exception(
+                "FOV selection: ND export failed for %s; the acquisition is unaffected",
+                summary_path,
+            )
 
     @property
     def calibration_mode(self) -> bool:

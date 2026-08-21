@@ -93,6 +93,7 @@ Everything lives under `metadata.fov_selection` in the acquisition YAML. See
 | `model` | the selection model (see below) |
 | `save_decision` | write the per-FOV debug outputs (projection/mask PNGs + `fov_summary.csv`); see [Artifacts](#artifacts) |
 | `save_pre_scan_omezarr` | write the full per-step reconstruction to `<name>_prescan.ome.zarr` (see [Artifacts](#artifacts)) |
+| `save_pre_scan_nd` | also export `fov_summary.csv` to an AnnData zarr for Embedding Atlas (forces `save_decision`; see [Artifacts](#artifacts)) |
 | `save_best_focus_z_for_debug` | write the detected best-focus slice/depth per FOV (only with the `best_focus_z` projection; see [Artifacts](#artifacts)) |
 | `require_gpu` | fail fast if reconstruction cannot run on a GPU (default true) |
 
@@ -169,6 +170,11 @@ loads in the feature viewer either way. With no debug flags a normal run writes 
   by well.
 - Normal mode only: `selected` / `position` / `rank` columns are stamped, and the selected
   FOVs' projections are gathered into `<name>_fov_debug/selected_fov/`.
+- With `save_pre_scan_nd`: `fov_summary.csv` is also exported to `fov_summary.zarr`, an AnnData
+  zarr v3 store for [Embedding Atlas](https://github.com/apple/embedding-atlas) (`X` = feature
+  matrix, `obs` = identity/metadata, `obsm["X_pca"]` = a PCA embedding). Needs the `fov`
+  dependency group for `anndata`; see `nd_export.py`, which also has a standalone CLI
+  (`python -m shrimpy.fov_selection.nd_export <matrix.csv>`).
 
 The CSV columns differ by mode: normal writes `name, filename, proba, <model features>` plus
 the post-drain `selected` / `position` / `rank`; calibration writes `filename, <all features>`
@@ -258,6 +264,7 @@ fov_selection/
 ├── feature_extraction.py FeatureExtractor (object-level and FOV-level features)
 ├── prescan_artifacts.py     per-FOV pre-scan PNG / CSV / OME-Zarr writers + finalize
 ├── acquisition_artifacts.py once-per-run records (recovery config, viewer launch)
+├── nd_export.py          fov_summary.csv -> AnnData zarr for Embedding Atlas (save_pre_scan_nd)
 ├── plate_naming.py       plate labels and path-name sanitizers
 └── feature_viewer/       Qt GUI
     ├── app.py            main window, Analysis tab, and the `main()` entry point

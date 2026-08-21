@@ -602,6 +602,7 @@ class BaseEngine(MDAEngine):
         # selected. Both are individually guarded, so a failure here cannot lose the selection.
         self._fov.log_selection_summary()
         self._fov.finalize_debug_summary()
+        self._fov.export_prescan_nd()
         self.mmcore.mda.events.frameReady.disconnect(self._fov.on_frame_ready)
         self._fov.shutdown()
         self._fov = None

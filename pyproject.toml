@@ -75,6 +75,7 @@ fov = [
   "scikit-image",    # regionprops object features in extract_fov_features
   "scipy",           # nearest-neighbor / spatial stats in feature extraction
   "pandas",          # feature-matrix tables throughout
+  "anndata",         # save_pre_scan_nd: feature matrix -> AnnData zarr for Embedding Atlas (nd_export)
   "matplotlib",      # figures (predict_fov_goodness, viewer)
   "joblib",          # save/load the trained tree model
   # reconstruction for the FOV pre-scan (deskew -> phase -> virtual staining).

@@ -102,4 +102,5 @@ metadata:
           weight: 1.0
     # Debug outputs. save_decision is forced on in calibration mode regardless of this flag.
     save_pre_scan_omezarr: False   # also write the per-step reconstruction to <name>_prescan.ome.zarr
+    save_pre_scan_nd: False
     save_decision: True           # feature-matrix CSV + projection/mask PNGs under <name>_fov_debug/
