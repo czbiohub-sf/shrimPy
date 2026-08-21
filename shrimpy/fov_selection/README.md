@@ -170,6 +170,35 @@ tab from the config's `model` block (passed inline, so no profile file is writte
 falling back to data-seeded defaults when the config defines no model. Use the Rank tab's
 Save button to write a ranking profile once tuned.
 
+## Logging
+
+Every module logs through the `shrimpy` logger; the CLI wires up two handlers (console at
+INFO, log file at DEBUG), and the worker subprocess attaches the same file handler, so the
+file is the complete record. The same logging happens in **both** normal and calibration mode.
+
+At **INFO** (the readable narrative) you get:
+
+- setup, once: `Starting FOV-selection pre-scan: N candidate FOVs`, the worker starting and
+  its model/segmenter `... ready` line.
+- per FOV: `deciding <name> (p, Z slices)`, one line per reconstruction step
+  (`<name> deskew ok (Xs)`, `phase ok`, `vs ok`), the projection (`best_focus_z: in-focus
+  slice ...`), `segment <target> ok (N objects)`, and a **single** score line
+  `<name> -> score=X (acquired->decision Xs)`.
+- after the drain, once: `pre-scan finished in ... (N FOVs, X s/FOV)`, the acquired->decision
+  latency average, `N/M FOVs passed selection: [names]`, and the artifact-written lines
+  (selected/rank, well columns, selected PNGs, recovery config / viewer launch).
+
+At **DEBUG** (file only) you get the detail that would otherwise be noise: the worker's own
+per-FOV score with its raw compute time (the INFO line above already reports the score with
+the more useful end-to-end latency), the per-FOV **Skipped** verdicts (the passed set is the
+INFO summary; every FOV's verdict is also in `fov_summary.csv`), and the low-level
+reconstruction steps (deskewing / phase / VS prediction).
+
+The score is logged once per FOV at INFO, and the selection is one INFO summary line, so the
+log has no duplicated per-FOV score or per-FOV verdict spam. Warnings/errors (segmentation
+failures, empty FOVs, a locked `fov_summary.csv`, a worker that will not exit) are always
+logged and never swallowed.
+
 ## Package layout
 
 ```
