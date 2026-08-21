@@ -34,8 +34,10 @@ in a worker subprocess for torch/GPU isolation:
 
 ```
 raw z-stack (fov_selection_channel)
-  → reconstruct        deskew / phase / virtual staining      (preprocessing.py)
-  → project            sum | max | middle | logstd | best_focus_z
+  # preprocessor (preprocessing.py): reconstruction only
+  → reconstruct        deskew / phase / virtual staining  → {channel: (Z, Y, X)}
+  # FOV-selection decision (this package), driven by decide_fov:
+  → project            sum | max | middle | logstd | best_focus_z   (pipeline.project_zyx)
   → reduce to ONE 2D image by `target`                         (pipeline._resolve_seg_input)
   → segment ONE mask   cellpose | instanseg | otsu             (segmentation.py)
   → features           per-object then per-FOV aggregation     (feature_extraction.py)
@@ -47,10 +49,35 @@ plain single-mask keys (for example `coverage_frac`), with no channel prefix. Th
 reads features by name only and never sees which channel produced them, so any model type
 pairs with any preprocessing.
 
+### The preprocessor is reconstruction only
+
+**Projection and segmentation are deliberately NOT part of the preprocessor.** The
+preprocessor (`shrimpy/preprocessing.py`, `build_preprocessor`) does only reconstruction
+(flatfield / deskew / phase / VS) and returns 3D channel volumes `{channel: (Z, Y, X)}`;
+projection, segmentation, feature extraction, and scoring live in this package and are driven
+by `decide_fov`. The seam sits there for three reasons:
+
+- **Reuse.** `preprocessing.py` is shared with DynaTrack, which needs the same reconstruction
+  but has a completely different downstream (position tracking, not projection + segmentation).
+  Only the reconstruction is common, so only the reconstruction belongs in the shared module.
+- **Natural 3D-to-2D boundary.** Reconstruction is the optical step that produces 3D volumes;
+  projection (which collapses Z, and for `best_focus_z` needs its own optics) and segmentation
+  are the analysis step that turns a volume into a mask. The clean handoff is "reconstructed
+  3D volumes out, 2D analysis in".
+- **Keeps the shared module free of FOV-selection concerns.** Reducing the reconstruction
+  outputs to a single mask by `target`, the one-mask feature schema, and the choice of
+  segmenter are all selection-specific, so they stay here rather than in `preprocessing.py`.
+
+In the config's `preprocessing:` list this split is explicit: the reconstruction steps
+(`flatfield` / `deskew` / `phase` / `vs`) are consumed by `build_preprocessor`, while the
+projection step and `segmentation` are consumed by `decide_fov`. With no reconstruction step
+in the list, `build_preprocessor` returns `None` and `decide_fov` segments the raw stack
+directly.
+
 ## Configuration
 
 Everything lives under `metadata.fov_selection` in the acquisition YAML. See
-`config/mda/mantis/fov_selection_demo.yaml` for a fully commented example. Key fields:
+`config/mda/fov_selection_demo.yaml` for a fully commented example. Key fields:
 
 | Field | Meaning |
 |-------|---------|
