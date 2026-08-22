@@ -11,10 +11,13 @@ microscope shrimPy drives (mantis, iSIM, Dragonfly, ...):
   sequenced vs. single events, and skipping events whose autofocus did not
   engage,
 - resetting hardware properties in ``teardown_sequence``,
-- the smart-microscopy features shared by all microscopes — currently DynaTrack
-  position tracking, switched on from ``metadata.dynatrack``,
+- the smart-microscopy features shared by all microscopes — DynaTrack position
+  tracking (``metadata.dynatrack``) and smart FOV selection
+  (``metadata.fov_selection``); each is inert unless its section enables it,
 - the :meth:`BaseEngine.acquire` entry point that runs an ``MDASequence`` and
-  writes OME-Zarr.
+  writes OME-Zarr. With FOV selection enabled this is the two-run adaptive
+  acquisition: a pre-scan decides which candidate FOVs are worth imaging, then
+  the timelapse runs on those only.
 
 Microscope-specific engines subclass it and override the pieces that differ:
 
@@ -31,6 +34,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 
 from collections.abc import Iterable
 from pathlib import Path
@@ -49,6 +53,13 @@ from useq import MDAEvent, MDASequence
 from shrimpy._logging import find_log_file
 from shrimpy.config import ShrimpyMetadata, load_config
 from shrimpy.dynatrack import DynaTrack
+from shrimpy.fov_selection import FovSelection
+from shrimpy.fov_selection import acquisition_artifacts as fov_artifacts
+from shrimpy.fov_selection.sequences import (
+    build_prescan_sequence,
+    build_timelapse_sequence,
+    fov_selection_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +117,16 @@ class BaseEngine(MDAEngine):
         self._xy_stage_device = None
         self._data_path: Path | None = None
         self._dynatrack: DynaTrack | None = None
+        self._fov: FovSelection | None = None
+        # Good FOV names from the pre-scan run, captured in teardown_sequence so
+        # acquire() can build the timelapse run after the pre-scan run returns.
+        self._fov_passed_names: list[str] = []
+        # Feature-viewer CSV written by a calibration pre-scan, captured in
+        # teardown_sequence so acquire() can open the viewer on it after the run returns.
+        self._fov_calibration_csv: Path | None = None
+        # Index appended to the acquisition name; see acquire(). Sibling artifacts
+        # append it after their own suffix.
+        self._run_index: int | None = None
 
         # Register event callbacks for logging
         mmc.mda.set_engine(self)
@@ -170,7 +191,23 @@ class BaseEngine(MDAEngine):
         # hardware state and the setup event applies the ROI.
         result = super().setup_sequence(sequence)
 
-        self._setup_dynatrack(meta, sequence)
+        # Read the pixel size only AFTER the setup event has been applied. MM resolves
+        # getPixelSizeUm() from whichever pixel-size config group currently matches the
+        # device property values, so before super().setup_sequence() it reflects leftover
+        # hardware state (whatever the GUI was last left in) rather than the state this
+        # acquisition actually runs with. Reading it early silently produced a different
+        # px_to_scan_ratio between otherwise-identical runs, which changed the deskewed
+        # X extent (the scan axis) and stretched every downstream projection / mask /
+        # physical feature. Same reason _zyx_shape() is deferred to after this point.
+        pixel_size_um = core.getPixelSizeUm()
+        logger.info(
+            "Pixel size: %.5f um/px (config %r)",
+            pixel_size_um,
+            core.getCurrentPixelSizeConfig(),
+        )
+
+        self._setup_dynatrack(meta, sequence, pixel_size_um)
+        self._setup_fov_selection(meta, sequence, pixel_size_um)
 
         return result
 
@@ -235,6 +272,7 @@ class BaseEngine(MDAEngine):
     def teardown_sequence(self, sequence: MDASequence) -> None:
         """Return the hardware to a safe idle state after the sequence."""
         self._teardown_dynatrack()
+        self._teardown_fov_selection(sequence)
 
         super().teardown_sequence(sequence)
 
@@ -419,21 +457,23 @@ class BaseEngine(MDAEngine):
     # DynaTrack position tracking
     # ------------------------------------------------------------------
 
-    def _setup_dynatrack(self, meta: ShrimpyMetadata, sequence: MDASequence) -> None:
+    def _setup_dynatrack(
+        self, meta: ShrimpyMetadata, sequence: MDASequence, pixel_size_um: float
+    ) -> None:
         """Build and start DynaTrack, if ``metadata.dynatrack`` enables it.
 
-        The XY pixel size (from the core) and the sequence z_plan step are the
-        single source of truth for all scale parameters; DynaTrack derives and
-        injects them. Called after the parent ``setup_sequence`` so the pixel
-        size and any grid-plan FOV sizes reflect the state the setup event
-        leaves the hardware in.
+        ``pixel_size_um`` and the sequence z_plan step are the single source of
+        truth for all scale parameters; DynaTrack derives and injects them.
+        Called after the parent ``setup_sequence`` so the pixel size and any
+        grid-plan FOV sizes reflect the state the setup event leaves the
+        hardware in.
         """
         core = self.mmcore
         self._dynatrack = DynaTrack.from_config(
             meta.dynatrack,
             sequence,
             data_path=self._data_path,
-            pixel_size_um=core.getPixelSizeUm(),
+            pixel_size_um=pixel_size_um,
         )
         if self._dynatrack is None:
             return
@@ -456,12 +496,9 @@ class BaseEngine(MDAEngine):
         # the setup event has applied the ROI, so getImageHeight/Width reflects
         # the actual acquired frame size (also used to build the preprocessor,
         # when configured, inside the worker).
-        zyx_shape = (
-            max(sequence.sizes.get("z", 1), 1),
-            core.getImageHeight(),
-            core.getImageWidth(),
+        self._dynatrack.start(
+            zyx_shape=self._zyx_shape(sequence), log_file_path=find_log_file()
         )
-        self._dynatrack.start(zyx_shape=zyx_shape, log_file_path=find_log_file())
 
     def _teardown_dynatrack(self) -> None:
         """Disconnect and shut down DynaTrack, if it is running."""
@@ -470,6 +507,103 @@ class BaseEngine(MDAEngine):
         self.mmcore.mda.events.frameReady.disconnect(self._dynatrack.on_frame_ready)
         self._dynatrack.shutdown()
         self._dynatrack = None
+
+    def _zyx_shape(self, sequence: MDASequence) -> tuple[int, int, int]:
+        """Acquired (Z, Y, X) frame shape for the current ROI.
+
+        Shared by DynaTrack and FOV selection when starting their worker
+        subprocesses. Called after the setup event has applied the ROI, so
+        ``getImageHeight``/``getImageWidth`` reflect the actual frame size.
+        """
+        return (
+            max(sequence.sizes.get("z", 1), 1),
+            self.mmcore.getImageHeight(),
+            self.mmcore.getImageWidth(),
+        )
+
+    # ------------------------------------------------------------------
+    # Smart FOV selection
+    # ------------------------------------------------------------------
+
+    def _setup_fov_selection(
+        self, meta: ShrimpyMetadata, sequence: MDASequence, pixel_size_um: float
+    ) -> None:
+        """Build and start FOV selection, if ``metadata.fov_selection`` enables it.
+
+        This runs for the PRE-SCAN run only: :meth:`acquire` builds a pre-scan
+        sequence (fov_selection_channel only, one timepoint, all candidate
+        positions) and runs it first, and the decision streams in via
+        ``frameReady``. The subsequent timelapse run disables ``fov_selection``
+        in its metadata, so ``from_metadata`` returns ``None`` there.
+        """
+        core = self.mmcore
+        self._fov = FovSelection.from_metadata(
+            meta.fov_selection,
+            sequence,
+            pixel_size_um=pixel_size_um,
+            data_path=self._data_path,
+            run_index=self._run_index,
+        )
+        if self._fov is None:
+            return
+
+        core.mda.events.frameReady.connect(self._fov.on_frame_ready)
+        logger.info(
+            "FOV selection pre-scan: on '%s', %d candidate positions",
+            self._fov.fov_selection_channel,
+            len(sequence.stage_positions),
+        )
+        # Reconstruction runs in a worker subprocess for the same torch/GPU
+        # isolation reason as DynaTrack; started after the ROI is applied so the
+        # acquired frame shape (used to build the transfer function) is known.
+        self._fov.start(zyx_shape=self._zyx_shape(sequence), log_file_path=find_log_file())
+
+    def _teardown_fov_selection(self, sequence: MDASequence) -> None:
+        """Capture the pre-scan's selection, then shut FOV selection down.
+
+        The passing FOV names are read before the worker is stopped so
+        :meth:`acquire` can build the timelapse run from them;
+        ``passed_position_names()`` survives ``shutdown()`` (only the frame
+        buffers are cleared, not the verdicts).
+        """
+        if self._fov is None:
+            return
+
+        self._fov.drain()
+        # Read calibration mode from the (pre-scan) sequence metadata rather than the
+        # coordinator, so the branch is decided by config alone.
+        calibration_mode = bool(fov_selection_config(sequence).get("calibration_mode", False))
+        if calibration_mode:
+            # Calibration pre-scan: no timelapse. Capture the feature-viewer CSV so acquire()
+            # can open the viewer on it; there is no selection to hand to a timelapse.
+            self._fov_calibration_csv = self._fov.calibration_matrix_csv
+            self._fov_passed_names = []
+            logger.info(
+                "FOV selection calibration: pre-scan complete, %d/%d FOVs scored "
+                "(all features extracted); feature matrix at %s",
+                self._fov.num_decided,
+                len(sequence.stage_positions),
+                self._fov_calibration_csv,
+            )
+        else:
+            # Capture the selection FIRST, before the filesystem writes below. Ordering
+            # matters: finalize_debug_summary() used to run before _fov_passed_names was
+            # assigned, so a PermissionError writing the debug CSV (a spreadsheet app holding
+            # it open) aborted teardown with the list empty -- the timelapse was then skipped
+            # for "no FOVs passed" despite a perfectly good selection. The debug writers are
+            # individually guarded now; this ordering makes the science independent of them.
+            self._fov_passed_names = self._fov.passed_position_names()
+
+        # Post-drain logging + CSV finalize run in EVERY mode: the selection summary (which
+        # FOVs the model selected) and the well / decision columns on fov_summary.csv are
+        # recorded whether or not a timelapse follows -- calibration reports what WOULD be
+        # selected. Both are individually guarded, so a failure here cannot lose the selection.
+        self._fov.log_selection_summary()
+        self._fov.finalize_debug_summary()
+        self._fov.export_prescan_nd()
+        self.mmcore.mda.events.frameReady.disconnect(self._fov.on_frame_ready)
+        self._fov.shutdown()
+        self._fov = None
 
     def event_iterator(self, events: Iterable[MDAEvent]):
         """Wrap event iteration to apply position updates before logging.
@@ -503,22 +637,32 @@ class BaseEngine(MDAEngine):
         name: str,
         mda_config: MDASequence | str | Path,
     ) -> None:
-        """Run an acquisition and write the data as OME-Zarr.
+        """Run a Mantis acquisition and write the data as OME-Zarr.
+
+        When ``metadata.fov_selection`` is enabled this runs the two-run adaptive
+        acquisition (pre-scan, then timelapse on the good FOVs only); otherwise it is
+        an ordinary single run, as in :meth:`BaseEngine.acquire`.
 
         Parameters
         ----------
         output_dir : str | Path
             Directory where acquisition data will be saved.
         name : str
-            Base acquisition name; an index suffix will be appended automatically.
+            Base acquisition name; an index suffix is appended automatically.
         mda_config : MDASequence | str | Path
-            An MDASequence object or path to an acquisition configuration YAML
-            file (an MDASequence with the microscope settings under
-            ``metadata``; see :mod:`shrimpy.config`).
+            An MDASequence object or path to an acquisition configuration YAML file
+            (an MDASequence with the microscope settings under ``metadata``; see
+            :mod:`shrimpy.config`).
         """
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        name = _get_next_acquisition_name(output_dir, name)
+        # Index the acquisition name. The index is kept separately so sibling artifacts
+        # (<name>_fov_debug/, <name>_prescan.ome.zarr) can append it at the END of their
+        # own name rather than inheriting it mid-name -- "acq_fov_debug_1", not
+        # "acq_1_fov_debug".
+        base_name = name
+        name = _get_next_acquisition_name(output_dir, base_name)
+        self._run_index = int(name[len(base_name) + 1 :])
 
         if isinstance(mda_config, MDASequence):
             sequence = mda_config
@@ -530,23 +674,141 @@ class BaseEngine(MDAEngine):
         data_path = output_dir / f"{name}.ome.zarr"
         self._data_path = data_path
 
+        fov_cfg = fov_selection_config(sequence)
+        if not fov_cfg.get("enabled", False):
+            # FOV selection is off -> ordinary single-run acquisition.
+            logger.info(f"Starting acquisition: {name}")
+            self._run_mda(sequence, data_path)
+        else:
+            # FOV selection is on -> adaptive two-run acquisition: a pre-scan run
+            # decides which candidate FOVs pass selection (self._fov_passed_names,
+            # captured in teardown_sequence), then the timelapse images only those.
+            # Sequence building lives in shrimpy/fov_selection/sequences.py.
+            prescan_seq = build_prescan_sequence(sequence, fov_cfg)
+            n_candidates = len(prescan_seq.stage_positions)
+            logger.info("Starting FOV-selection pre-scan: %d candidate FOVs", n_candidates)
+            # The pre-scan run writes nothing to disk itself: the decision streams via
+            # frameReady, and (when save_pre_scan_omezarr is set) the worker writes the
+            # per-step reconstruction to <name>_prescan.ome.zarr.
+            #
+            # Time the whole call: teardown_sequence drains the outstanding decisions
+            # before mda.run() returns, so this span covers imaging AND every FOV's
+            # reconstruction/segmentation/scoring -- i.e. the real cost of the pre-scan,
+            # not just the stage-and-camera time.
+            prescan_started = time.monotonic()
+            self._run_mda(prescan_seq, None)
+            prescan_elapsed = time.monotonic() - prescan_started
+            logger.info(
+                "FOV-selection pre-scan finished in %s (%d FOVs, %.1f s/FOV)",
+                _format_duration(prescan_elapsed),
+                n_candidates,
+                prescan_elapsed / n_candidates if n_candidates else float("nan"),
+            )
+
+            if fov_cfg.get("calibration_mode", False):
+                # Calibration mode stops after the pre-scan: no timelapse is run.
+                # Instead the feature viewer opens on the pre-scan's feature matrix so
+                # the user can pick features, tune the score function, and save a
+                # ranking profile to drive a later standard acquisition.
+                logger.info(
+                    "FOV-selection calibration mode: skipping the timelapse run and "
+                    "opening the feature viewer."
+                )
+                fov_artifacts.launch_feature_viewer(
+                    self._fov_calibration_csv, fov_cfg.get("model")
+                )
+                logger.info("Calibration pre-scan completed successfully")
+                return
+
+            passed = list(self._fov_passed_names)
+            if not passed:
+                logger.warning("FOV selection: no FOVs passed; skipping the timelapse run.")
+                return
+            timelapse_seq = build_timelapse_sequence(sequence, prescan_seq, passed)
+            fov_artifacts.save_selected_config(timelapse_seq, output_dir, self._run_index)
+            self._run_mda(timelapse_seq, data_path)
+
+        logger.info("Acquisition completed successfully")
+
+    def _run_mda(
+        self,
+        sequence: MDASequence,
+        output: Path | None,
+    ) -> None:
+        """Run one ``core.mda.run``. ``output=None`` writes nothing to disk.
+
+        ``frameReady`` is still emitted when ``output`` is ``None`` (it is independent
+        of the sink), so the pre-scan run drives the decision without producing a store.
+        """
+        out_settings = None
+        if output is not None:
+            out_settings = AcquisitionSettings(
+                root_path=output, compression="blosc-zstd", format="acquire-zarr"
+            )
+
         # Summary metadata is written by pymmcore-plus into the zarr root group's
         # attributes, under `attributes.pymmcore_plus.summary_metadata`.
 
-        logger.info(f"Starting acquisition: {name}")
         self.mmcore.mda.run(
             sequence,
-            output=AcquisitionSettings(
-                root_path=data_path, compression="blosc-zstd", format="acquire-zarr"
-            ),
+            output=out_settings,
             dimension_overrides={"z": {"chunk_size": min(512, sequence.sizes["z"])}},
             overwrite=False,
         )
-        logger.info("Acquisition completed successfully")
+
+
+def _format_duration(seconds: float) -> str:
+    """Human-readable duration, e.g. ``'42.3s'`` / ``'7m 12s'`` / ``'1h 03m 20s'``.
+
+    A pre-scan over a plate runs from seconds to hours, and a bare float of seconds is
+    hard to read at the top of that range -- so the unit scales with the magnitude.
+    """
+    seconds = max(float(seconds), 0.0)
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes, secs = divmod(int(round(seconds)), 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m {secs:02d}s"
+    return f"{minutes}m {secs:02d}s"
+
+
+# Upper bound on the dedup search. Reaching it means something is generating names in a
+# loop rather than a human running experiments; better to fail loudly than spin forever.
+MAX_ACQUISITION_INDEX = 10_000
+
+
+def acquisition_artifact_paths(output_dir: Path, name: str, run_index: int) -> list[Path]:
+    """Every path an acquisition called ``name`` would write in ``output_dir``.
+
+    The output store plus the FOV-selection siblings (``<base>_fov_debug/``,
+    ``<base>_prescan.ome.zarr``). A name is only free when ALL of these are free.
+    """
+    from shrimpy.fov_selection.manager import sibling_artifact_paths
+
+    data_path = output_dir / f"{name}.ome.zarr"
+    return [data_path, *sibling_artifact_paths(data_path, run_index)]
 
 
 def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
-    """Get next available acquisition name with incremented index.
+    """Return ``name`` with the next free ``_<idx>`` suffix (``acq_1``, ``acq_2``, ...).
+
+    The index is ALWAYS appended -- the bare ``name`` is never used as a store name.
+    This keeps every acquisition in a folder consistently numbered, so runs sort and
+    read as a series rather than "the first one" plus numbered stragglers.
+
+    Guards an acquisition from crashing (the zarr writer refuses to overwrite) or
+    silently clobbering a previous experiment: the index is bumped until a fully unused
+    name is found.
+
+    "Free" deliberately means *no artifact of that name exists*, not *no complete
+    acquisition of that name exists*. Completeness is not knowable and not the point: a
+    run that dies mid-pre-scan writes ``<name>_fov_debug/`` and possibly
+    ``<name>_prescan.ome.zarr`` but never creates ``<name>.ome.zarr`` (the pre-scan run
+    passes ``output=None``). Testing only the store would hand the next run the same
+    name, and its worker would append rows to the dead run's ``fov_summary.csv`` and
+    reuse its debug directory. Leftovers are never reused or cleaned up -- a new name is
+    always allocated, and the incomplete folder is left untouched for inspection.
 
     Parameters
     ----------
@@ -558,12 +820,27 @@ def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
     Returns
     -------
     str
-        Acquisition name with index (e.g., "acq_1", "acq_2", etc.).
+        A name none of whose artifacts exist (e.g. ``acq_1``, ``acq_2``, ...).
     """
-    idx = 1
-    while True:
-        indexed_name = f"{name}_{idx}"
-        data_path = output_dir / f"{indexed_name}.ome.zarr"
-        if not data_path.exists():
-            return indexed_name
-        idx += 1
+    conflicts: list[Path] = []
+    for run_index in range(1, MAX_ACQUISITION_INDEX + 1):
+        candidate = f"{name}_{run_index}"
+        taken = [
+            p
+            for p in acquisition_artifact_paths(output_dir, candidate, run_index)
+            if p.exists()
+        ]
+        if not taken:
+            if conflicts:
+                logger.info(
+                    "Acquisition name %r is already in use (found %s); using %r instead",
+                    name,
+                    ", ".join(sorted(p.name for p in conflicts)),
+                    candidate,
+                )
+            return candidate
+        conflicts.extend(taken)
+    raise RuntimeError(
+        f"Could not find a free acquisition name for {name!r} in {output_dir} after "
+        f"{MAX_ACQUISITION_INDEX} attempts."
+    )

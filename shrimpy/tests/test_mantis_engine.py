@@ -14,9 +14,11 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from useq import MDAEvent
+from useq import MDAEvent, MDASequence
 
-from shrimpy.engines.base_engine import BaseEngine
+from shrimpy.engines.base_engine import (
+    BaseEngine,
+)
 from shrimpy.engines.mantis_engine import (
     FAST_XY_STAGE_SPEED,
     MANTIS_XY_STAGE_NAME,
@@ -228,3 +230,69 @@ def test_pfs_all_offsets_fail(engine, mock_core):
     # Z stage should be returned to the original position
     last_set_position = mock_core.setPosition.call_args_list[-1]
     assert last_set_position == call("ZDrive", 100.0)
+
+
+# ---------------------------------------------------------------------------
+# setup_event() — SkipEvent on autofocus failure
+# ---------------------------------------------------------------------------
+
+
+def test_setup_event_autofocus_failure_raises_skip_event(engine, mock_core):
+    # Autofocus on + failure → SkipEvent raised with num_frames=1 for single event
+    from pymmcore_plus.mda import SkipEvent
+
+    engine._use_autofocus = True
+    engine._autofocus_method = "demo-PFS"
+    # Force autofocus to fail at every event
+    engine._autofocus_fail_at_index = [{}]
+
+    event = MDAEvent()
+    with pytest.raises(SkipEvent, match="autofocus failed") as exc_info:
+        engine.setup_event(event)
+    assert exc_info.value.num_frames == 1
+
+
+def test_setup_event_autofocus_failure_sequenced_event_skips_all_frames(engine, mock_core):
+    # SkipEvent.num_frames equals len(event.events) for SequencedEvents
+    from pymmcore_plus.core._sequencing import SequencedEvent
+    from pymmcore_plus.mda import SkipEvent
+
+    engine._use_autofocus = True
+    engine._autofocus_method = "demo-PFS"
+
+    engine._autofocus_fail_at_index = [{}]
+
+    sub_events = [MDAEvent(index={"t": 0, "p": 0, "z": i}) for i in range(5)]
+    seq_event = SequencedEvent(events=sub_events)
+
+    with pytest.raises(SkipEvent) as exc_info:
+        engine.setup_event(seq_event)
+    assert exc_info.value.num_frames == 5
+
+
+def test_setup_event_autofocus_success_does_not_raise(engine, mock_core):
+    # Autofocus on + success → no SkipEvent, delegates to parent setup_event
+    engine._use_autofocus = True
+    engine._autofocus_method = "demo-PFS"
+    engine._autofocus_fail_at_index = []
+
+    event = MDAEvent()
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_event"):
+        engine.setup_event(event)  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# teardown_sequence()
+# ---------------------------------------------------------------------------
+
+# Applying / skipping reset_hardware_sequencing_settings is BaseEngine behavior and is
+# covered in test_base_engine.py; only the mantis-specific FOV-selection teardown is
+# tested here.
+
+
+def test_teardown_no_metadata(engine, mock_core):
+    # Sequence with no shrimPy metadata at all → no setProperty calls
+    seq = MDASequence()
+    with patch("shrimpy.engines.base_engine.MDAEngine.teardown_sequence"):
+        engine.teardown_sequence(seq)
+    mock_core.setProperty.assert_not_called()

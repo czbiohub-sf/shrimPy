@@ -37,6 +37,7 @@ from qtpy.QtWidgets import (
 )
 from useq import MDASequence
 
+from shrimpy.engines.base_engine import _get_next_acquisition_name
 from shrimpy.engines.mantis_engine import MantisEngine
 
 
@@ -639,17 +640,51 @@ class MantisAcquisitionWidget(QWidget):
                     self._mmc, use_hardware_sequencing=use_hw_seq
                 )
 
+            # Resolve the output store from the MDA widget's save box, de-duplicating
+            # the acquisition name so a repeated name neither crashes the zarr writer
+            # (it refuses to overwrite) nor clobbers a previous experiment. Mantis
+            # appends _1, _2, ... on collision (see _get_next_acquisition_name).
+            output = self._resolve_output_path()
+
             self.status_label.setText("Running acquisition...")
             self.status_label.setStyleSheet("QLabel { color: blue; }")
 
             # Run the acquisition in a separate thread to keep GUI responsive
             # The acquisition complete status will be updated by the sequenceFinished signal
-            self._mmc.run_mda(sequence, block=False)
+            self._mmc.run_mda(sequence, output=output, block=False)
 
         except Exception as e:
             self.status_label.setText(f"Error: {str(e)}")
             self.status_label.setStyleSheet("QLabel { color: red; }")
             raise
+
+    def _resolve_output_path(self) -> Path | None:
+        """Deduplicated ``.ome.zarr`` output path from the MDA save box.
+
+        Returns ``None`` (no saving) when saving is unchecked or no directory is
+        set. Otherwise the save name is stripped of any ``.ome.zarr``/``.zarr``
+        extension and passed through :func:`_get_next_acquisition_name`, so a
+        re-run with the same name is written to ``<name>_1.ome.zarr`` (then
+        ``_2``, ...) instead of crashing the writer or overwriting the previous
+        experiment.
+        """
+        save_info = self.mda_widget.save_info.value()
+        if not save_info.get("should_save") or not save_info.get("save_dir"):
+            return None
+
+        output_dir = Path(save_info["save_dir"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        base_name = save_info.get("save_name") or "acquisition"
+        for suffix in (".ome.zarr", ".zarr"):
+            if base_name.endswith(suffix):
+                base_name = base_name[: -len(suffix)]
+                break
+
+        name = _get_next_acquisition_name(output_dir, base_name)
+        output = output_dir / f"{name}.ome.zarr"
+        self.status_label.setText(f"Saving to {output.name}")
+        return output
 
     def _toggle_pause(self):
         """Toggle pause/resume for the current acquisition."""

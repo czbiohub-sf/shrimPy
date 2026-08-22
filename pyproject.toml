@@ -57,6 +57,33 @@ dynatrack = [
 # exercise pure torch/numpy math, not biahub/cytoland). Avoids the ~2.5 GB
 # CUDA wheel the `dynatrack` group pulls on Windows.
 test-cpu = ["torch"]
+# Smart FOV-selection stack (shrimpy/fov_selection/*). Opt-in: install with
+# `uv sync --group fov` (not in default-groups, so a plain `uv sync` stays lean).
+fov = [
+  "cellpose",        # CellposeDINO "cpdino" + Cellpose-SAM "cpsam" segmentation
+  "dinov3",          # DINOv3 ViT backbone required by cellpose's "cpdino" model (GitHub-only)
+  "stardist",        # StarDist nuclei segmentation baseline (uses TensorFlow)
+  "tensorflow-cpu",  # StarDist backend; CPU build avoids GPU contention with torch
+  "instanseg-torch", # InstanSeg nuclei/cell segmentation (torch-native)
+  "imageio",         # 8-bit PNG export
+  "napari[pyqt6]",   # interactive viewing (PyQt6: matches pymmcore-gui's binding)
+  "napari-iohub",    # OME-Zarr / HCS reader plugin for napari
+  # analysis stack used by the pipeline / feature viewer / goodness prediction
+  "scikit-learn",    # decision-tree model + PCA/t-SNE in the feature viewer
+  "lightgbm",        # LightGBM lambdarank tier for tunable FOV ranking (ranking.py)
+  "interpret",       # Explainable Boosting Machine (GAM) tier for tunable FOV ranking
+  "scikit-image",    # regionprops object features in extract_fov_features
+  "scipy",           # nearest-neighbor / spatial stats in feature extraction
+  "pandas",          # feature-matrix tables throughout
+  "anndata",         # save_pre_scan_nd: feature matrix -> AnnData zarr for Embedding Atlas (nd_export)
+  "matplotlib",      # figures (predict_fov_goodness, viewer)
+  "joblib",          # save/load the trained tree model
+  # reconstruction for the FOV pre-scan (deskew -> phase -> virtual staining).
+  # Pull the whole `dynatrack` group so a fov venv can run preprocessing too;
+  # this brings in biahub[stain] (waveorder/cytoland/jsonargparse) + torch,
+  # so torch also picks up the group="dynatrack" cu132 index on Windows.
+  { include-group = "dynatrack" },
+]
 
 [project.scripts]
 shrimpy = "shrimpy.cli.main:cli"
@@ -73,6 +100,8 @@ packages = ["shrimpy"]
 
 [tool.uv.sources]
 pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "main" }
+# plate_row/plate_col are `int | None` on main (0-based indices), not the string well
+# labels the `add-plate-row-col` branch allowed. Configs and plate naming use ints.
 ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
 useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "main" }
 napari-deskew-preview = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview", branch = "main" }
@@ -81,6 +110,10 @@ napari-deskew-preview = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-
 # CPU wheel instead. Elsewhere (macOS/Linux) both fall back to PyPI (CPU/MPS).
 torch = [
   { index = "pytorch-cu132", group = "dynatrack", marker = "sys_platform == 'win32'" },
+  # `fov` include-groups `dynatrack`, but uv scopes this index to the group that
+  # DIRECTLY requires torch, not to include-group ancestors -- so `fov` needs its
+  # own entry or `uv sync --group fov` silently falls back to the PyPI CPU wheel.
+  { index = "pytorch-cu132", group = "fov", marker = "sys_platform == 'win32'" },
   { index = "pytorch-cpu", group = "test-cpu", marker = "sys_platform == 'win32'" },
 ]
 
@@ -92,6 +125,10 @@ biahub = { git = "https://github.com/czbiohub-sf/biahub", rev = "b011bca57d5bf15
 
 # no pipy release yet; uv sources don't propagate, so mirror biahub's cytoland pin
 cytoland = { git = "https://github.com/mehta-lab/VisCy", subdirectory = "applications/cytoland", rev = "4b62365c0df25929bffc7f01b3bb2d1c11d69cce" }
+
+# GitHub-only deps for the `fov` group (not on PyPI).
+napari-iohub = { git = "https://github.com/czbiohub-sf/napari-iohub.git" }
+dinov3 = { git = "https://github.com/facebookresearch/dinov3" }  # cellpose "cpdino" backbone
 
 # torch's CUDA and CPU builds can't coexist; pick exactly one group.
 [tool.uv]
@@ -131,6 +168,19 @@ ignore = [
     "N802",  # Function name should be lowercase (Qt uses camelCase)
     "N815",  # Variable in class scope should not be mixedCase (Qt uses camelCase)
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# The feature viewer is a multi-file Qt app (app.py, the per-tab modules, _common.py, and
+# data.py) whose conventions the repo-wide `N` rules do not fit (the global ignores above
+# already exempt N802/N815 for the same reason):
+#   N812  module imported under a short uppercase alias (fov_model as FM, data as D, ...) --
+#         the established repo alias; renaming is same-file churn with no behavioural gain.
+#   N803/N806  local Qt layout variables named colA/colB/colC (mirroring the sections they
+#         hold) and the sklearn-style feature matrix `X` in data.run_reduction.
+#   B008  `parent=QtCore.QModelIndex()` on QAbstractTableModel.rowCount/columnCount -- this
+#         mirrors Qt's own C++ default and is the canonical PyQt signature; QModelIndex() is a
+#         cheap immutable sentinel, not the mutable default B008 targets.
+"shrimpy/fov_selection/feature_viewer/*.py" = ["N812", "N803", "N806", "B008"]
 
 [tool.ruff.lint.isort]
 # Match current isort settings

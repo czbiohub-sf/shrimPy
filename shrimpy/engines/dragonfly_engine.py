@@ -22,7 +22,8 @@ from typing import TYPE_CHECKING
 from shrimpy.engines.base_engine import BaseEngine
 
 if TYPE_CHECKING:
-    from useq import MDAEvent
+    from pymmcore_plus.metadata import SummaryMetaV1
+    from useq import MDAEvent, MDASequence
 
 logger = logging.getLogger(__name__)
 
@@ -30,11 +31,47 @@ logger = logging.getLogger(__name__)
 class DragonflyEngine(BaseEngine):
     """MDA engine for the Dragonfly microscope.
 
+    Runs the whole sequence with the shutter held open (autoshutter off); see
+    :meth:`setup_sequence`.
+
     Hooks left to implement:
 
-    - ``setup_sequence`` / ``setup_event`` / ``teardown_sequence``: Dragonfly
-      hardware setup around the corresponding ``super()`` call
+    - ``setup_event``: Dragonfly hardware setup around the corresponding
+      ``super()`` call
     """
+
+    def __init__(self, mmc, *args, **kwargs):
+        super().__init__(mmc, *args, **kwargs)
+        # Autoshutter state to restore in teardown_sequence; None while no
+        # sequence is running.
+        self._autoshutter_to_restore: bool | None = None
+
+    def setup_sequence(self, sequence: MDASequence) -> SummaryMetaV1 | None:
+        """Open the shutter for the whole run, then run the shared setup.
+
+        The shutter is controlled through hardware blanking both all channels.
+        Setting the autoshutter shate must happen before
+        ``super().setup_sequence()``.
+        """
+        core = self.mmcore
+        self._autoshutter_to_restore = core.getAutoShutter()
+        logger.info("Disabling autoshutter and opening the shutter for the sequence")
+        core.setAutoShutter(False)
+        core.setShutterOpen(True)
+
+        return super().setup_sequence(sequence)
+
+    def teardown_sequence(self, sequence: MDASequence) -> None:
+        """Close the shutter and restore autoshutter, then the shared teardown.
+        """
+        super().teardown_sequence(sequence)
+
+        core = self.mmcore
+        logger.debug("Closing the shutter and restoring autoshutter")
+        core.setShutterOpen(False)
+        if self._autoshutter_to_restore is not None:
+            core.setAutoShutter(self._autoshutter_to_restore)
+            self._autoshutter_to_restore = None
 
     def engage_autofocus(self, event: MDAEvent) -> bool:
         """Engage Leica AFC for ``event``.
@@ -64,6 +101,11 @@ class DragonflyEngine(BaseEngine):
         """
         core = self.mmcore
         z_offsets = [0, -10, 10, -20, 20, -30, 30]  # in um
+
+        # Check if autofocus is already engaged
+        if core.isContinuousFocusLocked():
+            logger.debug("Continuous autofocus is already engaged")
+            return True
 
         for z_offset in z_offsets:
             core.setPosition(z_stage_name, z_position + z_offset)

@@ -107,6 +107,10 @@ def mantis(
                 device.connect_to_mda(core)
     engine = MantisEngine(core)
 
+    # FOV selection (when enabled in metadata.mantis.fov_selection) is handled
+    # inside the engine: the pre-scan is timepoint 0 of this run and the decision
+    # streams in via frameReady to gate the timelapse. No special routing here --
+    # the engine reads the metadata, like it does for DynaTrack.
     feeder = None
     if napari_viewer:
         from shrimpy.viewer import ViewerFeeder

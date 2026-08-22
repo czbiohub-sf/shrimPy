@@ -1,0 +1,106 @@
+# Setup
+# Anchored so the pre-scan (metadata.fov_selection.prescan_mda) can reuse the exact
+# same hardware setup via `setup: *setup` -- the pre-scan is its own MDASequence and
+# only inherits what it declares, so without this it runs at the camera's leftover
+# ROI (full 2048x2048) instead of the one set here.
+setup: &setup
+  roi: [0, 0, 2048, 2046]  # set Zyla ROI
+  channel:
+    config: 1-Zyla_BF
+    group: Channels
+  properties:
+    - ['Core', 'Focus', 'ZStage']  # piezo stage
+
+# Define stage positions
+stage_positions: []
+
+# Define time plan
+time_plan:
+  interval: 0
+  loops: 1
+
+# Define z plan (absolute)
+# z_plan:
+#   top: 10
+#   bottom: -10
+#   step: 1
+#   go_up: true
+
+# Define channels
+channels:
+- config: 1-Zyla_BF
+  group: Channels
+  exposure: 20.0
+# - config: 2-SonaLong_GFP
+#   group: Channels
+#   exposure: 20.0
+
+keep_shutter_open_across: ['z']
+
+# Microscope settings
+metadata:
+  autofocus:
+    enabled: true
+    method: Adaptive Focus Control
+    stage: FocusDrive
+
+  fov_selection:
+    enabled: true
+    calibration_mode: True
+
+    prescan_mda:
+      setup: *setup       # same ROI / imaging path / properties as the main acquisition
+      stage_positions:
+      - x: -15640
+        y: 19900
+        # properties:
+        #   - ['FocusDrive', 'Position', '7930']
+      grid_plan:
+        rows: 10
+        columns: 10
+        fov_width: 210.94
+        fov_height: 210.74
+      time_plan:
+        loops: 1            # single pre-scan timepoint (validated)
+        interval: 0
+      channels:
+        - config: 1-Zyla_BF
+          group: Channels
+          exposure: 20.0
+
+    # Acquired channel imaged during the pre-scan and fed to reconstruction (must be one
+    # of prescan_mda.channels). The A549 store's brightfield channel.
+    fov_selection_channel: 1-Zyla_BF
+
+    preprocessing: ['segmentation']
+
+    segmentation:
+      model: instanseg
+      path: C:\Users\CZC60777YX\Documents\instanseg_34532446.zip
+      gpu: true
+      target: cells         # which output head to keep: nuclei | cells
+
+    model:
+      type: ranking_by_defined_range
+      top_fov: 1                    # keep the N highest-ranked FOVs per position; required
+      aggregation: gaussian
+      features:
+        coverage_frac:
+          shape: gaussian
+          center: 0.68
+          fwhm: 0.1400000000000001
+          weight: 1.0
+        nn_um_mean:
+          shape: gaussian
+          center: 25.79625
+          fwhm: 5.124979999999999
+          weight: 1.0
+        max_empty_radius:
+          shape: gaussian
+          center: 25.0
+          fwhm: 10.0
+          weight: 1.0
+    # Debug outputs. save_decision is forced on in calibration mode regardless of this flag.
+    save_pre_scan_omezarr: False   # also write the per-step reconstruction to <name>_prescan.ome.zarr
+    save_pre_scan_nd: False
+    save_decision: True           # feature-matrix CSV + projection/mask PNGs under <name>_fov_debug/

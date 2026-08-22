@@ -29,9 +29,10 @@ class MantisEngine(BaseEngine):
     - Nikon PFS continuous autofocus
     - XY stage speed modulation
 
-    DynaTrack position tracking is shared by all engines and lives in
-    :class:`~shrimpy.engines.base_engine.BaseEngine`; mantis enables it from
-    ``metadata.dynatrack`` like any other microscope.
+    The smart-microscopy features are shared by all engines and live in
+    :class:`~shrimpy.engines.base_engine.BaseEngine`; mantis switches them on
+    from ``metadata.dynatrack`` / ``metadata.fov_selection`` like any other
+    microscope.
     """
 
     def __init__(self, mmc: CMMCorePlus, *args, **kwargs):

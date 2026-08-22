@@ -1,0 +1,276 @@
+# Setup
+setup:
+  roi: [100, 1050, 1664, 256]
+  channel:
+    config: Right
+    group: Imaging Path
+  properties:
+    - ['LS Position Galvo', 'Position', '0.116']
+    - ['LS Angle Galvo', 'Position', '-0.24']
+    - ['Prime BSI Express', 'ReadoutRate', '100MHz 16bit']
+    - ['Prime BSI Express', 'Gain', '2-CMS']
+    - ['Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter']
+    - ['TS2_TTL1-8', 'Sequence', 'Off']
+    - ['TS2_TTL1-8', 'Blanking', 'On']
+    - ['TS2_DAC03', 'Sequence', 'On']
+
+# Define stage positions
+stage_positions: []
+
+# Define time plan
+time_plan:
+  prioritize_duration: true
+  interval: "00:30:00"
+  duration: "33:00:00"
+
+# Define z plan
+z_plan:
+  top: 70
+  bottom: -90
+  step: 0.15
+  go_up: true
+
+# Define channels
+channels:
+- config: BF - Oblique
+  group: Channels - Right
+  exposure: 5.0
+  do_stack: true
+  z_offset: 0.0
+  acquire_every: 1
+  camera: null
+  # 5 mW 488 laser power
+- config: GFP EX488 EM525-45
+  group: Channels - Right
+  exposure: 10.0
+  do_stack: true
+  z_offset: 0.0
+  acquire_every: 1
+  camera: null
+
+autofocus_plan: null
+keep_shutter_open_across: []
+
+# Define metadata per microscope
+metadata:
+  pymmcore_widgets:
+    version: 0.10.2.dev23+g22b8c0aff.d20260106
+  reset_hardware_sequencing_settings:
+    - ['TS2_TTL1-8', 'Blanking', 'Off']
+    - ['TS2_DAC03', 'Sequence', 'Off']
+    - ['XYStage:XY:31', 'MotorSpeedX-S(mm/s)', '5.75']
+    - ['XYStage:XY:31', 'MotorSpeedY-S(mm/s)', '5.75']
+  autofocus:
+    enabled: true
+    method: PFS
+    stage: ZDrive
+
+  fov_selection:
+    enabled: true
+    calibration_mode: True
+    prescan_mda:
+      setup:
+        roi: [100, 1050, 1664, 256]
+        channel:
+          config: Right
+          group: Imaging Path
+        properties:
+          - ['LS Position Galvo', 'Position', '0.116']
+          - ['LS Angle Galvo', 'Position', '-0.24']
+          - ['Prime BSI Express', 'ReadoutRate', '100MHz 16bit']
+          - ['Prime BSI Express', 'Gain', '2-CMS']
+          - ['Prime BSI Express', 'ExposeOutMode', 'Rolling Shutter']
+          - ['TS2_TTL1-8', 'Sequence', 'Off']
+          - ['TS2_TTL1-8', 'Blanking', 'On']
+          - ['TS2_DAC03', 'Sequence', 'On']
+      stage_positions:
+      ### Alternative well plan
+        a1_center_xy: [21080, 24030]
+        plate:
+          rows: 4
+          columns: 6
+          name: 24-well
+          well_size: [15.6, 15.6]
+          well_spacing: [19.0, 19.0]
+        selected_wells:
+          - [0]
+          - [0]
+        well_points_plan:
+          rows: 3           # 7x7 = 49 FOVs/well; B/3,B/4,B/5 -> 147 total
+          columns: 3
+          fov_height: 180.0
+          fov_width: 180.0
+
+        ### Alternative well plan
+        # - x: 21080
+        #   y: 24030
+        #   plate_row: 0
+        #   plate_col: 0
+
+      # grid_plan:
+      #   rows: 8
+      #   columns: 8
+      #   fov_height: 180.0
+      #   fov_width: 180.0
+      time_plan:
+        loops: 1            # single pre-scan timepoint (validated)
+        interval: 0
+      z_plan:
+        top: 79.95
+        bottom: -80.1
+        step: 0.15
+        go_up: true
+      channels:
+        - config: BF
+          group: Channels - Right
+          exposure: 5.0
+
+    # Acquired channel fed to reconstruction (must be one of prescan_mda.channels).
+    fov_selection_channel: "BF"
+    # The object FOV selection segments and scores: 'cells' or 'nuclei'.
+    target: cells
+
+    # Ordered preprocessing steps: reconstruction step(s), then ONE projection, then
+    # segmentation. Options for each step type:
+    #   reconstruction : flatfield | deskew | phase | vs   (any subset, in order; optional)
+    #   projection     : sum_projection | max_projection | middle_slice_projection |
+    #                    logstd_projection | best_focus_z   (pick ONE; best_focus_z needs the
+    #                    `best_focus_z:` block below)
+    #   segmentation   : segmentation   (backend chosen in the `segmentation:` block below:
+    #                    cellpose | instanseg | otsu)
+    preprocessing: ['flatfield', 'deskew', 'phase','best_focus_z', 'segmentation']
+
+    deskew:
+      ls_angle_deg: 30.0
+      keep_overhang: false
+      average_n_slices: 3
+
+    # Example (uncomment together with `best_focus_z` above):
+    best_focus_z:
+      numerical_aperture_detection: 1.35   # detection (objective) NA
+      wavelength_illumination: 0.450       # illumination wavelength, um
+      mode: max                            # optional: 'max' (bright objects; default) | 'min'
+      midband_fractions: [0.125, 0.25]     # optional: band as a fraction of the cutoff freq
+    # Per-FOV best-focus-Z debug CSV (detected slice + depth) -> <stem>_best_focus_z.csv
+    # under <name>_fov_debug/. Only written when the projection above is `best_focus_z`.
+    save_best_focus_z_for_debug: True
+
+    phase:
+      transfer_function:
+        wavelength_illumination: 0.450
+        z_padding: 5
+        index_of_refraction_media: 1.4
+        numerical_aperture_detection: 1.35
+        numerical_aperture_illumination: 0.52
+        invert_phase_contrast: false
+      apply_inverse:
+        reconstruction_algorithm: Tikhonov
+        regularization_strength: 0.01
+
+    # virtual_staining:
+    #   ckpt_path: C://Users//labelfree//Documents//epoch=83-step=14532-loss=0.492.ckpt
+    #   target_channels: ['nuclei', 'membrane']
+    #   sliding_window_step: 1
+    #   model:
+    #     class_path: cytoland.engine.VSUNet
+    #     init_args:
+    #       architecture: fcmae
+    #       model_config:
+    #         in_channels: 1
+    #         out_channels: 2
+    #         in_stack_depth: 15
+    #         encoder_blocks: [3, 3, 9, 3]
+    #         dims: [96, 192, 384, 768]
+    #         encoder_drop_path_rate: 0.1
+    #         stem_kernel_size: [5, 4, 4]
+    #         decoder_conv_blocks: 2
+    #         pretraining: false
+    #       test_time_augmentations: false
+    #       tta_type: mean
+
+    # Segmentation backend (`model`: cellpose | instanseg | otsu). Pick ONE. Pair
+    # cellpose/instanseg with an image projection (middle_slice / best_focus_z); pair otsu
+    # with logstd_projection. One block is active below; the other two are commented out.
+    #
+    # cellpose  Cellpose-DINO instance masks (unset params fall back to training defaults):
+    #   model: cellpose
+    #   model_name: cpdino
+    #   gpu: true
+    #   flow_threshold: 0.4
+    #   cellprob_threshold: 0.0
+    #   batch_size: 64
+    #   min_size: 15
+    #   diameters:            # microns; null -> Cellpose auto-scale
+    #     nuclei: null
+    #     membrane: 120.0
+    #
+    # otsu  threshold -> close -> size filter -> fill holes -> label (no GPU/model; px units):
+    #   model: otsu
+    #   close_radius: 10      # morphological-closing disk radius, px (0 = skip)
+    #   min_size: 8000        # drop foreground components smaller than this, px
+    #   fill_holes: true
+    #
+    # instanseg  TorchScript checkpoint (bioimage.io .zip or bare .pt); head nuclei|cells is
+    #   derived from `target`. A .zip carries its training pixel size; for a bare .pt set
+    #   `model_pixel_size_um` so object scale matches the acquisition.
+    segmentation:
+      model: instanseg
+      path: E:\2026_07_28_smart_fov_selection_test\instanseg_34532446.zip
+      gpu: true
+
+    # FOV-goodness model (see shrimpy/fov_selection/fov_model.py). Pick ONE `model:` block.
+    # Models read features by NAME only; keys are plain (selection segments ONE mask, no
+    # channel prefix). Available features:
+    #   FOV-level    : coverage_frac, object_counts, average_object_intensity, nn_um_mean, nn_cv, com_offset_norm,
+    #                  mean_distance_to_center_fov, empty_grid_frac, occupancy_entropy,
+    #                  angular_uniformity
+    #   mask-derived : max_empty_radius, mask_occupancy_entropy, edge_frac,
+    #                  central_cov_ratio
+    # One block is active below; the other two are commented alternatives.
+
+    # ---- classification_by_thresholding: hard [lo, hi] box; keep a FOV iff EVERY feature is
+    #      in range. Per-FOV pass/fail (no top_fov; threshold does not apply). ----
+    # model:
+    #   type: classification_by_thresholding
+    #   features:
+    #     coverage_frac: [0.41821, 0.78977]      # bare [lo, hi], or {range: [lo, hi]}
+    #     com_offset_norm: [0.0, 0.404543]
+
+    # ---- classification_tree: trained .joblib; `threshold` = P(good) cutoff. Per-FOV
+    #      pass/fail (no top_fov). Feature names come from training (plain keys above). ----
+    # model:
+    #   type: classification_tree
+    #   path: /hpc/projects/.../models/fov_goodness.joblib
+    #   threshold: 0.5
+
+    # ---- ranking_by_defined_range (ACTIVE): weighted-desirability score, selected by pure
+    #      ranking. `top_fov: N` is REQUIRED (keeps the N best FOVs per position; no threshold,
+    #      no good/bad label). A feature that can't be measured scores 0. Tune the curves in
+    #      the viewer Rank tab, Save the profile, and paste it as `features:`.
+    #        per feature -- `shape` (+ optional `weight`):
+    #          gaussian  : center (peak) + fwhm (d=0.5 at center +- fwhm/2)         -- symmetric bell
+    #          lognormal : center (peak) + fold (d=0.5 at center*fold, center/fold) -- x>0, skewed
+    #          sigmoid   : midpoint (d=0.5) + width (10%->90% span) + direction (higher|lower)
+    #        `aggregation` -- how features combine into one score:
+    #          gaussian (default; strongest veto) | product (one weak feature vetoes) | sum (compensatory)
+    model:
+      type: ranking_by_defined_range
+      top_fov: 3                 # keep the N highest-ranked FOVs per position (required)
+      aggregation: gaussian
+      features:
+        coverage_frac:
+          shape: gaussian
+          center: 0.68376
+          fwhm: 0.17561
+          weight: 1.0
+        max_empty_radius:
+          shape: gaussian
+          center: 21.96101
+          fwhm: 7.81154
+          weight: 1.0
+
+    # FOV selection decision
+    # Debug outputs (off by default):
+    save_pre_scan_omezarr: False   # write the pre-scan run to <name>_prescan.ome.zarr
+    save_pre_scan_nd: False        # export fov_summary.csv -> fov_summary.zarr (AnnData) for Embedding Atlas
+    save_decision: True  # per-FOV masks/features/goodness under <name>_fov_debug/
