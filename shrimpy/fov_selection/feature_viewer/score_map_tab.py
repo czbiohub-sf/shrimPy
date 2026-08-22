@@ -113,8 +113,11 @@ class ScoreMapTabMixin:
                 s.get("curve_k", 0.0),
                 s.get("weight", 1.0),
             )
+        # top_fov is a manager-side selection quota, unused for scoring; set to the minimal
+        # valid value so DesirabilityModel (which requires it) can be constructed here.
         return {
             "type": "ranking_by_defined_range",
+            "top_fov": 1,
             "aggregation": self.map_agg_combo.currentText(),
             "features": feats,
         }

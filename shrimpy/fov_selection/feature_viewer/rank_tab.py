@@ -459,7 +459,15 @@ class RankTabMixin:
             if hasattr(self, "rank_agg_combo")
             else FM.DesirabilityModel.DEFAULT_AGGREGATION
         )
-        return {"type": "ranking_by_defined_range", "aggregation": agg, "features": feats}
+        # top_fov is required by DesirabilityModel but is a SELECTION quota applied by the
+        # manager; the viewer only scores/orders FOVs and never selects, so pass the minimal
+        # valid value to satisfy the constructor.
+        return {
+            "type": "ranking_by_defined_range",
+            "top_fov": 1,
+            "aggregation": agg,
+            "features": feats,
+        }
 
     # ---- rank tab: actions ----
     def _rerank(self):
