@@ -44,7 +44,7 @@ from pymmcore_plus.core._constants import Keyword
 from pymmcore_plus.core._sequencing import SequencedEvent
 from pymmcore_plus.mda import MDAEngine, SkipEvent
 from pymmcore_plus.metadata import SummaryMetaV1
-from useq import MDAEvent, MDASequence
+from useq import Axis, MDAEvent, MDASequence
 
 from shrimpy._logging import find_log_file
 from shrimpy.config import ShrimpyMetadata, load_config
@@ -54,6 +54,13 @@ logger = logging.getLogger(__name__)
 
 DEMO_PFS_METHOD = "demo-PFS"
 DEMO_PFS_SUCCESS_RATE = 0.5  # probability that a demo-PFS call succeeds
+
+# The axes that identify one autofocus position. A new stage position or grid
+# site moves the sample in XY, where the focal plane can differ; a new
+# timepoint revisits a position the sample may have drifted away from since.
+# Stepping the channel or the Z slice does neither, so the focus obtained on
+# arrival is reused for every channel and slice acquired there.
+AUTOFOCUS_POSITION_AXES = frozenset({Axis.TIME, Axis.POSITION, Axis.GRID})
 
 _PROC = psutil.Process(os.getpid())
 
@@ -103,6 +110,13 @@ class BaseEngine(MDAEngine):
         self._autofocus_stage = None
         self._autofocus_method = None
         self._autofocus_fail_at_index = None
+        # Position key of the last event autofocus was attempted for; see
+        # _autofocus_position_key(). None means "not attempted yet this run".
+        self._last_autofocus_position: tuple | None = None
+        # Core-Focus device and the position it held before any z_plan move; see
+        # _capture_focus_home(). Both None when focus homing does not apply.
+        self._focus_device: str | None = None
+        self._focus_home: float | None = None
         self._xy_stage_device = None
         self._data_path: Path | None = None
         self._dynatrack: DynaTrack | None = None
@@ -150,7 +164,10 @@ class BaseEngine(MDAEngine):
         core = self.mmcore
         meta = ShrimpyMetadata.from_sequence(sequence)
 
-        # Set autofocus settings
+        # Set autofocus settings. The position key is per-run state: FOV
+        # selection runs two sequences through one engine, and the timelapse
+        # must not inherit the last position of the pre-scan.
+        self._last_autofocus_position = None
         autofocus = meta.autofocus
         if autofocus.enabled:
             self._use_autofocus = True
@@ -170,7 +187,25 @@ class BaseEngine(MDAEngine):
         # hardware state and the setup event applies the ROI.
         result = super().setup_sequence(sequence)
 
-        self._setup_dynatrack(meta, sequence)
+        # Read the pixel size only AFTER the setup event has been applied. MM resolves
+        # getPixelSizeUm() from whichever pixel-size config group currently matches the
+        # device property values, so before super().setup_sequence() it reflects leftover
+        # hardware state (whatever the GUI was last left in) rather than the state this
+        # acquisition actually runs with. Reading it early silently produced a different
+        # px_to_scan_ratio between otherwise-identical runs, which changed the deskewed
+        # X extent (the scan axis) and stretched every downstream preprocessing result.
+        pixel_size_um = core.getPixelSizeUm()
+        logger.info(
+            "Pixel size: %.5f um/px (config %r)",
+            pixel_size_um,
+            core.getCurrentPixelSizeConfig(),
+        )
+
+        # Also deferred to after the setup event: the Core-Focus device it
+        # selects is the one whose home position we track.
+        self._capture_focus_home()
+
+        self._setup_dynatrack(meta, sequence, pixel_size_um)
 
         return result
 
@@ -180,7 +215,7 @@ class BaseEngine(MDAEngine):
         ``event`` is either a single :class:`~useq.MDAEvent` or a
         :class:`~pymmcore_plus.core._sequencing.SequencedEvent` bundling the
         frames of one hardware-sequenced burst. Autofocus engages once per
-        burst, or once per Z-stack for single events — see
+        burst, or once per position for single events — see
         :meth:`_should_engage_autofocus`. When it fails, every frame the event
         would have acquired is skipped.
         """
@@ -191,12 +226,20 @@ class BaseEngine(MDAEngine):
             self._set_event_xy_position(event)
             self.mmcore.waitForDevice(self._xy_stage_device)
 
+        # Return the Core-Focus device to its home position before autofocus, so
+        # the plane autofocus locks onto is the same for every position instead
+        # of wherever the previous Z-stack left the device. This is also what
+        # returns the device home at the *end* of a Z-stack: the stack being
+        # unwound here is the one that just finished.
+        if self._use_autofocus and self._should_engage_autofocus(event):
+            self._return_focus_device_home("before autofocus at a new position")
+
         # Engage autofocus
         self._engage_autofocus(event)
 
         # Skip acquisition if autofocus failed. For single events, the outcome of
-        # the last engagement stands, so the whole Z-stack is skipped, not only
-        # the slice at which autofocus was attempted.
+        # the last engagement stands, so the whole position is skipped, not only
+        # the frame at which autofocus was attempted.
         if self._use_autofocus and not self._autofocus_success:
             raise SkipEvent(num_frames=num_frames(event), reason="autofocus failed")
 
@@ -234,6 +277,11 @@ class BaseEngine(MDAEngine):
 
     def teardown_sequence(self, sequence: MDASequence) -> None:
         """Return the hardware to a safe idle state after the sequence."""
+        # The last Z-stack of the run has no successor to unwind it in
+        # setup_event, so close it out here. Before super(), whose
+        # _restore_initial_state() may also move Z.
+        self._return_focus_device_home("end of sequence")
+
         self._teardown_dynatrack()
 
         super().teardown_sequence(sequence)
@@ -282,25 +330,144 @@ class BaseEngine(MDAEngine):
     # Autofocus
     # ------------------------------------------------------------------
 
+    def _capture_focus_home(self) -> None:
+        """Record the Core-Focus device's position before any z_plan move.
+
+        This is the plane autofocus is engaged at, and the plane the device is
+        returned to at the end of every Z-stack (see
+        :meth:`_return_focus_device_home`). Without it the focal reference is
+        wherever the previous Z-stack happened to stop — on the Dragonfly the
+        piezo sat at the top of the previous stack, so AFC locked onto the
+        *top* slice and the whole stack was acquired below focus.
+
+        Must be called after ``super().setup_sequence()``: the sequence's
+        ``setup`` event is what applies ``Core-Focus``, so reading it earlier
+        returns whichever stage the Micro-Manager config defaults to.
+
+        Homing only applies when the z_plan and the autofocus hardware drive
+        *different* devices. When Core-Focus is itself the autofocus stage
+        (mantis, and the demo config) there is no residual z_plan offset to
+        neutralize, and moving that device would fight the z_plan.
+        """
+        core = self.mmcore
+        self._focus_device = None
+        self._focus_home = None
+
+        if not self._use_autofocus:
+            return
+
+        focus_device = core.getFocusDevice()
+        if not focus_device:
+            logger.debug("No Core-Focus device; not tracking a focus home position")
+            return
+        if focus_device == self._autofocus_stage:
+            logger.debug(
+                f"Core-Focus device {focus_device!r} is the autofocus stage; "
+                "the z_plan and autofocus drive the same device, so no homing"
+            )
+            return
+
+        try:
+            home = core.getPosition(focus_device)
+        except Exception:
+            logger.exception(
+                f"Could not read the position of Core-Focus device {focus_device!r}; "
+                "autofocus will engage wherever the z_plan leaves it"
+            )
+            return
+
+        self._focus_device = focus_device
+        self._focus_home = home
+        logger.info(
+            f"Core-Focus device {focus_device!r} home position: {home} um. Autofocus "
+            f"engages here (autofocus stage: {self._autofocus_stage!r}) and the device "
+            "returns here at the end of each Z-stack."
+        )
+
+    def _return_focus_device_home(self, reason: str) -> None:
+        """Move the Core-Focus device back to its captured home position.
+
+        A no-op unless :meth:`_capture_focus_home` found a home to track, or
+        when the device is already there — which is the common case for the
+        first Z-stack of a run.
+        """
+        if self._focus_device is None or self._focus_home is None:
+            return
+
+        core = self.mmcore
+        try:
+            current = core.getPosition(self._focus_device)
+        except Exception:
+            logger.exception(f"Could not read {self._focus_device} position ({reason})")
+            current = None
+
+        if current == self._focus_home:
+            logger.debug(
+                f"{self._focus_device} already at its home position "
+                f"{self._focus_home} um ({reason})"
+            )
+            return
+
+        logger.debug(
+            f"Returning {self._focus_device} from {current} to its home position "
+            f"{self._focus_home} um ({reason})"
+        )
+        try:
+            core.setPosition(self._focus_device, self._focus_home)
+            core.waitForDevice(self._focus_device)
+        except Exception:
+            logger.exception(
+                f"Failed to return {self._focus_device} to {self._focus_home} um ({reason})"
+            )
+
+    @staticmethod
+    def _autofocus_position_key(event: MDAEvent) -> tuple:
+        """Return the axes of ``event.index`` that identify one focus position.
+
+        Only the time, position and grid indices are kept (see
+        ``AUTOFOCUS_POSITION_AXES``), so every event acquired at one XY location
+        within one timepoint maps to the same key regardless of its channel or
+        Z slice. Keys are sorted so that they compare equal independently of
+        index insertion order.
+        """
+        return tuple(
+            sorted(
+                (str(axis), index)
+                for axis, index in event.index.items()
+                if axis in AUTOFOCUS_POSITION_AXES
+            )
+        )
+
     def _should_engage_autofocus(self, event: MDAEvent) -> bool:
         """Return whether autofocus should be engaged for ``event``.
 
         A ``SequencedEvent`` is acquired as one hardware-triggered burst, so
-        autofocus engages once, before the burst starts. Single events are
-        delivered one Z slice at a time, so autofocus engages only at the
-        bottom of each stack (``index['z'] == 0``) and the lock is left alone
-        for the remaining slices.
+        autofocus engages once, before the burst starts.
 
-        Events without a Z axis have no ``'z'`` index and always engage.
+        Single events are delivered one frame at a time, so autofocus engages
+        once per *position* — the first event whose
+        :meth:`_autofocus_position_key` differs from the last one attempted.
+        Only the time, position and grid axes form that key, so stepping the
+        channel or the Z slice reuses the focus obtained on arrival, while a new
+        timepoint re-engages.
+
+        Keying on Z alone would re-engage once per channel, because the channel
+        axis is outer to Z: at one XY location a 4-channel Z-stack presents
+        ``c=0,z=0``, ``c=1,z=0``, ``c=2,z=0``, ``c=3,z=0``, all of which are
+        ``z == 0``.
+
+        A sequence with none of those axes has one focus position, so it
+        engages on the first event and not again.
+
+        Pure: the position is recorded by :meth:`_engage_autofocus`, which also
+        logs the reuse, so :meth:`setup_event` can ask this question first —
+        to decide whether to home the focus device — without emitting a
+        duplicate log line.
         """
         if isinstance(event, SequencedEvent):
             return True
 
-        z_index = event.index.get("z", 0)
-        if z_index != 0:
-            logger.debug(f"Autofocus already engaged for this Z-stack (z={z_index})")
-            return False
-        return True
+        return self._autofocus_position_key(event) != self._last_autofocus_position
 
     def _engage_autofocus(self, event: MDAEvent) -> None:
         """Engage autofocus for ``event``, recording the outcome.
@@ -319,7 +486,19 @@ class BaseEngine(MDAEngine):
             return
 
         if not self._should_engage_autofocus(event):
+            logger.debug(
+                f"Autofocus already engaged for this position "
+                f"({dict(self._autofocus_position_key(event))}); "
+                f"reusing it for index={dict(event.index)}"
+            )
             return
+
+        # Record the position before dispatching, not after: a failed attempt
+        # must not be retried for every remaining channel and slice of this
+        # position. _autofocus_success carries the outcome, and setup_event
+        # skips the whole position on failure.
+        if not isinstance(event, SequencedEvent):
+            self._last_autofocus_position = self._autofocus_position_key(event)
 
         if self._autofocus_method == DEMO_PFS_METHOD:
             self._autofocus_success = self._engage_demo_pfs(
@@ -419,21 +598,23 @@ class BaseEngine(MDAEngine):
     # DynaTrack position tracking
     # ------------------------------------------------------------------
 
-    def _setup_dynatrack(self, meta: ShrimpyMetadata, sequence: MDASequence) -> None:
+    def _setup_dynatrack(
+        self, meta: ShrimpyMetadata, sequence: MDASequence, pixel_size_um: float
+    ) -> None:
         """Build and start DynaTrack, if ``metadata.dynatrack`` enables it.
 
-        The XY pixel size (from the core) and the sequence z_plan step are the
-        single source of truth for all scale parameters; DynaTrack derives and
-        injects them. Called after the parent ``setup_sequence`` so the pixel
-        size and any grid-plan FOV sizes reflect the state the setup event
-        leaves the hardware in.
+        ``pixel_size_um`` and the sequence z_plan step are the single source of
+        truth for all scale parameters; DynaTrack derives and injects them.
+        Called after the parent ``setup_sequence`` so the pixel size and any
+        grid-plan FOV sizes reflect the state the setup event leaves the
+        hardware in.
         """
         core = self.mmcore
         self._dynatrack = DynaTrack.from_config(
             meta.dynatrack,
             sequence,
             data_path=self._data_path,
-            pixel_size_um=core.getPixelSizeUm(),
+            pixel_size_um=pixel_size_um,
         )
         if self._dynatrack is None:
             return
