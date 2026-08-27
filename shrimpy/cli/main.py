@@ -10,9 +10,16 @@ import click
 # pymmcore-plus reads env vars at import time as a module-level constants,
 # so these must be set before any pymmcore-plus import occurs.
 if not os.environ.get("PYMM_LOG_LEVEL"):
-    os.environ["PYMM_LOG_LEVEL"] = "INFO"
+    os.environ["PYMM_LOG_LEVEL"] = "DEBUG"
 if not os.environ.get("PYMM_LOG_RICH"):
     os.environ["PYMM_LOG_RICH"] = "1"
+# PYMM_LOG_LEVEL only affects the Python-side "pymmcore-plus" logger. MMCore's
+# own device-level trace ("Will start absolute move of ZStage to ...", "Waiting
+# for device ...", serial traffic) needs enableDebugLog(True), which
+# CMMCorePlus.__init__ gates on PYMM_DEBUG_LOG. Without it the CoreLog has no
+# record of which stage was commanded when.
+if not os.environ.get("PYMM_DEBUG_LOG"):
+    os.environ["PYMM_DEBUG_LOG"] = "1"
 
 from shrimpy.cli.acquire import acquire
 from shrimpy.cli.gui import gui
