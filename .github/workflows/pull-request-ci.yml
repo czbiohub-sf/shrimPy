@@ -60,7 +60,7 @@ jobs:
         $path = uv run python -c "from pymmcore_plus.install import USER_DATA_MM_PATH; print(USER_DATA_MM_PATH)"
         $version = uv run python -c "import pymmcore; print(pymmcore.__version__)"
         "path=$path" >> $env:GITHUB_OUTPUT
-        "key=mm-test-adapters-${{ runner.os }}-$version" >> $env:GITHUB_OUTPUT
+        "key=mm-test-adapters-${env:RUNNER_OS}-$version" >> $env:GITHUB_OUTPUT
 
     # Keyed on the pymmcore version, which carries the device interface version
     # the adapters must match; no restore-keys, so a stale cache can never hand
