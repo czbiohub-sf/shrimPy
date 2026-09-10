@@ -195,20 +195,11 @@ class BaseEngine(MDAEngine):
         # hardware state and the setup event applies the ROI.
         result = super().setup_sequence(sequence)
 
-        # Read the pixel size only AFTER the setup event has been applied. MM resolves
-        # getPixelSizeUm() from whichever pixel-size config group currently matches the
-        # device property values, so before super().setup_sequence() it reflects leftover
-        # hardware state (whatever the GUI was last left in) rather than the state this
-        # acquisition actually runs with. Reading it early silently produced a different
-        # px_to_scan_ratio between otherwise-identical runs, which changed the deskewed
-        # X extent (the scan axis) and stretched every downstream preprocessing result.
-        pixel_size_um = core.getPixelSizeUm()
-
-        # Also deferred to after the setup event: the Core-Focus device it
-        # selects is the one whose home position we track.
+        # Deferred to after the setup event: the Core-Focus device it selects is
+        # the one whose home position we track.
         self._capture_focus_home()
 
-        self._setup_dynatrack(meta, sequence, pixel_size_um)
+        self._setup_dynatrack(meta, sequence)
 
         return result
 
@@ -600,23 +591,29 @@ class BaseEngine(MDAEngine):
     # DynaTrack position tracking
     # ------------------------------------------------------------------
 
-    def _setup_dynatrack(
-        self, meta: ShrimpyMetadata, sequence: MDASequence, pixel_size_um: float
-    ) -> None:
+    def _setup_dynatrack(self, meta: ShrimpyMetadata, sequence: MDASequence) -> None:
         """Build and start DynaTrack, if ``metadata.dynatrack`` enables it.
 
-        ``pixel_size_um`` and the sequence z_plan step are the single source of
-        truth for all scale parameters; DynaTrack derives and injects them.
-        Called after the parent ``setup_sequence`` so the pixel size and any
-        grid-plan FOV sizes reflect the state the setup event leaves the
-        hardware in.
+        The XY pixel size (from the core) and the sequence z_plan step are the
+        single source of truth for all scale parameters; DynaTrack derives and
+        injects them.
+
+        Called after the parent ``setup_sequence``, and reading the pixel size
+        only then, because MM resolves getPixelSizeUm() from whichever
+        pixel-size config group currently matches the device property values.
+        Read earlier it reflects leftover hardware state (whatever the GUI was
+        last left in) rather than the state this acquisition runs with, which
+        silently produced a different px_to_scan_ratio between
+        otherwise-identical runs — changing the deskewed X extent (the scan
+        axis) and stretching every downstream preprocessing result. Any
+        grid-plan FOV sizes likewise reflect the setup event's state.
         """
         core = self.mmcore
         self._dynatrack = DynaTrack.from_config(
             meta.dynatrack,
             sequence,
             data_path=self._data_path,
-            pixel_size_um=pixel_size_um,
+            pixel_size_um=core.getPixelSizeUm(),
         )
         if self._dynatrack is None:
             return
