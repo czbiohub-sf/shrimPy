@@ -57,6 +57,21 @@ def test_init_default_attributes(engine):
     assert engine._xy_stage_speed is None
 
 
+def test_pfs_properties_excluded_from_logging(engine, caplog):
+    # Nikon PFS properties update continuously and would flood the debug log
+    for property_name in ("PFS Status", "PFS in Range", "FocusMaintenance"):
+        assert property_name in engine.NOISY_PROPERTIES
+    with caplog.at_level("DEBUG", logger="shrimpy.engines.base_engine"):
+        engine._on_property_changed("TIPFSStatus", "PFS Status", "0000001100001010")
+    assert caplog.text == ""
+
+
+def test_other_properties_still_logged(engine, caplog):
+    with caplog.at_level("DEBUG", logger="shrimpy.engines.base_engine"):
+        engine._on_property_changed("Camera", "Exposure", "10.0")
+    assert "Camera.Exposure = 10.0" in caplog.text
+
+
 def test_init_acquisition_timeouts(mock_core):
     # Timeouts guard against stalling on dropped frames / missed triggers
     engine = MantisEngine(mock_core)

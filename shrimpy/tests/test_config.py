@@ -75,23 +75,41 @@ def test_property_values_are_coerced_to_strings():
     ]
 
 
+DYNATRACK = {"enabled": True, "input_channel": "BF", "tracking_channel": "BF"}
+
+
 def test_dynatrack_section_is_validated():
-    meta = ShrimpyMetadata.model_validate(
-        {
-            **METADATA,
-            "dynatrack": {
-                "enabled": True,
-                "input_channel": "BF",
-                "tracking_channel": "BF",
-            },
-        }
-    )
+    meta = ShrimpyMetadata.model_validate({"dynatrack": DYNATRACK})
     assert meta.dynatrack is not None
     assert meta.dynatrack.input_channel == "BF"
 
     # A dynatrack section must be complete even when it is present but disabled
     with pytest.raises(ValidationError):
         ShrimpyMetadata.model_validate({"dynatrack": {"enabled": False}})
+
+
+def test_autofocus_and_dynatrack_cannot_both_be_enabled():
+    # Both correct Z, so enabling them together is rejected before any hardware
+    # is touched
+    with pytest.raises(ValidationError, match="cannot both be enabled"):
+        ShrimpyMetadata.model_validate({**METADATA, "dynatrack": DYNATRACK})
+
+
+def test_dynatrack_allowed_when_autofocus_disabled():
+    meta = ShrimpyMetadata.model_validate(
+        {
+            "autofocus": {"enabled": False, "method": "demo-PFS", "stage": "Z"},
+            "dynatrack": DYNATRACK,
+        }
+    )
+    assert meta.dynatrack.enabled is True
+
+
+def test_autofocus_allowed_when_dynatrack_disabled():
+    meta = ShrimpyMetadata.model_validate(
+        {**METADATA, "dynatrack": {**DYNATRACK, "enabled": False}}
+    )
+    assert meta.autofocus.enabled is True
 
 
 def test_from_sequence_reads_sequence_metadata():
@@ -115,6 +133,12 @@ def test_load_config_rejects_legacy_nesting(tmp_path):
     legacy = {**CONFIG, "metadata": {"mantis": METADATA}}
     with pytest.raises(ValueError, match="legacy config layout"):
         load_config(_write(tmp_path, legacy, "legacy.yaml"))
+
+
+def test_load_config_rejects_autofocus_with_dynatrack(tmp_path):
+    both = {**CONFIG, "metadata": {**METADATA, "dynatrack": DYNATRACK}}
+    with pytest.raises(ValidationError, match="cannot both be enabled"):
+        load_config(_write(tmp_path, both, "both.yaml"))
 
 
 def test_load_config_rejects_invalid_section(tmp_path):

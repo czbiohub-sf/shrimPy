@@ -161,7 +161,9 @@ meta.dynatrack                                         # DynaTrackConfig | None
 
 Validation is strict (`extra="forbid"`): an unknown metadata section, or an
 unknown key within one, is an error. A present-but-disabled `dynatrack` section
-is still fully validated — omit the section to disable tracking.
+is still fully validated — omit the section to disable tracking. Autofocus and
+DynaTrack may not both be enabled: both correct Z, so a config that enables the
+two together is rejected.
 
 #### 3. Logging Pattern
 Every module logs through the `shrimpy` logger hierarchy
