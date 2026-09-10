@@ -61,11 +61,14 @@ uv run python -c "import shrimpy; print('shrimPy installed successfully')"
 
 ## Usage
 
-### Running the Mantis GUI
+### Running the GUI
 
 ```sh
-uv run python -m shrimpy.mantis.launch_mantis_gui
+uv run shrimpy gui
 ```
+
+The older Mantis-specific acquisition widget is deprecated and kept for
+reference in `shrimpy/archive/`.
 
 ### CLI
 

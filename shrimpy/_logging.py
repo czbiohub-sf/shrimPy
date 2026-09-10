@@ -89,6 +89,18 @@ def configure_logging(
     return log_file
 
 
+def find_log_file() -> Path | None:
+    """Return the path of the FileHandler attached to the shrimpy logger.
+
+    Used to point subprocesses (e.g. the DynaTrack worker) at the acquisition's
+    log file so their messages land alongside the engine's.
+    """
+    for handler in logging.getLogger("shrimpy").handlers:
+        if isinstance(handler, logging.FileHandler):
+            return Path(handler.baseFilename)
+    return None
+
+
 def log_conda_environment(log_dir: Path) -> tuple[bytes | None, bytes | None]:
     """Log current conda environment information to a file.
 

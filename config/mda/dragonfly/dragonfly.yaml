@@ -1,0 +1,50 @@
+# Setup
+setup:
+  roi: [0, 0, 2048, 2046]  # set Zyla ROI
+  channel:
+    config: 1-Zyla_BF
+    group: Channels
+  properties:
+    - ['Core', 'Focus', 'ZStage']  # piezo stage
+    - ['Andor ILE', 'Laser 488-Power Setpoint', '2']  # set laser power
+
+# Define stage positions
+stage_positions:
+- x: -14522
+  y: -755
+  properties:
+    - ['FocusDrive', 'Position', '7032']
+- x: -15622
+  y: -755
+  properties:
+    - ['FocusDrive', 'Position', '7032']
+
+# Define time plan
+time_plan:
+  interval: 0
+  loops: 1
+
+# Define z plan (absolute)
+z_plan:
+  top: 10
+  bottom: -10
+  step: 1
+  go_up: true
+
+# Define channels
+channels:
+- config: 1-Zyla_BF
+  group: Channels
+  exposure: 5.0
+- config: 2-SonaLong_GFP
+  group: Channels
+  exposure: 20.0
+
+keep_shutter_open_across: ['z']
+
+# Microscope settings
+metadata:
+  autofocus:
+    enabled: true
+    method: Adaptive Focus Control
+    stage: FocusDrive

@@ -1156,9 +1156,12 @@ class DynaTrackUpdater(PositionUpdater):
             f"DynaTrack[mem]: before compute_shift p={position_index} t={timepoint_index} "
             f"rss={_rss_gb():.2f} GB"
         )
-        t_pcc = _time.monotonic()
+        t_shift = _time.monotonic()
         shift_image_xyz = self._compute_shift(reference_stack_zyx, current_stack_zyx)
-        logger.info(f"DynaTrack: phase cross corr took {_time.monotonic() - t_pcc:.2f}s")
+        logger.info(
+            f"DynaTrack: {self._config.tracking_method} took "
+            f"{_time.monotonic() - t_shift:.2f}s"
+        )
         logger.debug(
             f"DynaTrack[mem]: after compute_shift p={position_index} t={timepoint_index} "
             f"rss={_rss_gb():.2f} GB"

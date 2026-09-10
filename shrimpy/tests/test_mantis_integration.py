@@ -20,7 +20,8 @@ from useq import MDASequence, Position
 
 from shrimpy.config import load_config
 from shrimpy.dynatrack import DynaTrack
-from shrimpy.mantis.mantis_engine import DEMO_PFS_METHOD, MantisEngine
+from shrimpy.engines.base_engine import DEMO_PFS_METHOD
+from shrimpy.engines.mantis_engine import MantisEngine
 
 # Local copy of the demo MDA config, kept in tests/artifacts so test inputs
 # are independent of the project's runtime configuration files.
