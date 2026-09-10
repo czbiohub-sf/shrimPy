@@ -151,8 +151,6 @@ def dragonfly(mm_config: Path, mda_config: Path, output_dir: Path, name: str):
     # which buries the real timing in the log.
     from pymmcore_plus import CMMCorePlus
 
-    core = CMMCorePlus()
-
     from shrimpy.engines.dragonfly_engine import DragonflyEngine
 
     config_file = Path(__file__).parent.parent.parent / "config" / "logging.ini"
@@ -162,6 +160,8 @@ def dragonfly(mm_config: Path, mda_config: Path, output_dir: Path, name: str):
         logger.info(f"Log file: {log_file}")
     else:
         logger.warning(f"Logging config not found at {config_file}, using defaults")
+
+    core = CMMCorePlus()
 
     logger.info(f"Loading Micro-Manager configuration from {mm_config}")
     core.loadSystemConfiguration(mm_config)
