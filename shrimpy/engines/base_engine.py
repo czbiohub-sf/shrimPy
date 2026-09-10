@@ -203,11 +203,6 @@ class BaseEngine(MDAEngine):
         # px_to_scan_ratio between otherwise-identical runs, which changed the deskewed
         # X extent (the scan axis) and stretched every downstream preprocessing result.
         pixel_size_um = core.getPixelSizeUm()
-        logger.info(
-            "Pixel size: %.5f um/px (config %r)",
-            pixel_size_um,
-            core.getCurrentPixelSizeConfig(),
-        )
 
         # Also deferred to after the setup event: the Core-Focus device it
         # selects is the one whose home position we track.
