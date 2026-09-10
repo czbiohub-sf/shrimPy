@@ -28,7 +28,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from useq import MDASequence
 
 from shrimpy.dynatrack.tracking import DynaTrackConfig
@@ -98,6 +98,13 @@ class ShrimpyMetadata(BaseModel):
         tracking. A section that is present is validated even when
         ``enabled: false``, so ``input_channel`` / ``tracking_channel`` are
         required; omit the section entirely to disable tracking.
+
+    Raises
+    ------
+    pydantic.ValidationError
+        If autofocus and DynaTrack are both enabled: both correct Z, so
+        together they fight over the focal plane (see
+        :meth:`_check_autofocus_dynatrack_exclusive`).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -111,6 +118,24 @@ class ShrimpyMetadata(BaseModel):
     _coerce_reset = field_validator("reset_hardware_sequencing_settings", mode="before")(
         _as_property_settings
     )
+
+    @model_validator(mode="after")
+    def _check_autofocus_dynatrack_exclusive(self) -> ShrimpyMetadata:
+        """Reject configs that enable both autofocus and DynaTrack.
+
+        Both features drive Z: continuous autofocus holds the focal plane
+        against a reference surface, while DynaTrack writes a corrected Z onto
+        each event to follow the sample. Running them together means they
+        fight over the focal plane, and the correction DynaTrack writes onto a
+        sequenced event is not the position autofocus engages at.
+        """
+        if self.autofocus.enabled and self.dynatrack is not None and self.dynatrack.enabled:
+            raise ValueError(
+                "autofocus and dynatrack cannot both be enabled: both correct Z "
+                "and would fight over the focal plane. Disable one of them "
+                "(set 'autofocus.enabled: false' or 'dynatrack.enabled: false')."
+            )
+        return self
 
     @classmethod
     def from_sequence(cls, sequence: MDASequence) -> ShrimpyMetadata:
