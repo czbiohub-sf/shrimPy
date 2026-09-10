@@ -146,12 +146,8 @@ def dragonfly(mm_config: Path, mda_config: Path, output_dir: Path, name: str):
     # Import before configure_logging: pymmcore-plus calls configure_logging() at module
     # level, which clears all handlers on the "pymmcore-plus" logger. Importing first
     # ensures that call happens before fileConfig() attaches the shrimpy file handler.
-    # Plain CMMCorePlus, not RobustCMMCore, while debugging AFC: the retry
-    # wrapper turns every legitimately-failing call into 3 attempts 5 s apart,
-    # which buries the real timing in the log.
-    from pymmcore_plus import CMMCorePlus
-
     from shrimpy.engines.dragonfly_engine import DragonflyEngine
+    from shrimpy.robust_cmmcore import RobustCMMCore
 
     config_file = Path(__file__).parent.parent.parent / "config" / "logging.ini"
     log_file = configure_logging(config_file, output_dir, name)
@@ -161,7 +157,7 @@ def dragonfly(mm_config: Path, mda_config: Path, output_dir: Path, name: str):
     else:
         logger.warning(f"Logging config not found at {config_file}, using defaults")
 
-    core = CMMCorePlus()
+    core = RobustCMMCore()
 
     logger.info(f"Loading Micro-Manager configuration from {mm_config}")
     core.loadSystemConfiguration(mm_config)

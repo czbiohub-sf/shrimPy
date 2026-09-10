@@ -914,7 +914,7 @@ def test_move_focus_stage_skips_moves_below_threshold(mock_core):
     mock_core.getPosition.return_value = 7914.6245
 
     for target in (7914.6245, 7914.6245 + 0.0999, 7914.6245 - 0.0999):
-        assert eng._move_focus_stage("FocusDrive", target, "test") is True
+        assert eng._move_focus_stage("FocusDrive", target) is True
     mock_core.setPosition.assert_not_called()
     mock_core.waitForDevice.assert_not_called()
 
@@ -925,7 +925,7 @@ def test_move_focus_stage_moves_at_the_threshold(mock_core):
     eng = _dragonfly(mock_core)
     mock_core.getPosition.return_value = 100.0
 
-    assert eng._move_focus_stage("FocusDrive", 100.1, "test") is True
+    assert eng._move_focus_stage("FocusDrive", 100.1) is True
     mock_core.setPosition.assert_called_once_with("FocusDrive", 100.1)
     mock_core.waitForDevice.assert_called_once_with("FocusDrive")
 
@@ -934,7 +934,7 @@ def test_move_focus_stage_moves_well_above_threshold(mock_core):
     eng = _dragonfly(mock_core)
     mock_core.getPosition.return_value = 100.0
 
-    assert eng._move_focus_stage("FocusDrive", 90.0, "test") is True
+    assert eng._move_focus_stage("FocusDrive", 90.0) is True
     mock_core.setPosition.assert_called_once_with("FocusDrive", 90.0)
 
 
@@ -944,7 +944,7 @@ def test_move_focus_stage_moves_when_position_unreadable(mock_core):
     eng = _dragonfly(mock_core)
     mock_core.getPosition.side_effect = RuntimeError("no reply")
 
-    assert eng._move_focus_stage("FocusDrive", 100.0, "test") is True
+    assert eng._move_focus_stage("FocusDrive", 100.0) is True
     mock_core.setPosition.assert_called_once_with("FocusDrive", 100.0)
 
 
@@ -954,7 +954,7 @@ def test_move_focus_stage_reports_wait_failure(mock_core):
     mock_core.getPosition.return_value = 100.0
     mock_core.waitForDevice.side_effect = RuntimeError("timed out after 5000ms")
 
-    assert eng._move_focus_stage("FocusDrive", 130.0, "test") is False
+    assert eng._move_focus_stage("FocusDrive", 130.0) is False
 
 
 def test_move_focus_stage_reports_set_position_failure(mock_core):
@@ -962,4 +962,4 @@ def test_move_focus_stage_reports_set_position_failure(mock_core):
     mock_core.getPosition.return_value = 100.0
     mock_core.setPosition.side_effect = RuntimeError("out of range")
 
-    assert eng._move_focus_stage("FocusDrive", 130.0, "test") is False
+    assert eng._move_focus_stage("FocusDrive", 130.0) is False
