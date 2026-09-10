@@ -53,7 +53,7 @@ jobs:
     # *unauthenticated* GitHub API (pymmcore-plus uses a bare urlopen, so a
     # GITHUB_TOKEN would not be used), which is limited to 60 requests/hour per
     # IP and shared with every other job on the runner. Cache the installed
-    # adapters so most runs never make that call, and retry the ones that do.
+    # adapters so most runs never make that call at all.
     - name: Locate mmcore install directory
       id: mmcore
       run: |
@@ -74,18 +74,7 @@ jobs:
 
     - name: Install mmcore
       if: steps.mmcore-cache.outputs.cache-hit != 'true'
-      run: |
-        for ($attempt = 1; $attempt -le 3; $attempt++) {
-          uv run mmcore install --test-adapters
-          if ($LASTEXITCODE -eq 0) { exit 0 }
-          if ($attempt -lt 3) {
-            $wait = 30 * $attempt
-            Write-Host "mmcore install failed (attempt $attempt/3); retrying in $wait s"
-            Start-Sleep -Seconds $wait
-          }
-        }
-        Write-Host "mmcore install failed after 3 attempts"
-        exit 1
+      run: uv run mmcore install --test-adapters
 
     - name: Run tests
       run: make test
