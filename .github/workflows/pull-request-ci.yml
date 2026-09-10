@@ -49,7 +49,31 @@ jobs:
       # production `dynatrack` group uses) — enough for the DynaTrack unit tests.
       run: uv sync --group test-cpu
 
+    # `mmcore install` resolves the release to download through the
+    # *unauthenticated* GitHub API (pymmcore-plus uses a bare urlopen, so a
+    # GITHUB_TOKEN would not be used), which is limited to 60 requests/hour per
+    # IP and shared with every other job on the runner. Cache the installed
+    # adapters so most runs never make that call at all.
+    - name: Locate mmcore install directory
+      id: mmcore
+      run: |
+        $path = uv run python -c "from pymmcore_plus.install import USER_DATA_MM_PATH; print(USER_DATA_MM_PATH)"
+        $version = uv run python -c "import pymmcore; print(pymmcore.__version__)"
+        "path=$path" >> $env:GITHUB_OUTPUT
+        "key=mm-test-adapters-${env:RUNNER_OS}-$version" >> $env:GITHUB_OUTPUT
+
+    # Keyed on the pymmcore version, which carries the device interface version
+    # the adapters must match; no restore-keys, so a stale cache can never hand
+    # the tests adapters built for a different interface version.
+    - name: Cache mmcore test adapters
+      id: mmcore-cache
+      uses: actions/cache@v6.1.0
+      with:
+        path: ${{ steps.mmcore.outputs.path }}
+        key: ${{ steps.mmcore.outputs.key }}
+
     - name: Install mmcore
+      if: steps.mmcore-cache.outputs.cache-hit != 'true'
       run: uv run mmcore install --test-adapters
 
     - name: Run tests
