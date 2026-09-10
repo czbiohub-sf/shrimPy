@@ -94,6 +94,11 @@ class BaseEngine(MDAEngine):
         timeouts) before calling ``super().__init__()``.
     """
 
+    #: Device properties excluded from debug logging. ``BaseEngine`` logs every
+    #: property change; subclasses override this with the microscope-specific
+    #: properties that change too often to be useful in the log.
+    NOISY_PROPERTIES: tuple[str, ...] = ()
+
     def __init__(self, mmc: CMMCorePlus, *args, **kwargs):
         kwargs.setdefault("use_hardware_sequencing", True)
         kwargs.setdefault("force_set_xy_position", False)
@@ -118,9 +123,12 @@ class BaseEngine(MDAEngine):
     # ------------------------------------------------------------------
 
     def _on_property_changed(self, device: str, property_name: str, value: str) -> None:
-        """Log property changes at debug level."""
-        # Ignore select property changes
-        if property_name in ("PFS Status", "PFS in Range", "FocusMaintenance"):
+        """Log property changes at debug level.
+
+        Properties named in :attr:`NOISY_PROPERTIES` are skipped, which
+        lets a microscope filter out its own high-frequency device properties.
+        """
+        if property_name in self.NOISY_PROPERTIES:
             return
         logger.debug(f"Property changed: {device}.{property_name} = {value}")
 

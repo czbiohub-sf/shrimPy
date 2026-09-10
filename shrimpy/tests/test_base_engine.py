@@ -139,11 +139,12 @@ def test_property_changed_logged(engine, caplog):
     assert "Camera.Exposure = 10.0" in caplog.text
 
 
-def test_property_changed_ignores_pfs_status(engine, caplog):
-    # Noisy PFS properties are filtered out of the log
+def test_property_changed_logs_all_properties_by_default(engine, caplog):
+    # BaseEngine has no microscope-specific properties to filter out
+    assert engine.NOISY_PROPERTIES == ()
     with caplog.at_level("DEBUG", logger="shrimpy.engines.base_engine"):
         engine._on_property_changed("TIPFSStatus", "PFS Status", "0000001100001010")
-    assert caplog.text == ""
+    assert "TIPFSStatus.PFS Status = 0000001100001010" in caplog.text
 
 
 def test_roi_set_logged(engine, caplog):
