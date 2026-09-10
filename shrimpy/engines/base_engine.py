@@ -539,7 +539,7 @@ class BaseEngine(MDAEngine):
             output=AcquisitionSettings(
                 root_path=data_path, compression="blosc-zstd", format="acquire-zarr"
             ),
-            dimension_overrides={"z": {"chunk_size": min(512, sequence.sizes["z"])}},
+            dimension_overrides={"z": {"chunk_size": min(512, sequence.sizes.get("z", 1))}},
             overwrite=False,
         )
         logger.info("Acquisition completed successfully")
