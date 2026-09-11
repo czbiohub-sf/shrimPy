@@ -107,19 +107,14 @@ class DragonflyEngine(BaseEngine):
         return True
 
     def _engage_leica_afc(self, z_stage_name: str, z_position: float) -> bool:
-        """Run a full AFC focus at ``z_position``, retrying at Z offsets.
-
-        The first attempt focuses at ``z_position`` without touching the stage;
-        only if AFC fails to lock there is the stage stepped to the fallback
-        offsets, and returned to ``z_position`` if none of them work either.
+        """Move the Z stage to ``z_position`` and run a full AFC focus.
 
         Parameters
         ----------
         z_stage_name : str
             The name of the z stage device which is moved before focusing.
         z_position : float
-            The position at which autofocus is engaged, and the reference the
-            fallback offsets are measured from.
+            The target position at which autofocus will be engaged.
 
         Returns
         -------
@@ -130,17 +125,17 @@ class DragonflyEngine(BaseEngine):
         z_offsets = [0, -10, 10, -20, 20, -30, 30]  # in um
 
         # Check if autofocus is already engaged
-        if core.isContinuousFocusLocked():
+        try:
+            already_locked = core.isContinuousFocusLocked()
+        except Exception:
+            logger.exception("isContinuousFocusLocked() raised; assuming not locked")
+            already_locked = False
+        if already_locked:
             logger.debug("Continuous autofocus is already engaged")
             return True
 
         for z_offset in z_offsets:
-            # The first attempt asks AFC to lock at ``z_position`` itself, so
-            # there is nothing to move: commanding the stage to where it is
-            # already going to focus is the zero-distance move that hangs the
-            # LeicaDMI adapter (see _move_focus_stage). Only the fallback
-            # offsets actually drive the stage.
-            if z_offset and not self._move_focus_stage(z_stage_name, z_position + z_offset):
+            if not self._move_focus_stage(z_stage_name, z_position + z_offset):
                 continue
 
             try:

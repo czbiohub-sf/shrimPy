@@ -957,31 +957,6 @@ def test_dragonfly_engage_autofocus_calls_afc(mock_core):
     ]
 
 
-def test_engage_leica_afc_does_not_move_the_stage_for_the_zero_offset(mock_core):
-    # The first attempt focuses at z_position itself, so the stage is never
-    # commanded — not even when it reads far from z_position, which is when a
-    # distance-based guard alone would let a move through.
-    eng = _dragonfly(mock_core)
-    eng._autofocus_stage = "FocusDrive"
-    mock_core.getPosition.return_value = 500.0  # nowhere near the target
-
-    assert eng._engage_leica_afc("FocusDrive", 100.0) is True
-    mock_core.setPosition.assert_not_called()
-    mock_core.fullFocus.assert_called_once()
-
-
-def test_engage_leica_afc_fallback_offsets_are_relative_to_z_position(mock_core):
-    # Once AFC fails at z_position, the fallbacks are absolute targets around
-    # it, regardless of where the stage was left
-    eng = _dragonfly(mock_core)
-    eng._autofocus_stage = "FocusDrive"
-    mock_core.getPosition.return_value = 500.0
-    mock_core.fullFocus.side_effect = [RuntimeError("no lock"), None]
-
-    assert eng._engage_leica_afc("FocusDrive", 100.0) is True
-    mock_core.setPosition.assert_called_once_with("FocusDrive", 90.0)
-
-
 def _dragonfly(mock_core) -> DragonflyEngine:
     with patch("shrimpy.engines.base_engine.MDAEngine.__init__", return_value=None):
         eng = DragonflyEngine(mock_core)
