@@ -187,6 +187,13 @@ class BaseEngine(MDAEngine):
             if not self._autofocus_method == DEMO_PFS_METHOD:
                 core.setAutoFocusDevice(self._autofocus_method)
         else:
+            # Cleared, not merely left unset: one engine runs more than one
+            # sequence (FOV selection pre-scan, then the timelapse), so
+            # settings that survive would silently autofocus a run that asked
+            # not to, using the previous run's stage and method.
+            self._use_autofocus = False
+            self._autofocus_stage = None
+            self._autofocus_method = None
             self._home_focus_device = False
             logger.info("Autofocus is disabled for this acquisition")
 

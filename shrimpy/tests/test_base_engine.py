@@ -519,6 +519,22 @@ def test_capture_focus_home_skipped_unless_opted_in(engine, mock_core):
     assert engine._focus_home is None
 
 
+def test_setup_sequence_clears_autofocus_when_a_later_run_disables_it(engine, mock_core):
+    # One engine runs more than one sequence (FOV selection pre-scan, then the
+    # timelapse); a run that asks for no autofocus must not inherit the
+    # previous run's stage and method.
+    engine._use_autofocus = True
+    engine._autofocus_stage = "FocusDrive"
+    engine._autofocus_method = "AFC"
+
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence"):
+        engine.setup_sequence(MDASequence(metadata={"autofocus": {"enabled": False}}))
+
+    assert engine._use_autofocus is False
+    assert engine._autofocus_stage is None
+    assert engine._autofocus_method is None
+
+
 def test_setup_sequence_reads_home_focus_device_from_metadata(engine, mock_core):
     # Opt-in flows from metadata.autofocus.home_focus_device, and does not
     # linger when a later run omits it
