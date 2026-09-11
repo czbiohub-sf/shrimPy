@@ -495,8 +495,8 @@ class BaseEngine(MDAEngine):
 
         if not self._should_engage_autofocus(event):
             logger.debug(
-                f"Autofocus already engaged for this position; reusing it for "
-                f"index={dict(event.index)}"
+                f"Autofocus will not be engaged at index={dict(event.index)}, "
+                f"reusing the lock from {dict(self._last_autofocus_position)}"
             )
             return
 
