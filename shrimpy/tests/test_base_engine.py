@@ -483,6 +483,7 @@ def test_setup_sequence_resets_autofocus_position(engine, mock_core):
 def _autofocus_engine(engine, mock_core, focus_device="ZStage", stage="FocusDrive"):
     """Configure ``engine`` as a Dragonfly-style split focus/autofocus setup."""
     engine._use_autofocus = True
+    engine._home_focus_device = True
     engine._autofocus_method = "Adaptive Focus Control"
     engine._autofocus_stage = stage
     mock_core.getFocusDevice.return_value = focus_device
@@ -507,8 +508,39 @@ def test_capture_focus_home_skipped_when_focus_is_the_autofocus_stage(engine, mo
     assert engine._focus_home is None
 
 
+def test_capture_focus_home_skipped_unless_opted_in(engine, mock_core):
+    # mantis: Core-Focus (the LS scan galvo) differs from the autofocus stage,
+    # but moves neither sample nor objective, so PFS is indifferent to it and
+    # homing would only add a galvo move before every sequenced burst.
+    _autofocus_engine(engine, mock_core, focus_device="LS Scan Galvo", stage="ZDrive")
+    engine._home_focus_device = False
+    engine._capture_focus_home()
+    assert engine._focus_device is None
+    assert engine._focus_home is None
+
+
+def test_setup_sequence_reads_home_focus_device_from_metadata(engine, mock_core):
+    # Opt-in flows from metadata.autofocus.home_focus_device, and does not
+    # linger when a later run omits it
+    mock_core.getFocusDevice.return_value = "ZStage"
+    mock_core.getPosition.return_value = 5.0
+    autofocus = {"enabled": True, "method": "AFC", "stage": "FocusDrive"}
+
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence"):
+        engine.setup_sequence(
+            MDASequence(metadata={"autofocus": {**autofocus, "home_focus_device": True}})
+        )
+        assert engine._home_focus_device is True
+        assert engine._focus_device == "ZStage"
+
+        engine.setup_sequence(MDASequence(metadata={"autofocus": autofocus}))
+        assert engine._home_focus_device is False
+        assert engine._focus_device is None
+
+
 def test_capture_focus_home_skipped_when_autofocus_disabled(engine, mock_core):
     engine._use_autofocus = False
+    engine._home_focus_device = True
     mock_core.getFocusDevice.return_value = "ZStage"
     engine._capture_focus_home()
     assert engine._focus_device is None
@@ -527,8 +559,18 @@ def test_setup_sequence_recaptures_focus_home_per_run(engine, mock_core):
     _autofocus_engine(engine, mock_core)
     engine._focus_device = "stale"
     engine._focus_home = 999.0
+    sequence = MDASequence(
+        metadata={
+            "autofocus": {
+                "enabled": True,
+                "method": "AFC",
+                "stage": "FocusDrive",
+                "home_focus_device": True,
+            }
+        }
+    )
     with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence"):
-        engine.setup_sequence(MDASequence())
+        engine.setup_sequence(sequence)
     assert engine._focus_device == "ZStage"
     assert engine._focus_home == 5.0
 

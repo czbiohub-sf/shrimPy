@@ -115,6 +115,7 @@ class BaseEngine(MDAEngine):
         self._autofocus_stage = None
         self._autofocus_method = None
         self._autofocus_fail_at_index = None
+        self._home_focus_device = False
         # Position key of the last event autofocus was attempted for; see
         # _autofocus_position_key(). None means "not attempted yet this run".
         self._last_autofocus_position: tuple | None = None
@@ -181,10 +182,12 @@ class BaseEngine(MDAEngine):
             self._use_autofocus = True
             self._autofocus_stage = autofocus.stage
             self._autofocus_method = autofocus.method
+            self._home_focus_device = autofocus.home_focus_device
             logger.info(f"Enabling autofocus with method: {self._autofocus_method}")
             if not self._autofocus_method == DEMO_PFS_METHOD:
                 core.setAutoFocusDevice(self._autofocus_method)
         else:
+            self._home_focus_device = False
             logger.info("Autofocus is disabled for this acquisition")
 
         # Store XY stage device name
@@ -338,16 +341,20 @@ class BaseEngine(MDAEngine):
         ``setup`` event is what applies ``Core-Focus``, so reading it earlier
         returns whichever stage the Micro-Manager config defaults to.
 
-        Homing only applies when the z_plan and the autofocus hardware drive
-        *different* devices. When Core-Focus is itself the autofocus stage
-        (mantis, and the demo config) there is no residual z_plan offset to
-        neutralize, and moving that device would fight the z_plan.
+        Opt-in, via ``metadata.autofocus.home_focus_device``: the Core-Focus
+        device differing from the autofocus stage does not by itself mean the
+        two interact. On mantis they do not — Core-Focus is the light-sheet
+        scan galvo, which moves neither sample nor objective — so homing there
+        would only add a redundant galvo move before every sequenced burst.
+        Homing is also skipped when Core-Focus *is* the autofocus stage, where
+        there is no residual z_plan offset to neutralize and moving the device
+        would fight the z_plan.
         """
         core = self.mmcore
         self._focus_device = None
         self._focus_home = None
 
-        if not self._use_autofocus:
+        if not self._use_autofocus or not self._home_focus_device:
             return
 
         focus_device = core.getFocusDevice()
