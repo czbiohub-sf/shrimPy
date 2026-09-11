@@ -125,12 +125,7 @@ class DragonflyEngine(BaseEngine):
         z_offsets = [0, -10, 10, -20, 20, -30, 30]  # in um
 
         # Check if autofocus is already engaged
-        try:
-            already_locked = core.isContinuousFocusLocked()
-        except Exception:
-            logger.exception("isContinuousFocusLocked() raised; assuming not locked")
-            already_locked = False
-        if already_locked:
+        if core.isContinuousFocusLocked():
             logger.debug("Continuous autofocus is already engaged")
             return True
 
