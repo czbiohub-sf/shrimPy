@@ -195,7 +195,9 @@ Acquisitions are configured using YAML `MDASequence` files, validated by
 - `channels`: Channel configurations
 - `z_plan`: Z-stack range and step size
 - `stage_positions`: XY positions or a well-plate plan (optional)
-- `metadata.autofocus`: `enabled`, `method` (`PFS` / `demo-PFS`), `stage`
+- `metadata.autofocus`: `enabled`, `method` (`PFS` / `demo-PFS`), `stage`,
+  `home_focus_device` (default false; opt in only when the Core-Focus device's
+  position changes the plane autofocus locks onto, as on the Dragonfly)
 - `metadata.reset_hardware_sequencing_settings`: properties restored in teardown
 - `metadata.dynatrack`: DynaTrack position tracking, available to every engine
   (see `shrimpy/dynatrack/README.md`)

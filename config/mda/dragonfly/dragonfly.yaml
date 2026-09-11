@@ -48,3 +48,7 @@ metadata:
     enabled: true
     method: Adaptive Focus Control
     stage: FocusDrive
+    # The z_plan rides the ASI piezo (Core-Focus) while AFC drives the Leica
+    # FocusDrive. Without homing, AFC locks onto wherever the previous Z-stack
+    # stopped -- the top slice -- and the stack is acquired below focus.
+    home_focus_device: true
