@@ -189,7 +189,9 @@ def test_demo_mda_acquisition(demo_engine, demo_mda_sequence, tmp_path):
     assert sharding is not None, f"Expected ShardingCodec, got {codecs}"
     blosc = next((c for c in sharding.codecs if isinstance(c, BloscCodec)), None)
     assert blosc is not None, f"Expected BloscCodec in sharding, got {sharding.codecs}"
-    assert blosc.cname.value == "zstd", f"Expected zstd compression, got {blosc.cname}"
+    # zarr >=3.3 stores cname as a plain string; earlier versions used the BloscCname enum
+    cname = getattr(blosc.cname, "value", blosc.cname)
+    assert cname == "zstd", f"Expected zstd compression, got {blosc.cname}"
 
     # --- Verify z chunk_shape != 1 ---
     # dimension order: (t, c, z, y, x)
