@@ -69,13 +69,6 @@ channels:
   acquire_every: 1
   camera: null
 
-# Define axis order
-axis_order:
-- t
-- p
-- c
-- z
-
 autofocus_plan: null
 keep_shutter_open_across: []
 
