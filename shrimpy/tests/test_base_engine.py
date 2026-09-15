@@ -349,7 +349,7 @@ def test_demo_pfs_sequenced_event_uses_first_sub_event_index(engine):
 
 
 # ---------------------------------------------------------------------------
-# _should_engage_autofocus() — once per burst / once per Z-stack
+# _should_engage_autofocus() — once per burst / once per position
 # ---------------------------------------------------------------------------
 
 
@@ -361,47 +361,318 @@ def test_should_engage_autofocus_sequenced_event(engine):
         assert engine._should_engage_autofocus(SequencedEvent(events=sub_events)) is True
 
 
-def test_should_engage_autofocus_single_event_bottom_of_stack(engine):
-    # Single events arrive one Z slice at a time → engage only at z=0
+def test_should_engage_autofocus_single_event_new_position(engine):
+    # Nothing engaged yet → the first event of any position engages
     assert engine._should_engage_autofocus(MDAEvent(index={"t": 0, "p": 0, "z": 0})) is True
-    for z in (1, 2, 7):
-        event = MDAEvent(index={"t": 0, "p": 0, "z": z})
-        assert engine._should_engage_autofocus(event) is False
+
+    # Once a position has been attempted, no event of that position re-engages,
+    # whatever its channel or Z index
+    engine._last_autofocus_position = engine._autofocus_position_key(
+        MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 0})
+    )
+    for c in range(4):
+        for z in (0, 1, 7):
+            event = MDAEvent(index={"t": 0, "p": 0, "c": c, "z": z})
+            assert engine._should_engage_autofocus(event) is False
+
+    # A new timepoint, stage position or grid site engages again
+    for index in (
+        {"t": 1, "p": 0, "z": 0},
+        {"t": 0, "p": 1, "z": 0},
+        {"t": 0, "p": 0, "g": 1, "z": 0},
+    ):
+        assert engine._should_engage_autofocus(MDAEvent(index=index)) is True
+
+
+def test_autofocus_position_key_keeps_time_position_and_grid(engine):
+    # Channel and Z are dropped; time, position and grid identify the location,
+    # and key order does not depend on index insertion order.
+    key = engine._autofocus_position_key(
+        MDAEvent(index={"t": 2, "p": 1, "g": 3, "c": 9, "z": 4})
+    )
+    assert key == (("g", 3), ("p", 1), ("t", 2))
+    assert key == engine._autofocus_position_key(
+        MDAEvent(index={"z": 0, "c": 0, "g": 3, "t": 2, "p": 1})
+    )
 
 
 def test_should_engage_autofocus_event_without_z_axis(engine):
-    # No Z axis in the sequence → every event engages
+    # No Z axis in the sequence → the first event of each position still engages
     assert engine._should_engage_autofocus(MDAEvent(index={"t": 0, "p": 0})) is True
 
 
-def test_engage_autofocus_skipped_within_stack_keeps_previous_outcome(engine):
-    # Autofocus is not re-run for z>0; the previous outcome (and lock) stands
+def test_engage_autofocus_skipped_within_position_keeps_previous_outcome(engine):
+    # Autofocus is not re-run for the rest of a position; the previous outcome
+    # (and lock) stands
     engine._use_autofocus = True
     engine._autofocus_method = DEMO_PFS_METHOD
     engine._autofocus_fail_at_index = []
 
-    engine._engage_autofocus(MDAEvent(index={"t": 0, "p": 0, "z": 0}))
+    engine._engage_autofocus(MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 0}))
     assert engine._autofocus_success is True
 
-    # Would fail if it ran at all — but it must not run within the stack
+    # Would fail if it ran at all — but it must not run again at this position,
+    # neither for a later slice nor for a later channel
     engine._autofocus_fail_at_index = [{}]
-    engine._engage_autofocus(MDAEvent(index={"t": 0, "p": 0, "z": 1}))
+    engine._engage_autofocus(MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 1}))
+    assert engine._autofocus_success is True
+    engine._engage_autofocus(MDAEvent(index={"t": 0, "p": 0, "c": 1, "z": 0}))
     assert engine._autofocus_success is True
 
-    # ... and runs again at the bottom of the next stack
-    engine._engage_autofocus(MDAEvent(index={"t": 0, "p": 1, "z": 0}))
+    # ... and runs again at the next position
+    engine._engage_autofocus(MDAEvent(index={"t": 0, "p": 1, "c": 0, "z": 0}))
     assert engine._autofocus_success is False
 
 
-def test_engage_autofocus_calls_hardware_once_per_stack(engine):
-    # The microscope-specific hook is called only for the events that engage
+def test_engage_autofocus_calls_hardware_once_per_position(engine):
+    # The microscope-specific hook is called only for the events that engage:
+    # once for a whole 4-channel Z-stack, not once per channel.
     engine._use_autofocus = True
     engine._autofocus_method = "PFS"
 
     with patch.object(engine, "engage_autofocus", return_value=True) as mock_af:
-        for z in range(4):
-            engine._engage_autofocus(MDAEvent(index={"t": 0, "p": 0, "z": z}))
+        for c in range(4):
+            for z in range(4):
+                engine._engage_autofocus(MDAEvent(index={"t": 0, "p": 0, "c": c, "z": z}))
     assert mock_af.call_count == 1
+
+    # Each new timepoint at the same position re-engages once, not once per
+    # channel
+    with patch.object(engine, "engage_autofocus", return_value=True) as mock_af:
+        for t in range(1, 5):
+            for c in range(4):
+                for z in range(4):
+                    engine._engage_autofocus(MDAEvent(index={"t": t, "p": 0, "c": c, "z": z}))
+    assert mock_af.call_count == 4
+
+    # ... and so does a new grid site
+    with patch.object(engine, "engage_autofocus", return_value=True) as mock_af:
+        for z in range(4):
+            engine._engage_autofocus(MDAEvent(index={"t": 5, "p": 0, "g": 1, "z": z}))
+    assert mock_af.call_count == 1
+
+
+def test_engage_autofocus_failure_not_retried_within_position(engine):
+    # A failed attempt is recorded, so the remaining channels/slices of the
+    # position do not each retry the hardware
+    engine._use_autofocus = True
+    engine._autofocus_method = "PFS"
+
+    with patch.object(engine, "engage_autofocus", return_value=False) as mock_af:
+        for c in range(4):
+            engine._engage_autofocus(MDAEvent(index={"t": 0, "p": 0, "c": c, "z": 0}))
+    assert mock_af.call_count == 1
+    assert engine._autofocus_success is False
+
+
+def test_setup_sequence_resets_autofocus_position(engine, mock_core):
+    # The position key is per-run state: FOV selection runs two sequences
+    # through one engine and the timelapse must not inherit the pre-scan's
+    # last position.
+    engine._last_autofocus_position = (("p", 3),)
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence"):
+        engine.setup_sequence(MDASequence())
+    assert engine._last_autofocus_position is None
+
+
+# ---------------------------------------------------------------------------
+# Core-Focus homing — autofocus engages at the z_plan's starting position
+# ---------------------------------------------------------------------------
+
+
+def _autofocus_engine(engine, mock_core, focus_device="ZStage", stage="FocusDrive"):
+    """Configure ``engine`` as a Dragonfly-style split focus/autofocus setup."""
+    engine._use_autofocus = True
+    engine._home_focus_device = True
+    engine._autofocus_method = "Adaptive Focus Control"
+    engine._autofocus_stage = stage
+    mock_core.getFocusDevice.return_value = focus_device
+    mock_core.getPosition.return_value = 5.0
+    return engine
+
+
+def test_capture_focus_home_records_core_focus_position(engine, mock_core):
+    # The Core-Focus device differs from the autofocus stage → track its home
+    _autofocus_engine(engine, mock_core)
+    engine._capture_focus_home()
+    assert engine._focus_device == "ZStage"
+    assert engine._focus_home == 5.0
+
+
+def test_capture_focus_home_skipped_when_focus_is_the_autofocus_stage(engine, mock_core):
+    # mantis / demo: the z_plan and autofocus drive the same device, so homing
+    # it would fight the z_plan
+    _autofocus_engine(engine, mock_core, focus_device="ZDrive", stage="ZDrive")
+    engine._capture_focus_home()
+    assert engine._focus_device is None
+    assert engine._focus_home is None
+
+
+def test_capture_focus_home_skipped_unless_opted_in(engine, mock_core):
+    # mantis: Core-Focus (the LS scan galvo) differs from the autofocus stage,
+    # but moves neither sample nor objective, so PFS is indifferent to it and
+    # homing would only add a galvo move before every sequenced burst.
+    _autofocus_engine(engine, mock_core, focus_device="LS Scan Galvo", stage="ZDrive")
+    engine._home_focus_device = False
+    engine._capture_focus_home()
+    assert engine._focus_device is None
+    assert engine._focus_home is None
+
+
+def test_setup_sequence_clears_autofocus_when_a_later_run_disables_it(engine, mock_core):
+    # One engine runs more than one sequence (FOV selection pre-scan, then the
+    # timelapse); a run that asks for no autofocus must not inherit the
+    # previous run's stage and method.
+    engine._use_autofocus = True
+    engine._autofocus_stage = "FocusDrive"
+    engine._autofocus_method = "AFC"
+
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence"):
+        engine.setup_sequence(MDASequence(metadata={"autofocus": {"enabled": False}}))
+
+    assert engine._use_autofocus is False
+    assert engine._autofocus_stage is None
+    assert engine._autofocus_method is None
+
+
+def test_setup_sequence_reads_home_focus_device_from_metadata(engine, mock_core):
+    # Opt-in flows from metadata.autofocus.home_focus_device, and does not
+    # linger when a later run omits it
+    mock_core.getFocusDevice.return_value = "ZStage"
+    mock_core.getPosition.return_value = 5.0
+    autofocus = {"enabled": True, "method": "AFC", "stage": "FocusDrive"}
+
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence"):
+        engine.setup_sequence(
+            MDASequence(metadata={"autofocus": {**autofocus, "home_focus_device": True}})
+        )
+        assert engine._home_focus_device is True
+        assert engine._focus_device == "ZStage"
+
+        engine.setup_sequence(MDASequence(metadata={"autofocus": autofocus}))
+        assert engine._home_focus_device is False
+        assert engine._focus_device is None
+
+
+def test_capture_focus_home_skipped_when_autofocus_disabled(engine, mock_core):
+    engine._use_autofocus = False
+    engine._home_focus_device = True
+    mock_core.getFocusDevice.return_value = "ZStage"
+    engine._capture_focus_home()
+    assert engine._focus_device is None
+
+
+def test_capture_focus_home_survives_unreadable_position(engine, mock_core):
+    _autofocus_engine(engine, mock_core)
+    mock_core.getPosition.side_effect = RuntimeError("no reply")
+    engine._capture_focus_home()
+    assert engine._focus_device is None
+    assert engine._focus_home is None
+
+
+def test_setup_sequence_recaptures_focus_home_per_run(engine, mock_core):
+    # Per-run state, like the autofocus position key
+    _autofocus_engine(engine, mock_core)
+    engine._focus_device = "stale"
+    engine._focus_home = 999.0
+    sequence = MDASequence(
+        metadata={
+            "autofocus": {
+                "enabled": True,
+                "method": "AFC",
+                "stage": "FocusDrive",
+                "home_focus_device": True,
+            }
+        }
+    )
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence"):
+        engine.setup_sequence(sequence)
+    assert engine._focus_device == "ZStage"
+    assert engine._focus_home == 5.0
+
+
+def test_return_focus_device_home_moves_and_waits(engine, mock_core):
+    engine._focus_device = "ZStage"
+    engine._focus_home = 5.0
+    mock_core.getPosition.return_value = -2.0  # left at the bottom of a stack
+
+    engine._return_focus_device_home("test")
+    mock_core.setPosition.assert_called_once_with("ZStage", 5.0)
+    mock_core.waitForDevice.assert_called_once_with("ZStage")
+
+
+def test_return_focus_device_home_noop_when_already_home(engine, mock_core):
+    engine._focus_device = "ZStage"
+    engine._focus_home = 5.0
+    mock_core.getPosition.return_value = 5.0
+
+    engine._return_focus_device_home("test")
+    mock_core.setPosition.assert_not_called()
+
+
+def test_return_focus_device_home_noop_without_a_home(engine, mock_core):
+    engine._focus_device = None
+    engine._focus_home = None
+    engine._return_focus_device_home("test")
+    mock_core.setPosition.assert_not_called()
+
+
+def test_setup_event_homes_focus_before_autofocus(engine, mock_core):
+    # The piezo must be back at its home position *before* fullFocus runs,
+    # otherwise autofocus locks onto whatever plane the last stack ended on.
+    _autofocus_engine(engine, mock_core)
+    engine._focus_device = "ZStage"
+    engine._focus_home = 5.0
+    mock_core.getPosition.return_value = -2.0
+
+    with (
+        patch("shrimpy.engines.base_engine.MDAEngine.setup_event"),
+        patch.object(engine, "engage_autofocus", return_value=True) as mock_af,
+    ):
+        mock_core.attach_mock(mock_af, "engage_autofocus")
+        engine.setup_event(MDAEvent(index={"t": 0, "p": 0, "z": 0}))
+
+    names = [c[0] for c in mock_core.mock_calls]
+    assert names.index("setPosition") < names.index("engage_autofocus")
+
+
+def test_setup_event_does_not_home_within_a_position(engine, mock_core):
+    # Only the event that engages autofocus unwinds the stack; the remaining
+    # slices must not drag the focus device back mid-stack.
+    _autofocus_engine(engine, mock_core)
+    engine._focus_device = "ZStage"
+    engine._focus_home = 5.0
+    engine._autofocus_success = True
+    engine._last_autofocus_position = engine._autofocus_position_key(
+        MDAEvent(index={"t": 0, "p": 0, "z": 0})
+    )
+    mock_core.getPosition.return_value = -2.0
+
+    with (
+        patch("shrimpy.engines.base_engine.MDAEngine.setup_event"),
+        patch.object(engine, "engage_autofocus", return_value=True),
+    ):
+        for z in range(1, 5):
+            engine.setup_event(MDAEvent(index={"t": 0, "p": 0, "z": z}))
+
+    mock_core.setPosition.assert_not_called()
+
+
+def test_teardown_sequence_returns_focus_device_home(engine, mock_core):
+    # The last Z-stack has no successor to unwind it in setup_event
+    engine._focus_device = "ZStage"
+    engine._focus_home = 5.0
+    mock_core.getPosition.return_value = 5.0  # value differs below
+
+    mock_core.getPosition.return_value = -2.0
+    with patch("shrimpy.engines.base_engine.MDAEngine.teardown_sequence") as mock_super:
+        mock_core.attach_mock(mock_super, "super_teardown")
+        engine.teardown_sequence(MDASequence())
+
+    mock_core.setPosition.assert_called_once_with("ZStage", 5.0)
+    # Before super(), whose _restore_initial_state() may also move Z
+    names = [c[0] for c in mock_core.mock_calls]
+    assert names.index("setPosition") < names.index("super_teardown")
 
 
 # ---------------------------------------------------------------------------
@@ -655,30 +926,98 @@ def test_dragonfly_engage_autofocus_calls_afc(mock_core):
     eng._autofocus_stage = "FocusDrive"
     mock_core.getPosition.return_value = 100.0
 
-    eng._engage_autofocus(MDAEvent())
+    # Each call uses a distinct position index: autofocus engages once per
+    # position, so repeating one would be skipped (see _should_engage_autofocus)
+    eng._engage_autofocus(MDAEvent(index={"p": 0}))
     assert eng._autofocus_success is True
-    # Locked on the first try, at the target Z position
-    mock_core.setPosition.assert_called_once_with("FocusDrive", 100.0)
+    # Locked on the first try. The stage is already at the target, so the
+    # zero-distance move is skipped entirely (see _move_focus_stage).
+    mock_core.setPosition.assert_not_called()
     mock_core.fullFocus.assert_called_once()
 
     # A failed call is retried at increasing Z offsets, and the offset at which
     # it locks is the one the stage is left at
     mock_core.reset_mock()
     mock_core.fullFocus.side_effect = [RuntimeError("no lock"), None]
-    eng._engage_autofocus(MDAEvent())
+    eng._engage_autofocus(MDAEvent(index={"p": 1}))
     assert eng._autofocus_success is True
-    assert mock_core.setPosition.call_args_list == [
-        call("FocusDrive", 100.0),
-        call("FocusDrive", 90.0),
-    ]
+    assert mock_core.setPosition.call_args_list == [call("FocusDrive", 90.0)]
 
     # Exhausting every offset is reported, so setup_event skips the event
     mock_core.reset_mock()
     mock_core.fullFocus.side_effect = RuntimeError("no lock")
-    eng._engage_autofocus(MDAEvent())
+    eng._engage_autofocus(MDAEvent(index={"p": 2}))
     assert eng._autofocus_success is False
     # Every offset is tried, then the stage is returned to the target position
-    # rather than left at the last (+30 um) offset it failed on.
+    # rather than left at the last (+30 um) offset it failed on. The offset-0
+    # attempt and the restore are both no-ops here because the mocked stage
+    # never leaves 100.0.
     assert mock_core.setPosition.call_args_list == [
-        call("FocusDrive", 100.0 + offset) for offset in (0, -10, 10, -20, 20, -30, 30)
-    ] + [call("FocusDrive", 100.0)]
+        call("FocusDrive", 100.0 + offset) for offset in (-10, 10, -20, 20, -30, 30)
+    ]
+
+
+def _dragonfly(mock_core) -> DragonflyEngine:
+    with patch("shrimpy.engines.base_engine.MDAEngine.__init__", return_value=None):
+        eng = DragonflyEngine(mock_core)
+    eng._mmcore_ref = weakref.ref(mock_core)
+    return eng
+
+
+def test_move_focus_stage_skips_moves_below_threshold(mock_core):
+    # Commanding a Leica FocusDrive to the position it already holds hangs
+    # waitForDevice: the adapter never sees the $71004 motion flag it clears
+    # Busy() on. Anything under MIN_FOCUS_MOVE_UM is reported as already there.
+    eng = _dragonfly(mock_core)
+    mock_core.getPosition.return_value = 7914.6245
+
+    for target in (7914.6245, 7914.6245 + 0.0999, 7914.6245 - 0.0999):
+        assert eng._move_focus_stage("FocusDrive", target) is True
+    mock_core.setPosition.assert_not_called()
+    mock_core.waitForDevice.assert_not_called()
+
+
+def test_move_focus_stage_moves_at_the_threshold(mock_core):
+    # Exactly MIN_FOCUS_MOVE_UM moves, despite abs(100.1 - 100.0) landing at
+    # 0.09999999999999432 in binary floating point
+    eng = _dragonfly(mock_core)
+    mock_core.getPosition.return_value = 100.0
+
+    assert eng._move_focus_stage("FocusDrive", 100.1) is True
+    mock_core.setPosition.assert_called_once_with("FocusDrive", 100.1)
+    mock_core.waitForDevice.assert_called_once_with("FocusDrive")
+
+
+def test_move_focus_stage_moves_well_above_threshold(mock_core):
+    eng = _dragonfly(mock_core)
+    mock_core.getPosition.return_value = 100.0
+
+    assert eng._move_focus_stage("FocusDrive", 90.0) is True
+    mock_core.setPosition.assert_called_once_with("FocusDrive", 90.0)
+
+
+def test_move_focus_stage_moves_when_position_unreadable(mock_core):
+    # Without a position we cannot compute the distance, so command the move
+    # rather than silently skipping it
+    eng = _dragonfly(mock_core)
+    mock_core.getPosition.side_effect = RuntimeError("no reply")
+
+    assert eng._move_focus_stage("FocusDrive", 100.0) is True
+    mock_core.setPosition.assert_called_once_with("FocusDrive", 100.0)
+
+
+def test_move_focus_stage_reports_wait_failure(mock_core):
+    # A waitForDevice timeout is non-fatal: the caller tries the next Z offset
+    eng = _dragonfly(mock_core)
+    mock_core.getPosition.return_value = 100.0
+    mock_core.waitForDevice.side_effect = RuntimeError("timed out after 5000ms")
+
+    assert eng._move_focus_stage("FocusDrive", 130.0) is False
+
+
+def test_move_focus_stage_reports_set_position_failure(mock_core):
+    eng = _dragonfly(mock_core)
+    mock_core.getPosition.return_value = 100.0
+    mock_core.setPosition.side_effect = RuntimeError("out of range")
+
+    assert eng._move_focus_stage("FocusDrive", 130.0) is False

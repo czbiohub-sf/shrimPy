@@ -70,6 +70,23 @@ class AutofocusSettings(BaseModel):
         Name of the Z stage that is moved to help engage autofocus (e.g.
         ``"ZDrive"``). Z positions are not written to this stage while
         autofocus is enabled, so the focus lock is not disturbed.
+    home_focus_device : bool
+        Return the Core-Focus device to the position it held before the run
+        (its "home") before engaging autofocus at each new position, and once
+        at the end of the sequence.
+
+        Only set this when the Core-Focus device's position *changes the plane
+        autofocus locks onto*. On the Dragonfly it does: the z_plan rides the
+        ASI piezo while AFC drives the Leica FocusDrive, so without homing, AFC
+        locks onto wherever the previous Z-stack stopped — the top slice — and
+        the whole stack is acquired below focus.
+
+        On mantis the Core-Focus device is the light-sheet scan galvo, which
+        moves neither the sample nor the objective, so PFS on ``ZDrive`` is
+        indifferent to it; homing would only add a redundant galvo move before
+        every hardware-sequenced burst. Hence the default of False: the
+        Core-Focus device differing from ``stage`` does not by itself mean the
+        two interact.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -77,6 +94,7 @@ class AutofocusSettings(BaseModel):
     enabled: bool = False
     method: str | None = None
     stage: str | None = None
+    home_focus_device: bool = False
 
 
 class ShrimpyMetadata(BaseModel):
