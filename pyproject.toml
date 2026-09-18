@@ -196,6 +196,8 @@ select = ["F", "E", "W", "I", "N", "UP", "B"]
 ignore = [
     "E501",  # Line too long (handled by formatter)
     "N802",  # Function name should be lowercase (Qt uses camelCase)
+    "N803",  # Argument name should be lowercase (`X` is the sklearn design-matrix convention)
+    "N806",  # Variable in function should be lowercase (same, plus Qt's colA/colB layout vars)
     "N815",  # Variable in class scope should not be mixedCase (Qt uses camelCase)
 ]
 

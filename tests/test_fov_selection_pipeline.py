@@ -20,7 +20,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from shrimpy.fov_selection import pipeline  # noqa: E402
-from shrimpy.fov_selection.feature_extraction import FeatureExtractor as FE  # noqa: E402
+from shrimpy.fov_selection.feature_extraction import FeatureExtractor  # noqa: E402
 from shrimpy.fov_selection.segmentation import build_segmenter  # noqa: E402
 
 
@@ -42,12 +42,12 @@ def test_mask_only_features_match_full_path():
     inten = np.random.default_rng(1).normal(50, 10, mask.shape).astype(np.float32)
     px = 0.1133
 
-    rows = FE.object_feature_rows(mask, inten, px)
+    rows = FeatureExtractor.object_feature_rows(mask, inten, px)
     # Mirror what the full path assembles: group_features (per-object aggregates) updated
     # with mask_gap_features (mask-derived). Mask-only keys are drawn from BOTH -- coverage_frac
     # from the former, mask_occupancy_entropy from the latter.
-    full = FE.group_features(pd.DataFrame(rows))
-    full.update(FE.mask_gap_features(mask, px))
+    full = FeatureExtractor.group_features(pd.DataFrame(rows))
+    full.update(FeatureExtractor.mask_gap_features(mask, px))
     mask_only = pipeline._mask_only_features(mask, set(pipeline.MASK_ONLY_FEATURE_KEYS))
 
     for key in pipeline.MASK_ONLY_FEATURE_KEYS:
@@ -133,7 +133,7 @@ def test_object_counts_and_average_object_intensity():
     inten[8:16, 8:16] = 10.0
     inten[40:48, 40:48] = 30.0
 
-    rec = group_features(pd.DataFrame(FE.object_feature_rows(mask, inten, 0.1)))
+    rec = group_features(pd.DataFrame(FeatureExtractor.object_feature_rows(mask, inten, 0.1)))
     assert rec["object_counts"] == 2
     assert rec["average_object_intensity"] == pytest.approx(20.0)  # mean of 10 and 30
 
@@ -143,8 +143,8 @@ def test_object_counts_is_mask_only_and_matches_full_path():
     # key and equals the length of the per-object table on a populated mask.
     assert "object_counts" in pipeline.MASK_ONLY_FEATURE_KEYS
     mask = _blob_mask()
-    full = FE.group_features(
-        pd.DataFrame(FE.object_feature_rows(mask, mask.astype(np.float32), 0.1))
+    full = FeatureExtractor.group_features(
+        pd.DataFrame(FeatureExtractor.object_feature_rows(mask, mask.astype(np.float32), 0.1))
     )
     assert (
         pipeline._mask_only_features(mask, {"object_counts"})["object_counts"]

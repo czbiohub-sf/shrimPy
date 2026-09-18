@@ -10,7 +10,7 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as Navigation
 from matplotlib.figure import Figure
 from qtpy import QtWidgets
 
-from shrimpy.fov_selection import fov_model as FM
+from shrimpy.fov_selection import fov_model
 
 from ._common import (
     MPL_BG,
@@ -43,7 +43,7 @@ class ScoreMapTabMixin:
         bar.addWidget(self.map_y_combo)
         bar.addWidget(QtWidgets.QLabel("combine"))
         self.map_agg_combo = QtWidgets.QComboBox()
-        self.map_agg_combo.addItems(list(FM.DesirabilityModel.AGGREGATIONS))
+        self.map_agg_combo.addItems(list(fov_model.DesirabilityModel.AGGREGATIONS))
         if hasattr(self, "rank_agg_combo"):  # default to the Rank tab's aggregation
             self.map_agg_combo.setCurrentText(self.rank_agg_combo.currentText())
         bar.addWidget(self.map_agg_combo)
@@ -163,7 +163,7 @@ class ScoreMapTabMixin:
             return
 
         try:
-            model = FM.build_fov_model(self._map_pair_cfg(fx, fy))
+            model = fov_model.build_fov_model(self._map_pair_cfg(fx, fy))
         except Exception as e:  # noqa: BLE001
             self.map_status.setText(f"cannot build score model: {e}")
             self.map_canvas.draw_idle()

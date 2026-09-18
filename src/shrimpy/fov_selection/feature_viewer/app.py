@@ -43,7 +43,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 
 matplotlib.use("QtAgg")
 
-from . import data as D
+from . import data
 from ._common import (
     DEFAULT_DIR,
     REDUCE_PREFIX,
@@ -244,7 +244,7 @@ class FeatureViewer(
         g = QtWidgets.QGroupBox("4. Dim. reduction (3 comp.)")
         form = QtWidgets.QFormLayout(g)
         self.cb_method = QtWidgets.QComboBox()
-        self.cb_method.addItems(D.METHODS)
+        self.cb_method.addItems(data.METHODS)
         self.sp_perp = QtWidgets.QDoubleSpinBox()
         self.sp_perp.setRange(2, 200)
         self.sp_perp.setValue(30)
@@ -266,7 +266,7 @@ class FeatureViewer(
         self.reduce_status = QtWidgets.QLabel("not run")
         self.reduce_status.setWordWrap(True)
         form.addRow(self.reduce_status)
-        if not D.HAS_UMAP:
+        if not data.HAS_UMAP:
             self.reduce_status.setText(
                 "UMAP unavailable (pip install umap-learn). PCA / t-SNE ready."
             )
@@ -346,11 +346,11 @@ class FeatureViewer(
 
     def _load_files(self, files):
         """Load feature CSV(s); each row's image comes from sibling PNG folders."""
-        self._ingest(D.load_matrices(files), files)
+        self._ingest(data.load_matrices(files), files)
 
     def _load_paired(self, pairs):
         """Load explicit (csv, png_folder) pairs, each matrix with its own image folder."""
-        self._ingest(D.load_paired(pairs), [c for c, _ in pairs])
+        self._ingest(data.load_paired(pairs), [c for c, _ in pairs])
 
     def _ingest(self, df, files):
         """Common post-load wiring for both load paths."""
@@ -380,7 +380,7 @@ class FeatureViewer(
         self.reduced_cols = [
             c
             for c in (self.df.columns if self.df is not None else [])
-            if D.REDUCED_RE.match(c)
+            if data.REDUCED_RE.match(c)
         ]
         self._reset_hidden()
         self._clear_focus()  # positions shifted -> stale highlight
@@ -434,7 +434,7 @@ class FeatureViewer(
         axes = [self.cb_x.currentText(), self.cb_y.currentText()]
         if self.mode.currentText() == "3D":
             axes.append(self.cb_z.currentText())
-        return any(D.REDUCED_RE.match(a) for a in axes if a)
+        return any(data.REDUCED_RE.match(a) for a in axes if a)
 
     def _after_visibility_change(self):
         """After points are removed/restored, re-fit the reduced embedding on the survivors if one is shown, otherwise just replot."""
@@ -449,10 +449,10 @@ class FeatureViewer(
         import re
 
         for a in (self.cb_x.currentText(), self.cb_y.currentText(), self.cb_z.currentText()):
-            if a and D.REDUCED_RE.match(a):
+            if a and data.REDUCED_RE.match(a):
                 pref = re.match(r"^(PCA|TSNE|UMAP)", a).group(1)
                 method = {"PCA": "PCA", "TSNE": "t-SNE", "UMAP": "UMAP"}[pref]
-                if method in D.METHODS:
+                if method in data.METHODS:
                     self.cb_method.setCurrentText(method)
                     self.run_reduction()
                     return
@@ -589,7 +589,7 @@ class FeatureViewer(
         self._ready = False
         self._img_aspect_cache = None  # recompute the tile aspect from the new data's PNGs
         self._refresh_channel_combos()  # channel toggles reflect the loaded data's channels
-        feats = D.feature_columns(self.df) if self.df is not None else []
+        feats = data.feature_columns(self.df) if self.df is not None else []
         cols = list(self.df.columns) if self.df is not None else []
         # goodness / goodness_probability are labels / model outputs (kept out of the
         # reduction inputs, feature_columns), but the user still wants them selectable as
@@ -769,12 +769,12 @@ class FeatureViewer(
             self.reduce_status.setText("need >=3 visible FOVs")
             return
         method = self.cb_method.currentText()
-        feature_cols = D.feature_columns(self.df)
+        feature_cols = data.feature_columns(self.df)
         feature_matrix = self.df.iloc[visible_positions][feature_cols].to_numpy(float)
         self.reduce_status.setText(f"running {method} on {len(visible_positions)} FOVs…")
         QtWidgets.QApplication.processEvents()
         try:
-            embedding = D.run_reduction(
+            embedding = data.run_reduction(
                 feature_matrix,
                 method,
                 perplexity=self.sp_perp.value(),
@@ -815,7 +815,7 @@ class FeatureViewer(
         """Populate the channel toggles from the channels present in the loaded data and
         point __png at the active channel."""
         cols = self.df.columns if self.df is not None else []
-        chans = [c for c in D.CHANNELS if f"__png_{c}" in cols]
+        chans = [c for c in data.CHANNELS if f"__png_{c}" in cols]
         if self._channel not in chans:
             # default to the mask overlay when present, else the first available channel
             if "mask" in chans:

@@ -10,9 +10,9 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from qtpy import QtCore, QtGui, QtWidgets
 
-from shrimpy.fov_selection import fov_model as FM
+from shrimpy.fov_selection import fov_model
 
-from . import data as D
+from . import data
 from ._common import (
     PROFILE_DIR,
     RANK_CLICK_COLOR,
@@ -109,11 +109,11 @@ class RankTabMixin:
         act.addWidget(QtWidgets.QLabel("combine"))
         self.rank_agg_combo = QtWidgets.QComboBox()
         self.rank_agg_combo.addItems(
-            list(FM.DesirabilityModel.AGGREGATIONS)
+            list(fov_model.DesirabilityModel.AGGREGATIONS)
         )  # sum/product/gaussian
         # Start on the same rule an unset `aggregation` gets during acquisition, so what you
         # tune here is what runs.
-        self.rank_agg_combo.setCurrentText(FM.DesirabilityModel.DEFAULT_AGGREGATION)
+        self.rank_agg_combo.setCurrentText(fov_model.DesirabilityModel.DEFAULT_AGGREGATION)
         self.rank_agg_combo.setToolTip(
             "sum: weighted mean (compensatory)\n"
             "product: weighted geometric mean (one weak feature vetoes)\n"
@@ -186,7 +186,7 @@ class RankTabMixin:
     # ---- rank tab: knob state ----
     def _rank_feature_list(self):
         """The feature columns available to rank in the loaded data (empty if none loaded)."""
-        return D.feature_columns(self.df) if self.df is not None else []
+        return data.feature_columns(self.df) if self.df is not None else []
 
     def _seed_range(self, f, direction):
         """Data-derived (lo, hi) for feature ``f`` at ``direction``: label-agnostic quantiles
@@ -259,12 +259,12 @@ class RankTabMixin:
             )
             tbl.setItem(i, RCOL_FEATURE, item)
             dcombo = QtWidgets.QComboBox()
-            dcombo.addItems(list(FM.DesirabilityModel.DIRECTIONS))
+            dcombo.addItems(list(fov_model.DesirabilityModel.DIRECTIONS))
             dcombo.setCurrentText(spec["direction"])
             dcombo.currentTextChanged.connect(lambda _t, r=i: self._on_rank_dir_changed(r))
             tbl.setCellWidget(i, RCOL_DIR, dcombo)
             scombo = QtWidgets.QComboBox()  # curve family
-            scombo.addItems(list(FM.DesirabilityModel.SHAPES))
+            scombo.addItems(list(fov_model.DesirabilityModel.SHAPES))
             scombo.setCurrentText(spec.get("shape", "gaussian"))
             scombo.currentTextChanged.connect(lambda _t, r=i: self._on_rank_shape_changed(r))
             tbl.setCellWidget(i, RCOL_SHAPE, scombo)
@@ -294,7 +294,7 @@ class RankTabMixin:
         """(Re)build the three parameter columns for ``row`` from its internal spec, showing the
         interpretable params for the current shape/direction (see fov_model.curve_params)."""
         tbl = self.rank_table
-        params = FM.curve_params(
+        params = fov_model.curve_params(
             spec.get("shape", "gaussian"),
             spec["lo"],
             spec["hi"],
@@ -400,7 +400,7 @@ class RankTabMixin:
                 if w is not None and getattr(w, "_param_key", None) is not None:
                     params[w._param_key] = w.value()
             try:
-                lo, hi, curve_k = FM.curve_bounds(shape, params)
+                lo, hi, curve_k = fov_model.curve_bounds(shape, params)
             except (ValueError, KeyError):
                 lo, hi, curve_k = prev["lo"], prev["hi"], prev.get("curve_k", 0.0)
             weight = tbl.cellWidget(i, RCOL_WEIGHT).value()
@@ -457,7 +457,7 @@ class RankTabMixin:
         agg = (
             self.rank_agg_combo.currentText()
             if hasattr(self, "rank_agg_combo")
-            else FM.DesirabilityModel.DEFAULT_AGGREGATION
+            else fov_model.DesirabilityModel.DEFAULT_AGGREGATION
         )
         # top_fov is required by DesirabilityModel but is a SELECTION quota applied by the
         # manager; the viewer only scores/orders FOVs and never selects, so pass the minimal
@@ -482,7 +482,7 @@ class RankTabMixin:
         if n_used == 0:
             self.rank_status.setText("check at least one feature to score the FOVs")
             return
-        model = FM.build_fov_model(cfg)
+        model = fov_model.build_fov_model(cfg)
         proba, _good = model.predict(self.df)
         self.df["score"] = np.asarray(proba, float)
         # best-first; NaN scores sink to the end (numpy argsort puts NaN last)
@@ -553,7 +553,7 @@ class RankTabMixin:
         def desirability_at(x):
             """The profile's desirability height at value `x` for this feature's spec."""
             return float(
-                FM.DesirabilityModel._desirability(
+                fov_model.DesirabilityModel._desirability(
                     np.array([x]),
                     lo,
                     hi,
@@ -569,7 +569,7 @@ class RankTabMixin:
     def _sample_profile(spec, lo_x, hi_x, n=240):
         """(xs, ds) of the desirability curve across [lo_x, hi_x] using the model shape."""
         xs = np.linspace(lo_x, hi_x, n)
-        ds = FM.DesirabilityModel._desirability(
+        ds = fov_model.DesirabilityModel._desirability(
             xs,
             spec["lo"],
             spec["hi"],
@@ -659,7 +659,7 @@ class RankTabMixin:
                 if not np.isnan(fv):
                     ax.axvline(fv, color=RANK_CLICK_COLOR, lw=1.6, ls="--")
                     fd = float(
-                        FM.DesirabilityModel._desirability(
+                        fov_model.DesirabilityModel._desirability(
                             np.array([fv]),
                             spec["lo"],
                             spec["hi"],
@@ -774,7 +774,7 @@ class RankTabMixin:
             return
         r = feats.index(feature)
         spec = self.rank_ranges[feature]
-        params = FM.curve_params(
+        params = fov_model.curve_params(
             spec.get("shape", "gaussian"),
             spec["lo"],
             spec["hi"],
