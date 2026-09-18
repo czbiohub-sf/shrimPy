@@ -68,7 +68,7 @@ uv run shrimpy gui
 ```
 
 The older Mantis-specific acquisition widget is deprecated and kept for
-reference in `shrimpy/archive/`.
+reference in `archive/`.
 
 ### CLI
 
