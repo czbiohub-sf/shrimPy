@@ -166,11 +166,12 @@ setting fails before any hardware is touched:
 ```python
 from shrimpy.config import ShrimpyMetadata, load_config
 
-sequence = load_config('config/mda/mantis/demo.yaml')  # validates on load
-meta = ShrimpyMetadata.from_sequence(sequence)         # engines read this
-meta.autofocus                                         # AutofocusSettings
-meta.reset_hardware_sequencing_settings                # [(device, property, value), ...]
-meta.dynatrack                                         # DynaTrackConfig | None
+sequence = load_config("config/mda/mantis/demo.yaml")  # validates on load
+meta = ShrimpyMetadata.from_sequence(sequence)  # engines read this
+
+meta.autofocus  # AutofocusSettings
+meta.reset_hardware_sequencing_settings  # [(device, property, value), ...]
+meta.dynatrack  # DynaTrackConfig | None
 ```
 
 Validation is strict (`extra="forbid"`): an unknown metadata section, or an
