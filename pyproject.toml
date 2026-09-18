@@ -69,6 +69,8 @@ version_scheme = "post-release"
 local_scheme = "no-local-version"
 
 [tool.hatch.build.targets.wheel]
+# Only the package ships. Tests and archived implementations live at the repo root
+# (tests/, archive/) precisely so they stay out of the wheel.
 packages = ["shrimpy"]
 
 [tool.uv.sources]
@@ -141,6 +143,6 @@ known-first-party = ["shrimpy"]
 docstring-code-format = true
 
 [tool.pytest.ini_options]
-testpaths = ["shrimpy/tests"]
+testpaths = ["tests"]
 # Never collect tests from archived/legacy code or scripts (any depth)
 norecursedirs = ["archive", "scripts"]
