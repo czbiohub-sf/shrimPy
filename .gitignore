@@ -122,3 +122,5 @@ ENV/
 
 # Local debugger output (VS Code launch config)
 debug_output/
+# Claude
+.claude/

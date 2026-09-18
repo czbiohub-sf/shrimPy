@@ -69,13 +69,6 @@ channels:
   acquire_every: 1
   camera: null
 
-# Define axis order
-axis_order:
-- t
-- p
-- c
-- z
-
 autofocus_plan: null
 keep_shutter_open_across: []
 
@@ -87,6 +80,6 @@ metadata:
     - ['XYStage:XY:31', 'MotorSpeedX-S(mm/s)', '5.75']
     - ['XYStage:XY:31', 'MotorSpeedY-S(mm/s)', '5.75']
   autofocus:
-    enabled: false
+    enabled: true
     method: PFS
     stage: ZDrive

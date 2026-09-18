@@ -12,7 +12,14 @@ import types
 
 import pytest
 
-pytest.importorskip("qtpy")
+# qtpy is a core dependency, so importorskip("qtpy") is not enough: it imports
+# fine and then raises QtBindingsNotFoundError, which is not an ImportError. The
+# actual Qt binding arrives with the `fov` extra (napari[pyqt6]).
+try:
+    import qtpy  # noqa: F401
+except Exception:  # pragma: no cover - depends on which extras are installed
+    pytest.skip("no Qt bindings (install the `fov` extra)", allow_module_level=True)
+
 pytest.importorskip("matplotlib")
 
 

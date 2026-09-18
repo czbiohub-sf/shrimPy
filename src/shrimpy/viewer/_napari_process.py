@@ -233,7 +233,7 @@ class _ViewerState:
     def _add_deskew_widget(self, scan_step_um: float, raw_shape: tuple[int, ...]) -> None:
         """Add the shared Deskew dock widget (Display deskewed / Display raw + geometry)."""
         try:
-            from napari_deskew_preview._controls import DeskewControls
+            from napari_deskew_preview.controls import DeskewControls
 
             self._controls = DeskewControls(scan_step_um=scan_step_um)
             self._controls.displayDeskewedRequested.connect(self._display_deskewed)

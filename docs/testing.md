@@ -8,7 +8,7 @@ make test          # or: uv run pytest
 
 Most tests are pure unit tests and need no hardware. A handful of **integration
 tests** (the ones using the `demo_core` fixture in
-`shrimpy/tests/conftest.py` — e.g. `test_mantis_integration.py` and the
+`tests/conftest.py` — e.g. `test_mantis_integration.py` and the
 `DynaTrack` integration tests) drive a real `CMMCorePlus` against
 Micro-Manager's built-in **demo devices**. These require the Micro-Manager
 device adapters to be installed and discoverable by `pymmcore-plus`.

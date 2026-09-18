@@ -4,6 +4,9 @@ PACKAGE_NAME := shrimpy
 install:
 	uv sync
 
+# Optional: only for co-developing pymmcore-plus / ome-writers. `uv sync` alone
+# fetches both from the git branches pinned in pyproject.toml; this overlays
+# editable installs from sibling checkouts in the parent directory.
 .PHONY: install-dev
 install-dev:
 	uv sync
