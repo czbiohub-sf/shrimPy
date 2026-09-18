@@ -35,6 +35,10 @@ class MantisEngine(BaseEngine):
     microscope.
     """
 
+    #: Nikon PFS properties which update continuously while the focus lock is
+    #: engaged; logging them would flood the debug log.
+    NOISY_PROPERTIES = ("PFS Status", "PFS in Range", "FocusMaintenance")
+
     def __init__(self, mmc: CMMCorePlus, *args, **kwargs):
         """Initialize and register the MantisEngine with the core.
 
