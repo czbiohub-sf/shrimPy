@@ -82,20 +82,25 @@ Data are acquired using `shrimpy acquire <microscope_name>`:
 
 ```sh
 uv run shrimpy acquire mantis \
-    --config-filepath path/to/config.yaml \
-    --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name
+    --mm-config path/to/mantis.cfg \
+    --mda-config path/to/sequence.yaml \
+    --output-dir ./YYYY_MM_DD_experiment_name \
+    --name acquisition_name
 ```
 
 The acquisition may also be run in "demo" mode with the Micro-Manager `MMConfig_Demo.cfg` config. This does not require any microscope hardware:
 
 ```sh
 uv run shrimpy acquire mantis \
-    --config-filepath path/to/config.yaml \
-    --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name \
-    --mm-config-filepath path/to/MMConfig_Demo.cfg
+    --mm-config path/to/MMConfig_Demo.cfg \
+    --mda-config config/mda/mantis/demo.yaml \
+    --output-dir ./YYYY_MM_DD_experiment_name \
+    --name acquisition_name
 ```
 
-Acquisitions are configured using YAML files. See [examples/acquisition_settings/](examples/acquisition_settings/) for configuration examples.
+The output directory must already exist.
+
+Acquisitions are configured using YAML files, each an `MDASequence` with the microscope settings under `metadata`. See [config/mda/](config/mda/) for example configurations.
 
 ## Setting up the mantis microscope
 
@@ -109,7 +114,7 @@ Data reconstruction is accomplished with the [biahub](https://github.com/czbiohu
 
 ## Data and metadata format
 
-The format of the raw and reconstructed data and associated metadata is documented [here](/docs/data_structure.md).
+The format of the raw and reconstructed data and associated metadata is documented [here](docs/data_structure.md).
 
 ## Development
 

@@ -51,14 +51,19 @@ uv run shrimpy gui
 The older Mantis acquisition widget is deprecated and archived in
 `archive/` — do not update it.
 
-### Demo Mode Acquisition (Legacy)
-The legacy CLI is archived but provides a pattern for programmatic acquisition:
+### Demo Mode Acquisition
+No microscope hardware is required -- point `--mm-config` at Micro-Manager's
+`MMConfig_Demo.cfg`:
 ```bash
-shrimpy acquire mantis \
-    --config-filepath examples/acquisition_settings/example_mda_sequence.yaml \
-    --output-dirpath ./YYYY_MM_DD_experiment/acquisition_name \
-    --mm-config-filepath path/to/MMConfig_Demo.cfg
+uv run shrimpy acquire mantis \
+    --mm-config path/to/MMConfig_Demo.cfg \
+    --mda-config config/mda/mantis/demo.yaml \
+    --output-dir ./YYYY_MM_DD_experiment \
+    --name acquisition_name
 ```
+The archived pycromanager CLI used a different flag spelling
+(`--config-filepath` / `--output-dirpath` / `--mm-config-filepath`); its example
+settings are in `archive/pycromanager/acquisition_settings/`.
 
 ## Architecture
 
