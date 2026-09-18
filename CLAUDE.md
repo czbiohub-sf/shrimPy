@@ -157,7 +157,7 @@ setting fails before any hardware is touched:
 ```python
 from shrimpy.config import ShrimpyMetadata, load_config
 
-sequence = load_config('examples/mda/mantis/demo.yaml')  # validates on load
+sequence = load_config('config/mda/mantis/demo.yaml')  # validates on load
 meta = ShrimpyMetadata.from_sequence(sequence)         # engines read this
 meta.autofocus                                         # AutofocusSettings
 meta.reset_hardware_sequencing_settings                # [(device, property, value), ...]
@@ -224,18 +224,40 @@ so its save/load and run paths are out of sync with the engine. Use the CLI
 
 ## Key Dependencies
 
-- **pymmcore-plus** (0.17.0): Python bindings for Micro-Manager with MDA engine
-- **pymmcore-widgets**: Qt widgets for microscope control
+Core (always installed):
+- **pymmcore-plus**: Python bindings for Micro-Manager with MDA engine
 - **useq-schema**: Multi-dimensional acquisition sequence specification
+- **ome-writers** / **acquire-zarr**: OME-Zarr output
 - **PyYAML**: Configuration parsing
 - **numpy**: Numerical operations
-- **qtpy**: Qt abstraction layer (PyQt5/6, PySide2/6)
+- **click**: CLI
+- **qtpy**: Qt abstraction layer (only used lazily by the viewer child process)
 
-Optional (for analysis, not in core package):
-- **biahub**: Image analysis library (deskewing, reconstruction, registration)
-- **iohub**: OME-Zarr conversion and metadata management
-- **recOrder**: Phase and orientation reconstruction
-- **VisCy**: Virtual staining
+Nothing in the core set pulls Qt bindings, so `shrimpy acquire` runs headless.
+
+### Extras vs dependency groups
+
+`[project.optional-dependencies]` (extras) are optional **runtime features**: they
+ship in the package metadata, so a user of the installed package can opt in with
+`uv sync --extra <name>` or `pip install "shrimpy[<name>]"`.
+
+- `gui` — **pymmcore-gui**, required only by `shrimpy gui`
+- `viewer` — **napari** + **napari-deskew-preview**, the live acquisition viewer
+- `dynatrack` — **biahub[stain]** (pulls cytoland/VisCy), **matplotlib**, **torch**
+
+`[dependency-groups]` (PEP 735) are **development/CI only**: they are not in the
+published metadata and cannot be installed by a consumer, only with
+`uv sync --group <name>` from a checkout.
+
+- `dev` — pre-commit, pytest, ruff, iohub, ipykernel (synced by default)
+- `build` — build, twine (release tooling)
+- `test-cpu` — CI-only CPU torch wheel; conflicts with the `dynatrack` extra
+
+The rule: a feature a *user* of the package might want is an extra; tooling only a
+*contributor* needs is a group.
+
+Other optional analysis libraries, used through `dynatrack` rather than imported
+directly: **recOrder** (phase/orientation), **VisCy** (virtual staining).
 
 ## Code Style
 

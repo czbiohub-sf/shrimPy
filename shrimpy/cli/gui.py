@@ -31,7 +31,13 @@ def gui(mm_config: Path | None, unicore: bool):
 
         shrimpy gui --mm-config path/to/MMConfig_demo_ReplayCamera.cfg --unicore
     """
-    from pymmcore_gui._app import create_mmgui
+    try:
+        from pymmcore_gui._app import create_mmgui
+    except ImportError as exc:  # pragma: no cover - depends on how shrimpy was installed
+        raise click.ClickException(
+            "pymmcore-gui is not installed. It is an optional dependency; install it "
+            "with `uv sync --extra gui` or `pip install 'shrimpy[gui]'`."
+        ) from exc
 
     mmcore = None
     if unicore:
