@@ -8,8 +8,8 @@ from pathlib import Path
 
 import click
 
-from shrimpy._logging import configure_logging
 from shrimpy.cli.options import mda_config, mm_config, name, output_dir
+from shrimpy.logging import configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -69,13 +69,9 @@ def mantis(
     from shrimpy.engines.mantis_engine import MantisEngine
 
     # Configure logging
-    config_file = Path(__file__).parent.parent.parent / "config" / "logging.ini"
-    log_file = configure_logging(config_file, output_dir, name)
-    if config_file.exists():
-        logger.info(f"Logging configured for acquisition: {name}")
-        logger.info(f"Log file: {log_file}")
-    else:
-        logger.warning(f"Logging config not found at {config_file}, using defaults")
+    log_file = configure_logging(output_dir, name)
+    logger.info(f"Logging configured for acquisition: {name}")
+    logger.info(f"Log file: {log_file}")
 
     if unicore:
         from pymmcore_plus.experimental.unicore.core._unicore import UniMMCore
@@ -149,13 +145,9 @@ def dragonfly(mm_config: Path, mda_config: Path, output_dir: Path, name: str):
     from shrimpy.engines.dragonfly_engine import DragonflyEngine
     from shrimpy.robust_cmmcore import RobustCMMCore
 
-    config_file = Path(__file__).parent.parent.parent / "config" / "logging.ini"
-    log_file = configure_logging(config_file, output_dir, name)
-    if config_file.exists():
-        logger.info(f"Logging configured for acquisition: {name}")
-        logger.info(f"Log file: {log_file}")
-    else:
-        logger.warning(f"Logging config not found at {config_file}, using defaults")
+    log_file = configure_logging(output_dir, name)
+    logger.info(f"Logging configured for acquisition: {name}")
+    logger.info(f"Log file: {log_file}")
 
     core = RobustCMMCore()
 

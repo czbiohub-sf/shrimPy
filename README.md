@@ -21,37 +21,33 @@ Install uv (if not already installed):
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### Clone repositories
-
-shrimPy depends on local editable installs of `pymmcore-plus` and `ome-writers`. These are installed as editable packages during the initial phases of active development and will be pinned to stable releases eventually. Clone all three repositories into the same parent directory:
-
-```sh
-git clone https://github.com/czbiohub-sf/shrimPy.git
-git clone https://github.com/ieivanov/pymmcore-plus.git
-git clone https://github.com/ieivanov/ome-writers.git
-```
-
-Your directory structure should look like:
-
-```
-parent-directory/
-  shrimPy/
-  pymmcore-plus/
-  ome-writers/
-```
-
 ### Install
 
 ```sh
+git clone https://github.com/czbiohub-sf/shrimPy.git
 cd shrimPy
 uv sync
 ```
 
 This will automatically:
-- Download and install Python 3.11 (if not already available)
+- Download and install Python 3.12 (if not already available)
 - Create a `.venv` virtual environment
-- Install shrimPy and all dependencies (including dev tools)
-- Install `pymmcore-plus` and `ome-writers` as editable packages from the local clones
+- Install shrimPy, its dependencies, and the development tooling
+
+`pymmcore-plus`, `ome-writers`, and `useq-schema` track git branches pinned in `pyproject.toml` and are fetched for you. They do not need to be cloned separately.
+
+### Optional features
+
+The core install is headless and pulls no Qt bindings, so `shrimpy acquire` works on a bare server. Opt into the features you need:
+
+```sh
+uv sync --extra gui        # `shrimpy gui` (pymmcore-gui)
+uv sync --extra viewer     # live napari viewer during acquisition
+uv sync --extra dynatrack  # DynaTrack position tracking (biahub, torch)
+uv sync --all-extras       # all of the above
+```
+
+On Windows the `dynatrack` extra pulls the CUDA build of PyTorch, which requires the CUDA Toolkit to be installed. The `viewer` extra needs access to the `napari-deskew-preview` repository.
 
 ### Verify the installation
 
@@ -68,7 +64,7 @@ uv run shrimpy gui
 ```
 
 The older Mantis-specific acquisition widget is deprecated and kept for
-reference in `shrimpy/archive/`.
+reference in `archive/`.
 
 ### CLI
 
@@ -82,20 +78,25 @@ Data are acquired using `shrimpy acquire <microscope_name>`:
 
 ```sh
 uv run shrimpy acquire mantis \
-    --config-filepath path/to/config.yaml \
-    --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name
+    --mm-config path/to/mantis.cfg \
+    --mda-config path/to/sequence.yaml \
+    --output-dir ./YYYY_MM_DD_experiment_name \
+    --name acquisition_name
 ```
 
 The acquisition may also be run in "demo" mode with the Micro-Manager `MMConfig_Demo.cfg` config. This does not require any microscope hardware:
 
 ```sh
 uv run shrimpy acquire mantis \
-    --config-filepath path/to/config.yaml \
-    --output-dirpath ./YYYY_MM_DD_experiment_name/acquisition_name \
-    --mm-config-filepath path/to/MMConfig_Demo.cfg
+    --mm-config path/to/MMConfig_Demo.cfg \
+    --mda-config config/mda/mantis/demo.yaml \
+    --output-dir ./YYYY_MM_DD_experiment_name \
+    --name acquisition_name
 ```
 
-Acquisitions are configured using YAML files. See [examples/acquisition_settings/](examples/acquisition_settings/) for configuration examples.
+The output directory must already exist.
+
+Acquisitions are configured using YAML files, each an `MDASequence` with the microscope settings under `metadata`. See [config/mda/](config/mda/) for example configurations.
 
 ## Setting up the mantis microscope
 
@@ -109,7 +110,7 @@ Data reconstruction is accomplished with the [biahub](https://github.com/czbiohu
 
 ## Data and metadata format
 
-The format of the raw and reconstructed data and associated metadata is documented [here](/docs/data_structure.md).
+The format of the raw and reconstructed data and associated metadata is documented [here](docs/data_structure.md).
 
 ## Development
 

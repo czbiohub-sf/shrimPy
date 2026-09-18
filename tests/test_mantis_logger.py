@@ -7,11 +7,15 @@ from pathlib import Path
 
 import pytest
 
+import shrimpy
+
+from shrimpy.logging import DEFAULT_LOGGING_CONFIG
+
 
 @pytest.fixture
 def config_file() -> Path:
-    """Fixture that provides path to logging config file."""
-    return Path(__file__).parent.parent.parent / "config" / "logging.ini"
+    """Fixture that provides path to the packaged logging config file."""
+    return DEFAULT_LOGGING_CONFIG
 
 
 @pytest.fixture
@@ -35,17 +39,34 @@ def temp_log_dir():
                     pass
 
 
-def test_logging_config_file_exists(config_file):
-    """Test that logging configuration file exists."""
+def test_packaged_logging_config_is_installed(config_file):
+    """The logging config must ship with the package, not sit beside the source tree.
+
+    A wheel that omits it would silently drop shrimPy to the basic-config fallback.
+    """
     assert config_file.exists(), f"Logging config not found at {config_file}"
+    assert config_file.is_relative_to(Path(shrimpy.__file__).parent)
+
+
+def test_configure_logging_defaults_to_packaged_config(temp_log_dir):
+    """Called with no config_file, the packaged config is used (the production path)."""
+    from shrimpy.logging import configure_logging
+
+    configure_logging(temp_log_dir, "test_acquisition")
+
+    shrimpy_logger = logging.getLogger("shrimpy")
+    # Distinguishes the packaged config from the fallback: only the former sets a
+    # DEBUG-level FileHandler alongside an INFO-level console handler.
+    levels = sorted(h.level for h in shrimpy_logger.handlers)
+    assert levels == [logging.DEBUG, logging.INFO]
 
 
 def test_configure_logging_from_cli(config_file, temp_log_dir):
     """Test the configure_logging function from cli.acquire."""
-    from shrimpy._logging import configure_logging
+    from shrimpy.logging import configure_logging
 
     output_dir = temp_log_dir
-    log_file = configure_logging(config_file, output_dir, "test_acquisition")
+    log_file = configure_logging(output_dir, "test_acquisition", config_file)
 
     # Check that log file path is returned
     assert isinstance(log_file, Path)
@@ -62,9 +83,9 @@ def test_configure_logging_from_cli(config_file, temp_log_dir):
 
 def test_logger_hierarchy(config_file, temp_log_dir):
     """Test that logger hierarchy is properly set up."""
-    from shrimpy._logging import configure_logging
+    from shrimpy.logging import configure_logging
 
-    configure_logging(config_file, temp_log_dir, "test_acquisition")
+    configure_logging(temp_log_dir, "test_acquisition", config_file)
 
     # Get loggers from the shrimpy hierarchy
     cli_logger = logging.getLogger("shrimpy.cli.acquire")
@@ -77,9 +98,9 @@ def test_logger_hierarchy(config_file, temp_log_dir):
 
 def test_logger_file_handler(config_file, temp_log_dir):
     """Test that log file uses FileHandler as in the original setup."""
-    from shrimpy._logging import configure_logging
+    from shrimpy.logging import configure_logging
 
-    configure_logging(config_file, temp_log_dir, "test_acquisition")
+    configure_logging(temp_log_dir, "test_acquisition", config_file)
 
     # Get the root shrimpy logger
     shrimpy_logger = logging.getLogger("shrimpy")
@@ -98,10 +119,10 @@ def test_logger_file_handler(config_file, temp_log_dir):
 
 def test_logger_writes_to_file(config_file, temp_log_dir):
     """Test that log messages are written to file."""
-    from shrimpy._logging import configure_logging
+    from shrimpy.logging import configure_logging
 
     output_dir = temp_log_dir
-    configure_logging(config_file, output_dir, "test_acquisition")
+    configure_logging(output_dir, "test_acquisition", config_file)
 
     # Get a logger and write messages
     logger = logging.getLogger("shrimpy.engines.mantis_engine")
@@ -127,12 +148,12 @@ def test_logger_writes_to_file(config_file, temp_log_dir):
 
 def test_multiple_acquisitions_separate_logs(config_file, temp_log_dir):
     """Test that multiple acquisitions create separate log files."""
-    from shrimpy._logging import configure_logging
+    from shrimpy.logging import configure_logging
 
     output_dir = temp_log_dir
 
     # First acquisition
-    configure_logging(config_file, output_dir, "acquisition_1")
+    configure_logging(output_dir, "acquisition_1", config_file)
     logger1 = logging.getLogger("shrimpy.test1")
     logger1.info("Message from acquisition 1")
 
@@ -142,7 +163,7 @@ def test_multiple_acquisitions_separate_logs(config_file, temp_log_dir):
         logging.getLogger("shrimpy").removeHandler(handler)
 
     # Second acquisition
-    configure_logging(config_file, output_dir, "acquisition_2")
+    configure_logging(output_dir, "acquisition_2", config_file)
     logger2 = logging.getLogger("shrimpy.test2")
     logger2.info("Message from acquisition 2")
 
@@ -164,42 +185,35 @@ def test_multiple_acquisitions_separate_logs(config_file, temp_log_dir):
     assert "Message from acquisition 2" in log_files_2[0].read_text()
 
 
-def test_fallback_logging_when_config_missing(config_file, temp_log_dir):
-    """Test that logging falls back to basic config when config file is missing."""
-    from shrimpy._logging import configure_logging
+def test_fallback_logging_when_config_missing(temp_log_dir):
+    """A missing config file degrades to basic config instead of raising.
+
+    Points at a path that was never there, rather than moving the packaged config out
+    of the way -- a crash mid-test used to leave the installed config renamed.
+    """
+    from shrimpy.logging import configure_logging
 
     output_dir = temp_log_dir
+    missing = temp_log_dir / "does_not_exist.ini"
 
-    # Temporarily move config file (simulate missing)
-    backup_name = config_file.with_suffix(".ini.bak")
+    # Should not raise exception, should use fallback
+    log_file = configure_logging(output_dir, "test_acquisition", missing)
 
-    try:
-        if config_file.exists():
-            config_file.rename(backup_name)
+    # Log file path should be returned
+    assert isinstance(log_file, Path)
 
-        # Should not raise exception, should use fallback
-        log_file = configure_logging(config_file, output_dir, "test_acquisition")
-
-        # Log file path should be returned
-        assert isinstance(log_file, Path)
-
-        # Log file should still be created with timestamp naming
-        log_dir = output_dir / "logs"
-        log_files = list(log_dir.glob("test_acquisition_log_*.log"))
-        assert len(log_files) == 1
-        assert log_file.exists()
-
-    finally:
-        # Restore config file
-        if backup_name.exists():
-            backup_name.rename(config_file)
+    # Log file should still be created with timestamp naming
+    log_dir = output_dir / "logs"
+    log_files = list(log_dir.glob("test_acquisition_log_*.log"))
+    assert len(log_files) == 1
+    assert log_file.exists()
 
 
 def test_pymmcore_logger_captured(config_file, temp_log_dir):
     """Test that pymmcore-plus logger events are captured to the log file."""
-    from shrimpy._logging import configure_logging
+    from shrimpy.logging import configure_logging
 
-    configure_logging(config_file, temp_log_dir, "test_acquisition")
+    configure_logging(temp_log_dir, "test_acquisition", config_file)
 
     # Get pymmcore-plus logger and write a message
     pymmcore_logger = logging.getLogger("pymmcore-plus")
@@ -227,14 +241,14 @@ def test_pymmcore_logger_captured_after_import(config_file, temp_log_dir):
     from pymmcore_plus._logger import configure_logging as pymmcore_configure_logging
     from pymmcore_plus._logger import logger as pymmcore_logger
 
-    from shrimpy._logging import configure_logging
+    from shrimpy.logging import configure_logging
 
     # Replicate import-time: pymmcore-plus sets up its own handlers first
     pymmcore_configure_logging(file=None, log_to_stderr=False)
 
     # Then shrimpy configures logging, which should add a file handler without
     # disturbing the handlers already on the pymmcore-plus logger
-    configure_logging(config_file, temp_log_dir, "test_acquisition")
+    configure_logging(temp_log_dir, "test_acquisition", config_file)
 
     pymmcore_logger.info("Test message from pymmcore-plus after import")
 
@@ -254,14 +268,14 @@ def test_pymmcore_plus_own_handlers_preserved(config_file, temp_log_dir):
     from pymmcore_plus._logger import configure_logging as pymmcore_configure_logging
     from pymmcore_plus._logger import logger as pymmcore_logger
 
-    from shrimpy._logging import configure_logging
+    from shrimpy.logging import configure_logging
 
     # Set up pymmcore-plus's own handlers (simulating import-time with stderr handler)
     pymmcore_configure_logging(file=None, log_to_stderr=True)
     handlers_before = list(pymmcore_logger.handlers)
     assert len(handlers_before) > 0
 
-    configure_logging(config_file, temp_log_dir, "test_acquisition")
+    configure_logging(temp_log_dir, "test_acquisition", config_file)
 
     # All original pymmcore-plus handlers must still be present
     for handler in handlers_before:
@@ -277,9 +291,9 @@ def test_pymmcore_plus_own_handlers_preserved(config_file, temp_log_dir):
 
 def test_detailed_formatter(config_file, temp_log_dir):
     """Test that the detailed formatter includes module and function names."""
-    from shrimpy._logging import configure_logging
+    from shrimpy.logging import configure_logging
 
-    configure_logging(config_file, temp_log_dir, "test_acquisition")
+    configure_logging(temp_log_dir, "test_acquisition", config_file)
 
     # Get a logger and write a message
     logger = logging.getLogger("shrimpy.engines.mantis_engine")
