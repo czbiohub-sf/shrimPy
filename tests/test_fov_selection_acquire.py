@@ -450,7 +450,9 @@ def test_selected_fov_config_appends_the_dedup_index(tmp_path):
     experiment_dir = tmp_path / "expt"
     experiment_dir.mkdir()
 
-    fov_artifacts.save_selected_config(timelapse, experiment_dir, None)  # -> config_for_recovery.yaml
+    fov_artifacts.save_selected_config(
+        timelapse, experiment_dir, None
+    )  # -> config_for_recovery.yaml
     fov_artifacts.save_selected_config(timelapse, experiment_dir, 1)  # name taken -> _1
 
     assert (experiment_dir / "config_for_recovery.yaml").exists()

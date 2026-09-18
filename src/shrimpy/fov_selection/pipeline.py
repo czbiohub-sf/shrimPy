@@ -146,7 +146,9 @@ def _best_focus_z(
 # spread), i.e. WITHOUT regionprops shape props or cKDTree spacing. When the model only needs
 # these, the expensive per-object extraction is skipped. Values are identical to the ones the
 # full path produces (group_features / mask_gap_features call the same code).
-MASK_ONLY_FEATURE_KEYS = frozenset({"coverage_frac", "object_counts", "mask_occupancy_entropy"})
+MASK_ONLY_FEATURE_KEYS = frozenset(
+    {"coverage_frac", "object_counts", "mask_occupancy_entropy"}
+)
 
 
 def _mask_only_features(mask: np.ndarray, keys: set[str]) -> dict[str, float]:

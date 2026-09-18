@@ -43,6 +43,9 @@ logger = logging.getLogger(__name__)
 # features. Everything else numeric is a feature. This is a superset across the live
 # fov_summary.csv (name / filename / proba / selected / position / rank / well_row / well_col)
 # and older offline matrices (fov / timepoint / goodness / image_* / pixel_size_um).
+# The grouping below is deliberate, so keep the formatter off this literal:
+# its trailing comma would otherwise explode it to one entry per line.
+# fmt: off
 NON_FEATURE_COLUMNS = frozenset(
     {
         # identity / grouping
@@ -56,6 +59,7 @@ NON_FEATURE_COLUMNS = frozenset(
         "x", "y",
     }
 )
+# fmt: on
 
 GOODNESS_LABELS = {-1.0: "bad", 0.0: "neutral", 1.0: "good"}
 
@@ -127,9 +131,9 @@ def build_anndata(frame: pd.DataFrame, field_width: int = 6):
             obs["goodness"].map(GOODNESS_LABELS).fillna("unlabeled").astype("category")
         )
     if {"well_row", "well_col"} <= set(frame.columns):
-        obs["well"] = (
-            frame["well_row"].astype(str) + frame["well_col"].astype(str)
-        ).astype("category")
+        obs["well"] = (frame["well_row"].astype(str) + frame["well_col"].astype(str)).astype(
+            "category"
+        )
 
     # Row index: the CSV join key (the PNG stem), falling back to `name`.
     for key in ("filename", "name"):
@@ -229,8 +233,12 @@ def main() -> None:
     )
     ap.add_argument("csv", type=Path)
     ap.add_argument("-o", "--out", type=Path, help="output .zarr (default: <csv stem>.zarr)")
-    ap.add_argument("--plate", type=Path, help="OME-Zarr HCS store to read the field width from")
-    ap.add_argument("--field-width", type=int, default=6, help="fov_name zero-padding (default 6)")
+    ap.add_argument(
+        "--plate", type=Path, help="OME-Zarr HCS store to read the field width from"
+    )
+    ap.add_argument(
+        "--field-width", type=int, default=6, help="fov_name zero-padding (default 6)"
+    )
     args = ap.parse_args()
 
     out = write_feature_anndata(

@@ -143,8 +143,13 @@ def test_object_counts_is_mask_only_and_matches_full_path():
     # key and equals the length of the per-object table on a populated mask.
     assert "object_counts" in pipeline.MASK_ONLY_FEATURE_KEYS
     mask = _blob_mask()
-    full = FE.group_features(pd.DataFrame(FE.object_feature_rows(mask, mask.astype(np.float32), 0.1)))
-    assert pipeline._mask_only_features(mask, {"object_counts"})["object_counts"] == full["object_counts"]
+    full = FE.group_features(
+        pd.DataFrame(FE.object_feature_rows(mask, mask.astype(np.float32), 0.1))
+    )
+    assert (
+        pipeline._mask_only_features(mask, {"object_counts"})["object_counts"]
+        == full["object_counts"]
+    )
 
 
 def test_extract_features_empty_mask_reports_zero_coverage():

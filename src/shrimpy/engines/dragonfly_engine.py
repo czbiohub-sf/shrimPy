@@ -70,8 +70,7 @@ class DragonflyEngine(BaseEngine):
         return super().setup_sequence(sequence)
 
     def teardown_sequence(self, sequence: MDASequence) -> None:
-        """Close the shutter and restore autoshutter, then the shared teardown.
-        """
+        """Close the shutter and restore autoshutter, then the shared teardown."""
         super().teardown_sequence(sequence)
 
         core = self.mmcore

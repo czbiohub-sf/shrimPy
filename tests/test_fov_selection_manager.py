@@ -130,7 +130,10 @@ _RANKING_FEATURES = {"coverage_frac": {"shape": "gaussian", "center": 0.5, "fwhm
 
 def test_from_metadata_ranking_requires_top_fov():
     # ranking_by_defined_range selects purely by top_fov, so omitting it aborts before acquiring.
-    meta = {**META, "model": {"type": "ranking_by_defined_range", "features": _RANKING_FEATURES}}
+    meta = {
+        **META,
+        "model": {"type": "ranking_by_defined_range", "features": _RANKING_FEATURES},
+    }
     with pytest.raises(ValueError, match="top_fov"):
         FovSelection.from_metadata(meta, SEQUENCE, 0.1, decide_fn=_good_if_positive)
 
@@ -256,7 +259,13 @@ class _StubSelection(FovSelection):
     """
 
     def __init__(
-        self, debug_dir, top_fov, passed, fov_group=None, well_coords=None, calibration_mode=False
+        self,
+        debug_dir,
+        top_fov,
+        passed,
+        fov_group=None,
+        well_coords=None,
+        calibration_mode=False,
     ):
         self._debug_dir = debug_dir
         self._top_fov = top_fov
@@ -364,9 +373,7 @@ def test_finalize_gathers_only_selected_projection_pngs(tmp_path):
     sel_dir = tmp_path / "selected_fov"
     got = sorted(p.name for p in sel_dir.iterdir())
     # position "P" for all (stub default): files are prefixed by well then FOV name.
-    assert got == sorted(
-        f"{file_stem_name('P')}__{file_stem_name(n)}.png" for n in ("B", "C")
-    )
+    assert got == sorted(f"{file_stem_name('P')}__{file_stem_name(n)}.png" for n in ("B", "C"))
     # the unselected FOVs are not copied over.
     assert not (sel_dir / f"{file_stem_name('P')}__{file_stem_name('A')}.png").exists()
 
