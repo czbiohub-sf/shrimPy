@@ -9,13 +9,19 @@ segmentation-input resolution and the calibration extract-all behavior.
 
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
 import pytest
 
-from shrimpy.fov_selection import pipeline
-from shrimpy.fov_selection.feature_extraction import FeatureExtractor as FE
-from shrimpy.fov_selection.segmentation import build_segmenter
+# The FOV feature stack (scipy/scikit-image/pandas) ships in the `fov` extra, which
+# a default `uv sync` does not install -- skip rather than fail collection.
+pytest.importorskip("scipy")
+pytest.importorskip("skimage")
+
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+
+from shrimpy.fov_selection import pipeline  # noqa: E402
+from shrimpy.fov_selection.feature_extraction import FeatureExtractor as FE  # noqa: E402
+from shrimpy.fov_selection.segmentation import build_segmenter  # noqa: E402
 
 
 def _blob_mask(n: int = 40, size: int = 256, seed: int = 0) -> np.ndarray:

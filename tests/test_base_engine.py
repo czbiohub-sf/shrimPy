@@ -1046,6 +1046,10 @@ def test_teardown_captures_selection_before_debug_writes():
     """
     engine = BaseEngine.__new__(BaseEngine)
     engine._dynatrack = None
+    # Set by __init__, which __new__ bypasses; teardown reads them via
+    # _return_focus_device_home().
+    engine._focus_device = None
+    engine._focus_home = None
     engine._fov_passed_names = []
     core = MagicMock()
     engine._mmcore_ref = weakref.ref(core)  # `mmcore` is a read-only property
@@ -1069,6 +1073,10 @@ def test_calibration_teardown_still_logs_selection_and_finalizes():
     are stamped even when no timelapse follows."""
     engine = BaseEngine.__new__(BaseEngine)
     engine._dynatrack = None
+    # Set by __init__, which __new__ bypasses; teardown reads them via
+    # _return_focus_device_home().
+    engine._focus_device = None
+    engine._focus_home = None
     engine._fov_passed_names = None
     core = MagicMock()
     engine._mmcore_ref = weakref.ref(core)

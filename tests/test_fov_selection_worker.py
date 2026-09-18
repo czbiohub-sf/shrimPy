@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from shrimpy.fov_selection import prescan_artifacts
 
@@ -103,6 +104,7 @@ def _fv_artifacts(fov_name):
 
 
 def test_feature_viewer_layout_matches_standard(tmp_path):
+    pytest.importorskip("imageio")  # PNG export ships in the `fov` extra
     import pandas as pd
 
     for name in ("B4_0000", "B4/0001"):  # a slash must be sanitized to a safe stem
@@ -125,6 +127,7 @@ def test_feature_viewer_layout_matches_standard(tmp_path):
 
 
 def test_feature_viewer_layout_loads_in_the_viewer(tmp_path):
+    pytest.importorskip("imageio")  # PNG export ships in the `fov` extra
     # The written layout must round-trip through the viewer's own loader with the
     # brightfield PNG wired to each row.
     from shrimpy.fov_selection.feature_viewer import data
@@ -139,6 +142,7 @@ def test_feature_viewer_layout_loads_in_the_viewer(tmp_path):
 
 
 def test_normal_mode_fov_summary_loads_in_the_viewer(tmp_path):
+    pytest.importorskip("imageio")  # PNG export ships in the `fov` extra
     # fov_summary.csv (save_decision, normal mode) must load in the viewer just like the
     # calibration matrix: it carries a `filename` join column and its images live in the same
     # prescan_fov/ folder, while the decision outputs (proba/selected/rank) stay off the axes.
