@@ -214,6 +214,12 @@ ignore = [
 #         cheap immutable sentinel, not the mutable default B008 targets.
 "shrimpy/fov_selection/feature_viewer/*.py" = ["N812", "N803", "N806", "B008"]
 
+# `def rowCount(self, parent=QtCore.QModelIndex())` is the signature Qt's model
+# overrides are declared with, and an invalid QModelIndex is a value type, so
+# B008's mutable-default concern does not apply.
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["qtpy.QtCore.QModelIndex"]
+
 [tool.ruff.lint.isort]
 # Match current isort settings
 lines-between-types = 1
