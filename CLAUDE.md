@@ -68,9 +68,13 @@ settings are in `archive/pycromanager/acquisition_settings/`.
 ## Architecture
 
 ### Repository Structure
-Only `shrimpy/` is packaged; everything else is repo-only and stays out of the wheel.
+Only `src/shrimpy/` is packaged; everything else is repo-only and stays out of
+the wheel. The `src/` layout means an un-installed checkout cannot shadow the
+installed package: anything that imports `shrimpy` is exercising the real
+distribution, so a file missing from the wheel fails loudly instead of silently
+resolving against the working tree.
 ```
-shrimpy/                 # the installed package
+src/shrimpy/             # the installed package
 ├── engines/             # One module per microscope, all sharing BaseEngine
 │   ├── base_engine.py        # BaseEngine: MDAEngine subclass shared by all microscopes
 │   ├── mantis_engine.py      # Label-free + light-sheet microscope (implemented)
@@ -91,7 +95,7 @@ archive/                 # Historical implementations (pycromanager, old pymmcor
                          # deprecated Mantis Qt widget and its launcher)
 ```
 
-Nothing is re-exported from `shrimpy/engines/__init__.py`: importing a
+Nothing is re-exported from `src/shrimpy/engines/__init__.py`: importing a
 microscope engine pulls in its heavy optional dependencies (torch, via
 DynaTrack), and the CLI controls when that happens. Import the module directly,
 e.g. `from shrimpy.engines.mantis_engine import MantisEngine`.
@@ -99,7 +103,7 @@ e.g. `from shrimpy.engines.mantis_engine import MantisEngine`.
 ### Key Design Patterns
 
 #### 1. Engine Abstraction Pattern
-`shrimpy/engines/base_engine.py` holds `BaseEngine`, the `MDAEngine` subclass
+`src/shrimpy/engines/base_engine.py` holds `BaseEngine`, the `MDAEngine` subclass
 shared by every microscope. It owns the behavior that does not vary by platform:
 
 - hardware-sequencing defaults (`use_hardware_sequencing=True`,
@@ -132,12 +136,12 @@ class MantisEngine(BaseEngine):
 ```
 
 To add a new microscope:
-1. Subclass `BaseEngine` in `shrimpy/engines/<microscope_name>_engine.py`
+1. Subclass `BaseEngine` in `src/shrimpy/engines/<microscope_name>_engine.py`
    (`isim_engine.py` and `dragonfly_engine.py` are placeholders to fill in)
 2. Implement `engage_autofocus()`; override `setup_sequence()`, `setup_event()`,
    and positioning methods as needed, always calling `super()`
 3. Define microscope-specific metadata schema
-4. Add a `shrimpy acquire <microscope_name>` command in `shrimpy/cli/acquire.py`
+4. Add a `shrimpy acquire <microscope_name>` command in `src/shrimpy/cli/acquire.py`
 5. Add tests in `tests/test_<microscope_name>_engine.py`
 
 #### 2. Metadata Propagation Pattern
@@ -156,7 +160,7 @@ metadata:
   dynatrack: {enabled: true, input_channel: BF, tracking_channel: BF}
 ```
 
-`shrimpy/config.py` validates those sections with pydantic, so a mistyped
+`src/shrimpy/config.py` validates those sections with pydantic, so a mistyped
 setting fails before any hardware is touched:
 
 ```python
@@ -178,7 +182,7 @@ two together is rejected.
 #### 3. Logging Pattern
 Every module logs through the `shrimpy` logger hierarchy
 (`logger = logging.getLogger(__name__)`); the CLI configures the handlers once,
-from the packaged `shrimpy/logging/logging.ini`:
+from the packaged `shrimpy/logging/logging.ini` (`src/` in the repo):
 ```python
 from shrimpy.logging import configure_logging
 
@@ -197,10 +201,10 @@ Use `logger.debug()` for detailed diagnostics (file only) and `logger.info()` fo
 ### Configuration Files
 
 Acquisitions are configured using YAML `MDASequence` files, validated by
-`shrimpy/config.py`. Examples live in `config/mda/` — `mantis/` (`demo.yaml`,
+`src/shrimpy/config.py`. Examples live in `config/mda/` — `mantis/` (`demo.yaml`,
 `mantis.yaml`, `dynatrack_demo.yaml`), `dragonfly/dragonfly.yaml`, and
 `replay_demo.yaml`. These are samples to copy and edit; they are *not* installed
-with the package. The only runtime package data is `shrimpy/logging/logging.ini`.
+with the package. The only runtime package data is `src/shrimpy/logging/logging.ini`.
 
 **Key Configuration Sections:**
 - `setup`: ROI, imaging path, and device properties applied once before the run
@@ -213,7 +217,7 @@ with the package. The only runtime package data is `shrimpy/logging/logging.ini`
   position changes the plane autofocus locks onto, as on the Dragonfly)
 - `metadata.reset_hardware_sequencing_settings`: properties restored in teardown
 - `metadata.dynatrack`: DynaTrack position tracking, available to every engine
-  (see `shrimpy/dynatrack/README.md`)
+  (see `src/shrimpy/dynatrack/README.md`)
 
 Configs with the settings nested one level deeper under `metadata.mantis` (the
 older layout) are rejected by `load_config` with a migration message.
@@ -223,7 +227,7 @@ older layout) are rejected by `load_config` with a migration message.
 `shrimpy gui` launches pymmcore-gui. The Mantis-specific acquisition widget
 (`archive/mantis_acquisition_widget.py` and `archive/launch_mantis_gui.py`) **is
 deprecated** — do not update it. It still writes/reads the older
-`metadata['mantis']` nesting and has not been migrated to `shrimpy/config.py`,
+`metadata['mantis']` nesting and has not been migrated to `src/shrimpy/config.py`,
 so its save/load and run paths are out of sync with the engine. Use the CLI
 (`shrimpy acquire mantis --mda-config <config.yaml>`) instead.
 
@@ -295,7 +299,7 @@ tests for new microscope engines there.
 
 **Active restructuring:**
 - Transitioning from mantis-only to a multi-microscope framework: all engines
-  now live in `shrimpy/engines/` and share `BaseEngine`
+  now live in `src/shrimpy/engines/` and share `BaseEngine`
 - Archiving legacy code (pycromanager/V1-V2 engines, the Mantis Qt widget) in
   `archive/`
 - iSIM and Dragonfly engines are placeholders for future work
@@ -320,8 +324,8 @@ tests for new microscope engines there.
 
 ### Extending to New Microscopes
 When filling in the iSIM / Dragonfly placeholders or adding another microscope:
-1. Study `shrimpy/engines/base_engine.py` for the shared behavior and
-   `shrimpy/engines/mantis_engine.py` as the reference subclass
+1. Study `src/shrimpy/engines/base_engine.py` for the shared behavior and
+   `src/shrimpy/engines/mantis_engine.py` as the reference subclass
 2. Override only the methods that differ from `BaseEngine` behavior
 3. Document microscope-specific metadata schema in docstrings
 4. Log through `logging.getLogger(__name__)` so messages land in the shared

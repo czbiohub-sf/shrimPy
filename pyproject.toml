@@ -76,7 +76,7 @@ local_scheme = "no-local-version"
 [tool.hatch.build.targets.wheel]
 # Only the package ships. Tests and archived implementations live at the repo root
 # (tests/, archive/) precisely so they stay out of the wheel.
-packages = ["shrimpy"]
+packages = ["src/shrimpy"]
 
 [tool.uv.sources]
 pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "main" }
