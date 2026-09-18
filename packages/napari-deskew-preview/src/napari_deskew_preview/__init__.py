@@ -4,6 +4,11 @@ The source-agnostic core (:class:`DeskewProjector`, :class:`DeskewedArray`,
 :func:`deskewed_layer`, :func:`array_gather`) and the :class:`LazyPlaneArray` base are
 numpy-only and importable without napari; the napari dock widget lives in
 :mod:`napari_deskew_preview._widget`.
+
+:class:`~napari_deskew_preview.controls.DeskewControls` is public but deliberately
+*not* re-exported here: it needs qtpy, and this module must stay importable without
+Qt so shrimPy's acquisition process can import the package without pulling a GUI
+toolkit in. Import it from :mod:`napari_deskew_preview.controls` at the point of use.
 """
 
 from __future__ import annotations

@@ -8,19 +8,25 @@ description = "napari widget for quick on-demand deskew preview of oblique-plane
 version = "0.1.0"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.10"
+requires-python = ">=3.12"
+# No module here imports napari -- it is discovered *by* napari through the
+# napari.manifest entry point below, and the deskew core is plain numpy. Keeping
+# napari optional lets the numpy-only core (and its tests) be installed without
+# pulling a GUI stack; `pip install napari-deskew-preview[napari]` if you want
+# napari itself pulled in too.
 dependencies = [
   "numpy",
-  "napari",
   "qtpy",
 ]
 classifiers = [
   "Framework :: napari",
   "Intended Audience :: Science/Research",
-  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
 ]
 
 [project.optional-dependencies]
+napari = ["napari"]
 dev = ["pytest", "ruff"]
 
 [project.entry-points."napari.manifest"]
@@ -31,11 +37,8 @@ packages = ["src/napari_deskew_preview"]
 
 [tool.ruff]
 line-length = 95
-target-version = "py310"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["F", "E", "W", "I", "N", "UP", "B"]
 ignore = ["E501", "N802", "N815"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]

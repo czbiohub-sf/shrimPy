@@ -8,7 +8,7 @@ leading axes (T, C, position, ...) as a batch.
 The layer data is replaced **in place** with a lazy deskewed view that computes one plane at
 a time, so even volumes larger than RAM are viewable. Replacing in place (rather than adding
 a second layer) keeps a single, self-consistent set of dimension sliders. The UI is the
-shared :class:`~napari_deskew_preview._controls.DeskewControls`.
+shared :class:`~napari_deskew_preview.controls.DeskewControls`.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import logging
 
 from qtpy.QtWidgets import QVBoxLayout, QWidget
 
-from napari_deskew_preview._controls import DeskewControls
+from napari_deskew_preview.controls import DeskewControls
 from napari_deskew_preview.deskew import array_gather, deskewed_layer
 
 logger = logging.getLogger(__name__)

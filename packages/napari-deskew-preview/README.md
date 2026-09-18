@@ -17,9 +17,18 @@ or [napari-lattice](https://github.com/BioimageAnalysisCoreWEHI/napari_lattice).
 
 ## Install (internal)
 
+This package is developed in the [shrimPy](https://github.com/czbiohub-sf/shrimPy)
+repository as a uv workspace member, but it is a separate distribution and does not
+depend on shrimPy:
+
 ```bash
-pip install "napari-deskew-preview @ git+https://github.com/czbiohub-sf/napari-deskew-preview"
+pip install "napari-deskew-preview @ git+https://github.com/czbiohub-sf/shrimPy.git#subdirectory=packages/napari-deskew-preview"
 ```
+
+`napari` itself is an optional dependency — nothing here imports it, since napari
+discovers the widget through the `napari.manifest` entry point. Installing into an
+existing napari environment is the normal case; use
+`napari-deskew-preview[napari]` to pull napari in as well.
 
 ## Use
 

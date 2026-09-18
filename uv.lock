@@ -30,6 +30,10 @@ conflicts = [[
 ]]
 
 [manifest]
+members = [
+    "napari-deskew-preview",
+    "shrimpy",
+]
 overrides = [{ name = "pyqt6", marker = "sys_platform == 'linux'", specifier = "<6.10" }]
 
 [[package]]
@@ -2701,8 +2705,8 @@ wheels = [
 [package.optional-dependencies]
 pyqt6 = [
     { name = "pyqt6", marker = "sys_platform == 'linux' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "pyqt6-qt6", version = "6.9.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
-    { name = "pyqt6-qt6", version = "6.11.2", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "pyqt6-qt6", version = "6.9.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "pyqt6-qt6", version = "6.11.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
 ]
 
 [[package]]
@@ -2723,12 +2727,30 @@ wheels = [
 [[package]]
 name = "napari-deskew-preview"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview?branch=main#730de5cb5ddb2821128389f13884a6c4e0243a33" }
+source = { editable = "packages/napari-deskew-preview" }
 dependencies = [
-    { name = "napari" },
     { name = "numpy" },
     { name = "qtpy" },
 ]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "ruff" },
+]
+napari = [
+    { name = "napari" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "napari", marker = "extra == 'napari'" },
+    { name = "numpy" },
+    { name = "pytest", marker = "extra == 'dev'" },
+    { name = "qtpy" },
+    { name = "ruff", marker = "extra == 'dev'" },
+]
+provides-extras = ["napari", "dev"]
 
 [[package]]
 name = "napari-plugin-engine"
@@ -4208,8 +4230,8 @@ name = "pyqt6"
 version = "6.9.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyqt6-qt6", version = "6.9.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
-    { name = "pyqt6-sip", marker = "sys_platform != 'win32' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu')" },
+    { name = "pyqt6-qt6", version = "6.9.2", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'emscripten' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "pyqt6-sip", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'emscripten' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/32/1b/567f46eb43ca961efd38d7a0b73efb70d7342854f075fd919179fdb2a571/pyqt6-6.9.1.tar.gz", hash = "sha256:50642be03fb40f1c2111a09a1f5a0f79813e039c15e78267e6faaf8a96c1c3a6", size = 1067230, upload-time = "2025-06-06T08:49:30.307Z" }
 wheels = [
@@ -4231,13 +4253,10 @@ resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten' and extra != 'extra-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version >= '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra != 'extra-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and sys_platform == 'emscripten' and extra != 'extra-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra != 'extra-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
-    "python_full_version < '3.13' and sys_platform == 'win32' and extra != 'extra-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and sys_platform == 'emscripten' and extra != 'extra-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
     "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra != 'extra-7-shrimpy-dynatrack' and extra != 'group-7-shrimpy-test-cpu'",
 ]
@@ -5319,6 +5338,7 @@ build = [
 dev = [
     { name = "iohub" },
     { name = "ipykernel" },
+    { name = "napari-deskew-preview" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "ruff" },
@@ -5335,7 +5355,7 @@ requires-dist = [
     { name = "click" },
     { name = "matplotlib", marker = "extra == 'dynatrack'" },
     { name = "napari", extras = ["pyqt6"], marker = "extra == 'viewer'" },
-    { name = "napari-deskew-preview", marker = "extra == 'viewer'", git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview?branch=main" },
+    { name = "napari-deskew-preview", marker = "extra == 'viewer'", editable = "packages/napari-deskew-preview" },
     { name = "numpy" },
     { name = "ome-writers", extras = ["acquire-zarr"], git = "https://github.com/ieivanov/ome-writers?branch=main" },
     { name = "pymmcore", specifier = ">=11.14.0.75.0" },
@@ -5357,6 +5377,7 @@ build = [
 dev = [
     { name = "iohub" },
     { name = "ipykernel" },
+    { name = "napari-deskew-preview", editable = "packages/napari-deskew-preview" },
     { name = "pre-commit", specifier = "~=4.5" },
     { name = "pytest", specifier = "~=9.0" },
     { name = "ruff", specifier = "~=0.15" },
