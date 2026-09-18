@@ -277,7 +277,7 @@ Run `make format` before committing. The pre-commit hooks will catch violations.
 
 This project uses [uv](https://docs.astral.sh/uv/) for dependency management and `hatchling` + `hatch-vcs` as the build backend (version derived from git tags).
 
-- `pymmcore-plus` and `ome-writers` are installed as editable local sources (see `[tool.uv.sources]` in `pyproject.toml`)
+- `pymmcore-plus`, `ome-writers`, and `useq-schema` are pinned to git branches and fetched automatically (see `[tool.uv.sources]` in `pyproject.toml`); no local clones are needed. `make install-dev` optionally overlays editable installs from sibling checkouts when co-developing them.
 - Dependencies are locked in `uv.lock` for reproducibility
 
 ## Testing

@@ -21,37 +21,33 @@ Install uv (if not already installed):
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### Clone repositories
-
-shrimPy depends on local editable installs of `pymmcore-plus` and `ome-writers`. These are installed as editable packages during the initial phases of active development and will be pinned to stable releases eventually. Clone all three repositories into the same parent directory:
-
-```sh
-git clone https://github.com/czbiohub-sf/shrimPy.git
-git clone https://github.com/ieivanov/pymmcore-plus.git
-git clone https://github.com/ieivanov/ome-writers.git
-```
-
-Your directory structure should look like:
-
-```
-parent-directory/
-  shrimPy/
-  pymmcore-plus/
-  ome-writers/
-```
-
 ### Install
 
 ```sh
+git clone https://github.com/czbiohub-sf/shrimPy.git
 cd shrimPy
 uv sync
 ```
 
 This will automatically:
-- Download and install Python 3.11 (if not already available)
+- Download and install Python 3.12 (if not already available)
 - Create a `.venv` virtual environment
-- Install shrimPy and all dependencies (including dev tools)
-- Install `pymmcore-plus` and `ome-writers` as editable packages from the local clones
+- Install shrimPy, its dependencies, and the development tooling
+
+`pymmcore-plus`, `ome-writers`, and `useq-schema` track git branches pinned in `pyproject.toml` and are fetched for you. They do not need to be cloned separately.
+
+### Optional features
+
+The core install is headless and pulls no Qt bindings, so `shrimpy acquire` works on a bare server. Opt into the features you need:
+
+```sh
+uv sync --extra gui        # `shrimpy gui` (pymmcore-gui)
+uv sync --extra viewer     # live napari viewer during acquisition
+uv sync --extra dynatrack  # DynaTrack position tracking (biahub, torch)
+uv sync --all-extras       # all of the above
+```
+
+On Windows the `dynatrack` extra pulls the CUDA build of PyTorch, which requires the CUDA Toolkit to be installed. The `viewer` extra needs access to the `napari-deskew-preview` repository.
 
 ### Verify the installation
 
