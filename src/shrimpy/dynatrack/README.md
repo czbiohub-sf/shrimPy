@@ -121,7 +121,7 @@ metadata:
 The section is validated even when `enabled: false`, so `input_channel` and
 `tracking_channel` must be present; omit the whole section to disable tracking.
 
-See [`config/mda/mantis/dynatrack_demo.yaml`](../../config/mda/mantis/dynatrack_demo.yaml)
+See [`config/mda/mantis/dynatrack_demo.yaml`](../../../config/mda/mantis/dynatrack_demo.yaml)
 for a fully commented example.
 
 ## Package layout

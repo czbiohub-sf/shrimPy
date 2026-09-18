@@ -27,38 +27,27 @@ dependencies = [
   "numpy",
   "ome-writers[acquire-zarr]",
   "pymmcore>=11.14.0.75.0",
-  "pymmcore-gui",
   "pymmcore-plus",
-  "pymmcore-widgets",
   "PyYAML",
   "qtpy",
   "useq-schema",
 ]
 
 
+# Optional *runtime* features, opt-in by users of the installed package
+# (`uv sync --extra gui`, `pip install "shrimpy[gui]"`).
 [project.optional-dependencies]
-build = ["build", "twine"]
+# `shrimpy gui` only; nothing in the package imports Qt at module level, so the
+# acquisition CLI and the engines run headless without this.
+gui = ["pymmcore-gui"]
 viewer = ["napari[pyqt6]", "napari-deskew-preview"]
-
-[dependency-groups]
-dev = [
-  "pre-commit~=4.5",
-  "pytest~=9.0",
-  "ruff~=0.15",
-  "iohub",
-  "ipykernel",
-]
 dynatrack = [
   "biahub[stain]",  # [stain] pulls in cytoland, required for dynatrack
   "matplotlib",
   "torch",
 ]
-# CI-only: the CPU torch build is all the DynaTrack *unit* tests need (they
-# exercise pure torch/numpy math, not biahub/cytoland). Avoids the ~2.5 GB
-# CUDA wheel the `dynatrack` group pulls on Windows.
-test-cpu = ["torch"]
 # Smart FOV-selection stack (shrimpy/fov_selection/*). Opt-in: install with
-# `uv sync --group fov` (not in default-groups, so a plain `uv sync` stays lean).
+# `uv sync --extra fov` (an extra, so a plain `uv sync` stays lean).
 fov = [
   "cellpose",        # CellposeDINO "cpdino" + Cellpose-SAM "cpsam" segmentation
   "dinov3",          # DINOv3 ViT backbone required by cellpose's "cpdino" model (GitHub-only)
@@ -79,11 +68,30 @@ fov = [
   "matplotlib",      # figures (predict_fov_goodness, viewer)
   "joblib",          # save/load the trained tree model
   # reconstruction for the FOV pre-scan (deskew -> phase -> virtual staining).
-  # Pull the whole `dynatrack` group so a fov venv can run preprocessing too;
-  # this brings in biahub[stain] (waveorder/cytoland/jsonargparse) + torch,
-  # so torch also picks up the group="dynatrack" cu132 index on Windows.
-  { include-group = "dynatrack" },
+  # Pull the whole `dynatrack` extra so a fov venv can run preprocessing too;
+  # this brings in biahub[stain] (waveorder/cytoland/jsonargparse) + torch.
+  "shrimpy[dynatrack]",
+  # torch also arrives via shrimpy[dynatrack], but the cu132 index source above
+  # only applies to the extra that requires torch *directly*, so name it here
+  # too or `uv sync --extra fov` falls back to the PyPI CPU wheel on Windows.
+  "torch",
 ]
+
+# Development and CI only: never published in the package metadata, so these
+# cannot be installed by a consumer (`uv sync --group dev`).
+[dependency-groups]
+build = ["build", "twine"]
+dev = [
+  "pre-commit~=4.5",
+  "pytest~=9.0",
+  "ruff~=0.15",
+  "iohub",
+  "ipykernel",
+]
+# CI-only: the CPU torch build is all the DynaTrack *unit* tests need (they
+# exercise pure torch/numpy math, not biahub/cytoland). Avoids the ~2.5 GB
+# CUDA wheel the `dynatrack` extra pulls on Windows.
+test-cpu = ["torch"]
 
 [project.scripts]
 shrimpy = "shrimpy.cli.main:cli"
@@ -96,7 +104,9 @@ version_scheme = "post-release"
 local_scheme = "no-local-version"
 
 [tool.hatch.build.targets.wheel]
-packages = ["shrimpy"]
+# Only the package ships. Tests and archived implementations live at the repo root
+# (tests/, archive/) precisely so they stay out of the wheel.
+packages = ["src/shrimpy"]
 
 [tool.uv.sources]
 pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "main" }
@@ -109,11 +119,11 @@ napari-deskew-preview = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-
 # for the production `dynatrack` group; the CI-only `test-cpu` group takes the
 # CPU wheel instead. Elsewhere (macOS/Linux) both fall back to PyPI (CPU/MPS).
 torch = [
-  { index = "pytorch-cu132", group = "dynatrack", marker = "sys_platform == 'win32'" },
-  # `fov` include-groups `dynatrack`, but uv scopes this index to the group that
-  # DIRECTLY requires torch, not to include-group ancestors -- so `fov` needs its
-  # own entry or `uv sync --group fov` silently falls back to the PyPI CPU wheel.
-  { index = "pytorch-cu132", group = "fov", marker = "sys_platform == 'win32'" },
+  { index = "pytorch-cu132", extra = "dynatrack", marker = "sys_platform == 'win32'" },
+  # `fov` pulls shrimpy[dynatrack], but uv scopes this index to the extra that
+  # DIRECTLY requires torch, not to ancestors -- so `fov` needs its own entry or
+  # `uv sync --extra fov` silently falls back to the PyPI CPU wheel.
+  { index = "pytorch-cu132", extra = "fov", marker = "sys_platform == 'win32'" },
   { index = "pytorch-cpu", group = "test-cpu", marker = "sys_platform == 'win32'" },
 ]
 
@@ -126,13 +136,23 @@ biahub = { git = "https://github.com/czbiohub-sf/biahub", rev = "b011bca57d5bf15
 # no pipy release yet; uv sources don't propagate, so mirror biahub's cytoland pin
 cytoland = { git = "https://github.com/mehta-lab/VisCy", subdirectory = "applications/cytoland", rev = "4b62365c0df25929bffc7f01b3bb2d1c11d69cce" }
 
-# GitHub-only deps for the `fov` group (not on PyPI).
+# GitHub-only deps for the `fov` extra (not on PyPI).
 napari-iohub = { git = "https://github.com/czbiohub-sf/napari-iohub.git" }
 dinov3 = { git = "https://github.com/facebookresearch/dinov3" }  # cellpose "cpdino" backbone
 
-# torch's CUDA and CPU builds can't coexist; pick exactly one group.
+# torch's CUDA and CPU builds can't coexist; pick exactly one of these.
 [tool.uv]
-conflicts = [[{ group = "dynatrack" }, { group = "test-cpu" }]]
+conflicts = [
+  [{ extra = "dynatrack" }, { group = "test-cpu" }],
+  [{ extra = "fov" }, { group = "test-cpu" }],
+]
+
+# pyqt6-qt6 moved its Linux baseline from manylinux_2_28 to manylinux_2_34 at
+# 6.10.0, so 6.9.x is the newest build that runs on glibc 2.28 hosts (RHEL/Rocky
+# 8, which includes the HPC dev machines). Scoped to Linux so the Windows
+# acquisition machines stay on current Qt. Reaches PyQt6 wherever it enters the
+# graph -- pymmcore-gui via [gui], napari[pyqt6] via [viewer].
+override-dependencies = ["pyqt6<6.10; sys_platform == 'linux'"]
 
 [[tool.uv.index]]
 name = "pytorch-cu132"
@@ -191,6 +211,6 @@ known-first-party = ["shrimpy"]
 docstring-code-format = true
 
 [tool.pytest.ini_options]
-testpaths = ["shrimpy/tests"]
+testpaths = ["tests"]
 # Never collect tests from archived/legacy code or scripts (any depth)
 norecursedirs = ["archive", "scripts"]

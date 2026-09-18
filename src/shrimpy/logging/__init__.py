@@ -1,10 +1,27 @@
+"""Logging configuration for shrimPy acquisitions.
+
+The INI file that drives it (``logging.ini``) sits beside this module as package data,
+so it resolves the same way from a source checkout and from an installed wheel.
+
+Absolute imports are the default in Python 3, so the ``logging`` imported below is the
+standard library module, not this package.
+"""
+
+from __future__ import annotations
+
 import logging
 import logging.config
 import os
 
 from datetime import datetime
+from importlib.resources import files
 from pathlib import Path
 from subprocess import PIPE, STDOUT, Popen
+
+# ``files()`` returns a Traversable; shrimPy is never installed zipped (it drives local
+# hardware), so this is always a real filesystem path and can be handed straight to
+# ``fileConfig``.
+DEFAULT_LOGGING_CONFIG = Path(str(files("shrimpy.logging") / "logging.ini"))
 
 
 class _IgnorePropertyChangedWarnings(logging.Filter):
@@ -21,26 +38,32 @@ class _IgnorePropertyChangedWarnings(logging.Filter):
 
 
 def configure_logging(
-    config_file: Path,
     output_dir: Path,
     name: str,
+    config_file: Path | None = None,
 ) -> Path:
     """Configure logging from config file.
 
     Parameters
     ----------
-    config_file : Path
-        Path to logging configuration INI file.
     output_dir : Path
         Output directory where logs will be saved.
     name : str
         Acquisition name used for log file naming.
+    config_file : Path, optional
+        Path to a logging configuration INI file. Defaults to the packaged
+        :data:`DEFAULT_LOGGING_CONFIG`. If the file does not exist, falls back to a
+        basic INFO-level console + file configuration rather than failing: losing
+        the preferred log format must never stop an acquisition from starting.
 
     Returns
     -------
     Path
         Path to log file.
     """
+
+    if config_file is None:
+        config_file = DEFAULT_LOGGING_CONFIG
 
     # Create logs directory
     log_dir = output_dir / "logs"

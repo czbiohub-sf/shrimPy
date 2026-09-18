@@ -12,7 +12,7 @@ from useq import MDASequence
 
 from shrimpy.config import ShrimpyMetadata, load_config
 
-CONFIG_DIR = Path(__file__).parent.parent.parent / "config" / "mda" / "mantis"
+CONFIG_DIR = Path(__file__).parent.parent / "config" / "mda" / "mantis"
 DEMO_MDA_CONFIG = Path(__file__).parent / "artifacts" / "demo_mda_sequence.yaml"
 
 METADATA = {

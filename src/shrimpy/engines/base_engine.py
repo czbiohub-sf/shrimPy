@@ -50,7 +50,6 @@ from pymmcore_plus.mda import MDAEngine, SkipEvent
 from pymmcore_plus.metadata import SummaryMetaV1
 from useq import Axis, MDAEvent, MDASequence
 
-from shrimpy._logging import find_log_file
 from shrimpy.config import ShrimpyMetadata, load_config
 from shrimpy.dynatrack import DynaTrack
 from shrimpy.fov_selection import FovSelection
@@ -60,6 +59,7 @@ from shrimpy.fov_selection.sequences import (
     build_timelapse_sequence,
     fov_selection_config,
 )
+from shrimpy.logging import find_log_file
 
 logger = logging.getLogger(__name__)
 
