@@ -57,6 +57,9 @@ dev = [
   "ruff~=0.15",
   "iohub",
   "ipykernel",
+  # Workspace member, so its (numpy-only) tests run in the default environment.
+  # Costs nothing: its deps are numpy and qtpy, both already core.
+  "napari-deskew-preview",
 ]
 # CI-only: the CPU torch build is all the DynaTrack *unit* tests need (they
 # exercise pure torch/numpy math, not biahub/cytoland). Avoids the ~2.5 GB
@@ -78,11 +81,18 @@ local_scheme = "no-local-version"
 # (tests/, archive/) precisely so they stay out of the wheel.
 packages = ["src/shrimpy"]
 
+# napari-deskew-preview is developed here but published as its own distribution,
+# so it is a workspace member rather than part of the shrimpy package. It can be
+# installed on its own:
+#   pip install "napari-deskew-preview @ git+https://github.com/czbiohub-sf/shrimPy.git#subdirectory=packages/napari-deskew-preview"
+[tool.uv.workspace]
+members = ["packages/*"]
+
 [tool.uv.sources]
 pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "main" }
 ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
 useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "main" }
-napari-deskew-preview = { git = "ssh://git@github.com/czbiohub-sf/napari-deskew-preview", branch = "main" }
+napari-deskew-preview = { workspace = true }
 # Windows: CUDA build via cu132 index (requires CUDA Toolkit 13.2 on the machine)
 # for the production `dynatrack` group; the CI-only `test-cpu` group takes the
 # CPU wheel instead. Elsewhere (macOS/Linux) both fall back to PyPI (CPU/MPS).
@@ -155,6 +165,8 @@ known-first-party = ["shrimpy"]
 docstring-code-format = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# The workspace member's tests are numpy-only (no napari/Qt), so they run in the
+# default environment alongside shrimPy's.
+testpaths = ["tests", "packages/napari-deskew-preview/tests"]
 # Never collect tests from archived/legacy code or scripts (any depth)
 norecursedirs = ["archive", "scripts"]

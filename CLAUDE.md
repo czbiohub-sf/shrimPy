@@ -93,7 +93,32 @@ tests/                   # Unit and integration tests
 config/mda/              # Example acquisition configs to copy and edit
 archive/                 # Historical implementations (pycromanager, old pymmcore-plus,
                          # deprecated Mantis Qt widget and its launcher)
+packages/                # uv workspace members: separate distributions developed here
+└── napari-deskew-preview/   # napari deskew widget, also installable on its own
 ```
+
+### Workspace members
+
+`packages/*` are uv workspace members: they live in this repo but build and
+publish as their own distributions, so they are *not* part of the `shrimpy`
+wheel. `[tool.uv.sources]` points at them with `{ workspace = true }`.
+
+`napari-deskew-preview` is the deskew preview widget shrimPy's viewer uses. It
+never imports napari (napari discovers it through a `napari.manifest` entry
+point), so its dependencies are just numpy and qtpy and its numpy-only tests run
+in the default environment — they are in the root `testpaths`. shrimPy depends
+on it through the `viewer` extra; it is also in the `dev` group so its tests
+always run.
+
+Install it without shrimPy:
+```bash
+pip install "napari-deskew-preview @ git+https://github.com/czbiohub-sf/shrimPy.git#subdirectory=packages/napari-deskew-preview"
+```
+
+`DeskewControls` lives in the public `napari_deskew_preview.controls` module
+rather than being re-exported from the package root: it needs qtpy, and the root
+`__init__` must stay importable without Qt so shrimPy's acquisition process can
+import the package without a GUI toolkit.
 
 Nothing is re-exported from `src/shrimpy/engines/__init__.py`: importing a
 microscope engine pulls in its heavy optional dependencies (torch, via

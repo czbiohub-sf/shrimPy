@@ -47,7 +47,15 @@ uv sync --extra dynatrack  # DynaTrack position tracking (biahub, torch)
 uv sync --all-extras       # all of the above
 ```
 
-On Windows the `dynatrack` extra pulls the CUDA build of PyTorch, which requires the CUDA Toolkit to be installed. The `viewer` extra needs access to the `napari-deskew-preview` repository.
+On Windows the `dynatrack` extra pulls the CUDA build of PyTorch, which requires the CUDA Toolkit to be installed.
+
+### Workspace packages
+
+`packages/` holds [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/) members: separate distributions developed in this repository that are not part of the `shrimpy` package. Currently that is [napari-deskew-preview](packages/napari-deskew-preview/), the deskew widget used by the live viewer, which can also be installed on its own:
+
+```sh
+pip install "napari-deskew-preview @ git+https://github.com/czbiohub-sf/shrimPy.git#subdirectory=packages/napari-deskew-preview"
+```
 
 ### Verify the installation
 

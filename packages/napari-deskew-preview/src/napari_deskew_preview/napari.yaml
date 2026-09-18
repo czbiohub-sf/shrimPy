@@ -1,0 +1,10 @@
+name: napari-deskew-preview
+display_name: Deskew Preview
+contributions:
+  commands:
+    - id: napari-deskew-preview.deskew_widget
+      python_name: napari_deskew_preview._widget:DeskewWidget
+      title: Deskew oblique-plane data
+  widgets:
+    - command: napari-deskew-preview.deskew_widget
+      display_name: Deskew Preview
