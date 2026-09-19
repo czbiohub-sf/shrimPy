@@ -35,14 +35,17 @@ def acquire():
     "--napari-viewer",
     is_flag=True,
     default=False,
-    help="Show acquired data live in a separate-process napari viewer.",
+    help="Show the acquisition live in a separate-process napari viewer.",
 )
 @click.option(
     "--napari-cache-mb",
     type=float,
     default=8192.0,
     show_default=True,
-    help="Approximate RAM budget (MB) for the viewer's in-memory frame cache.",
+    help=(
+        "Approximate RAM budget (MB) for the viewer's cache of decompressed volumes. "
+        "Image data is read from the OME-Zarr store, so this only bounds the cache."
+    ),
 )
 def mantis(
     mm_config: Path,
@@ -103,24 +106,24 @@ def mantis(
                 device.connect_to_mda(core)
     engine = MantisEngine(core)
 
-    feeder = None
+    viewer = None
     if napari_viewer:
-        from shrimpy.viewer import ViewerFeeder
+        from shrimpy.viewer import LiveViewer
 
         # Mantis is an oblique-plane light-sheet microscope, so the deskew widget is
         # shown by default (on, toggleable). Other microscopes pass deskew=False.
-        feeder = ViewerFeeder(core, cache_mb=napari_cache_mb, deskew=True)
-        feeder.start()
+        viewer = LiveViewer(engine, cache_mb=napari_cache_mb, deskew=True)
+        viewer.start()
 
     try:
         engine.acquire(output_dir=output_dir, name=name, mda_config=mda_config)
     finally:
-        if feeder is not None:
-            # Keep the window open after acquisition so the user can inspect the
-            # cached data, then release shared memory once they close it.
+        if viewer is not None:
+            # Keep the window open after the acquisition: the store is complete on
+            # disk, so the user can go on browsing all of it.
             logger.info("Acquisition done; viewer window left open until closed.")
-            feeder.join()
-            feeder.cleanup()
+            viewer.join()
+            viewer.cleanup()
 
 
 @acquire.command()

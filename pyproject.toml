@@ -40,7 +40,10 @@ dependencies = [
 # `shrimpy gui` only; nothing in the package imports Qt at module level, so the
 # acquisition CLI and the engines run headless without this.
 gui = ["pymmcore-gui"]
-viewer = ["napari[pyqt6]", "napari-deskew-preview"]
+# iohub reads the acquisition's OME-Zarr back (shrimpy.viewer.store): it already
+# handles every layout ome-writers writes, and is how the lab opens these stores
+# elsewhere. Only the viewer needs it, so `shrimpy acquire` stays lean without it.
+viewer = ["napari[pyqt6]", "napari-deskew-preview", "iohub"]
 dynatrack = [
   "biahub[stain]",  # [stain] pulls in cytoland, required for dynatrack
   "matplotlib",

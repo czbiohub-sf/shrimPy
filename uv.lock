@@ -5326,6 +5326,7 @@ gui = [
     { name = "pymmcore-gui" },
 ]
 viewer = [
+    { name = "iohub" },
     { name = "napari", extra = ["pyqt6"] },
     { name = "napari-deskew-preview" },
 ]
@@ -5353,6 +5354,7 @@ requires-dist = [
     { name = "acquire-zarr", specifier = ">=0.9.0" },
     { name = "biahub", extras = ["stain"], marker = "extra == 'dynatrack'", git = "https://github.com/czbiohub-sf/biahub?rev=b011bca57d5bf15c777839e4250e594f7471af3e" },
     { name = "click" },
+    { name = "iohub", marker = "extra == 'viewer'" },
     { name = "matplotlib", marker = "extra == 'dynatrack'" },
     { name = "napari", extras = ["pyqt6"], marker = "extra == 'viewer'" },
     { name = "napari-deskew-preview", marker = "extra == 'viewer'", editable = "packages/napari-deskew-preview" },

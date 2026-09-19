@@ -66,5 +66,6 @@ viewer.add_image(data)  # lazy: planes computed on demand
 ## Notes
 
 - The deskew geometry matches biahub's `fast_deskew_zyx` to float32 precision.
-- The same source-agnostic core is used by shrimpy's live acquisition viewer; this package
-  is the standalone/offline home and the basis for future unification.
+- The same source-agnostic core is used by shrimPy's acquisition viewer, over a `gather`
+  that reads the acquisition's OME-Zarr; the same data therefore deskews to the same
+  pixels there and here. This package is the standalone/offline home.
