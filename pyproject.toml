@@ -31,6 +31,8 @@ dependencies = [
   "PyYAML",
   "qtpy",
   "useq-schema",
+  # also transitive via ome-writers; declared so [tool.uv.sources] can redirect it
+  "yaozarrs",
 ]
 
 
@@ -95,6 +97,11 @@ members = ["packages/*"]
 pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "main" }
 ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
 useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "main" }
+# Released yaozarrs (<=0.3.2) never writes the plate *row* groups from
+# PlateBuilder.prepare(), the path ome-writers takes, so an HCS store cannot be read
+# until it is closed and the live viewer stays empty for the whole acquisition.
+# imaging-formats/yaozarrs#58; point this back at PyPI once that is released.
+yaozarrs = { git = "https://github.com/ieivanov/yaozarrs", branch = "fix-plate-builder-row-groups" }
 napari-deskew-preview = { workspace = true }
 # Windows: CUDA build via cu132 index (requires CUDA Toolkit 13.2 on the machine)
 # for the production `dynatrack` group; the CI-only `test-cpu` group takes the

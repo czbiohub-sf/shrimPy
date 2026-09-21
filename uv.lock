@@ -5382,6 +5382,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "qtpy" },
     { name = "useq-schema" },
+    { name = "yaozarrs" },
 ]
 
 [package.optional-dependencies]
@@ -5437,6 +5438,7 @@ requires-dist = [
     { name = "torch", marker = "sys_platform == 'win32' and extra == 'dynatrack'", index = "https://download.pytorch.org/whl/cu132", conflict = { package = "shrimpy", extra = "dynatrack" } },
     { name = "torch", marker = "sys_platform != 'win32' and extra == 'dynatrack'" },
     { name = "useq-schema", git = "https://github.com/ieivanov/useq-schema?branch=main" },
+    { name = "yaozarrs", git = "https://github.com/ieivanov/yaozarrs?branch=fix-plate-builder-row-groups" },
 ]
 provides-extras = ["dynatrack", "gui", "viewer"]
 
@@ -6569,16 +6571,12 @@ wheels = [
 
 [[package]]
 name = "yaozarrs"
-version = "0.3.2"
-source = { registry = "https://pypi.org/simple" }
+version = "0.3.2.dev5+ga5b824b52"
+source = { git = "https://github.com/ieivanov/yaozarrs?branch=fix-plate-builder-row-groups#a5b824b529084f66b2cec8e632f2af061dba752c" }
 dependencies = [
     { name = "pydantic" },
     { name = "pydantic-core", marker = "python_full_version >= '3.13' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/f2/52/1ce1df1554c9e0fc0380e8e1a0365ea79cbd6d52daa5e39f26885e74273f/yaozarrs-0.3.2.tar.gz", hash = "sha256:d99cf65b03daffe3e704d97726ead7b8ff9da29815d4d973edc0ff3b46e7de7f", size = 199424, upload-time = "2026-09-11T11:51:19.032Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/32/de/be83afdd24ee0b8084e2b64bc7203f8ecd174425ae056d68e613aeff8f17/yaozarrs-0.3.2-py3-none-any.whl", hash = "sha256:049b0e1df62db380f3b6c2e76105963813bb250ccd2ae4707f6a2a54c6a93276", size = 105650, upload-time = "2026-09-11T11:51:17.177Z" },
 ]
 
 [package.optional-dependencies]
