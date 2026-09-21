@@ -35,7 +35,7 @@ from napari_deskew_preview import (
     deskewed_layer,
 )
 
-from shrimpy.viewer.store import DEFAULT_CACHE_MB, AcquisitionStore
+from shrimpy.viewer.store import AcquisitionStore
 
 # DeskewControls is imported lazily inside _add_deskew_widget (it needs Qt).
 
@@ -121,10 +121,9 @@ def store_gather(store: AcquisitionStore, channel: int):
 class _ViewerState:
     """Owns the napari layers and keeps them in step with the store on disk."""
 
-    def __init__(self, viewer: object, *, deskew: bool, cache_mb: float) -> None:
+    def __init__(self, viewer: object, *, deskew: bool) -> None:
         self._viewer = viewer
         self._deskew_requested = deskew
-        self._cache_mb = cache_mb
         self._store: AcquisitionStore | None = None
         self._path: Path | None = None
         self._layers: list[object] = []
@@ -193,7 +192,7 @@ class _ViewerState:
             return
         try:
             with _quietly("iohub.ngff"):
-                self._store = AcquisitionStore(self._path, cache_mb=self._cache_mb)
+                self._store = AcquisitionStore(self._path)
         except Exception:  # noqa: BLE001 - not written yet (or not yet valid); retry
             logger.debug("Store %s not readable yet", self._path, exc_info=True)
             return
@@ -500,7 +499,6 @@ def run_viewer(
     control: mp.Queue | None = None,
     *,
     deskew: bool = False,
-    cache_mb: float = DEFAULT_CACHE_MB,
     refresh_ms: int = DEFAULT_REFRESH_MS,
 ) -> None:
     """Open napari on an acquisition store and follow it until the window closes.
@@ -516,8 +514,8 @@ def run_viewer(
         ...}`` and ``{"kind": "finish"}``. None for offline viewing.
     deskew : bool
         Offer deskewed display (oblique-plane microscopes such as mantis).
-    cache_mb, refresh_ms
-        Volume cache budget and how often the store is re-read while acquiring.
+    refresh_ms : int
+        How often the store is re-read while acquiring.
 
     Imports napari lazily so this module stays importable in the acquisition process,
     which has no napari/Qt dependency.
@@ -538,7 +536,7 @@ def run_viewer(
         return
 
     viewer = napari.Viewer(title=_title(path) if path is not None else "shrimpy")
-    state = _ViewerState(viewer, deskew=deskew, cache_mb=cache_mb)
+    state = _ViewerState(viewer, deskew=deskew)
     if path is not None:
         state.set_path(path)
 

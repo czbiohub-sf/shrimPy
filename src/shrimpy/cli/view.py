@@ -20,14 +20,7 @@ import click
         "light-sheet arm). Uses the scan step and pixel size recorded in the store."
     ),
 )
-@click.option(
-    "--cache-mb",
-    type=float,
-    default=8192.0,
-    show_default=True,
-    help="Approximate RAM budget (MB) for the cache of decompressed volumes.",
-)
-def view(path: Path, deskew: bool, cache_mb: float):
+def view(path: Path, deskew: bool):
     """View the acquisition stored at PATH (a ``.ome.zarr`` directory).
 
     The store may still be open for writing, so this also attaches to an acquisition
@@ -40,4 +33,4 @@ def view(path: Path, deskew: bool, cache_mb: float):
     """
     from shrimpy.viewer._napari_process import run_viewer
 
-    run_viewer(path, deskew=deskew, cache_mb=cache_mb)
+    run_viewer(path, deskew=deskew)

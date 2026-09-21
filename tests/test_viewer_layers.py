@@ -88,7 +88,7 @@ class FakeViewer:
 def viewer_on(path, *, deskew=False):
     """A viewer state already opened on ``path``."""
     viewer = FakeViewer()
-    state = _ViewerState(viewer, deskew=deskew, cache_mb=64.0)
+    state = _ViewerState(viewer, deskew=deskew)
     state.set_path(path)
     state.tick()  # opens the store and builds the layers
     return viewer, state
@@ -132,7 +132,7 @@ def test_the_viewer_waits_for_the_acquisition_to_produce_data(tmp_path):
     """
     root = tmp_path / "pending.ome.zarr"
     viewer = FakeViewer()
-    state = _ViewerState(viewer, deskew=False, cache_mb=64.0)
+    state = _ViewerState(viewer, deskew=False)
 
     state.tick()  # no path yet
     assert viewer.layers == []

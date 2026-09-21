@@ -47,7 +47,11 @@ from iohub.ngff import Position
 # Resolution level within each image group; iohub's ``Position.data`` uses the same.
 FULL_RESOLUTION = "0"
 
-# Volume cache budget (MB) when the caller does not pick one.
+# Volume cache budget (MB). Deliberately not a CLI option: every plane is readable from
+# disk at any index, so this only trades RAM against re-decompressing a volume and
+# changes nothing about what the viewer can show. Sized to hold the frame on screen --
+# a deskewed plane mixes every channel's volume at the current (position, t) -- with
+# room left to scrub between frames.
 DEFAULT_CACHE_MB = 4096.0
 
 

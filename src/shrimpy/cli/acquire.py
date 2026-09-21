@@ -37,16 +37,6 @@ def acquire():
     default=False,
     help="Show the acquisition live in a separate-process napari viewer.",
 )
-@click.option(
-    "--napari-cache-mb",
-    type=float,
-    default=8192.0,
-    show_default=True,
-    help=(
-        "Approximate RAM budget (MB) for the viewer's cache of decompressed volumes. "
-        "Image data is read from the OME-Zarr store, so this only bounds the cache."
-    ),
-)
 def mantis(
     mm_config: Path,
     mda_config: Path,
@@ -54,7 +44,6 @@ def mantis(
     name: str,
     unicore: bool,
     napari_viewer: bool,
-    napari_cache_mb: float,
 ):
     """Run Mantis microscope acquisition.
 
@@ -112,7 +101,7 @@ def mantis(
 
         # Mantis is an oblique-plane light-sheet microscope, so the deskew widget is
         # shown by default (on, toggleable). Other microscopes pass deskew=False.
-        viewer = LiveViewer(engine, cache_mb=napari_cache_mb, deskew=True)
+        viewer = LiveViewer(engine, deskew=True)
         viewer.start()
 
     try:

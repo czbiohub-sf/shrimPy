@@ -22,7 +22,6 @@ import multiprocessing as mp
 from typing import TYPE_CHECKING, Any
 
 from shrimpy.viewer._napari_process import DEFAULT_REFRESH_MS, run_viewer
-from shrimpy.viewer.store import DEFAULT_CACHE_MB
 
 if TYPE_CHECKING:
     from useq import MDASequence
@@ -45,8 +44,6 @@ class LiveViewer:
         viewer shows the Deskew widget with deskew on by default (toggleable), provided
         the store records a scan step and holds a real z-stack. Other microscopes
         (e.g. iSIM) pass False.
-    cache_mb : float
-        RAM budget for the viewer's cache of decompressed volumes.
     refresh_ms : int
         How often the viewer re-reads the store for newly acquired data.
     """
@@ -56,12 +53,10 @@ class LiveViewer:
         engine: BaseEngine,
         *,
         deskew: bool = False,
-        cache_mb: float = DEFAULT_CACHE_MB,
         refresh_ms: int = DEFAULT_REFRESH_MS,
     ) -> None:
         self._engine = engine
         self._deskew = deskew
-        self._cache_mb = cache_mb
         self._refresh_ms = refresh_ms
         self._control: mp.Queue = mp.Queue()
         self._process: mp.Process | None = None
@@ -75,7 +70,6 @@ class LiveViewer:
             args=(None, self._control),
             kwargs={
                 "deskew": self._deskew,
-                "cache_mb": self._cache_mb,
                 "refresh_ms": self._refresh_ms,
             },
             name="shrimpy-napari-viewer",
