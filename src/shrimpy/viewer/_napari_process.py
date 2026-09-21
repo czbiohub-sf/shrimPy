@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import multiprocessing as mp
 import queue as _queue
+import warnings
 
 from contextlib import contextmanager
 from pathlib import Path
@@ -58,12 +59,22 @@ DEFAULT_REFRESH_MS = 500
 
 @contextmanager
 def _quietly(logger_name: str):
-    """Raise ``logger_name``'s threshold to errors for the duration of the block."""
+    """Silence a half-created store's complaints: ``logger_name``'s log records
+    below ERROR, and any warning raised inside the block.
+
+    Both halves are needed. iohub reports a position it cannot parse through
+    ``logging``, but zarr reports a group it cannot resolve through
+    :mod:`warnings` -- so quietening the logger alone still lets
+    ``ZarrUserWarning: Object at A is not recognized as a component of a Zarr
+    hierarchy`` through to the acquisition's console, once per retry.
+    """
     quietened = logging.getLogger(logger_name)
     previous = quietened.level
     quietened.setLevel(logging.ERROR)
     try:
-        yield
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            yield
     finally:
         quietened.setLevel(previous)
 
@@ -169,9 +180,11 @@ class _ViewerState:
         """Open the store, tolerating the window between 'the acquisition started' and
         'the writer finished creating the store'.
 
-        Reading a half-created store is expected here, not exceptional, so iohub's
-        per-position "skipped invalid item" warnings are quietened for the attempt --
-        they would otherwise land in the acquisition log once per position per retry.
+        Reading a half-created store is expected here, not exceptional, so the
+        complaints it draws -- iohub's per-position "skipped invalid item", and zarr's
+        "not recognized as a component of a Zarr hierarchy" for a group whose
+        ``zarr.json`` the writer has not reached yet -- are quietened for the attempt.
+        They would otherwise land in the acquisition's log and console once per retry.
         Nothing real is hidden: a position's array can only exist after the writer has
         created *every* position's group, so an attempt that finds image data (the
         only kind this accepts) has by then seen the complete set of positions.

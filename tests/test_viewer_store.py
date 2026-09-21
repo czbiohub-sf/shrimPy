@@ -14,6 +14,7 @@ leaving the stream open (:class:`Acquiring`) and waiting for the flush.
 from __future__ import annotations
 
 import time
+import warnings
 
 import numpy as np
 import pytest
@@ -286,6 +287,59 @@ def test_refresh_finds_positions_that_had_no_array_yet(tmp_path):
         assert store.refresh()
         assert store.t_extent(1) == 1
         assert store.plane(1, 0, 0, 0)[0, 0] == 3
+
+
+def test_a_plate_opens_while_it_is_still_being_acquired(tmp_path):
+    """An HCS plate must be readable mid-run, not only once the writer closes.
+
+    The row groups (``A/``) between the plate and its wells carry no OME metadata of
+    their own, so a writer can forget to give them a ``zarr.json`` -- and then nothing
+    can resolve ``plate -> row -> well`` until the store is closed and the gap is
+    papered over. The whole point of reading from disk is that the acquisition is
+    browsable *while* it runs, so this is checked on an open stream.
+    """
+    root = tmp_path / "live_plate.ome.zarr"
+    positions = [
+        Position(name=f"fov{f}", plate_row="A", plate_column=str(col))
+        for col in (1, 2)
+        for f in (0, 1)
+    ]
+    with Acquiring(
+        root,
+        n_t=2,
+        n_c=1,
+        n_z=2,
+        z_chunk=2,
+        positions=positions,
+        plate=Plate(row_names=["A"], column_names=["1", "2"]),
+    ) as stream:
+        stream.append(2)  # t=0 at the first field only
+
+        store = AcquisitionStore(root)
+        assert store.position_names == ("A/1/fov0", "A/1/fov1", "A/2/fov0", "A/2/fov1")
+        assert store.plane(0, 0, 0, 0)[0, 0] == 1
+
+
+def test_an_array_being_created_is_quiet(tmp_path):
+    """A position mid-creation must not print anything on the way to reading blank.
+
+    acquire-zarr makes a position's array directory before it writes the array's
+    ``zarr.json``, and in that window iohub builds its KeyError from
+    ``Group.array_keys()`` -- which walks the group and has zarr warn about the
+    directory it cannot recognize. That is the state the store exists to report, so it
+    belongs in the return value, not on the acquisition's console.
+    """
+    root = tmp_path / "half_made.ome.zarr"
+    write_store(root, n_t=1, n_c=1, n_z=2, positions=["A", "B"], z_chunk=2)
+    (root / "B" / "0" / "zarr.json").unlink()
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        store = AcquisitionStore(root)
+        store.refresh()
+    assert not caught, [str(w.message) for w in caught]
+    assert store.t_extent(1) == 0
+    assert not store.plane(1, 0, 0, 0).any()
 
 
 def test_refresh_is_false_when_nothing_changed(single):

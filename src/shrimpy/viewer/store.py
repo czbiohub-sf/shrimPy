@@ -33,6 +33,7 @@ adds on top is what reading a *live* store needs:
 from __future__ import annotations
 
 import itertools
+import warnings
 
 from collections import OrderedDict
 from pathlib import Path
@@ -186,7 +187,13 @@ class AcquisitionStore:
     def _fetch(self, position: int):
         """This position's array, re-read from the store, or None if not written yet."""
         try:
-            return self._images[position].data
+            with warnings.catch_warnings():
+                # iohub builds its KeyError message from Group.array_keys(), which
+                # walks the group -- and zarr warns there about an array directory
+                # acquire-zarr has created but not yet given a zarr.json. That is the
+                # very state this method exists to report, not something to print.
+                warnings.simplefilter("ignore")
+                return self._images[position].data
         except KeyError:
             # acquire-zarr has not created this position's array; nothing acquired here.
             return None
