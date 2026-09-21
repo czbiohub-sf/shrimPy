@@ -122,7 +122,16 @@ conflicts = [[{ extra = "dynatrack" }, { group = "test-cpu" }]]
 # 8, which includes the HPC dev machines). Scoped to Linux so the Windows
 # acquisition machines stay on current Qt. Reaches PyQt6 wherever it enters the
 # graph -- pymmcore-gui via [gui], napari[pyqt6] via [viewer].
-override-dependencies = ["pyqt6<6.10; sys_platform == 'linux'"]
+#
+# Must be an override, not a constraint: pymmcore-gui pins pyqt6==6.11.0, which
+# a constraint cannot relax, and an override *replaces* every requirement on the
+# package. That replacement is also why the second entry is needed -- with only
+# the Linux one, pyqt6 is overridden into nothing off Linux and napari installs
+# with no Qt bindings at all (`uv run napari` then fails on a missing PyQt6).
+override-dependencies = [
+  "pyqt6<6.10; sys_platform == 'linux'",
+  "pyqt6>=6.10; sys_platform != 'linux'",
+]
 
 [[tool.uv.index]]
 name = "pytorch-cu132"
