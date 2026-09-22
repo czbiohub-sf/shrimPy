@@ -120,7 +120,5 @@ ENV/
 .mypy_cache/
 .dmypy.json
 
-# Local debugger output (VS Code launch config)
-debug_output/
 # Claude
 .claude/
