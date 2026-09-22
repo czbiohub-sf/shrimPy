@@ -410,7 +410,7 @@ class ClassificationTreeModelSettings(BaseModel):
     threshold: float = Field(default=0.5, ge=0, le=1)
 
 
-FovModelSettings = Annotated[
+FOVModelSettings = Annotated[
     RankingModelSettings | ThresholdingModelSettings | ClassificationTreeModelSettings,
     Field(discriminator="type"),
 ]
@@ -428,7 +428,7 @@ class FOVSelectionConfig(BaseModel):
     ----------
     enabled : bool
         Master switch. Engines only build a
-        :class:`~shrimpy.fov_selection.manager.FovSelection` coordinator when True; the
+        :class:`~shrimpy.fov_selection.manager.FOVSelection` coordinator when True; the
         rest of the block is validated either way (see the module docstring).
     calibration_mode : bool
         Run the pre-scan ONLY -- no timelapse. Every producible feature is extracted
@@ -509,7 +509,7 @@ class FOVSelectionConfig(BaseModel):
     virtual_staining: dict[str, Any] | None = None
     best_focus_z: BestFocusZSettings | None = None
     segmentation: SegmentationSettings
-    model: FovModelSettings
+    model: FOVModelSettings
     save_decision: bool = False
     save_pre_scan_omezarr: bool = False
     save_pre_scan_nd: bool = False

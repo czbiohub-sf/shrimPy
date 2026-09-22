@@ -4,7 +4,7 @@ Online, streaming selection of "good" fields of view during an acquisition, plus
 feature viewer for tuning the selection model and offline scripts for training one.
 
 The package is microscope agnostic: an acquisition engine (`shrimpy/engines/`) builds a
-`FovSelection` coordinator from its `metadata.fov_selection` config and interacts with that
+`FOVSelection` coordinator from its `metadata.fov_selection` config and interacts with that
 object only. Everything else (reconstruction, segmentation, feature extraction, the worker
 subprocess) is an implementation detail behind it.
 
@@ -217,11 +217,14 @@ overlaid on one example FOV.
 
 ## Artifacts
 
-Everything lands next to the acquisition. Debug outputs live under `<name>_fov_debug/` and are
+Everything lands next to the acquisition, named after the output store: an acquisition
+written to `acq_1.ome.zarr` puts its debug outputs in `acq_1_fov_debug/` and its pre-scan
+reconstruction in `acq_1_prescan.ome.zarr`, so a run's artifacts sort beside the store they
+belong to. (`<name>` below is that store name, index included.) Debug outputs are
 gated by flags in `metadata.fov_selection`; `calibration_mode` forces `save_decision` on. The
 image folders and the `fov_summary.csv` name are the SAME in both modes, so a run's output
 loads in the feature viewer either way. With no debug flags a normal run writes only
-`config_for_recovery.yaml`.
+`<name>_config_backup.yaml`.
 
 **Per FOV, during the pre-scan** (written by the worker):
 
@@ -254,7 +257,7 @@ and its `proba` / `rank` are filled in later from the viewer's Rank tab. Both ca
 
 | Mode | Artifact | Path / notes |
 |------|----------|--------------|
-| normal | the acquisition config with the selected FOVs filled into `stage_positions` | `config_for_recovery.yaml` (a `_<run_index>` suffix is appended only if that name is already taken) |
+| normal | the acquisition config with the selected FOVs filled into `stage_positions` | `<name>_config_backup.yaml` (e.g. `acq_2_config_backup.yaml`) -- per-run, so it cannot overwrite another acquisition's |
 | calibration | the feature viewer, launched on `fov_summary.csv` with the Rank tab seeded from the config's `model` | no file written |
 
 **Skipped FOVs.** A candidate whose autofocus fails is skipped entirely (`setup_event` raises
@@ -324,11 +327,11 @@ logged and never swallowed.
 ```
 fov_selection/
 ├── config.py             FOVSelectionConfig: the validated metadata.fov_selection schema
-├── manager.py            FovSelection coordinator (engine-facing): buffering,
+├── manager.py            FOVSelection coordinator (engine-facing): buffering,
 │                         verdict store, drain, per-position top-K selection
 ├── sequences.py          build the pre-scan and timelapse MDASequences
 ├── pipeline.py           per-FOV decision: project → segment → features → verdict
-├── worker.py             subprocess isolation (WorkerConfig + FovSelectionWorker)
+├── worker.py             subprocess isolation (WorkerConfig + FOVSelectionWorker)
 ├── fov_model.py          pluggable models + interpretable curve conversions
 ├── segmentation.py       Cellpose / InstanSeg / Otsu backends
 ├── feature_extraction.py FeatureExtractor (object-level and FOV-level features)

@@ -14,7 +14,7 @@ import pytest
 from useq import MDAEvent, MDASequence
 
 from shrimpy.fov_selection.config import FOVSelectionConfig
-from shrimpy.fov_selection.manager import FovSelection
+from shrimpy.fov_selection.manager import FOVSelection, PrescanOutcome
 
 # 5-slice z_plan, two channels, three candidate positions.
 SEQUENCE = MDASequence(
@@ -72,15 +72,15 @@ def _event(p_idx: int, z_idx: int, channel: str, t_idx: int = 0) -> MDAEvent:
     )
 
 
-def _feed_prescan_stack(fov: FovSelection, p_idx: int, value: float, channel: str = "BF"):
+def _feed_prescan_stack(fov: FOVSelection, p_idx: int, value: float, channel: str = "BF"):
     """Emit a full t0 z-stack for one position with constant pixel value."""
     for z in range(N_Z):
         frame = np.full((4, 4), value, dtype=np.float32)
         fov.on_frame_ready(frame, _event(p_idx, z, channel))
 
 
-def _make_fov() -> FovSelection:
-    fov = FovSelection.from_metadata(
+def _make_fov() -> FOVSelection:
+    fov = FOVSelection.from_metadata(
         _cfg(), SEQUENCE, pixel_size_um=0.1, decide_fn=_good_if_positive
     )
     fov.start(zyx_shape=(N_Z, 4, 4))
@@ -94,7 +94,7 @@ def _make_fov() -> FovSelection:
 
 def _calibration_fov(tmp_path, config_extra=None):
     """Build a coordinator directly (bypassing model validation) with a data_path."""
-    return FovSelection(
+    return FOVSelection(
         config=_cfg(**(config_extra or {})),
         sequence=SEQUENCE,
         pixel_size_um=0.1,
@@ -128,9 +128,59 @@ def test_calibration_finalize_debug_summary_is_a_noop(tmp_path):
     fov.finalize_debug_summary()  # must not raise despite there being no fov_summary.csv
 
 
+# ---------------------------------------------------------------------------
+# outcome() -- what the pre-scan hands back across the mda.run() boundary
+# ---------------------------------------------------------------------------
+
+
+def _decided_fov(tmp_path, config_extra=None) -> FOVSelection:
+    """A started coordinator that has scored one good FOV and one bad one."""
+    fov = _calibration_fov(tmp_path, config_extra)
+    fov.start(zyx_shape=(N_Z, 4, 4))
+    _feed_prescan_stack(fov, 0, value=1.0)  # good0 -> positive -> good
+    _feed_prescan_stack(fov, 1, value=-1.0)  # bad0  -> negative -> not good
+    fov.drain()
+    return fov
+
+
+def test_outcome_carries_the_selection_in_normal_mode(tmp_path):
+    fov = _decided_fov(tmp_path, {"save_decision": True})
+    try:
+        outcome = fov.outcome()
+        assert outcome.selected_fovs == ["good0"]
+        # save_decision writes the same fov_summary.csv, but only calibration hands it
+        # on: outside calibration there is no viewer to open.
+        assert outcome.calibration_csv is None
+    finally:
+        fov.shutdown()
+
+
+def test_outcome_drops_the_selection_in_calibration_mode(tmp_path):
+    # Calibration runs no timelapse, so the FOVs it scored are NOT a selection to hand
+    # on (log_selection_summary still reports which ones would have been picked). What
+    # the engine needs is the matrix the feature viewer opens on.
+    fov = _decided_fov(tmp_path, {"calibration_mode": True})
+    try:
+        assert fov.passed_position_names() == ["good0"]  # a selection does exist ...
+        assert fov.outcome() == PrescanOutcome(  # ... and is deliberately not passed on
+            selected_fovs=[],
+            calibration_csv=tmp_path / "acq_fov_debug" / "fov_summary.csv",
+        )
+    finally:
+        fov.shutdown()
+
+
+def test_outcome_survives_shutdown(tmp_path):
+    # shutdown() clears the frame buffers, not the verdicts -- so the engine's ordering
+    # (capture, then the debug writers, then shutdown) is not load-bearing for this.
+    fov = _decided_fov(tmp_path)
+    fov.shutdown()
+    assert fov.outcome().selected_fovs == ["good0"]
+
+
 def test_from_metadata_disabled_returns_none():
-    assert FovSelection.from_metadata(_cfg(enabled=False), SEQUENCE, 0.1) is None
-    assert FovSelection.from_metadata(None, SEQUENCE, 0.1) is None
+    assert FOVSelection.from_metadata(_cfg(enabled=False), SEQUENCE, 0.1) is None
+    assert FOVSelection.from_metadata(None, SEQUENCE, 0.1) is None
 
 
 def test_model_type_picks_the_selection_rule():
@@ -143,7 +193,7 @@ def test_model_type_picks_the_selection_rule():
             "features": {"coverage_frac": {"shape": "gaussian", "center": 0.5, "fwhm": 0.2}},
         }
     )
-    fov = FovSelection.from_metadata(ranking, SEQUENCE, 0.1, decide_fn=_good_if_positive)
+    fov = FOVSelection.from_metadata(ranking, SEQUENCE, 0.1, decide_fn=_good_if_positive)
     assert fov._model_type == "ranking_by_defined_range"
     assert fov._top_fov == 2
 
@@ -153,14 +203,14 @@ def test_model_type_picks_the_selection_rule():
             "features": {"coverage_frac": {"range": [0.0, 1.0]}},
         }
     )
-    fov = FovSelection.from_metadata(thresholding, SEQUENCE, 0.1, decide_fn=_good_if_positive)
+    fov = FOVSelection.from_metadata(thresholding, SEQUENCE, 0.1, decide_fn=_good_if_positive)
     assert fov._model_type == "classification_by_thresholding"
     assert fov._top_fov is None
 
 
 def test_from_metadata_requires_pixel_size():
     with pytest.raises(ValueError, match="pixel size"):
-        FovSelection.from_metadata(_cfg(), SEQUENCE, pixel_size_um=0.0)
+        FOVSelection.from_metadata(_cfg(), SEQUENCE, pixel_size_um=0.0)
 
 
 def test_from_metadata_requires_a_z_step_for_deskew_or_phase():
@@ -168,12 +218,12 @@ def test_from_metadata_requires_a_z_step_for_deskew_or_phase():
     # worker would only fail mid-run (or silently use a wrong axial scale).
     flat = SEQUENCE.replace(z_plan=None)
     with pytest.raises(ValueError, match="Z step"):
-        FovSelection.from_metadata(_cfg(), flat, 0.1)
+        FOVSelection.from_metadata(_cfg(), flat, 0.1)
 
 
 def test_from_metadata_rejects_unknown_fov_selection_channel():
     with pytest.raises(ValueError, match="fov_selection_channel"):
-        FovSelection.from_metadata(_cfg(fov_selection_channel="nope"), SEQUENCE, 0.1)
+        FOVSelection.from_metadata(_cfg(fov_selection_channel="nope"), SEQUENCE, 0.1)
 
 
 def test_streaming_decision_partitions_good_and_bad():
@@ -227,11 +277,11 @@ def test_non_input_channel_and_later_timepoints_ignored():
 
 def test_target_nuclei_reconstructs_nuclei_only():
     # VS + nuclei -> only the nuclei channel is reconstructed (membrane not predicted).
-    fov = FovSelection.from_metadata(
+    fov = FOVSelection.from_metadata(
         _cfg(target="nuclei"), SEQUENCE, 0.1, decide_fn=_good_if_positive
     )
     assert fov._recon_channels == ["nuclei"]
-    fov_cells = FovSelection.from_metadata(
+    fov_cells = FOVSelection.from_metadata(
         _cfg(target="cells"), SEQUENCE, 0.1, decide_fn=_good_if_positive
     )
     assert fov_cells._recon_channels == ["nuclei", "membrane"]
@@ -240,7 +290,7 @@ def test_target_nuclei_reconstructs_nuclei_only():
 def test_target_drives_the_segmentation_head():
     # `target` is a top-level field; the coordinator injects it into the segmentation
     # block, so the backend never carries a second copy that could disagree with it.
-    fov = FovSelection.from_metadata(
+    fov = FOVSelection.from_metadata(
         _cfg(target="nuclei"), SEQUENCE, 0.1, decide_fn=_good_if_positive
     )
     assert fov._segmentation["target"] == "nuclei"
@@ -252,8 +302,8 @@ def test_target_drives_the_segmentation_head():
 # a debug artifact must never be able to abort an acquisition.
 
 
-class _StubSelection(FovSelection):
-    """Bare FovSelection exposing only what finalize_debug_summary touches.
+class _StubSelection(FOVSelection):
+    """Bare FOVSelection exposing only what finalize_debug_summary touches.
 
     ``fov_group`` maps every candidate name to a position; the default puts the four
     ``_summary`` FOVs in ONE position, so ``rank`` is a single global ordering.

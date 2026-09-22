@@ -1,7 +1,7 @@
 """Engine-facing coordinator for online, streaming FOV selection.
 
 Mirrors :class:`shrimpy.dynatrack.manager.DynaTrack`: an acquisition engine
-builds a :class:`FovSelection` from the ``fov_selection`` metadata section and
+builds a :class:`FOVSelection` from the ``fov_selection`` metadata section and
 interacts with that object only. It turns the pre-scan run (a single-timepoint
 run on ``fov_selection_channel`` over all candidate FOVs) into a per-FOV pass/skip verdict:
 
@@ -10,13 +10,14 @@ run on ``fov_selection_channel`` over all candidate FOVs) into a per-FOV pass/sk
 
 The decision is streamed: as each pre-scan FOV's z-stack completes in
 ``on_frame_ready`` it is submitted to a worker subprocess (torch/GPU isolation,
-like DynaTrack). ``drain`` is awaited after the pre-scan run, and
-``passed_position_names`` selects which FOVs the timelapse run images.
+like DynaTrack). ``drain`` is awaited after the pre-scan run, then :meth:`outcome`
+hands the engine a :class:`PrescanOutcome` naming the FOVs the timelapse run images --
+the coordinator itself does not outlive ``teardown_sequence``.
 
 Config lives under ``metadata.fov_selection``, validated by
 :class:`shrimpy.fov_selection.config.FOVSelectionConfig` when the acquisition config is
 loaded -- the coordinator takes that object, not a raw mapping, and only adds the checks
-that need the acquisition too (see :meth:`FovSelection.from_metadata`). Scale parameters
+that need the acquisition too (see :meth:`FOVSelection.from_metadata`). Scale parameters
 (XY pixel size, Z step) are the single source of truth injected into the deskew/phase
 sub-configs (as DynaTrack does), so they are not duplicated in the config.
 """
@@ -30,6 +31,7 @@ import threading
 import time
 
 from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -55,7 +57,33 @@ _FOV_FIELD_SUFFIX = re.compile(r"_\d{4}$")
 PRESCAN_TIMEPOINT = 0
 
 
-def sibling_artifact_paths(data_path: Path | None, run_index: int | None = None) -> list[Path]:
+@dataclass(frozen=True)
+class PrescanOutcome:
+    """What a pre-scan run hands back to the engine, captured by :meth:`FOVSelection.outcome`.
+
+    An MDA run has no return value: the runner passes only the sequence to
+    ``setup_sequence`` / ``teardown_sequence``, so the coordinator is built, used, and
+    dropped entirely inside one ``mmc.mda.run()`` call. Anything the *next* run needs has
+    to be lifted out before it goes -- and it is exactly these two things, so they are
+    named here rather than kept as loose attributes on the engine.
+
+    Attributes
+    ----------
+    selected_fovs : list[str]
+        Names of the candidate FOVs the timelapse run should image, in pre-scan order
+        (see :meth:`FOVSelection.passed_position_names`). Empty both when nothing passed
+        and in calibration mode, which runs no timelapse at all -- the engine treats the
+        two the same way, and calibration is told apart by ``calibration_csv``.
+    calibration_csv : Path | None
+        The feature viewer's ``fov_summary.csv``, for the engine to open the viewer on.
+        ``None`` outside calibration mode, and when no debug directory was written.
+    """
+
+    selected_fovs: list[str] = field(default_factory=list)
+    calibration_csv: Path | None = None
+
+
+def sibling_artifact_paths(data_path: Path | None) -> list[Path]:
     """Every path a FOV-selection run may create NEXT TO its output store.
 
     The pre-scan writes no store of its own, so these are the only on-disk traces a run
@@ -64,23 +92,24 @@ def sibling_artifact_paths(data_path: Path | None, run_index: int | None = None)
     ``<name>.ome.zarr`` is still free, the next run picks the same name, and its worker
     appends to the dead run's ``fov_summary.csv``.
 
-    The selected-FOV config artifact is deliberately NOT here: it uses the fixed
-    ``config_for_recovery.yaml`` name, not the acquisition's, so it does not vary with the
-    candidate name -- including it would make every candidate look taken.
+    The selected-FOV config backup is one of these: it is written between the two runs,
+    so a run that dies right after it (before the timelapse creates the store) leaves it
+    as the only trace of the name.
     """
     if data_path is None:
         return []
     return [
         p
         for p in (
-            FovSelection._debug_dir_for(data_path, run_index),
-            FovSelection._prescan_recon_path_for(data_path, run_index),
+            FOVSelection._debug_dir_for(data_path),
+            FOVSelection._prescan_recon_path_for(data_path),
+            FOVSelection._config_backup_path_for(data_path),
         )
         if p is not None
     ]
 
 
-class FovSelection:
+class FOVSelection:
     """Coordinates the online, streaming FOV-selection decision for one run.
 
     Parameters
@@ -107,12 +136,6 @@ class FovSelection:
         decisions run on the executor thread instead of the worker subprocess
         (used by tests and custom deciders); ``start`` then skips spawning the
         worker.
-    run_index : int | None
-        Deduplication index the engine appended to the acquisition name when the
-        bare name was already taken (``acq`` -> ``acq_1``). Moved to the end of the
-        sibling artifact names, so they read ``acq_fov_debug_1`` /
-        ``acq_prescan_1.ome.zarr`` rather than burying the index mid-name. See
-        :meth:`_sibling_path`.
     """
 
     def __init__(
@@ -123,7 +146,6 @@ class FovSelection:
         z_step_um: float,
         data_path: Path | None = None,
         decide_fn: Callable[[np.ndarray], tuple[float, bool]] | None = None,
-        run_index: int | None = None,
     ) -> None:
         self.config = config
         self._pixel_size_um = pixel_size_um
@@ -148,7 +170,7 @@ class FovSelection:
         # it also needs the sibling debug directory, so it opens one when it is the only thing on.
         self._save_best_focus_z = config.save_best_focus_z_for_debug
         self._debug_dir = (
-            self._debug_dir_for(data_path, run_index)
+            self._debug_dir_for(data_path)
             if (self._save_decision or self._save_best_focus_z)
             else None
         )
@@ -163,9 +185,7 @@ class FovSelection:
         # itself writes nothing to disk. Independent of save_decision.
         self._save_pre_scan_omezarr = config.save_pre_scan_omezarr
         self._recon_zarr_path = (
-            self._prescan_recon_path_for(data_path, run_index)
-            if self._save_pre_scan_omezarr
-            else None
+            self._prescan_recon_path_for(data_path) if self._save_pre_scan_omezarr else None
         )
         # Fail fast if reconstruction can't run on a GPU. Default True; set
         # fov_selection.require_gpu: false to allow a (slow) CPU run for debugging.
@@ -246,7 +266,7 @@ class FovSelection:
         # one FOV's frames are held past the acquisition of the next stack.
         self._executor: ThreadPoolExecutor | None = None
         self._pending: Future | None = None
-        self._worker = None  # FovSelectionWorker (subprocess) unless decide_fn set
+        self._worker = None  # FOVSelectionWorker (subprocess) unless decide_fn set
         self._decide_fn = decide_fn
 
         # Fail before acquiring if the model asks for a feature the configured preprocessing
@@ -259,68 +279,68 @@ class FovSelection:
     # -- construction ------------------------------------------------------
 
     @staticmethod
-    def _sibling_path(
-        data_path: Path | None, suffix: str, run_index: int | None = None
-    ) -> Path | None:
-        """Sibling artifact path next to the output store: ``<base><suffix>[_<run_index>]``.
+    def _store_stem(data_path: Path | None) -> str | None:
+        """The output store's name without its zarr extension: ``acq_1.ome.zarr`` -> ``acq_1``.
 
-        ``run_index`` is the index the engine appends to every acquisition name
-        (``acq`` -> ``acq_1``). It is stripped off the store name and re-appended at the
-        END of the sibling's own name, so the first run of ``acq`` yields
-        ``acq_fov_debug_1`` -- not ``acq_1_fov_debug``, which buries the index mid-name
-        and sorts the runs' folders apart.
-
-        Passing the index explicitly (rather than pattern-matching a trailing ``_<n>``
-        off the path) keeps a user-supplied name that genuinely ends in a number intact:
-        the first run of ``plate_2`` is stored as ``plate_2_1`` and yields
-        ``plate_2_fov_debug_1``, which cannot collide with the second run of ``plate``
-        (``plate_fov_debug_2``).
-        """
-        if data_path is None:
-            return None
-        data_path = Path(data_path)
-        name = data_path.name
-        for ext in (".ome.zarr", ".zarr"):
-            if name.endswith(ext):
-                name = name[: -len(ext)]
-                break
-        tail = ""
-        if run_index is not None and name.endswith(f"_{run_index}"):
-            name = name[: -len(f"_{run_index}")]
-            tail = f"_{run_index}"
-        return data_path.with_name(f"{name}{suffix}{tail}")
-
-    @classmethod
-    def _debug_dir_for(
-        cls, data_path: Path | None, run_index: int | None = None
-    ) -> Path | None:
-        """Sibling ``<name>_fov_debug[_<n>]/`` directory next to the output store."""
-        return cls._sibling_path(data_path, "_fov_debug", run_index)
-
-    @staticmethod
-    def _matrix_stem_for(data_path: Path | None) -> str | None:
-        """Stem for the optional best-focus-Z debug CSV, ``<acq>_fov_feature_matrix``.
-
-        Derived from the output store name (``<acq>.ome.zarr`` -> ``<acq>``). The main
-        calibration table and its image folders now use fixed names (``fov_summary.csv`` /
-        ``prescan_fov`` / ``prescan_mask``); this stem only labels the best-focus-Z CSV.
+        The single source of truth for naming every sibling artifact. The engine always
+        indexes the acquisition name (``acq`` -> ``acq_1``), so the index rides along
+        inside the stem and nothing else has to be threaded down here.
         """
         if data_path is None:
             return None
         name = Path(data_path).name
         for ext in (".ome.zarr", ".zarr"):
             if name.endswith(ext):
-                name = name[: -len(ext)]
-                break
-        return f"{name}_fov_feature_matrix"
+                return name[: -len(ext)]
+        return name
 
     @classmethod
-    def _prescan_recon_path_for(
-        cls, data_path: Path | None, run_index: int | None = None
-    ) -> Path | None:
-        """Sibling ``<name>_prescan[_<n>].ome.zarr`` store next to the output store."""
-        path = cls._sibling_path(data_path, "_prescan", run_index)
+    def _sibling_path(cls, data_path: Path | None, suffix: str) -> Path | None:
+        """Sibling artifact path next to the output store: ``<store stem><suffix>``.
+
+        ``acq_1.ome.zarr`` yields ``acq_1_fov_debug`` / ``acq_1_prescan.ome.zarr``, so a
+        run's artifacts all share its store's name and sort beside it. Derived purely
+        from the store path -- there is no separate index to keep in sync, and a
+        user-supplied name that itself ends in a digit (``plate_2`` -> ``plate_2_1``) is
+        never mis-parsed, because nothing here parses.
+        """
+        stem = cls._store_stem(data_path)
+        if stem is None:
+            return None
+        return Path(data_path).with_name(f"{stem}{suffix}")
+
+    @classmethod
+    def _debug_dir_for(cls, data_path: Path | None) -> Path | None:
+        """Sibling ``<acq>_fov_debug/`` directory next to the output store."""
+        return cls._sibling_path(data_path, "_fov_debug")
+
+    @classmethod
+    def _matrix_stem_for(cls, data_path: Path | None) -> str | None:
+        """Stem for the optional best-focus-Z debug CSV, ``<acq>_fov_feature_matrix``.
+
+        The main calibration table and its image folders use fixed names
+        (``fov_summary.csv`` / ``prescan_fov`` / ``prescan_mask``); this stem only labels
+        the best-focus-Z CSV.
+        """
+        stem = cls._store_stem(data_path)
+        return None if stem is None else f"{stem}_fov_feature_matrix"
+
+    @classmethod
+    def _prescan_recon_path_for(cls, data_path: Path | None) -> Path | None:
+        """Sibling ``<acq>_prescan.ome.zarr`` store next to the output store."""
+        path = cls._sibling_path(data_path, "_prescan")
         return None if path is None else path.with_name(f"{path.name}.ome.zarr")
+
+    @classmethod
+    def _config_backup_path_for(cls, data_path: Path | None) -> Path | None:
+        """Sibling ``<acq>_config_backup.yaml`` next to the output store.
+
+        The acquisition config with the SELECTED FOVs filled in; written by
+        :func:`shrimpy.fov_selection.acquisition_artifacts.save_selected_config`. Named
+        from the store like every other sibling, so each run gets its own backup and no
+        run can overwrite another's.
+        """
+        return cls._sibling_path(data_path, "_config_backup.yaml")
 
     @classmethod
     def from_metadata(
@@ -330,8 +350,7 @@ class FovSelection:
         pixel_size_um: float,
         data_path: Path | None = None,
         decide_fn: Callable[[np.ndarray], tuple[float, bool]] | None = None,
-        run_index: int | None = None,
-    ) -> FovSelection | None:
+    ) -> FOVSelection | None:
         """Build the coordinator from the validated ``fov_selection`` metadata block.
 
         Returns ``None`` when FOV selection is disabled. The block itself was already
@@ -365,7 +384,6 @@ class FovSelection:
             z_step_um=z_step_um,
             data_path=data_path,
             decide_fn=decide_fn,
-            run_index=run_index,
         )
 
     @staticmethod
@@ -536,11 +554,11 @@ class FovSelection:
         setup has applied the ROI.
         """
         if self._decide_fn is None:
-            from shrimpy.fov_selection.worker import FovSelectionWorker, WorkerConfig
+            from shrimpy.fov_selection.worker import FOVSelectionWorker, WorkerConfig
 
             recon = self._inject_scales(self._recon_config())
             logger.info("FOV selection: starting worker process for shape %s", zyx_shape)
-            self._worker = FovSelectionWorker(
+            self._worker = FOVSelectionWorker(
                 WorkerConfig(
                     recon=recon,
                     target=self._target,
@@ -669,9 +687,33 @@ class FovSelection:
         """Block until all submitted pre-scan decisions have completed.
 
         Awaited in ``teardown_sequence`` after the pre-scan run finishes, before
-        ``passed_position_names`` is read to build the timelapse run.
+        :meth:`outcome` is read to build the timelapse run.
         """
         self._await_pending(timeout=timeout)
+
+    def outcome(self) -> PrescanOutcome:
+        """Everything the timelapse run needs from this pre-scan (see :class:`PrescanOutcome`).
+
+        Call after :meth:`drain` and *before* the debug writers
+        (:meth:`log_selection_summary`, :meth:`finalize_debug_summary`,
+        :meth:`export_prescan_nd`). Those are individually guarded now, but the ordering
+        is what keeps the science independent of them: the capture used to run last, so a
+        PermissionError writing ``fov_summary.csv`` -- a spreadsheet app holding it open --
+        aborted teardown with nothing captured, and the timelapse was skipped for "no FOVs
+        passed" despite a perfectly good selection.
+
+        Safe to call after :meth:`shutdown` (that clears the frame buffers, not the
+        verdicts), though the engine has no reason to: the coordinator does not outlive
+        ``teardown_sequence``.
+        """
+        if self._calibration_mode:
+            # Calibration stops after the pre-scan, so there is no selection to hand on --
+            # only the feature matrix for the viewer. log_selection_summary still reports
+            # which FOVs the model WOULD have selected.
+            return PrescanOutcome(
+                selected_fovs=[], calibration_csv=self.calibration_matrix_csv
+            )
+        return PrescanOutcome(selected_fovs=self.passed_position_names())
 
     def passed_position_names(self) -> list[str]:
         """Names of the FOVs that passed FOV selection (imaged in the timelapse run).

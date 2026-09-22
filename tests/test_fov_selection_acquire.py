@@ -465,10 +465,10 @@ def test_selected_fov_config_fills_stage_positions_and_reloads(tmp_path):
 
     experiment_dir = tmp_path / "2026_08_04_my_experiment"
     experiment_dir.mkdir()
-    fov_artifacts.save_selected_config(timelapse, experiment_dir, None)
+    fov_artifacts.save_selected_config(timelapse, experiment_dir / "acq_1.ome.zarr")
 
-    # fixed recovery-config name, beside the config.yaml it mirrors
-    artifact = experiment_dir / "config_for_recovery.yaml"
+    # named after the store, beside the config.yaml it mirrors
+    artifact = experiment_dir / "acq_1_config_backup.yaml"
     assert artifact.exists()
 
     written = MDASequence.from_file(artifact)  # a valid sequence, though nothing reloads it
@@ -484,9 +484,9 @@ def test_selected_fov_config_fills_stage_positions_and_reloads(tmp_path):
     assert written == timelapse
 
 
-def test_selected_fov_config_appends_the_dedup_index(tmp_path):
-    # A second acquisition in the same folder must not silently replace the first record --
-    # run_index is appended only once the fixed name is already taken.
+def test_selected_fov_config_is_per_run_so_it_cannot_overwrite(tmp_path):
+    # Every acquisition in a folder gets its own backup, named from its store -- there
+    # is no shared name for a second run to silently replace.
     from shrimpy.fov_selection import acquisition_artifacts as fov_artifacts
 
     seq = _sequence(metadata={"fov_selection": _grid_fov_cfg()})
@@ -496,13 +496,11 @@ def test_selected_fov_config_appends_the_dedup_index(tmp_path):
     experiment_dir = tmp_path / "expt"
     experiment_dir.mkdir()
 
-    fov_artifacts.save_selected_config(
-        timelapse, experiment_dir, None
-    )  # -> config_for_recovery.yaml
-    fov_artifacts.save_selected_config(timelapse, experiment_dir, 1)  # name taken -> _1
+    fov_artifacts.save_selected_config(timelapse, experiment_dir / "acq_1.ome.zarr")
+    fov_artifacts.save_selected_config(timelapse, experiment_dir / "acq_2.ome.zarr")
 
-    assert (experiment_dir / "config_for_recovery.yaml").exists()
-    assert (experiment_dir / "config_for_recovery_1.yaml").exists()
+    assert (experiment_dir / "acq_1_config_backup.yaml").exists()
+    assert (experiment_dir / "acq_2_config_backup.yaml").exists()
 
 
 def test_selected_fov_config_never_raises(tmp_path):
@@ -517,5 +515,5 @@ def test_selected_fov_config_never_raises(tmp_path):
     experiment_dir = tmp_path / "expt"
     experiment_dir.mkdir()
     # a directory where the file should go -> write_text raises, must be swallowed
-    (experiment_dir / "config_for_recovery.yaml").mkdir()
-    fov_artifacts.save_selected_config(timelapse, experiment_dir, None)
+    (experiment_dir / "acq_1_config_backup.yaml").mkdir()
+    fov_artifacts.save_selected_config(timelapse, experiment_dir / "acq_1.ome.zarr")

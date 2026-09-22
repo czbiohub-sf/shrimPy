@@ -24,12 +24,12 @@ from pathlib import Path
 
 from useq import MDASequence
 
+from shrimpy.fov_selection.manager import FOVSelection
+
 logger = logging.getLogger(__name__)
 
 
-def save_selected_config(
-    timelapse_seq: MDASequence, output_dir: Path, run_index: int | None
-) -> None:
+def save_selected_config(timelapse_seq: MDASequence, data_path: Path) -> None:
     """Record the acquisition config with the SELECTED FOVs in ``stage_positions``.
 
     The config an FOV-selection experiment starts from leaves ``stage_positions``
@@ -38,12 +38,12 @@ def save_selected_config(
     that gap filled: one entry per selected FOV carrying its absolute ``x``/``y``,
     the well's ``ZDrive`` coarse focus, and its ``plate_row``/``plate_col``.
 
-    Saved as ``config_for_recovery.yaml`` in the experiment folder, beside the
-    hand-written ``config.yaml`` it mirrors. A purely descriptive record of what the
-    run chose (a config you could re-run to reacquire the same FOVs) -- nothing reads
-    it back. Only when that name is already taken (a second acquisition in the same
-    folder) is ``run_index`` appended (``config_for_recovery_1.yaml``), so an existing
-    record is not silently replaced.
+    Saved beside the output store as ``<acq>_config_backup.yaml`` (``acq_2.ome.zarr``
+    -> ``acq_2_config_backup.yaml``), next to the hand-written ``config.yaml`` it
+    mirrors. A purely descriptive record of what the run chose -- a config you could
+    re-run to reacquire the same FOVs -- that nothing reads back. Named from the store
+    like every other sibling artifact, so each acquisition in a folder gets its own
+    backup and no run can overwrite another's.
 
     ``exclude_defaults`` keeps the file close to the hand-written config rather than
     expanding every useq default. The ``setup.action`` type discriminator is restored
@@ -55,9 +55,7 @@ def save_selected_config(
     """
     import yaml
 
-    path = output_dir / "config_for_recovery.yaml"
-    if path.exists() and run_index is not None:
-        path = output_dir / f"config_for_recovery_{run_index}.yaml"
+    path = FOVSelection._config_backup_path_for(data_path)
     try:
         data = timelapse_seq.model_dump(mode="json", exclude_defaults=True)
         setup = data.get("setup")

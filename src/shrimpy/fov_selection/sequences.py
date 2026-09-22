@@ -54,7 +54,7 @@ def build_prescan_sequence(sequence: MDASequence, fov_cfg: FOVSelectionConfig) -
     may be a single 2D slice for fluorescence-based selection, independent of the
     timelapse z-plan. The parent ``fov_selection`` config (minus ``prescan_mda``)
     and the shared mantis hardware settings are injected into the pre-scan
-    metadata so ``setup_sequence`` builds the ``FovSelection`` coordinator and
+    metadata so ``setup_sequence`` builds the ``FOVSelection`` coordinator and
     configures the scope the same way as the timelapse run.
 
     Candidate FOVs may be defined in either useq style: a ``WellPlatePlan``

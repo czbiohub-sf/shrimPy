@@ -10,7 +10,7 @@ features match training exactly. Feature extraction is decoupled from the model:
       -> per-object features          [FeatureExtractor.object_feature_rows]
       -> per-FOV aggregation          [FeatureExtractor.group_features]
       -> named feature table          [extract_features: plain feature keys, one mask]
-      -> verdict                      [FovModel.predict, fov_model.py]
+      -> verdict                      [FOVModel.predict, fov_model.py]
 
 The model (thresholding / desirability / trained tree / ...) reads the feature table
 by NAME only -- it never sees which channel produced a feature -- so any model type
@@ -271,7 +271,7 @@ def decide_fov(
 
     Reconstructs the input z-stack (``preprocessor``), projects and segments each
     ``recon_channels`` channel, extracts a named feature table, and asks ``model``
-    (any :class:`~shrimpy.fov_selection.fov_model.FovModel`) for the verdict. Feature
+    (any :class:`~shrimpy.fov_selection.fov_model.FOVModel`) for the verdict. Feature
     extraction is model-agnostic (see :func:`extract_features`) and the model reads only
     feature names, so any model type pairs with any preprocessing. Shared by the streaming
     worker and tests.
@@ -292,8 +292,8 @@ def decide_fov(
         Loaded segmentation backend from
         :func:`shrimpy.fov_selection.segmentation.build_segmenter` (Cellpose / InstanSeg /
         Otsu); it carries its own config, so the segmentation block is not re-passed here.
-    model : FovModel
-        Any :class:`~shrimpy.fov_selection.fov_model.FovModel` (thresholding, desirability,
+    model : FOVModel
+        Any :class:`~shrimpy.fov_selection.fov_model.FOVModel` (thresholding, desirability,
         trained tree, ...); consumes the extracted features by name.
     bf_zyx : np.ndarray
         Raw input-channel z-stack ``(Z, Y, X)``.

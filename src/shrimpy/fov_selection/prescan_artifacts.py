@@ -495,7 +495,7 @@ def finalize_summary_csv(
 
 def stamp_well_columns(summary_path: Path, well_coords: dict[str, tuple[str, int]]) -> None:
     """Add ``well_row`` / ``well_col`` columns to ``fov_summary.csv`` by joining each row's
-    ``filename`` to ``well_coords`` (see :meth:`FovSelection._build_well_coords`).
+    ``filename`` to ``well_coords`` (see :meth:`FOVSelection._build_well_coords`).
 
     The feature viewer groups FOVs by ``(well_row, well_col)``
     (:meth:`FeatureViewer._group_positions_by_well`), so this is what lets a pre-scan CSV
@@ -557,7 +557,7 @@ def save_selected_fov_pngs(
     ``<position>__<name>.png`` (the position prefix dropped when the group is unknown) so the
     selections group by well / grid center.
 
-    Best-effort, called from :meth:`FovSelection.finalize_debug_summary` alongside
+    Best-effort, called from :meth:`FOVSelection.finalize_debug_summary` alongside
     :func:`finalize_summary_csv`: it runs at the end of the pre-scan and must never raise out
     of ``teardown_sequence``. A no-op when ``prescan_fov/`` was never written (e.g.
     ``save_decision`` off); a per-file copy failure is logged and skipped.

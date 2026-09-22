@@ -33,7 +33,7 @@ class WorkerConfig:
     into the process as a single value.
 
     Collecting the settings here (rather than threading ~20 positional args through
-    ``FovSelectionWorker`` -> ``Process(args=...)`` -> ``_worker_loop``) means each field is
+    ``FOVSelectionWorker`` -> ``Process(args=...)`` -> ``_worker_loop``) means each field is
     named exactly once at the construction site and read by name in the loop; there is no
     positional args tuple to keep in sync. Frozen so it is a stable snapshot for the run.
 
@@ -113,7 +113,7 @@ class WorkerConfig:
     write_prescan_artifacts: bool = True
 
 
-class FovSelectionWorker:
+class FOVSelectionWorker:
     """Manages a subprocess that runs the FOV-selection decision.
 
     Built from a single :class:`WorkerConfig` (the manager assembles it once); the config is
@@ -375,7 +375,7 @@ def _worker_loop(
                     }
                 )
                 # DEBUG, not INFO: the manager logs the same score with the more useful
-                # acquired->decision latency in the main process (see FovSelection._record),
+                # acquired->decision latency in the main process (see FOVSelection._record),
                 # so logging it again here at INFO would just duplicate every FOV's score.
                 log.debug(
                     "FOV-selection worker: %s -> score=%.3f (compute %.1fs)",

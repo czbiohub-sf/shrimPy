@@ -1,6 +1,6 @@
 """Pluggable FOV-goodness models.
 
-A :class:`FovModel` maps a per-FOV feature table (named columns) to a decision
+A :class:`FOVModel` maps a per-FOV feature table (named columns) to a decision
 ``(proba, good)``. Models depend ONLY on feature *names* -- never on which channel /
 projection produced a feature -- so feature extraction (preprocessing -> project ->
 segment -> named features, in :mod:`pipeline`) is fully decoupled from the model. Any
@@ -14,7 +14,7 @@ model has a ``type``:
     type: classification_by_thresholding -> ThresholdingModel  (hard [lo, hi] box)
     type: classification_tree            -> TrainedTreeModel   (trained .joblib: imputer + tree)
 
-Adding a model type = add a :class:`FovModel` subclass + a branch in
+Adding a model type = add a :class:`FOVModel` subclass + a branch in
 :func:`build_fov_model`; nothing in the feature-extraction or acquisition path changes.
 """
 
@@ -42,7 +42,7 @@ MODEL_TYPES = frozenset(
 )
 
 
-class FovModel:
+class FOVModel:
     """Interface: a FOV-goodness model over a named feature table.
 
     Subclasses set :attr:`feature_names` (the columns the model reads) and implement
@@ -59,7 +59,7 @@ class FovModel:
         raise NotImplementedError
 
 
-class ThresholdingModel(FovModel):
+class ThresholdingModel(FOVModel):
     """Hard QC box: a FOV is good iff every feature is inside its ``[lo, hi]`` range.
 
     ``features`` maps feature name -> ``{range: [lo, hi]}`` (or a bare ``[lo, hi]`` list).
@@ -88,7 +88,7 @@ class ThresholdingModel(FovModel):
         return proba, [bool(x) for x in in_box]
 
 
-class DesirabilityModel(FovModel):
+class DesirabilityModel(FOVModel):
     """User-defined desirable ranges -> weighted-desirability score (no training).
 
     Produces one ``proba`` in ``[0, 1]`` per FOV, used purely as a RANKING score. By default
@@ -118,7 +118,7 @@ class DesirabilityModel(FovModel):
 
     Selection is pure ranking: the manager keeps the ``model.top_fov`` highest-scoring FOVs
     per position across the whole pre-scan (see
-    :meth:`shrimpy.fov_selection.manager.FovSelection.passed_position_names`). ``top_fov`` is
+    :meth:`shrimpy.fov_selection.manager.FOVSelection.passed_position_names`). ``top_fov`` is
     therefore REQUIRED (validated here and, at config-load time, by
     :class:`shrimpy.fov_selection.config.RankingModelSettings`), and there is no per-FOV
     good/bad notion: :meth:`predict` returns ``good=None`` and ignores ``threshold`` (a
@@ -453,7 +453,7 @@ class DesirabilityModel(FovModel):
         return np.exp(-0.5 * (w[:, None] * z2).sum(0) / total)
 
 
-class TrainedTreeModel(FovModel):
+class TrainedTreeModel(FOVModel):
     """A trained decision-tree model dict ``{imputer, tree, features}`` (from a .joblib).
 
     Missing feature columns are added as NaN and filled by the model's median imputer,
@@ -471,8 +471,8 @@ class TrainedTreeModel(FovModel):
         return np.asarray(proba, float), [bool(p >= threshold) for p in proba]
 
 
-def build_fov_model(model_cfg: dict) -> FovModel:
-    """Construct the :class:`FovModel` for the ``fov_selection.model`` config block.
+def build_fov_model(model_cfg: dict) -> FOVModel:
+    """Construct the :class:`FOVModel` for the ``fov_selection.model`` config block.
 
     ``type`` selects the model (:data:`MODEL_TYPES`); ``classification_tree`` additionally
     needs a ``path`` to the trained .joblib. Raises on an unknown/missing ``type``.

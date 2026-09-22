@@ -1,6 +1,6 @@
 """FOV selection -- online, streaming selection of "good" fields of view.
 
-Microscope-agnostic: an acquisition engine builds a :class:`FovSelection`
+Microscope-agnostic: an acquisition engine builds a :class:`FOVSelection`
 coordinator from its ``fov_selection`` metadata section and interacts with that
 object only. The per-FOV decision pipeline (reconstruct -> project -> segment ->
 features -> tree) and the worker subprocess are implementation details of this
@@ -8,6 +8,6 @@ package.
 """
 
 from shrimpy.fov_selection.config import FOVSelectionConfig
-from shrimpy.fov_selection.manager import FovSelection
+from shrimpy.fov_selection.manager import FOVSelection, PrescanOutcome
 
-__all__ = ["FOVSelectionConfig", "FovSelection"]
+__all__ = ["FOVSelection", "FOVSelectionConfig", "PrescanOutcome"]

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import weakref
 
+from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -27,8 +28,7 @@ from shrimpy.engines.base_engine import (
 )
 from shrimpy.engines.dragonfly_engine import DragonflyEngine
 from shrimpy.engines.isim_engine import ISIMEngine
-
-from .conftest import fov_selection_metadata
+from shrimpy.fov_selection.manager import PrescanOutcome
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -1038,66 +1038,64 @@ def test_next_name_gap_in_indices(tmp_path):
     assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"
 
 
-def test_teardown_captures_selection_before_debug_writes():
-    """A failing debug write must not cost us the selection.
-
-    Regression: finalize_debug_summary() used to run BEFORE _fov_passed_names was
-    assigned, so a PermissionError on fov_summary.csv (a spreadsheet holding it open)
-    aborted teardown_sequence with the list still empty -- acquire() then skipped the
-    timelapse for "no FOVs passed" even though FOVs had scored and passed.
-    """
+def _teardown_engine(fov) -> BaseEngine:
+    """A bare engine wired up with just what _teardown_fov_selection touches."""
     engine = BaseEngine.__new__(BaseEngine)
     engine._dynatrack = None
     # Set by __init__, which __new__ bypasses; teardown reads them via
     # _return_focus_device_home().
     engine._focus_device = None
     engine._focus_home = None
-    engine._fov_passed_names = []
+    engine._prescan_outcome = None
+    engine._fov_selection = fov
     core = MagicMock()
     engine._mmcore_ref = weakref.ref(core)  # `mmcore` is a read-only property
+    # The weakref does not keep the mock alive, and BaseEngine.mmcore raises once it is
+    # collected -- so the engine has to hold a strong reference for the test's lifetime.
+    engine._test_core = core
+    return engine
 
+
+def test_teardown_captures_the_outcome_before_debug_writes():
+    """A failing debug write must not cost us the selection.
+
+    Regression: finalize_debug_summary() used to run BEFORE the selection was captured,
+    so a PermissionError on fov_summary.csv (a spreadsheet holding it open) aborted
+    teardown_sequence with nothing captured -- acquire() then skipped the timelapse for
+    "no FOVs passed" even though FOVs had scored and passed.
+    """
     fov = MagicMock()
-    fov.passed_position_names.return_value = ["p0_0019", "p0_0021", "p0_0016"]
+    fov.calibration_mode = False
+    fov.outcome.return_value = PrescanOutcome(selected_fovs=["p0_0019", "p0_0021", "p0_0016"])
     fov.finalize_debug_summary.side_effect = PermissionError("fov_summary.csv is locked")
-    engine._fov = fov
+    engine = _teardown_engine(fov)
 
     sequence = MDASequence(stage_positions=[{"x": 0, "y": 0}])
     with patch.object(MDAEngine, "teardown_sequence"), pytest.raises(PermissionError):
         engine.teardown_sequence(sequence)
 
     # Even though the debug write blew up, the selection survived.
-    assert engine._fov_passed_names == ["p0_0019", "p0_0021", "p0_0016"]
+    assert engine._prescan_outcome.selected_fovs == ["p0_0019", "p0_0021", "p0_0016"]
 
 
 def test_calibration_teardown_still_logs_selection_and_finalizes():
     """Calibration mode must run the post-drain summary + CSV finalize too, not only the
     normal path -- so the log records which FOVs the model would select and the well columns
     are stamped even when no timelapse follows."""
-    engine = BaseEngine.__new__(BaseEngine)
-    engine._dynatrack = None
-    # Set by __init__, which __new__ bypasses; teardown reads them via
-    # _return_focus_device_home().
-    engine._focus_device = None
-    engine._focus_home = None
-    engine._fov_passed_names = None
-    core = MagicMock()
-    engine._mmcore_ref = weakref.ref(core)
-
+    csv = Path("run/acq_fov_debug/fov_summary.csv")
     fov = MagicMock()
     fov.num_decided = 3
-    fov.calibration_matrix_csv = "run/acq_fov_debug/fov_summary.csv"
-    engine._fov = fov
+    fov.calibration_mode = True
+    fov.outcome.return_value = PrescanOutcome(selected_fovs=[], calibration_csv=csv)
+    engine = _teardown_engine(fov)
 
-    sequence = MDASequence(
-        stage_positions=[{"x": 0, "y": 0}],
-        metadata={"fov_selection": fov_selection_metadata(calibration_mode=True)},
-    )
     with patch.object(MDAEngine, "teardown_sequence"):
-        engine.teardown_sequence(sequence)
+        engine.teardown_sequence(MDASequence(stage_positions=[{"x": 0, "y": 0}]))
 
     fov.log_selection_summary.assert_called_once()
     fov.finalize_debug_summary.assert_called_once()
-    assert engine._fov_passed_names == []  # no timelapse selection in calibration
+    # No timelapse selection in calibration -- only the viewer's feature matrix.
+    assert engine._prescan_outcome == PrescanOutcome(selected_fovs=[], calibration_csv=csv)
 
 
 # ---------------------------------------------------------------------------
@@ -1111,23 +1109,23 @@ def test_calibration_teardown_still_logs_selection_and_finalizes():
 
 def test_next_name_avoids_a_crashed_prescan_debug_dir(tmp_path):
     # Store absent, debug dir present -> the name is NOT free.
-    (tmp_path / "acq_fov_debug_1").mkdir()
+    (tmp_path / "acq_1_fov_debug").mkdir()
     assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"
 
 
 def test_next_name_avoids_a_crashed_prescan_zarr(tmp_path):
-    (tmp_path / "acq_prescan_1.ome.zarr").mkdir()
+    (tmp_path / "acq_1_prescan.ome.zarr").mkdir()
     assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"
 
 
 def test_next_name_avoids_indexed_sibling_leftovers(tmp_path):
     # The real failure: stores acq_1..acq_3 exist, but a crashed 4th run left
-    # acq_fov_debug_4 and acq_prescan_4. acq_4 looks free by the store alone.
-    for suffix in ("_1", "_2", "_3"):
-        (tmp_path / f"acq{suffix}.ome.zarr").mkdir()
-    for suffix in ("_1", "_2", "_3", "_4"):
-        (tmp_path / f"acq_fov_debug{suffix}").mkdir()
-    (tmp_path / "acq_prescan_4.ome.zarr").mkdir()
+    # acq_4_fov_debug and acq_4_prescan. acq_4 looks free by the store alone.
+    for index in (1, 2, 3):
+        (tmp_path / f"acq_{index}.ome.zarr").mkdir()
+    for index in (1, 2, 3, 4):
+        (tmp_path / f"acq_{index}_fov_debug").mkdir()
+    (tmp_path / "acq_4_prescan.ome.zarr").mkdir()
 
     assert _get_next_acquisition_name(tmp_path, "acq") == "acq_5"
 
@@ -1135,7 +1133,7 @@ def test_next_name_avoids_indexed_sibling_leftovers(tmp_path):
 def test_next_name_never_reuses_or_deletes_leftovers(tmp_path):
     # Freshness is about the NAME existing, not about the run having completed: an
     # incomplete folder is skipped and left untouched for inspection.
-    debug = tmp_path / "acq_fov_debug_1"
+    debug = tmp_path / "acq_1_fov_debug"
     debug.mkdir()
     (debug / "fov_summary.csv").write_text("name,proba\np0_0000,0.5\n")
 
@@ -1146,17 +1144,28 @@ def test_next_name_never_reuses_or_deletes_leftovers(tmp_path):
 
 
 def test_artifact_paths_cover_store_and_siblings(tmp_path):
-    assert [p.name for p in acquisition_artifact_paths(tmp_path, "acq_1", 1)] == [
+    # Every sibling is named from the store, so the run index rides along in the stem
+    # and there is no second place for it to be kept in sync.
+    assert [p.name for p in acquisition_artifact_paths(tmp_path, "acq_1")] == [
         "acq_1.ome.zarr",
-        "acq_fov_debug_1",
-        "acq_prescan_1.ome.zarr",
+        "acq_1_fov_debug",
+        "acq_1_prescan.ome.zarr",
+        "acq_1_config_backup.yaml",
     ]
-    # The dedup index lands at the END of each sibling name, not mid-name.
-    assert [p.name for p in acquisition_artifact_paths(tmp_path, "acq_2", 2)] == [
-        "acq_2.ome.zarr",
-        "acq_fov_debug_2",
-        "acq_prescan_2.ome.zarr",
+    # A base name that itself ends in a digit is never mis-parsed -- nothing parses.
+    assert [p.name for p in acquisition_artifact_paths(tmp_path, "plate_2_1")] == [
+        "plate_2_1.ome.zarr",
+        "plate_2_1_fov_debug",
+        "plate_2_1_prescan.ome.zarr",
+        "plate_2_1_config_backup.yaml",
     ]
+
+
+def test_next_name_avoids_a_leftover_config_backup(tmp_path):
+    # The backup is written BETWEEN the two runs, so a run that dies right after it --
+    # before the timelapse creates the store -- leaves it as the name's only trace.
+    (tmp_path / "acq_1_config_backup.yaml").write_text("channels: []\n")
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"
 
 
 def test_move_focus_stage_skips_moves_below_threshold(mock_core):

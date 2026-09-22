@@ -6,7 +6,7 @@ microscope pre-scans every candidate FOV once, decides which are "good" with the
 trained model, and images the timelapse only on those.
 
 `acquire()` orchestrates **two sequential `core.mda.run()` calls** around one
-`FovSelection` object (read from `metadata.mantis.fov_selection`). No separate
+`FOVSelection` object (read from `metadata.mantis.fov_selection`). No separate
 controller, no CLI routing; `shrimpy acquire mantis` runs it like any other
 acquisition. Validated offline with the ReplayCamera replaying a real A549 store.
 
@@ -52,7 +52,7 @@ filter).
   (`fov_selection` disabled), run it into the main store. No good FOV → warn and
   skip run 2. The sequence builders live in the `fov_selection` package (below),
   not the engine, so the engine stays thin.
-- `setup_sequence()` — builds `FovSelection.from_metadata(...)` + starts the
+- `setup_sequence()` — builds `FOVSelection.from_metadata(...)` + starts the
   worker after ROI (via the shared `_zyx_shape` helper, also used by DynaTrack);
   non-`None` only for the pre-scan run (timelapse disables `fov_selection`).
 - `teardown_sequence()` — captures `good_position_names()` onto the engine, then
@@ -72,12 +72,12 @@ filter).
 
 ## FOV-selection package (`shrimpy/fov_selection/`)
 
-- `manager.py` — `FovSelection`, the streaming coordinator (mirrors `DynaTrack`):
+- `manager.py` — `FOVSelection`, the streaming coordinator (mirrors `DynaTrack`):
   `from_metadata` -> `start` (spawns worker) -> `on_frame_ready` (buffers the
   pre-scan stacks, submits per FOV as each completes) -> `drain` (after run 1)
   -> `good_position_names` -> `shutdown`. Bounded to one in-flight decision
   (backpressure — never holds a whole plate in RAM).
-- `worker.py` — `FovSelectionWorker` subprocess: builds preprocessor + Cellpose +
+- `worker.py` — `FOVSelectionWorker` subprocess: builds preprocessor + Cellpose +
   tree once, decides one FOV per message; writes per-FOV debug artifacts when
   `save_decision` is set.
 - `pipeline.py` — per-FOV `decide_fov` (project -> segment -> features -> predict),
