@@ -96,3 +96,26 @@ def shrimpy_metadata() -> dict:
             "stage": "Z",
         },
     }
+
+
+def fov_selection_metadata(**overrides) -> dict:
+    """A minimal *valid* ``metadata.fov_selection`` block, as a plain mapping.
+
+    :class:`~shrimpy.fov_selection.config.FOVSelectionConfig` validates the block in
+    full whether or not it is ``enabled``, so every test that touches FOV selection
+    needs the required fields present -- the channel, the ``target``, a
+    ``preprocessing`` pipeline ending in ``segmentation``, a segmentation backend, and
+    a model. Collecting them here keeps each test's config to the keys it is actually
+    about. ``overrides`` are merged at the top level (pass a whole replacement
+    sub-block to change one).
+    """
+    cfg = {
+        "enabled": True,
+        "fov_selection_channel": "BF",
+        "target": "cells",
+        "preprocessing": ["segmentation"],
+        "segmentation": {"model": "otsu"},
+        "model": {"type": "classification_tree", "path": "dummy.joblib"},
+    }
+    cfg.update(overrides)
+    return cfg

@@ -758,7 +758,8 @@ class BaseEngine(MDAEngine):
         self._fov.drain()
         # Read calibration mode from the (pre-scan) sequence metadata rather than the
         # coordinator, so the branch is decided by config alone.
-        calibration_mode = bool(fov_selection_config(sequence).get("calibration_mode", False))
+        fov_cfg = fov_selection_config(sequence)
+        calibration_mode = fov_cfg is not None and fov_cfg.calibration_mode
         if calibration_mode:
             # Calibration pre-scan: no timelapse. Capture the feature-viewer CSV so acquire()
             # can open the viewer on it; there is no selection to hand to a timelapse.
@@ -861,7 +862,7 @@ class BaseEngine(MDAEngine):
         self._data_path = data_path
 
         fov_cfg = fov_selection_config(sequence)
-        if not fov_cfg.get("enabled", False):
+        if fov_cfg is None or not fov_cfg.enabled:
             # FOV selection is off -> ordinary single-run acquisition.
             logger.info(f"Starting acquisition: {name}")
             self._run_mda(sequence, data_path)
@@ -891,7 +892,7 @@ class BaseEngine(MDAEngine):
                 prescan_elapsed / n_candidates if n_candidates else float("nan"),
             )
 
-            if fov_cfg.get("calibration_mode", False):
+            if fov_cfg.calibration_mode:
                 # Calibration mode stops after the pre-scan: no timelapse is run.
                 # Instead the feature viewer opens on the pre-scan's feature matrix so
                 # the user can pick features, tune the score function, and save a
@@ -901,7 +902,8 @@ class BaseEngine(MDAEngine):
                     "opening the feature viewer."
                 )
                 fov_artifacts.launch_feature_viewer(
-                    self._fov_calibration_csv, fov_cfg.get("model")
+                    self._fov_calibration_csv,
+                    fov_cfg.model.model_dump(mode="json", exclude_none=True),
                 )
                 logger.info("Calibration pre-scan completed successfully")
                 return

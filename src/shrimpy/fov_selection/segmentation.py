@@ -28,6 +28,11 @@ logger = logging.getLogger(__name__)
 # The InstanSeg model's two output heads, in channel order (rdf.yaml outputs[0] channel_names).
 INSTANSEG_TARGETS = ("nuclei", "cells")
 
+# Every backend :func:`build_segmenter` can construct, i.e. the values
+# ``fov_selection.segmentation.model`` may take (see
+# :data:`shrimpy.fov_selection.config.SegmentationSettings`).
+SEGMENTATION_BACKENDS = ("cellpose", "instanseg", "otsu")
+
 
 class Segmenter:
     """Interface: segment one 2D projection into a uint32 instance-label mask.
@@ -355,6 +360,6 @@ def build_segmenter(segmentation: dict | None = None) -> Segmenter:
     if backend == "cellpose":
         return CellposeSegmenter(seg)
     raise NotImplementedError(
-        f"segmentation.model={backend!r} is not supported; use 'cellpose', "
-        "'instanseg' or 'otsu'."
+        f"segmentation.model={backend!r} is not supported; "
+        f"use one of {list(SEGMENTATION_BACKENDS)}."
     )

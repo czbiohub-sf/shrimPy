@@ -33,9 +33,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from useq import MDASequence
 
 from shrimpy.dynatrack.tracking import DynaTrackConfig
+from shrimpy.fov_selection.config import FOVSelectionConfig
 
 __all__ = [
     "AutofocusSettings",
+    "FOVSelectionConfig",
     "ShrimpyMetadata",
     "load_config",
 ]
@@ -117,18 +119,11 @@ class ShrimpyMetadata(BaseModel):
         tracking. A section that is present is validated even when
         ``enabled: false``, so ``input_channel`` / ``tracking_channel`` are
         required; omit the section entirely to disable tracking.
-    fov_selection : dict | None
-        Smart FOV-selection settings; ``None`` (the default) disables it. Kept
-        as a raw mapping rather than a model: the block nests a whole
-        ``prescan_mda`` sequence plus a model/feature configuration that
-        :meth:`shrimpy.fov_selection.FovSelection.from_metadata` validates when
-        the section is enabled, and mirroring that schema here would be a
-        second source of truth. It is still declared so ``extra="forbid"``
-        does not reject a valid config.
-    pymmcore_widgets : dict | None
-        Version stamp written by pymmcore-widgets' ``MDAWidget`` when a
-        sequence is saved from a GUI. Not read by shrimPy -- declared only so
-        ``extra="forbid"`` does not reject a config that came out of the GUI.
+    fov_selection : FOVSelectionConfig | None
+        Smart FOV-selection settings; ``None`` (the default) disables it. Like
+        ``dynatrack``, a section that is present is validated in full even when
+        ``enabled: false`` -- omit the section entirely to disable selection.
+        See :class:`shrimpy.fov_selection.config.FOVSelectionConfig`.
 
     Raises
     ------
@@ -145,8 +140,7 @@ class ShrimpyMetadata(BaseModel):
         default_factory=list
     )
     dynatrack: DynaTrackConfig | None = None
-    fov_selection: dict | None = None
-    pymmcore_widgets: dict | None = None
+    fov_selection: FOVSelectionConfig | None = None
 
     _coerce_reset = field_validator("reset_hardware_sequencing_settings", mode="before")(
         _as_property_settings

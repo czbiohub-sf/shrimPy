@@ -76,8 +76,9 @@ directly.
 
 ## Configuration
 
-Everything lives under `metadata.fov_selection` in the acquisition YAML. See
-`config/mda/fov_selection_demo.yaml` for a fully commented example. Key fields:
+Everything lives under `metadata.fov_selection` in the acquisition YAML, validated by
+`FOVSelectionConfig` (`config.py`) — the single source of truth for the block's shape.
+See `config/mda/fov_selection_demo.yaml` for a fully commented example. Key fields:
 
 | Field | Meaning |
 |-------|---------|
@@ -97,11 +98,26 @@ Everything lives under `metadata.fov_selection` in the acquisition YAML. See
 | `save_best_focus_z_for_debug` | write the detected best-focus slice/depth per FOV (only with the `best_focus_z` projection; see [Artifacts](#artifacts)) |
 | `require_gpu` | fail fast if reconstruction cannot run on a GPU (default true) |
 
-The block itself is validated by `FovSelection.from_metadata` and the coordinator when they
-are built (a bad model type, a missing/unknown `fov_selection_channel`, a `target` outside
-`{cells, nuclei}`, or a model asking for an unproducible feature all raise before any
-hardware is touched). `shrimpy/config.py` keeps `fov_selection` as a single opaque section
-under its strict `extra="forbid"` metadata schema, so there is no second source of truth.
+### Where each check lives
+
+`shrimpy/config.py` declares the section as `fov_selection: FOVSelectionConfig | None`, so
+**everything checkable from the config alone is rejected by `load_config`, before the
+engine is even constructed**: an unknown key anywhere in the block, a missing required
+field, an unknown or duplicated preprocessing step, two projection steps, a reconstruction
+step with no sub-config, a `best_focus_z` projection with no optics, a segmentation backend
+that does not exist, an unusable desirability curve, a ranking model without `top_fov`.
+Validation does not depend on `enabled`: a section that is present is validated in full —
+omit it entirely to turn selection off.
+
+`deskew`, `phase`, and `virtual_staining` stay plain mappings, validated against their
+upstream schemas (`biahub`, `waveorder`, `cytoland`) where they are consumed; mirroring
+those here would be a second source of truth. Same split as `DynaTrackConfig`.
+
+What the coordinator still checks when it is built are the things the config alone cannot
+know: `fov_selection_channel` against the acquisition's channels, the model's feature names
+against the configured preprocessing, the pixel size the hardware reports, the sequence's Z
+step when deskew/phase need one, and whether the InstanSeg checkpoint exists on this
+machine. All of them raise before any hardware is touched.
 
 ## Selection models
 
@@ -307,6 +323,7 @@ logged and never swallowed.
 
 ```
 fov_selection/
+├── config.py             FOVSelectionConfig: the validated metadata.fov_selection schema
 ├── manager.py            FovSelection coordinator (engine-facing): buffering,
 │                         verdict store, drain, per-position top-K selection
 ├── sequences.py          build the pre-scan and timelapse MDASequences

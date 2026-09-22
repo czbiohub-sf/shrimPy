@@ -55,8 +55,6 @@ keep_shutter_open_across: []
 
 # Define metadata per microscope
 metadata:
-  pymmcore_widgets:
-    version: 0.10.2.dev23+g22b8c0aff.d20260106
   reset_hardware_sequencing_settings:
     - ['TS2_TTL1-8', 'Blanking', 'Off']
     - ['TS2_DAC03', 'Sequence', 'Off']

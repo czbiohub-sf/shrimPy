@@ -7,6 +7,7 @@ features -> tree) and the worker subprocess are implementation details of this
 package.
 """
 
+from shrimpy.fov_selection.config import FOVSelectionConfig
 from shrimpy.fov_selection.manager import FovSelection
 
-__all__ = ["FovSelection"]
+__all__ = ["FOVSelectionConfig", "FovSelection"]

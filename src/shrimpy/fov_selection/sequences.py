@@ -15,31 +15,37 @@ import copy
 
 from useq import MDASequence, Position, WellPlatePlan
 
+from shrimpy.fov_selection.config import FOVSelectionConfig
 from shrimpy.fov_selection.plate_naming import plate_labels, well_field_name
 
 
-def fov_selection_config(sequence: MDASequence) -> dict:
-    """Return the ``metadata.fov_selection`` block (``{}`` if absent).
+def fov_selection_config(sequence: MDASequence) -> FOVSelectionConfig | None:
+    """Return the validated ``metadata.fov_selection`` block (``None`` if absent).
 
-    The caller decides whether it is active by reading its ``enabled`` flag,
-    e.g. ``fov_selection_config(sequence).get("enabled")``.
+    The caller decides whether it is active by reading its ``enabled`` flag, e.g.
+    ``(cfg := fov_selection_config(seq)) is not None and cfg.enabled``. Validation is
+    the same one :class:`shrimpy.config.ShrimpyMetadata` applies at load time, repeated
+    here because the engine also reads this block off sequences it built itself (the
+    pre-scan and timelapse runs), which never went through ``load_config``.
     """
     meta = sequence.metadata if sequence.metadata else {}
-    return meta.get("fov_selection") or {}
+    block = meta.get("fov_selection")
+    if block is None:
+        return None
+    return FOVSelectionConfig.model_validate(block)
 
 
-# Hardware-setup metadata keys that the pre-scan run must share with the
-# timelapse run so the scope is configured identically for both.
+# Hardware-setup metadata sections the pre-scan run must share with the timelapse run so
+# the scope is configured identically for both. Only sections ShrimpyMetadata declares can
+# appear here: the injected pre-scan metadata is re-validated by setup_sequence under
+# extra="forbid", so copying anything else across would make the pre-scan run unloadable.
 _SHARED_METADATA_KEYS = (
     "autofocus",
-    "roi",
-    "initialization_settings",
     "reset_hardware_sequencing_settings",
-    "setup_hardware_sequencing_settings",
 )
 
 
-def build_prescan_sequence(sequence: MDASequence, fov_cfg: dict) -> MDASequence:
+def build_prescan_sequence(sequence: MDASequence, fov_cfg: FOVSelectionConfig) -> MDASequence:
     """Build the pre-scan ``MDASequence`` from ``fov_selection.prescan_mda``.
 
     The pre-scan is configured as its own complete, valid ``MDASequence`` nested
@@ -63,17 +69,15 @@ def build_prescan_sequence(sequence: MDASequence, fov_cfg: dict) -> MDASequence:
     ValueError
         If ``prescan_mda`` is missing or defines no ``stage_positions``; if the
         pre-scan has more than one timepoint (a looping pre-scan is not yet
-        supported); or if ``fov_selection_channel`` is missing from the config or is
-        not one of the pre-scan channels.
+        supported); or if ``fov_selection_channel`` is not one of the pre-scan
+        channels.
     """
-    prescan_mda = fov_cfg.get("prescan_mda")
-    if not prescan_mda:
+    prescan_seq = fov_cfg.prescan_mda
+    if prescan_seq is None:
         raise ValueError(
             "FOV selection requires metadata.fov_selection.prescan_mda "
             "(a valid MDASequence defining the candidate stage_positions and z_plan)."
         )
-
-    prescan_seq = MDASequence(**prescan_mda)
 
     if not prescan_seq.stage_positions:
         raise ValueError(
@@ -85,12 +89,7 @@ def build_prescan_sequence(sequence: MDASequence, fov_cfg: dict) -> MDASequence:
             f"t={prescan_seq.sizes['t']}); a looping pre-scan is not yet supported."
         )
 
-    fov_selection_channel = fov_cfg.get("fov_selection_channel")
-    if not fov_selection_channel:
-        raise ValueError(
-            "FOV selection requires fov_selection_channel in the config "
-            "(metadata.fov_selection.fov_selection_channel); there is no default."
-        )
+    fov_selection_channel = fov_cfg.fov_selection_channel
     channel_configs = [c.config for c in prescan_seq.channels]
     if fov_selection_channel not in channel_configs:
         raise ValueError(
@@ -112,10 +111,11 @@ def build_prescan_sequence(sequence: MDASequence, fov_cfg: dict) -> MDASequence:
 
     # Inject the fov_selection config + shared mantis hardware settings into the
     # pre-scan metadata. Drop prescan_mda from the injected block so the coordinator
-    # doesn't carry a redundant nested copy of itself.
+    # doesn't carry a redundant nested copy of itself. Written back as plain data
+    # (not the model) so the pre-scan sequence's metadata stays serializable into the
+    # run's summary metadata and re-validates like any hand-written config.
     parent_meta = sequence.metadata or {}
-    fov_block = copy.deepcopy(fov_cfg)
-    fov_block.pop("prescan_mda", None)
+    fov_block = fov_cfg.block(exclude={"prescan_mda"})
 
     prescan_meta = copy.deepcopy(prescan_seq.metadata) if prescan_seq.metadata else {}
     prescan_meta["fov_selection"] = fov_block

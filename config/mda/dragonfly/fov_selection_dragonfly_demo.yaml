@@ -72,13 +72,15 @@ metadata:
     # of prescan_mda.channels). The A549 store's brightfield channel.
     fov_selection_channel: 1-Zyla_BF
 
+    # The object FOV selection segments and scores: 'cells' or 'nuclei'. It also
+    # selects the InstanSeg output head, so it is NOT repeated in `segmentation`.
+    target: cells
     preprocessing: ['segmentation']
 
     segmentation:
       model: instanseg
       path: C:\Users\CZC60777YX\Documents\instanseg_34532446.zip
       gpu: true
-      target: cells         # which output head to keep: nuclei | cells
 
     model:
       type: ranking_by_defined_range

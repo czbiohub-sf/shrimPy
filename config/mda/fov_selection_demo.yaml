@@ -53,8 +53,6 @@ keep_shutter_open_across: []
 
 # Define metadata per microscope
 metadata:
-  pymmcore_widgets:
-    version: 0.10.2.dev23+g22b8c0aff.d20260106
   reset_hardware_sequencing_settings:
     - ['TS2_TTL1-8', 'Blanking', 'Off']
     - ['TS2_DAC03', 'Sequence', 'Off']
@@ -200,9 +198,9 @@ metadata:
     #   cellprob_threshold: 0.0
     #   batch_size: 64
     #   min_size: 15
-    #   diameters:            # microns; null -> Cellpose auto-scale
+    #   diameters:            # per `target`; microns; null -> Cellpose auto-scale
     #     nuclei: null
-    #     membrane: 120.0
+    #     cells: 120.0
     #
     # otsu  threshold -> close -> size filter -> fill holes -> label (no GPU/model; px units):
     #   model: otsu

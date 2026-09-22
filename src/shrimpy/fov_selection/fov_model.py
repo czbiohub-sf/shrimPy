@@ -119,8 +119,8 @@ class DesirabilityModel(FovModel):
     Selection is pure ranking: the manager keeps the ``model.top_fov`` highest-scoring FOVs
     per position across the whole pre-scan (see
     :meth:`shrimpy.fov_selection.manager.FovSelection.passed_position_names`). ``top_fov`` is
-    therefore REQUIRED (validated here and in
-    :meth:`shrimpy.fov_selection.manager.FovSelection.from_metadata`), and there is no per-FOV
+    therefore REQUIRED (validated here and, at config-load time, by
+    :class:`shrimpy.fov_selection.config.RankingModelSettings`), and there is no per-FOV
     good/bad notion: :meth:`predict` returns ``good=None`` and ignores ``threshold`` (a
     classification-only knob).
     """
@@ -249,9 +249,10 @@ class DesirabilityModel(FovModel):
         if not feats:
             raise ValueError("ranking_by_defined_range model has no 'features'")
         # top_fov is REQUIRED: this model selects purely by ranking (top-K per position), so
-        # without a quota there is nothing to select on. Also enforced pre-hardware in
-        # FovSelection.from_metadata; duplicated here so building the model directly (tests,
-        # offline use) cannot produce a ranking model that silently has no selection rule.
+        # without a quota there is nothing to select on. An acquisition config is already
+        # rejected for it by RankingModelSettings; duplicated here because this constructor
+        # also takes hand-built dicts (tests, offline use, the feature viewer), which would
+        # otherwise produce a ranking model that silently has no selection rule.
         top_fov = model_cfg.get("top_fov")
         if top_fov is None or int(top_fov) < 1:
             raise ValueError(

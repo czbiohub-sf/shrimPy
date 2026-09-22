@@ -13,8 +13,11 @@ The decision is streamed: as each pre-scan FOV's z-stack completes in
 like DynaTrack). ``drain`` is awaited after the pre-scan run, and
 ``passed_position_names`` selects which FOVs the timelapse run images.
 
-Config lives under ``metadata.fov_selection``. Scale parameters (XY pixel
-size, Z step) are the single source of truth injected into the deskew/phase
+Config lives under ``metadata.fov_selection``, validated by
+:class:`shrimpy.fov_selection.config.FOVSelectionConfig` when the acquisition config is
+loaded -- the coordinator takes that object, not a raw mapping, and only adds the checks
+that need the acquisition too (see :meth:`FovSelection.from_metadata`). Scale parameters
+(XY pixel size, Z step) are the single source of truth injected into the deskew/phase
 sub-configs (as DynaTrack does), so they are not duplicated in the config.
 """
 
@@ -40,14 +43,13 @@ if TYPE_CHECKING:
 
     from useq import MDAEvent, MDASequence
 
+    from shrimpy.fov_selection.config import FOVSelectionConfig
+
 logger = logging.getLogger(__name__)
 
 # Trailing per-well/per-center field index in an expanded FOV name ("site0_0003" -> "site0").
 # Anchored and 4-digit so it only strips a real field suffix (see _build_fov_groups).
 _FOV_FIELD_SUFFIX = re.compile(r"_\d{4}$")
-
-# The object FOV selection segments and scores; also the InstanSeg head name.
-TARGETS = ("cells", "nuclei")
 
 # Timepoint used for the pre-scan (first timepoint of the run).
 PRESCAN_TIMEPOINT = 0
@@ -83,8 +85,14 @@ class FovSelection:
 
     Parameters
     ----------
-    config : dict
-        The ``fov_selection`` metadata block.
+    config : FOVSelectionConfig
+        The validated ``fov_selection`` metadata block. Everything checkable from
+        the config alone (unknown keys, the pipeline, curve parameters, ``top_fov``)
+        has already been rejected by
+        :class:`~shrimpy.fov_selection.config.FOVSelectionConfig`; what is left here
+        are the checks that need the acquisition too -- the channel against the
+        sequence, the feature names against the configured preprocessing, and the
+        segmentation checkpoint against the filesystem.
     sequence : MDASequence
         The acquisition sequence being run; provides the pre-scan channel list
         and the number of z-slices per stack.
@@ -109,7 +117,7 @@ class FovSelection:
 
     def __init__(
         self,
-        config: dict,
+        config: FOVSelectionConfig,
         sequence: MDASequence,
         pixel_size_um: float,
         z_step_um: float,
@@ -124,23 +132,21 @@ class FovSelection:
         # feature viewer on its output. To feed the viewer, the worker extracts EVERY
         # producible feature (not just the model's) and writes the debug artifacts in the
         # viewer's standard layout, so save_decision is forced on regardless of config.
-        self._calibration_mode = bool(config.get("calibration_mode", False))
+        self._calibration_mode = config.calibration_mode
         # Optional AnnData/zarr export of the feature matrix for Embedding Atlas (nd_export).
         # It reads fov_summary.csv after the drain, so it forces save_decision on (the CSV must
         # exist); the export itself runs post-drain in export_prescan_nd().
-        self._save_pre_scan_nd = bool(config.get("save_pre_scan_nd", False))
+        self._save_pre_scan_nd = config.save_pre_scan_nd
         # Optional lightweight per-FOV debug artifacts (projection/mask PNGs +
         # fov_summary.csv), written by the worker to a sibling directory next to
         # the output store. Always on in calibration mode and when save_pre_scan_nd is set.
         self._save_decision = (
-            bool(config.get("save_decision", False))
-            or self._calibration_mode
-            or self._save_pre_scan_nd
+            config.save_decision or self._calibration_mode or self._save_pre_scan_nd
         )
         # Optional per-FOV best-focus-Z debug CSV (detected slice + depth), written by the
         # worker only when the projection is 'best_focus_z'. Independent of save_decision, but
         # it also needs the sibling debug directory, so it opens one when it is the only thing on.
-        self._save_best_focus_z = bool(config.get("save_best_focus_z_for_debug", False))
+        self._save_best_focus_z = config.save_best_focus_z_for_debug
         self._debug_dir = (
             self._debug_dir_for(data_path, run_index)
             if (self._save_decision or self._save_best_focus_z)
@@ -155,7 +161,7 @@ class FovSelection:
         # projection / mask channels) is written to <name>_prescan.ome.zarr next to
         # the output store -- replacing the raw pre-scan store, so the pre-scan run
         # itself writes nothing to disk. Independent of save_decision.
-        self._save_pre_scan_omezarr = bool(config.get("save_pre_scan_omezarr", False))
+        self._save_pre_scan_omezarr = config.save_pre_scan_omezarr
         self._recon_zarr_path = (
             self._prescan_recon_path_for(data_path, run_index)
             if self._save_pre_scan_omezarr
@@ -163,60 +169,48 @@ class FovSelection:
         )
         # Fail fast if reconstruction can't run on a GPU. Default True; set
         # fov_selection.require_gpu: false to allow a (slow) CPU run for debugging.
-        self._require_gpu = bool(config.get("require_gpu", True))
+        self._require_gpu = config.require_gpu
         # Acquired channel imaged during the pre-scan and fed to reconstruction.
-        # No default: it must be declared in the acquisition config so the pipeline
-        # always images whatever the YAML specifies.
-        self._fov_selection_channel = config.get("fov_selection_channel")
-        if not self._fov_selection_channel:
-            raise ValueError(
-                "FOV selection requires fov_selection_channel in the acquisition config "
-                "(metadata.fov_selection.fov_selection_channel); there is no default."
-            )
+        self._fov_selection_channel = config.fov_selection_channel
         # Ordered preprocessing steps (DynaTrack style), e.g.
         # ['deskew', 'phase', 'vs', 'sum_projection', 'segmentation']. The
         # reconstruction steps are consumed by build_preprocessor; projection and
         # segmentation are consumed here / in the pipeline.
-        self._steps = list(config.get("preprocessing") or [])
-        self._projection = self._projection_from_steps(self._steps)
-        # Optics for the 'best_focus_z' projection (waveorder focus): required only when that
-        # projection is selected; fail before acquiring if it is and they are missing.
-        self._best_focus_z = config.get("best_focus_z") or None
-        if self._projection == "best_focus_z":
-            self._validate_best_focus_z()
-        self._segmentation = config.get("segmentation", {}) or {}
-        model_cfg = config.get("model", {}) or {}
+        self._steps = list(config.preprocessing)
+        self._projection = config.projection
+        # Optics for the 'best_focus_z' projection (waveorder focus). The pipeline reads them
+        # as a plain mapping, so the sub-blocks are dumped here rather than passed as models:
+        # they cross into the worker subprocess, and every consumer of them (build_segmenter,
+        # build_fov_model, project_zyx) is config-object agnostic by design.
+        self._best_focus_z = (
+            config.best_focus_z.model_dump(mode="json") if config.best_focus_z else None
+        )
+        self._segmentation = config.segmentation.model_dump(mode="json", exclude_none=True)
+        self._model_cfg = config.model.model_dump(mode="json", exclude_none=True)
         # threshold is a classification-only knob: TrainedTreeModel uses it (proba >= threshold);
-        # the thresholding box and the ranking model both ignore it.
-        self._threshold = float(model_cfg.get("threshold", 0.5))
+        # the thresholding box and the ranking model both ignore it (and do not declare it).
+        self._threshold = getattr(config.model, "threshold", 0.5)
         # The model type drives the SELECTION rule (see passed_position_names): the ranking
         # model selects by top_fov per position, every classification model by its per-FOV
         # `good` verdict. Keyed on the type, not on whether top_fov happens to be set, so a
         # classification model never needs top_fov.
-        self._model_type = model_cfg.get("type")
+        self._model_type = config.model.type
         # top_fov (ranking_by_defined_range): keep the N highest-proba FOVs PER POSITION (per
-        # well / per grid center -- see _build_fov_groups). Required for ranking (validated in
-        # from_metadata / the model), unused by the classification models.
-        top_fov = model_cfg.get("top_fov")
-        self._top_fov = int(top_fov) if top_fov is not None else None
+        # well / per grid center -- see _build_fov_groups). Required by the ranking model's
+        # schema, absent from the classification models.
+        self._top_fov = getattr(config.model, "top_fov", None)
         # FOV name -> the position it belongs to, so top_fov is applied within each position.
         self._fov_group = self._build_fov_groups(sequence)
         # FOV filename -> (well_row, well_col) labels, stamped onto fov_summary.csv so the
         # feature viewer can group the pre-scan FOVs by well (see _build_well_coords).
         self._well_coords = self._build_well_coords(sequence)
-        self._is_vs = "vs" in self._steps
+        self._is_vs = config.uses_virtual_staining
         # `target` (cells | nuclei) is the ONE object FOV selection segments and scores. It
         # drives: (a) how the reconstruction outputs are reduced to a single segmentation
         # input (pipeline._resolve_seg_input), (b) the InstanSeg head (below), and (c) which
         # channels VS must predict. Selection always produces ONE mask -> single-channel
         # (plain) feature names, so `target` is recorded as run metadata, not in column names.
-        self._target = str(config.get("target", "")).lower()
-        if self._target not in TARGETS:
-            raise ValueError(
-                "fov_selection.target must be one of "
-                f"{TARGETS} (the object to segment and score); got {config.get('target')!r}. "
-                "Aborting before acquisition."
-            )
+        self._target = config.target
         # Reconstruction output channels to project. VS 'cells' combines nuclei+membrane into
         # one grayscale, so both are predicted; VS 'nuclei' segments the nuclei channel only,
         # so membrane is not predicted. Non-VS is the single reconstructed channel.
@@ -231,7 +225,6 @@ class FovSelection:
         self._segmentation = {**self._segmentation, "target": self._target}
 
         self._validate_fov_selection_channel(sequence)
-        self._require_segmentation_step()
         self._expected_slices = max(sequence.sizes.get("z", 1), 1)
 
         # Per-(timepoint, position) frame buffering for the pre-scan stacks.
@@ -260,8 +253,8 @@ class FovSelection:
         # cannot produce (a typo would otherwise be read as a silently-missing column). Skipped
         # when a decide_fn stands in for the pipeline -- it never extracts features.
         if self._decide_fn is None:
-            self._validate_feature_names(model_cfg)
-            self._validate_segmentation()
+            self._validate_feature_names(config)
+            self._validate_segmentation_checkpoint()
 
     # -- construction ------------------------------------------------------
 
@@ -332,46 +325,23 @@ class FovSelection:
     @classmethod
     def from_metadata(
         cls,
-        meta: dict | None,
+        meta: FOVSelectionConfig | None,
         sequence: MDASequence,
         pixel_size_um: float,
         data_path: Path | None = None,
         decide_fn: Callable[[np.ndarray], tuple[float, bool]] | None = None,
         run_index: int | None = None,
     ) -> FovSelection | None:
-        """Build the coordinator from the ``fov_selection`` metadata block.
+        """Build the coordinator from the validated ``fov_selection`` metadata block.
 
-        Returns ``None`` when FOV selection is disabled. Raises (fail before
-        acquiring) when it is enabled but no usable model is configured, the pixel
-        size is missing, or a deskew/phase reconstruction needs the Z step but the
-        sequence z_plan has none.
+        Returns ``None`` when FOV selection is disabled. The block itself was already
+        validated by :class:`~shrimpy.fov_selection.config.FOVSelectionConfig` when the
+        acquisition config was loaded; what is checked here is the pairing of that block
+        with *this acquisition* -- the pixel size the hardware reports, and the sequence's
+        Z step. Both raise before acquiring.
         """
-        if not meta or not meta.get("enabled", False):
+        if meta is None or not meta.enabled:
             return None
-        from shrimpy.fov_selection.fov_model import MODEL_TYPES
-
-        model_cfg = meta.get("model", {}) or {}
-        model_type = model_cfg.get("type")
-        if model_type not in MODEL_TYPES:
-            raise ValueError(
-                "FOV selection is enabled but metadata.fov_selection.model.type "
-                f"must be one of {sorted(MODEL_TYPES)}; got {model_type!r}. Aborting "
-                "before acquisition."
-            )
-        if model_type == "classification_tree" and not model_cfg.get("path"):
-            raise ValueError(
-                "fov_selection.model.type='classification_tree' requires a 'path' to a "
-                "trained FOV-selection .joblib. Aborting before acquisition."
-            )
-        if model_type == "ranking_by_defined_range":
-            top_fov = model_cfg.get("top_fov")
-            if top_fov is None or int(top_fov) < 1:
-                raise ValueError(
-                    "fov_selection.model.type='ranking_by_defined_range' selects by pure "
-                    "ranking and requires 'top_fov' (a positive int): the N highest-ranked "
-                    "FOVs OF EACH POSITION (well / grid center) pass. Aborting before "
-                    "acquisition."
-                )
         if not pixel_size_um:
             raise ValueError(
                 "FOV selection: pixel size is not set (core.getPixelSizeUm() returned "
@@ -383,7 +353,7 @@ class FovSelection:
         # _inject_scales feeds it into DeskewSettings.scan_step_um / PhaseSettings.z_pixel_size;
         # a missing step would otherwise crash the worker mid-run (or, with a hand-set
         # px_to_scan_ratio, silently use a wrong axial scale) and select nothing.
-        if (meta.get("deskew") or meta.get("phase")) and not z_step_um:
+        if (meta.deskew or meta.phase) and not z_step_um:
             raise ValueError(
                 "FOV selection: reconstruction includes deskew/phase, which need the Z step, "
                 "but the sequence z_plan has no step. Add a stepped z_plan before acquiring."
@@ -460,14 +430,6 @@ class FovSelection:
                 f"the acquisition channels {names}."
             )
 
-    def _require_segmentation_step(self) -> None:
-        """Features are computed from segmentation masks, so the step is required."""
-        if "segmentation" not in self._steps:
-            raise ValueError(
-                "fov_selection.preprocessing must include a 'segmentation' step "
-                f"(features come from segmentation masks). Got {self._steps}."
-            )
-
     def _producible_feature_names(self) -> set[str]:
         """Every feature-column name the configured preprocessing/segmentation can emit.
 
@@ -481,21 +443,17 @@ class FovSelection:
 
         return set(FEATURE_NAMES) | set(MASK_FEATURE_KEYS)
 
-    def _validate_feature_names(self, model_cfg: dict) -> None:
+    def _validate_feature_names(self, config: FOVSelectionConfig) -> None:
         """Fail before acquiring if the model asks for a feature the pipeline cannot produce.
 
         Checks the config-defined models (``ranking_by_defined_range`` /
         ``classification_by_thresholding``), whose feature names are hand-typed: a typo would
         otherwise surface only as a silently-missing column (NaN) at decision time rather than
         an error. A trained ``classification_tree``'s names come from training (not the config)
-        and are validated when the worker builds the model, so they are not checked here.
+        and are validated when the worker builds the model, so it declares no ``features``
+        block and is skipped here.
         """
-        if model_cfg.get("type") not in (
-            "ranking_by_defined_range",
-            "classification_by_thresholding",
-        ):
-            return
-        requested = list(model_cfg.get("features") or {})
+        requested = list(getattr(config.model, "features", None) or {})
         producible = self._producible_feature_names()
         unknown = [name for name in requested if name not in producible]
         if unknown:
@@ -506,80 +464,21 @@ class FovSelection:
                 "e.g. 'coverage_frac' -- no channel prefix). Aborting before acquisition."
             )
 
-    def _validate_segmentation(self) -> None:
-        """Fail before acquiring on an unusable ``segmentation`` block.
+    def _validate_segmentation_checkpoint(self) -> None:
+        """Fail before acquiring when the InstanSeg checkpoint is not on this machine.
 
         The backend is only loaded inside the worker subprocess, which does not start until
-        the pre-scan is already running -- so a typo'd backend name or a missing InstanSeg
-        checkpoint would otherwise surface as a mid-acquisition worker crash. Checked here
-        instead, alongside the model feature names.
+        the pre-scan is already running, so a missing checkpoint would otherwise surface as a
+        mid-acquisition worker crash. The rest of the block (backend name, required ``path``)
+        is the schema's job -- this is the one check that depends on the filesystem, which a
+        config written on another machine cannot know about.
         """
-        from shrimpy.fov_selection.segmentation import INSTANSEG_TARGETS
-
-        backend = self._segmentation.get("model", "cellpose")
-        if backend not in ("cellpose", "instanseg", "otsu"):
-            raise ValueError(
-                f"fov_selection.segmentation.model must be 'cellpose', 'instanseg' or "
-                f"'otsu'; got {backend!r}. Aborting before acquisition."
-            )
-        if backend != "instanseg":
-            return
-
         path = self._segmentation.get("path")
-        if not path:
-            raise ValueError(
-                "fov_selection.segmentation.model='instanseg' requires a 'path' to the "
-                "InstanSeg checkpoint (a bioimage.io .zip export or a TorchScript .pt). "
-                "Aborting before acquisition."
-            )
-        if not Path(path).exists():
+        if path and not Path(path).exists():
             raise FileNotFoundError(
                 f"fov_selection.segmentation.path: InstanSeg checkpoint not found: {path}. "
                 "Aborting before acquisition."
             )
-        target = self._segmentation.get("target", INSTANSEG_TARGETS[0])
-        if target not in INSTANSEG_TARGETS:
-            raise ValueError(
-                f"fov_selection.segmentation.target must be one of "
-                f"{list(INSTANSEG_TARGETS)}; got {target!r}. Aborting before acquisition."
-            )
-
-    def _validate_best_focus_z(self) -> None:
-        """Fail before acquiring if the 'best_focus_z' projection lacks its optics.
-
-        :func:`shrimpy.fov_selection.pipeline.project_zyx` would otherwise fall back to the
-        middle slice at run time; catching it here makes the misconfiguration explicit.
-        """
-        best_focus_z = self._best_focus_z or {}
-        missing = [
-            k
-            for k in ("numerical_aperture_detection", "wavelength_illumination")
-            if not best_focus_z.get(k)
-        ]
-        if missing:
-            raise ValueError(
-                "fov_selection.preprocessing selects 'best_focus_z', which needs "
-                f"fov_selection.best_focus_z with {missing} (detection NA + illumination wavelength in "
-                "um). Add a 'best_focus_z' block or choose another projection step."
-            )
-
-    @staticmethod
-    def _projection_from_steps(steps: list[str]) -> str:
-        """Derive the projection method from the preprocessing step list."""
-        if "max_projection" in steps:
-            return "max"
-        if "sum_projection" in steps:
-            return "sum"
-        if "middle_slice_projection" in steps:
-            return "middle"
-        if "logstd_projection" in steps:
-            return "logstd"
-        if "best_focus_z" in steps:
-            return "best_focus_z"
-        # No explicit projection step: default to 'sum' (the trained-model default and
-        # project_zyx's own default; channel-agnostic, and a no-op for a single-slice
-        # stack). A projection step is not mandatory in the config.
-        return "sum"
 
     def _recon_config(self) -> dict:
         """Assemble the reconstruction sub-config for build_preprocessor.
@@ -591,9 +490,9 @@ class FovSelection:
         """
         recon = {
             "preprocessing": self._steps,
-            "deskew": self.config.get("deskew"),
-            "phase": self.config.get("phase"),
-            "virtual_staining": self.config.get("virtual_staining"),
+            "deskew": self.config.deskew,
+            "phase": self.config.phase,
+            "virtual_staining": self.config.virtual_staining,
         }
         if self._is_vs:
             # VS predicts exactly the channels the target needs ('cells' -> nuclei+membrane,
@@ -647,7 +546,7 @@ class FovSelection:
                     target=self._target,
                     recon_channels=self._recon_channels,
                     segmentation=self._segmentation,
-                    model_cfg=self.config.get("model", {}) or {},
+                    model_cfg=self._model_cfg,
                     projection=self._projection,
                     threshold=self._threshold,
                     pixel_size_um=self._pixel_size_um,

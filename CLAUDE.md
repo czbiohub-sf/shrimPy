@@ -244,6 +244,10 @@ with the package. The only runtime package data is `src/shrimpy/logging/logging.
 - `metadata.reset_hardware_sequencing_settings`: properties restored in teardown
 - `metadata.dynatrack`: DynaTrack position tracking, available to every engine
   (see `src/shrimpy/dynatrack/README.md`)
+- `metadata.fov_selection`: smart FOV selection — the pre-scan sequence, the
+  preprocessing pipeline, the segmentation backend, and the selection model.
+  Validated by `FOVSelectionConfig` in `src/shrimpy/fov_selection/config.py`
+  (see `src/shrimpy/fov_selection/README.md`)
 
 Configs with the settings nested one level deeper under `metadata.mantis` (the
 older layout) are rejected by `load_config` with a migration message.

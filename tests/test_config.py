@@ -12,7 +12,7 @@ from useq import MDASequence
 
 from shrimpy.config import ShrimpyMetadata, load_config
 
-CONFIG_DIR = Path(__file__).parent.parent / "config" / "mda" / "mantis"
+CONFIG_DIR = Path(__file__).parent.parent / "config" / "mda"
 DEMO_MDA_CONFIG = Path(__file__).parent / "artifacts" / "demo_mda_sequence.yaml"
 
 METADATA = {
@@ -88,6 +88,36 @@ def test_dynatrack_section_is_validated():
         ShrimpyMetadata.model_validate({"dynatrack": {"enabled": False}})
 
 
+FOV_SELECTION = {
+    "enabled": True,
+    "fov_selection_channel": "BF",
+    "target": "cells",
+    "preprocessing": ["segmentation"],
+    "segmentation": {"model": "otsu"},
+    "model": {"type": "classification_tree", "path": "tree.joblib"},
+}
+
+
+def test_fov_selection_section_is_validated():
+    meta = ShrimpyMetadata.model_validate({"fov_selection": FOV_SELECTION})
+    assert meta.fov_selection is not None
+    assert meta.fov_selection.fov_selection_channel == "BF"
+    assert meta.fov_selection.segmentation.model == "otsu"
+
+    # As for dynatrack, a section that is present must be complete even when it is
+    # disabled -- omit the section entirely to turn FOV selection off.
+    with pytest.raises(ValidationError):
+        ShrimpyMetadata.model_validate({"fov_selection": {"enabled": False}})
+
+
+def test_pymmcore_widgets_section_is_rejected():
+    # The GUI stamps a `pymmcore_widgets: {version: ...}` block into a saved sequence.
+    # shrimPy never read it, and accepting it meant one more section that extra="forbid"
+    # could not vouch for -- so a config out of the GUI has to have it stripped.
+    with pytest.raises(ValidationError, match="pymmcore_widgets"):
+        ShrimpyMetadata.model_validate({"pymmcore_widgets": {"version": "0.10.2"}})
+
+
 def test_autofocus_and_dynatrack_cannot_both_be_enabled():
     # Both correct Z, so enabling them together is rejected before any hardware
     # is touched
@@ -147,7 +177,7 @@ def test_load_config_rejects_invalid_section(tmp_path):
         load_config(_write(tmp_path, bad, "bad.yaml"))
 
 
-@pytest.mark.parametrize("config_path", sorted(CONFIG_DIR.glob("*.yaml")))
+@pytest.mark.parametrize("config_path", sorted(CONFIG_DIR.rglob("*.yaml")))
 def test_shipped_configs_validate(config_path):
     load_config(config_path)
 

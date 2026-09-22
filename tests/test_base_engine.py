@@ -28,6 +28,8 @@ from shrimpy.engines.base_engine import (
 from shrimpy.engines.dragonfly_engine import DragonflyEngine
 from shrimpy.engines.isim_engine import ISIMEngine
 
+from .conftest import fov_selection_metadata
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -1088,7 +1090,7 @@ def test_calibration_teardown_still_logs_selection_and_finalizes():
 
     sequence = MDASequence(
         stage_positions=[{"x": 0, "y": 0}],
-        metadata={"fov_selection": {"calibration_mode": True}},
+        metadata={"fov_selection": fov_selection_metadata(calibration_mode=True)},
     )
     with patch.object(MDAEngine, "teardown_sequence"):
         engine.teardown_sequence(sequence)

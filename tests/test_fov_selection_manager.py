@@ -13,6 +13,7 @@ import pytest
 
 from useq import MDAEvent, MDASequence
 
+from shrimpy.fov_selection.config import FOVSelectionConfig
 from shrimpy.fov_selection.manager import FovSelection
 
 # 5-slice z_plan, two channels, three candidate positions.
@@ -36,7 +37,21 @@ META = {
     "fov_selection_channel": "BF",
     "target": "cells",
     "preprocessing": ["deskew", "phase", "vs", "sum_projection", "segmentation"],
+    "deskew": {"ls_angle_deg": 30.0, "px_to_scan_ratio": 1.0},
+    "phase": {"transfer_function": {}, "apply_inverse": {}},
+    "virtual_staining": {"ckpt_path": "dummy.ckpt"},
+    "segmentation": {"model": "otsu"},
 }
+
+
+def _cfg(**overrides) -> FOVSelectionConfig:
+    """:data:`META` as the validated config object the coordinator takes.
+
+    The schema itself is exercised in ``tests/test_fov_selection_config.py``; here it is
+    only the constructor, so these tests stay about the coordinator's behaviour rather
+    than the config's shape.
+    """
+    return FOVSelectionConfig.model_validate({**META, **overrides})
 
 
 def _good_if_positive(bf_zyx: np.ndarray) -> tuple[float, bool]:
@@ -66,7 +81,7 @@ def _feed_prescan_stack(fov: FovSelection, p_idx: int, value: float, channel: st
 
 def _make_fov() -> FovSelection:
     fov = FovSelection.from_metadata(
-        META, SEQUENCE, pixel_size_um=0.1, decide_fn=_good_if_positive
+        _cfg(), SEQUENCE, pixel_size_um=0.1, decide_fn=_good_if_positive
     )
     fov.start(zyx_shape=(N_Z, 4, 4))
     return fov
@@ -80,7 +95,7 @@ def _make_fov() -> FovSelection:
 def _calibration_fov(tmp_path, config_extra=None):
     """Build a coordinator directly (bypassing model validation) with a data_path."""
     return FovSelection(
-        config={**META, **(config_extra or {})},
+        config=_cfg(**(config_extra or {})),
         sequence=SEQUENCE,
         pixel_size_um=0.1,
         z_step_um=1.0,
@@ -114,53 +129,51 @@ def test_calibration_finalize_debug_summary_is_a_noop(tmp_path):
 
 
 def test_from_metadata_disabled_returns_none():
-    assert FovSelection.from_metadata({"enabled": False}, SEQUENCE, 0.1) is None
+    assert FovSelection.from_metadata(_cfg(enabled=False), SEQUENCE, 0.1) is None
     assert FovSelection.from_metadata(None, SEQUENCE, 0.1) is None
 
 
-def test_from_metadata_requires_model_path():
-    # A classification_tree model needs a trained .joblib 'path'; omitting it aborts.
-    meta = {**META, "model": {"type": "classification_tree"}}  # path dropped
-    with pytest.raises(ValueError, match="requires a 'path'"):
-        FovSelection.from_metadata(meta, SEQUENCE, 0.1)
+def test_model_type_picks_the_selection_rule():
+    # Ranking selects the top_fov best FOVs per position; a classification model selects
+    # on its per-FOV verdict and needs no quota. The coordinator keys on the TYPE.
+    ranking = _cfg(
+        model={
+            "type": "ranking_by_defined_range",
+            "top_fov": 2,
+            "features": {"coverage_frac": {"shape": "gaussian", "center": 0.5, "fwhm": 0.2}},
+        }
+    )
+    fov = FovSelection.from_metadata(ranking, SEQUENCE, 0.1, decide_fn=_good_if_positive)
+    assert fov._model_type == "ranking_by_defined_range"
+    assert fov._top_fov == 2
 
-
-_RANKING_FEATURES = {"coverage_frac": {"shape": "gaussian", "center": 0.5, "fwhm": 0.2}}
-
-
-def test_from_metadata_ranking_requires_top_fov():
-    # ranking_by_defined_range selects purely by top_fov, so omitting it aborts before acquiring.
-    meta = {
-        **META,
-        "model": {"type": "ranking_by_defined_range", "features": _RANKING_FEATURES},
-    }
-    with pytest.raises(ValueError, match="top_fov"):
-        FovSelection.from_metadata(meta, SEQUENCE, 0.1, decide_fn=_good_if_positive)
-
-
-def test_from_metadata_thresholding_does_not_require_top_fov():
-    # classification_by_thresholding selects by its per-FOV good box, so top_fov is not needed.
-    meta = {
-        **META,
-        "model": {
+    thresholding = _cfg(
+        model={
             "type": "classification_by_thresholding",
             "features": {"coverage_frac": {"range": [0.0, 1.0]}},
-        },
-    }
-    fov = FovSelection.from_metadata(meta, SEQUENCE, 0.1, decide_fn=_good_if_positive)
-    assert fov is not None
+        }
+    )
+    fov = FovSelection.from_metadata(thresholding, SEQUENCE, 0.1, decide_fn=_good_if_positive)
     assert fov._model_type == "classification_by_thresholding"
     assert fov._top_fov is None
 
 
 def test_from_metadata_requires_pixel_size():
     with pytest.raises(ValueError, match="pixel size"):
-        FovSelection.from_metadata(META, SEQUENCE, pixel_size_um=0.0)
+        FovSelection.from_metadata(_cfg(), SEQUENCE, pixel_size_um=0.0)
+
+
+def test_from_metadata_requires_a_z_step_for_deskew_or_phase():
+    # deskew/phase take the Z step from the sequence, not the config; without one the
+    # worker would only fail mid-run (or silently use a wrong axial scale).
+    flat = SEQUENCE.replace(z_plan=None)
+    with pytest.raises(ValueError, match="Z step"):
+        FovSelection.from_metadata(_cfg(), flat, 0.1)
 
 
 def test_from_metadata_rejects_unknown_fov_selection_channel():
     with pytest.raises(ValueError, match="fov_selection_channel"):
-        FovSelection.from_metadata({**META, "fov_selection_channel": "nope"}, SEQUENCE, 0.1)
+        FovSelection.from_metadata(_cfg(fov_selection_channel="nope"), SEQUENCE, 0.1)
 
 
 def test_streaming_decision_partitions_good_and_bad():
@@ -208,41 +221,29 @@ def test_non_input_channel_and_later_timepoints_ignored():
 
 
 # ---------------------------------------------------------------------------
-# target (cells | nuclei) validation
+# target (cells | nuclei) -> reconstruction channels and the segmentation head
 # ---------------------------------------------------------------------------
-
-
-def test_target_cells_and_nuclei_accepted():
-    for t in ("cells", "nuclei"):
-        fov = FovSelection.from_metadata(
-            {**META, "target": t}, SEQUENCE, pixel_size_um=0.1, decide_fn=_good_if_positive
-        )
-        assert fov is not None
-
-
-def test_target_invalid_raises():
-    with pytest.raises(ValueError, match="target must be one of"):
-        FovSelection.from_metadata(
-            {**META, "target": "brightfield"}, SEQUENCE, 0.1, decide_fn=_good_if_positive
-        )
-
-
-def test_target_missing_raises():
-    meta = {k: v for k, v in META.items() if k != "target"}
-    with pytest.raises(ValueError, match="target must be one of"):
-        FovSelection.from_metadata(meta, SEQUENCE, 0.1, decide_fn=_good_if_positive)
 
 
 def test_target_nuclei_reconstructs_nuclei_only():
     # VS + nuclei -> only the nuclei channel is reconstructed (membrane not predicted).
     fov = FovSelection.from_metadata(
-        {**META, "target": "nuclei"}, SEQUENCE, 0.1, decide_fn=_good_if_positive
+        _cfg(target="nuclei"), SEQUENCE, 0.1, decide_fn=_good_if_positive
     )
     assert fov._recon_channels == ["nuclei"]
     fov_cells = FovSelection.from_metadata(
-        {**META, "target": "cells"}, SEQUENCE, 0.1, decide_fn=_good_if_positive
+        _cfg(target="cells"), SEQUENCE, 0.1, decide_fn=_good_if_positive
     )
     assert fov_cells._recon_channels == ["nuclei", "membrane"]
+
+
+def test_target_drives_the_segmentation_head():
+    # `target` is a top-level field; the coordinator injects it into the segmentation
+    # block, so the backend never carries a second copy that could disagree with it.
+    fov = FovSelection.from_metadata(
+        _cfg(target="nuclei"), SEQUENCE, 0.1, decide_fn=_good_if_positive
+    )
+    assert fov._segmentation["target"] == "nuclei"
 
 
 # --- debug-summary finalisation ------------------------------------------------------

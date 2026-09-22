@@ -13,6 +13,7 @@ import pytest
 
 from useq import MDASequence
 
+from shrimpy.fov_selection.config import FOVSelectionConfig
 from shrimpy.fov_selection.sequences import (
     _filter_good_positions,
     build_prescan_sequence,
@@ -42,9 +43,21 @@ PLATE = {
 }
 
 
+# The fields FOVSelectionConfig requires of every block, regardless of `enabled`.
+# These tests are about sequence building, so they are the same for every case and are
+# merged into each config below rather than spelled out per test.
+_REQUIRED = {
+    "target": "cells",
+    "preprocessing": ["segmentation"],
+    "segmentation": {"model": "otsu"},
+    "model": {"type": "classification_tree", "path": "dummy.joblib"},
+}
+
+
 def _fov_cfg(**overrides) -> dict:
     """FOV-selection metadata block with a valid nested pre-scan MDASequence."""
     cfg = {
+        **_REQUIRED,
         "enabled": True,
         "fov_selection_channel": "BF - Oblique",
         "prescan_mda": {
@@ -63,6 +76,7 @@ def _fov_cfg(**overrides) -> dict:
 def _grid_fov_cfg(**overrides) -> dict:
     """FOV-selection block whose pre-scan uses explicit positions + a grid_plan."""
     cfg = {
+        **_REQUIRED,
         "enabled": True,
         "fov_selection_channel": "BF - Oblique",
         "prescan_mda": {
@@ -83,6 +97,11 @@ def _grid_fov_cfg(**overrides) -> dict:
     }
     cfg.update(overrides)
     return cfg
+
+
+def _validated(cfg: dict) -> FOVSelectionConfig:
+    """The block as the validated object the sequence builders take."""
+    return FOVSelectionConfig.model_validate(cfg)
 
 
 def _sequence(**overrides) -> MDASequence:
@@ -106,19 +125,30 @@ def _sequence(**overrides) -> MDASequence:
 # ---------------------------------------------------------------------------
 
 
-def test_fov_selection_config_returns_block_when_present():
+def test_fov_selection_config_returns_validated_block_when_present():
     cfg = fov_selection_config(_sequence())
-    assert cfg.get("enabled") is True
-    assert cfg["fov_selection_channel"] == "BF - Oblique"
+    assert isinstance(cfg, FOVSelectionConfig)
+    assert cfg.enabled is True
+    assert cfg.fov_selection_channel == "BF - Oblique"
 
 
 def test_fov_selection_config_reflects_disabled_flag():
-    seq = _sequence(metadata={"fov_selection": {"enabled": False}})
-    assert fov_selection_config(seq).get("enabled") is False
+    seq = _sequence(metadata={"fov_selection": _fov_cfg(enabled=False)})
+    assert fov_selection_config(seq).enabled is False
 
 
-def test_fov_selection_config_empty_when_absent():
-    assert fov_selection_config(_sequence(metadata={})) == {}
+def test_fov_selection_config_none_when_absent():
+    assert fov_selection_config(_sequence(metadata={})) is None
+
+
+def test_fov_selection_config_rejects_an_invalid_block():
+    # The engine reads this off sequences it built itself, which never went through
+    # load_config -- so the same schema has to be enforced here too.
+    from pydantic import ValidationError
+
+    seq = _sequence(metadata={"fov_selection": {"enabled": True, "nonsense": 1}})
+    with pytest.raises(ValidationError):
+        fov_selection_config(seq)
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +170,20 @@ def test_prescan_is_fov_selection_channel_only_one_timepoint_full_z():
     assert "prescan_mda" not in ps.metadata["fov_selection"]
 
 
+def test_prescan_metadata_revalidates_as_a_shrimpy_config():
+    # setup_sequence re-reads the pre-scan run's metadata through ShrimpyMetadata, so the
+    # block build_prescan_sequence writes back must be plain, serializable data that
+    # passes the same strict schema -- prescan_mda stripped and all.
+    from shrimpy.config import ShrimpyMetadata
+
+    seq = _sequence()
+    ps = build_prescan_sequence(seq, fov_selection_config(seq))
+    meta = ShrimpyMetadata.from_sequence(ps)
+    assert meta.fov_selection.enabled is True
+    assert meta.fov_selection.prescan_mda is None
+    assert meta.fov_selection.fov_selection_channel == "BF - Oblique"
+
+
 def test_prescan_injects_shared_hardware_settings():
     seq = _sequence(
         metadata={
@@ -153,13 +197,15 @@ def test_prescan_injects_shared_hardware_settings():
 
 def test_prescan_raises_on_unknown_fov_selection_channel():
     seq = _sequence()
-    cfg = _fov_cfg(fov_selection_channel="NoSuchChannel")
+    cfg = _validated(_fov_cfg(fov_selection_channel="NoSuchChannel"))
     with pytest.raises(ValueError, match="not one of the pre-scan channels"):
         build_prescan_sequence(seq, cfg)
 
 
 def test_prescan_raises_without_prescan_mda():
-    cfg = {"enabled": True, "fov_selection_channel": "BF - Oblique"}
+    # prescan_mda is optional in the schema (the pre-scan run's own metadata carries the
+    # block with it stripped), so the "you forgot the candidates" error lands here.
+    cfg = _validated({**_REQUIRED, "enabled": True, "fov_selection_channel": "BF - Oblique"})
     with pytest.raises(ValueError, match="prescan_mda"):
         build_prescan_sequence(_sequence(), cfg)
 
@@ -168,14 +214,14 @@ def test_prescan_raises_on_multiple_timepoints():
     cfg = _fov_cfg()
     cfg["prescan_mda"]["time_plan"] = {"loops": 2, "interval": 0}
     with pytest.raises(ValueError, match="single timepoint"):
-        build_prescan_sequence(_sequence(), cfg)
+        build_prescan_sequence(_sequence(), _validated(cfg))
 
 
 def test_prescan_raises_without_stage_positions():
     cfg = _fov_cfg()
     cfg["prescan_mda"]["stage_positions"] = []
     with pytest.raises(ValueError, match="stage_positions"):
-        build_prescan_sequence(_sequence(), cfg)
+        build_prescan_sequence(_sequence(), _validated(cfg))
 
 
 # ---------------------------------------------------------------------------
