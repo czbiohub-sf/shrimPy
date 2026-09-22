@@ -23,7 +23,6 @@ from shrimpy.engines.base_engine import (
     DEMO_PFS_METHOD,
     BaseEngine,
     _get_next_acquisition_name,
-    acquisition_artifact_paths,
 )
 from shrimpy.engines.dragonfly_engine import DragonflyEngine
 from shrimpy.engines.isim_engine import ISIMEngine
@@ -1125,24 +1124,6 @@ def test_next_name_never_reuses_or_deletes_leftovers(tmp_path):
 
     assert name == "acq_2"
     assert (debug / "fov_summary.csv").read_text() == "name,proba\np0_0000,0.5\n"
-
-
-def test_artifact_paths_cover_store_and_siblings(tmp_path):
-    # Every sibling is named from the store, so the run index rides along in the stem
-    # and there is no second place for it to be kept in sync.
-    assert [p.name for p in acquisition_artifact_paths(tmp_path, "acq_1")] == [
-        "acq_1.ome.zarr",
-        "acq_1_fov_debug",
-        "acq_1_prescan.ome.zarr",
-        "acq_1_config_backup.yaml",
-    ]
-    # A base name that itself ends in a digit is never mis-parsed -- nothing parses.
-    assert [p.name for p in acquisition_artifact_paths(tmp_path, "plate_2_1")] == [
-        "plate_2_1.ome.zarr",
-        "plate_2_1_fov_debug",
-        "plate_2_1_prescan.ome.zarr",
-        "plate_2_1_config_backup.yaml",
-    ]
 
 
 def test_next_name_avoids_a_leftover_config_backup(tmp_path):

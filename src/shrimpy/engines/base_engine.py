@@ -824,7 +824,8 @@ class BaseEngine(MDAEngine):
         # Index the acquisition name ("acq" -> "acq_1"). Every sibling artifact is
         # named from the resulting store path, so the index is carried by the name
         # itself ("acq_1_fov_debug/", "acq_1_prescan.ome.zarr") and there is nothing
-        # else to keep in sync -- see FOVSelection._sibling_path.
+        # else to keep in sync -- see FOVSelection._sibling_path. The same naming lets
+        # dedup treat any "acq_1.*" / "acq_1_*" entry as the name being taken.
         name = _get_next_acquisition_name(output_dir, name)
 
         if isinstance(mda_config, MDASequence):
@@ -913,7 +914,6 @@ class BaseEngine(MDAEngine):
 
         # Summary metadata is written by pymmcore-plus into the zarr root group's
         # attributes, under `attributes.pymmcore_plus.summary_metadata`.
-
         self.mmcore.mda.run(
             sequence,
             output=out_settings,
@@ -924,19 +924,7 @@ class BaseEngine(MDAEngine):
 
 # Upper bound on the dedup search. Reaching it means something is generating names in a
 # loop rather than a human running experiments; better to fail loudly than spin forever.
-MAX_ACQUISITION_INDEX = 10_000
-
-
-def acquisition_artifact_paths(output_dir: Path, name: str) -> list[Path]:
-    """Every path an acquisition called ``name`` would write in ``output_dir``.
-
-    The output store plus the FOV-selection siblings (``<name>_fov_debug/``,
-    ``<name>_prescan.ome.zarr``). A name is only free when ALL of these are free.
-    """
-    from shrimpy.fov_selection.manager import sibling_artifact_paths
-
-    data_path = output_dir / f"{name}.ome.zarr"
-    return [data_path, *sibling_artifact_paths(data_path)]
+MAX_ACQUISITION_INDEX = 1000
 
 
 def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
@@ -947,8 +935,10 @@ def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
     read as a series rather than "the first one" plus numbered stragglers.
 
     Guards an acquisition from crashing (the zarr writer refuses to overwrite) or
-    silently clobbering a previous experiment: the index is bumped until a fully unused
-    name is found.
+    silently clobbering a previous experiment: the index is bumped until no entry in
+    ``output_dir`` is named ``<name>_<idx>.*`` or ``<name>_<idx>_*``. This may skip an index a
+    differently-named acquisition happens to share a prefix with (``acq_1_1.ome.zarr``
+    from base name ``acq_1`` makes ``acq`` skip ``acq_1``), which only costs a number.
 
     "Free" deliberately means *no artifact of that name exists*, not *no complete
     acquisition of that name exists*. Completeness is not knowable and not the point: a
@@ -969,22 +959,21 @@ def _get_next_acquisition_name(output_dir: Path, name: str) -> str:
     Returns
     -------
     str
-        A name none of whose artifacts exist (e.g. ``acq_1``, ``acq_2``, ...).
+        A name no existing entry in ``output_dir`` uses (e.g. ``acq_1``, ``acq_2``, ...).
     """
-    conflicts: list[Path] = []
     for run_index in range(1, MAX_ACQUISITION_INDEX + 1):
         candidate = f"{name}_{run_index}"
-        taken = [p for p in acquisition_artifact_paths(output_dir, candidate) if p.exists()]
-        if not taken:
-            if conflicts:
+        # Every artifact is named from its store ("acq_1.ome.zarr", "acq_1_fov_debug/",
+        # "acq_1_prescan.ome.zarr", ...), so a prefix match finds them all.
+        prefixes = (f"{candidate}.", f"{candidate}_")
+        if not any(p.name.startswith(prefixes) for p in output_dir.iterdir()):
+            if run_index > 1:
                 logger.info(
-                    "Acquisition name %r is already in use (found %s); using %r instead",
+                    "Acquisition name %r is already in use; using %r instead",
                     name,
-                    ", ".join(sorted(p.name for p in conflicts)),
                     candidate,
                 )
             return candidate
-        conflicts.extend(taken)
     raise RuntimeError(
         f"Could not find a free acquisition name for {name!r} in {output_dir} after "
         f"{MAX_ACQUISITION_INDEX} attempts."

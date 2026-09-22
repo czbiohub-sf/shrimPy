@@ -83,32 +83,6 @@ class PrescanOutcome:
     calibration_csv: Path | None = None
 
 
-def sibling_artifact_paths(data_path: Path | None) -> list[Path]:
-    """Every path a FOV-selection run may create NEXT TO its output store.
-
-    The pre-scan writes no store of its own, so these are the only on-disk traces a run
-    leaves if it dies before the timelapse starts. Name deduplication has to test them
-    too -- otherwise a crashed pre-scan leaves ``<name>_fov_debug/`` behind while
-    ``<name>.ome.zarr`` is still free, the next run picks the same name, and its worker
-    appends to the dead run's ``fov_summary.csv``.
-
-    The selected-FOV config backup is one of these: it is written between the two runs,
-    so a run that dies right after it (before the timelapse creates the store) leaves it
-    as the only trace of the name.
-    """
-    if data_path is None:
-        return []
-    return [
-        p
-        for p in (
-            FOVSelection._debug_dir_for(data_path),
-            FOVSelection._prescan_recon_path_for(data_path),
-            FOVSelection._config_backup_path_for(data_path),
-        )
-        if p is not None
-    ]
-
-
 class FOVSelection:
     """Coordinates the online, streaming FOV-selection decision for one run.
 
