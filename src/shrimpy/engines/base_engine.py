@@ -889,9 +889,9 @@ class BaseEngine(MDAEngine):
             if not outcome.selected_fovs:
                 logger.warning("FOV selection: no FOVs passed; skipping the timelapse run.")
                 return
-            timelapse_seq = build_main_sequence(sequence, prescan_seq, outcome.selected_fovs)
-            fov_artifacts.save_selected_config(timelapse_seq, data_path)
-            self._run_mda(timelapse_seq, data_path)
+            main_seq = build_main_sequence(sequence, prescan_seq, outcome.selected_fovs)
+            fov_artifacts.save_selected_config(main_seq, data_path)
+            self._run_mda(main_seq, data_path)
 
         logger.info("Acquisition completed successfully")
 
