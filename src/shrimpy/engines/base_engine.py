@@ -641,9 +641,18 @@ class BaseEngine(MDAEngine):
                     return float(value)
         return self.mmcore.getPosition(self._autofocus_stage)
 
-    # ------------------------------------------------------------------
-    # DynaTrack position tracking
-    # ------------------------------------------------------------------
+    def _zyx_shape(self, sequence: MDASequence) -> tuple[int, int, int]:
+        """Acquired (Z, Y, X) frame shape for the current ROI.
+
+        Shared by DynaTrack and FOV selection when starting their worker
+        subprocesses. Called after the setup event has applied the ROI, so
+        ``getImageHeight``/``getImageWidth`` reflect the actual frame size.
+        """
+        return (
+            max(sequence.sizes.get("z", 1), 1),
+            self.mmcore.getImageHeight(),
+            self.mmcore.getImageWidth(),
+        )
 
     def _setup_dynatrack(
         self, meta: ShrimpyMetadata, sequence: MDASequence, pixel_size_um: float
@@ -695,23 +704,6 @@ class BaseEngine(MDAEngine):
         self.mmcore.mda.events.frameReady.disconnect(self._dynatrack.on_frame_ready)
         self._dynatrack.shutdown()
         self._dynatrack = None
-
-    def _zyx_shape(self, sequence: MDASequence) -> tuple[int, int, int]:
-        """Acquired (Z, Y, X) frame shape for the current ROI.
-
-        Shared by DynaTrack and FOV selection when starting their worker
-        subprocesses. Called after the setup event has applied the ROI, so
-        ``getImageHeight``/``getImageWidth`` reflect the actual frame size.
-        """
-        return (
-            max(sequence.sizes.get("z", 1), 1),
-            self.mmcore.getImageHeight(),
-            self.mmcore.getImageWidth(),
-        )
-
-    # ------------------------------------------------------------------
-    # Smart FOV selection
-    # ------------------------------------------------------------------
 
     def _setup_fov_selection(
         self, meta: ShrimpyMetadata, sequence: MDASequence, pixel_size_um: float
