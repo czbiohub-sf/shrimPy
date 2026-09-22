@@ -22,7 +22,6 @@ from useq import MDAEvent, MDASequence
 from shrimpy.engines.base_engine import (
     DEMO_PFS_METHOD,
     BaseEngine,
-    _format_duration,
     _get_next_acquisition_name,
     acquisition_artifact_paths,
 )
@@ -990,21 +989,6 @@ def test_dragonfly_teardown_leaves_autoshutter_off_when_it_started_off(mock_core
 # ---------------------------------------------------------------------------
 # _get_next_acquisition_name() — pure function
 # ---------------------------------------------------------------------------
-
-
-def test_format_duration_scales_units_with_magnitude():
-    # A pre-scan runs from seconds to hours; the unit scales so the number stays readable.
-    assert _format_duration(0) == "0.0s"
-    assert _format_duration(3.71) == "3.7s"
-    assert _format_duration(59.94) == "59.9s"
-    assert _format_duration(60) == "1m 00s"
-    assert _format_duration(432) == "7m 12s"
-    assert _format_duration(3600) == "1h 00m 00s"
-    assert _format_duration(3800) == "1h 03m 20s"
-    # Rounding must not leave a bare 60 in the seconds/minutes slot.
-    assert _format_duration(3599.6) == "1h 00m 00s"
-    # A negative span (clock weirdness) must not render as garbage.
-    assert _format_duration(-5) == "0.0s"
 
 
 def test_next_name_first_acquisition_in_empty_dir(tmp_path):

@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 
 from collections.abc import Iterable
 from pathlib import Path
@@ -857,20 +856,7 @@ class BaseEngine(MDAEngine):
             # The pre-scan run writes nothing to disk itself: the decision streams via
             # frameReady, and (when save_pre_scan_omezarr is set) the worker writes the
             # per-step reconstruction to <name>_prescan.ome.zarr.
-            #
-            # Time the whole call: teardown_sequence drains the outstanding decisions
-            # before mda.run() returns, so this span covers imaging AND every FOV's
-            # reconstruction/segmentation/scoring -- i.e. the real cost of the pre-scan,
-            # not just the stage-and-camera time.
-            prescan_started = time.monotonic()
             self._run_mda(prescan_seq, None)
-            prescan_elapsed = time.monotonic() - prescan_started
-            logger.info(
-                "FOV-selection pre-scan finished in %s (%d FOVs, %.1f s/FOV)",
-                _format_duration(prescan_elapsed),
-                n_candidates,
-                prescan_elapsed / n_candidates if n_candidates else float("nan"),
-            )
 
             outcome = self._prescan_outcome
             if outcome is None:
@@ -882,6 +868,7 @@ class BaseEngine(MDAEngine):
                     "failed -- see the log above); skipping the timelapse run."
                 )
                 return
+            logger.info("FOV-selection pre-scan finished")
 
             if fov_cfg.calibration_mode:
                 # Calibration mode stops after the pre-scan: no timelapse is run.
@@ -935,22 +922,6 @@ class BaseEngine(MDAEngine):
             dimension_overrides={"z": {"chunk_size": min(512, sequence.sizes.get("z", 1))}},
             overwrite=False,
         )
-
-
-def _format_duration(seconds: float) -> str:
-    """Human-readable duration, e.g. ``'42.3s'`` / ``'7m 12s'`` / ``'1h 03m 20s'``.
-
-    A pre-scan over a plate runs from seconds to hours, and a bare float of seconds is
-    hard to read at the top of that range -- so the unit scales with the magnitude.
-    """
-    seconds = max(float(seconds), 0.0)
-    if seconds < 60:
-        return f"{seconds:.1f}s"
-    minutes, secs = divmod(int(round(seconds)), 60)
-    hours, minutes = divmod(minutes, 60)
-    if hours:
-        return f"{hours}h {minutes:02d}m {secs:02d}s"
-    return f"{minutes}m {secs:02d}s"
 
 
 # Upper bound on the dedup search. Reaching it means something is generating names in a

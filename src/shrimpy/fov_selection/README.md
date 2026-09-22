@@ -307,7 +307,7 @@ At **INFO** (the readable narrative) you get:
   (`<name> deskew ok (Xs)`, `phase ok`, `vs ok`), the projection (`best_focus_z: in-focus
   slice ...`), `segment <target> ok (N objects)`, and a **single** score line
   `<name> -> score=X (acquired->decision Xs)`.
-- after the drain, once: `pre-scan finished in ... (N FOVs, X s/FOV)`, the acquired->decision
+- after the drain, once: `FOV-selection pre-scan finished`, the acquired->decision
   latency average, `N/M FOVs passed selection: [names]`, and the artifact-written lines
   (selected/rank, well columns, selected PNGs, recovery config / viewer launch).
 
