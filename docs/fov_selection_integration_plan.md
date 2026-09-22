@@ -66,7 +66,7 @@ filter).
   `MDASequence`; validates single timepoint + `fov_selection_channel`; injects the
   `fov_selection` config (minus `prescan_mda`) and shared mantis hardware
   settings into its metadata so `setup_sequence` builds the coordinator.
-- `build_timelapse_sequence(sequence, prescan_seq, good_names)` — `sequence`
+- `build_main_sequence(sequence, prescan_seq, good_names)` — `sequence`
   with `stage_positions` replaced by the good candidates (`_filter_good_positions`
   preserves `plate_row`/`plate_col` → HCS store) and `fov_selection` disabled.
 

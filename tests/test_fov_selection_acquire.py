@@ -16,8 +16,8 @@ from useq import MDASequence
 from shrimpy.fov_selection.config import FOVSelectionConfig
 from shrimpy.fov_selection.sequences import (
     _filter_good_positions,
+    build_main_sequence,
     build_prescan_sequence,
-    build_timelapse_sequence,
     expand_candidate_fovs,
     fov_selection_config,
 )
@@ -225,14 +225,14 @@ def test_prescan_raises_without_stage_positions():
 
 
 # ---------------------------------------------------------------------------
-# build_timelapse_sequence / _filter_good_positions
+# build_main_sequence / _filter_good_positions
 # ---------------------------------------------------------------------------
 
 
 def test_timelapse_keeps_only_good_positions_and_full_channels():
     seq = _sequence()
     ps = build_prescan_sequence(seq, fov_selection_config(seq))
-    tl = build_timelapse_sequence(seq, ps, ["B4_0000", "B5_0000"])
+    tl = build_main_sequence(seq, ps, ["B4_0000", "B5_0000"])
 
     # names are reduced to the per-well field index ("B4_0000" -> "0000")
     assert [p.name for p in tl.stage_positions] == ["0000", "0000"]
@@ -243,7 +243,7 @@ def test_timelapse_keeps_only_good_positions_and_full_channels():
 def test_timelapse_disables_fov_selection_without_mutating_original():
     seq = _sequence()
     ps = build_prescan_sequence(seq, fov_selection_config(seq))
-    tl = build_timelapse_sequence(seq, ps, ["B4_0000"])
+    tl = build_main_sequence(seq, ps, ["B4_0000"])
 
     assert tl.metadata["fov_selection"]["enabled"] is False
     # the original sequence's metadata must be untouched (deep-copied)
@@ -275,7 +275,7 @@ def test_timelapse_positions_produce_readable_hcs_plate():
     ome_useq = pytest.importorskip("ome_writers._useq")
     seq = _sequence()
     ps = build_prescan_sequence(seq, fov_selection_config(seq))
-    tl = build_timelapse_sequence(seq, ps, ["B4_0000", "B5_0000"])
+    tl = build_main_sequence(seq, ps, ["B4_0000", "B5_0000"])
 
     plate = ome_useq._plate_from_useq(tl)
     assert plate is not None
@@ -414,7 +414,7 @@ def test_expand_candidate_fovs_inherits_center_properties():
         ("0001", 1, 1, 4522.0),
         ("0002", 1, 2, 4573.0),
     ]
-    timelapse = build_timelapse_sequence(seq, ps, ["B2_0001", "B3_0002"])
+    timelapse = build_main_sequence(seq, ps, ["B2_0001", "B3_0002"])
     assert ("ZDrive", "Position", 4522.0) in [
         tuple(p) for p in next(timelapse.iter_events()).properties
     ]
@@ -461,7 +461,7 @@ def test_selected_fov_config_fills_stage_positions_and_reloads(tmp_path):
     prescan = build_prescan_sequence(seq, fov_selection_config(seq))
     assert not seq.stage_positions  # the starting config really is empty
 
-    timelapse = build_timelapse_sequence(seq, prescan, ["B2_0001", "B2_0003"])
+    timelapse = build_main_sequence(seq, prescan, ["B2_0001", "B2_0003"])
 
     experiment_dir = tmp_path / "2026_08_04_my_experiment"
     experiment_dir.mkdir()
@@ -491,7 +491,7 @@ def test_selected_fov_config_is_per_run_so_it_cannot_overwrite(tmp_path):
 
     seq = _sequence(metadata={"fov_selection": _grid_fov_cfg()})
     prescan = build_prescan_sequence(seq, fov_selection_config(seq))
-    timelapse = build_timelapse_sequence(seq, prescan, ["site0_0001"])
+    timelapse = build_main_sequence(seq, prescan, ["site0_0001"])
 
     experiment_dir = tmp_path / "expt"
     experiment_dir.mkdir()
@@ -510,7 +510,7 @@ def test_selected_fov_config_never_raises(tmp_path):
 
     seq = _sequence(metadata={"fov_selection": _grid_fov_cfg()})
     prescan = build_prescan_sequence(seq, fov_selection_config(seq))
-    timelapse = build_timelapse_sequence(seq, prescan, ["site0_0001"])
+    timelapse = build_main_sequence(seq, prescan, ["site0_0001"])
 
     experiment_dir = tmp_path / "expt"
     experiment_dir.mkdir()

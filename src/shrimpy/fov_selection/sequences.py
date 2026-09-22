@@ -174,7 +174,7 @@ def expand_candidate_fovs(prescan_seq: MDASequence) -> list[Position]:
     return out
 
 
-def build_timelapse_sequence(
+def build_main_sequence(
     sequence: MDASequence, prescan_seq: MDASequence, good_names: list[str]
 ) -> MDASequence:
     """Timelapse sequence: good FOVs only, ``fov_selection`` disabled.

@@ -46,7 +46,7 @@ knob never reaches the backend as an explicit ``None`` that would shadow its def
 Presence, not ``enabled``, drives validation: a section that is present is validated in
 full even with ``enabled: false`` (the timelapse run of an adaptive acquisition is
 handed exactly such a block -- see
-:func:`shrimpy.fov_selection.sequences.build_timelapse_sequence`). Omit the section
+:func:`shrimpy.fov_selection.sequences.build_main_sequence`). Omit the section
 entirely to disable FOV selection.
 """
 

@@ -54,8 +54,8 @@ from shrimpy.dynatrack import DynaTrack
 from shrimpy.fov_selection import FOVSelection, PrescanOutcome
 from shrimpy.fov_selection import acquisition_artifacts as fov_artifacts
 from shrimpy.fov_selection.sequences import (
+    build_main_sequence,
     build_prescan_sequence,
-    build_timelapse_sequence,
     fov_selection_config,
 )
 from shrimpy.logging import find_log_file
@@ -889,9 +889,7 @@ class BaseEngine(MDAEngine):
             if not outcome.selected_fovs:
                 logger.warning("FOV selection: no FOVs passed; skipping the timelapse run.")
                 return
-            timelapse_seq = build_timelapse_sequence(
-                sequence, prescan_seq, outcome.selected_fovs
-            )
+            timelapse_seq = build_main_sequence(sequence, prescan_seq, outcome.selected_fovs)
             fov_artifacts.save_selected_config(timelapse_seq, data_path)
             self._run_mda(timelapse_seq, data_path)
 
