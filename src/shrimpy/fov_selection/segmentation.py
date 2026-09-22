@@ -109,7 +109,13 @@ class CellposeSegmenter(Segmenter):
 
     def __init__(self, config: dict | None = None) -> None:
         super().__init__(config)
-        from cellpose import models
+        try:
+            from cellpose import models
+        except ImportError as e:
+            raise ImportError(
+                "segmentation.model='cellpose' needs the optional Cellpose backend: "
+                "`uv sync --extra fov-cellpose` (or `pip install 'shrimpy[fov-cellpose]'`)."
+            ) from e
 
         name = self._config.get("model_name") or self.MODEL_NAME
         gpu = self._config.get("gpu", True)
@@ -335,7 +341,12 @@ class InstansegSegmenter(Segmenter):
             for name, cast in self.FORWARD_ARGS.items()
             if seg.get(name) is not None
         }
-        with torch.no_grad():
+        # fp16 mixed precision on CUDA, as InstanSeg's own inference does. The module builds
+        # its label map in float32, so label ids are not rounded by the half-precision pass.
+        with (
+            torch.no_grad(),
+            torch.autocast("cuda", dtype=torch.float16, enabled=self.device == "cuda"),
+        ):
             out = self.module(x, target_segmentation=selector, **kwargs)
 
         # (1, 1, H, W) -- one head selected above. Nearest-neighbour back to the original grid
