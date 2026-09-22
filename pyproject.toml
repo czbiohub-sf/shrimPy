@@ -162,7 +162,10 @@ conflicts = [
 # 8, which includes the HPC dev machines). Scoped to Linux so the Windows
 # acquisition machines stay on current Qt. Reaches PyQt6 wherever it enters the
 # graph -- pymmcore-gui via [gui], napari[pyqt6] via [viewer].
-override-dependencies = ["pyqt6<6.10; sys_platform == 'linux'"]
+override-dependencies = [
+  "pyqt6<6.10; sys_platform == 'linux'",
+  "pyqt6>=6.10; sys_platform != 'linux'",
+]
 
 [[tool.uv.index]]
 name = "pytorch-cu132"
