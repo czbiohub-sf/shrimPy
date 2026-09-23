@@ -1,7 +1,8 @@
 """The feature viewer's Rank and Score-map tabs, run headless on shrimpy's scorer.
 
-The viewer does no model math of its own; these tests drive its real widgets through a
-tuning session and check that everything it computes or saves comes from the scorer.
+The viewer (packages/feature_viewer) does no model math of its own; these tests drive its
+real widgets through a tuning session and check that everything it computes or saves comes
+from shrimpy's DesirabilityScorer, and that shrimpy's entry point registers it.
 """
 
 from __future__ import annotations
@@ -21,9 +22,11 @@ try:
 except Exception:  # pragma: no cover - depends on which extras are installed
     pytest.skip("no Qt bindings (install the `fov` extra)", allow_module_level=True)
 pytest.importorskip("matplotlib")
+pytest.importorskip("fov_feature_viewer")
 
-from shrimpy.fov_selection.feature_viewer.app import FeatureViewer  # noqa: E402
-from shrimpy.fov_selection.feature_viewer.scorer import Scorer, load_scorer  # noqa: E402
+from fov_feature_viewer.app import FeatureViewer  # noqa: E402
+from fov_feature_viewer.scorer import Scorer, load_scorer  # noqa: E402
+
 from shrimpy.fov_selection.fov_model import DesirabilityScorer  # noqa: E402
 
 SCORER_PATH = "shrimpy.fov_selection.fov_model:DesirabilityScorer"
@@ -57,8 +60,12 @@ def _viewer(qapp, csv, scorer):
 
 
 def test_shrimpy_scorer_satisfies_the_viewer_interface():
+    from shrimpy.fov_selection.acquisition_artifacts import VIEWER_SCORER
+
     assert isinstance(DesirabilityScorer(), Scorer)
     assert isinstance(load_scorer(SCORER_PATH), DesirabilityScorer)
+    assert isinstance(load_scorer("shrimpy"), DesirabilityScorer)  # the entry point
+    assert VIEWER_SCORER == SCORER_PATH
     with pytest.raises(ValueError, match="Scorer"):
         load_scorer("builtins:dict")  # a class, but not a scorer
     with pytest.raises(ValueError, match="unknown scorer"):

@@ -86,8 +86,8 @@ def save_selected_config(timelapse_seq: MDASequence, data_path: Path) -> None:
 def launch_feature_viewer(csv_path: Path | None, model_cfg: dict | None = None) -> None:
     """Open the FOV feature viewer on a calibration pre-scan's feature matrix.
 
-    Launched as a detached subprocess (``python -m
-    shrimpy.fov_selection.feature_viewer <csv>``) so its Qt event loop stays clear
+    Launched as a detached subprocess (``python -m fov_feature_viewer --scorer
+    shrimpy <csv>``, the ``fov-feature-viewer`` package) so its Qt event loop stays clear
     of the acquisition process. When the config's ``model_cfg`` carries a ``features``
     block, it is passed INLINE (``--rank-profile-json``, no file written to disk) so the
     Rank tab opens pre-populated with the config's ``fov_selection.model`` curves (merged
@@ -100,7 +100,7 @@ def launch_feature_viewer(csv_path: Path | None, model_cfg: dict | None = None) 
         logger.warning(
             "FOV-selection calibration: feature matrix %s was not written; open the "
             "viewer manually once the CSV exists: "
-            "`python -m shrimpy.fov_selection.feature_viewer <csv>`.",
+            "`fov-feature-viewer --scorer shrimpy <csv>`.",
             csv_path,
         )
         return
@@ -113,7 +113,7 @@ def launch_feature_viewer(csv_path: Path | None, model_cfg: dict | None = None) 
     cmd = [
         sys.executable,
         "-m",
-        "shrimpy.fov_selection.feature_viewer",
+        "fov_feature_viewer",
         "--scorer",
         VIEWER_SCORER,
         "--start-tab",
@@ -129,6 +129,6 @@ def launch_feature_viewer(csv_path: Path | None, model_cfg: dict | None = None) 
     except Exception:
         logger.exception(
             "FOV-selection calibration: could not launch the feature viewer; open it "
-            "manually: `python -m shrimpy.fov_selection.feature_viewer %s`.",
+            "manually: `fov-feature-viewer --scorer shrimpy %s`.",
             csv_path,
         )

@@ -67,8 +67,7 @@ fov = [
   "scikit-learn",  # PCA/t-SNE in the feature viewer and nd_export; trained tree model
   "anndata",       # save_pre_scan_nd: feature matrix -> AnnData zarr (nd_export)
   "imageio",       # 8-bit PNG export
-  "matplotlib",    # feature viewer plots
-  "pyqt6",         # feature viewer Qt binding (matches pymmcore-gui's)
+  "fov-feature-viewer",  # calibration mode's Rank-tab GUI (packages/feature_viewer)
 ]
 # Cellpose segmentation backend for FOV selection (model: cellpose).
 fov-cellpose = [
@@ -129,6 +128,7 @@ pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "m
 ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
 useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "main" }
 napari-deskew-preview = { workspace = true }
+fov-feature-viewer = { workspace = true }
 # Windows: CUDA build via cu132 index (requires CUDA Toolkit 13.2 on the machine)
 # for the production `dynatrack` group; the CI-only `test-cpu` group takes the
 # CPU wheel instead. Elsewhere (macOS/Linux) both fall back to PyPI (CPU/MPS).
@@ -163,7 +163,7 @@ conflicts = [
 # 6.10.0, so 6.9.x is the newest build that runs on glibc 2.28 hosts (RHEL/Rocky
 # 8, which includes the HPC dev machines). Scoped to Linux so the Windows
 # acquisition machines stay on current Qt. Reaches PyQt6 wherever it enters the
-# graph -- pymmcore-gui via [gui], napari[pyqt6] via [viewer], pyqt6 via [fov].
+# graph -- pymmcore-gui via [gui], napari[pyqt6] via [viewer], fov-feature-viewer via [fov].
 override-dependencies = [
   "pyqt6<6.10; sys_platform == 'linux'",
   "pyqt6>=6.10; sys_platform != 'linux'",
@@ -206,19 +206,6 @@ ignore = [
     "N815",  # Variable in class scope should not be mixedCase (Qt uses camelCase)
 ]
 
-[tool.ruff.lint.per-file-ignores]
-# The feature viewer is a multi-file Qt app (app.py, the per-tab modules, _common.py, and
-# data.py) whose conventions the repo-wide `N` rules do not fit (the global ignores above
-# already exempt N802/N815 for the same reason):
-#   N812  module imported under a short uppercase alias (fov_model as FM, data as D, ...) --
-#         the established repo alias; renaming is same-file churn with no behavioural gain.
-#   N803/N806  local Qt layout variables named colA/colB/colC (mirroring the sections they
-#         hold) and the sklearn-style feature matrix `X` in data.run_reduction.
-#   B008  `parent=QtCore.QModelIndex()` on QAbstractTableModel.rowCount/columnCount -- this
-#         mirrors Qt's own C++ default and is the canonical PyQt signature; QModelIndex() is a
-#         cheap immutable sentinel, not the mutable default B008 targets.
-"shrimpy/fov_selection/feature_viewer/*.py" = ["N812", "N803", "N806", "B008"]
-
 # `def rowCount(self, parent=QtCore.QModelIndex())` is the signature Qt's model
 # overrides are declared with, and an invalid QModelIndex is a value type, so
 # B008's mutable-default concern does not apply.
@@ -236,6 +223,6 @@ docstring-code-format = true
 [tool.pytest.ini_options]
 # The workspace member's tests are numpy-only (no napari/Qt), so they run in the
 # default environment alongside shrimPy's.
-testpaths = ["tests", "packages/napari-deskew-preview/tests"]
+testpaths = ["tests", "packages/napari-deskew-preview/tests", "packages/feature_viewer/tests"]
 # Never collect tests from archived/legacy code or scripts (any depth)
 norecursedirs = ["archive", "scripts"]

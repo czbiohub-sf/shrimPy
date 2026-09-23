@@ -14,10 +14,8 @@ import numpy as np
 
 from qtpy import QtCore, QtGui, QtWidgets
 
-DEFAULT_DIR = os.environ.get(
-    "FOV_VIEWER_DIR",
-    "/hpc/projects/comp.micro/microscope_dev/smart_fov_selection/fov_selection_output",
-)
+# Where the Load dialog starts: $FOV_VIEWER_DIR, else the directory the viewer was run from.
+DEFAULT_DIR = os.environ.get("FOV_VIEWER_DIR", os.getcwd())
 # Where named ranking profiles (per biological question) are saved/loaded.
 PROFILE_DIR = Path(
     os.environ.get("FOV_RANK_PROFILE_DIR", str(Path(DEFAULT_DIR) / "ranking_profiles"))

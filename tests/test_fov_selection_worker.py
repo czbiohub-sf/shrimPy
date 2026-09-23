@@ -130,7 +130,7 @@ def test_feature_viewer_layout_loads_in_the_viewer(tmp_path):
     pytest.importorskip("imageio")  # PNG export ships in the `fov` extra
     # The written layout must round-trip through the viewer's own loader with the
     # brightfield PNG wired to each row.
-    from shrimpy.fov_selection.feature_viewer import data
+    data = pytest.importorskip("fov_feature_viewer.data")  # the `fov` extra
 
     for name in ("f0", "f1"):
         prescan_artifacts.write_feature_viewer_artifacts(tmp_path, name, _fv_artifacts(name))
@@ -148,7 +148,7 @@ def test_normal_mode_fov_summary_loads_in_the_viewer(tmp_path):
     # prescan_fov/ folder, while the decision outputs (proba/selected/rank) stay off the axes.
     import pandas as pd
 
-    from shrimpy.fov_selection.feature_viewer import data
+    data = pytest.importorskip("fov_feature_viewer.data")  # the `fov` extra
 
     for name, proba in (("f0", 0.2), ("f1", 0.9)):
         prescan_artifacts.write_decision_artifacts(tmp_path, name, proba, _fv_artifacts(name))

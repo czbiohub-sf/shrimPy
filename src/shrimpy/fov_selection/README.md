@@ -270,11 +270,15 @@ An imaged FOV with nothing segmented is different: it does get a row, with `cove
 ## Feature viewer
 
 ```bash
-python -m shrimpy.fov_selection.feature_viewer [CSV ...]
+fov-feature-viewer [CSV ...]
 ```
 
 A Qt GUI to explore FOV-level features, label FOVs, and tune the ranking model, with each
-FOV shown as an image thumbnail. Tabs:
+FOV shown as an image thumbnail. It is its own package, `packages/feature_viewer`
+(`fov-feature-viewer`, installed with the `fov` extra), and does no model math: its Rank
+and Score-map tabs run on shrimpy's `DesirabilityScorer` (`fov_model.py`), which it finds
+through the `fov_feature_viewer.scorers` entry point. See its README for the `Scorer`
+interface. Tabs:
 
 - **Analysis**: interactive 2D/3D scatter (PCA / t-SNE / UMAP) with per-feature threshold
   filters; selected FOVs shown as a thumbnail grid, grouped by well when the CSV carries
@@ -332,21 +336,16 @@ fov_selection/
 ├── sequences.py          build the pre-scan and timelapse MDASequences
 ├── pipeline.py           per-FOV decision: project → segment → features → verdict
 ├── worker.py             subprocess isolation (WorkerConfig + FOVSelectionWorker)
-├── fov_model.py          pluggable models + interpretable curve conversions
+├── fov_model.py          pluggable models, curve conversions, DesirabilityScorer (the viewer's)
 ├── segmentation.py       Cellpose / InstanSeg / Otsu backends
 ├── feature_extraction.py FeatureExtractor (object-level and FOV-level features)
 ├── prescan_artifacts.py     per-FOV pre-scan PNG / CSV / OME-Zarr writers + finalize
 ├── acquisition_artifacts.py once-per-run records (recovery config, viewer launch)
 ├── nd_export.py          fov_summary.csv -> AnnData zarr for Embedding Atlas (save_pre_scan_nd)
-├── plate_naming.py       plate labels and path-name sanitizers
-└── feature_viewer/       Qt GUI
-    ├── app.py            main window, Analysis tab, and the `main()` entry point
-    ├── _common.py        shared constants, theme, helper widgets
-    ├── label_tab.py      LabelTabMixin
-    ├── rank_tab.py       RankTabMixin
-    ├── score_map_tab.py  ScoreMapTabMixin
-    └── data.py           Qt-free data layer (load CSVs, wire PNGs, run reduction)
+└── plate_naming.py       plate labels and path-name sanitizers
 ```
+
+The feature viewer lives in `packages/feature_viewer/src/fov_feature_viewer/`.
 
 The GUI is split into one mixin per tab; `FeatureViewer` inherits them, so every method
 still shares one window instance.

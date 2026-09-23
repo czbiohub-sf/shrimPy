@@ -12,15 +12,15 @@ import types
 
 import pytest
 
-# qtpy is a core dependency, so importorskip("qtpy") is not enough: it imports
-# fine and then raises QtBindingsNotFoundError, which is not an ImportError. The
-# actual Qt binding arrives with the `fov` extra (napari[pyqt6]).
+# qtpy imports fine without a binding and then raises QtBindingsNotFoundError, which is
+# not an ImportError, so importorskip("qtpy") is not enough.
 try:
     import qtpy  # noqa: F401
 except Exception:  # pragma: no cover - depends on which extras are installed
-    pytest.skip("no Qt bindings (install the `fov` extra)", allow_module_level=True)
+    pytest.skip("no Qt bindings", allow_module_level=True)
 
 pytest.importorskip("matplotlib")
+pytest.importorskip("fov_feature_viewer")
 
 
 def _stub(df):
@@ -33,7 +33,7 @@ def _stub(df):
 def test_persist_scores_writes_proba_and_rank_by_filename(tmp_path):
     import pandas as pd
 
-    from shrimpy.fov_selection.feature_viewer.rank_tab import RankTabMixin
+    from fov_feature_viewer.rank_tab import RankTabMixin
 
     # a source CSV as the calibration pre-scan writes it (filename + features), with rows in
     # a DIFFERENT order than the in-memory table to exercise the identity join.

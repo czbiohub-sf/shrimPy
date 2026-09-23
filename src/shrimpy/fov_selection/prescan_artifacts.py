@@ -11,7 +11,7 @@ manager; the once-per-run acquisition records live in
   -- :func:`write_decision_artifacts`.
 - calibration feature-viewer layout: the SAME images in the SAME ``prescan_fov`` /
   ``prescan_mask`` folders, plus a ``fov_summary.csv`` with a ``filename`` join column that
-  :mod:`shrimpy.fov_selection.feature_viewer.data` loads directly --
+  :mod:`fov_feature_viewer.data` loads directly --
   :func:`write_feature_viewer_artifacts`. So ``save_decision`` output has one folder
   structure in both normal and calibration mode; only the CSV columns differ.
 - the full per-step reconstruction OME-Zarr (``save_pre_scan_omezarr``): every
@@ -53,7 +53,7 @@ SUMMARY_CSV_NAME = "fov_summary.csv"
 
 # Pre-scan FOV image folders (under debug_dir), FIXED names shared by both the save_decision
 # layout and the calibration feature-viewer layout, so the feature viewer loads one known
-# pair of folders (see feature_viewer/data.py). Their PNG stems equal the sanitized FOV name
+# pair of folders (see fov_feature_viewer/data.py). Their PNG stems equal the sanitized FOV name
 # (== the CSV `filename` join column for the calibration CSV).
 PRESCAN_FOV_DIRNAME = "prescan_fov"  # projection (brightfield slot) PNG per FOV
 PRESCAN_MASK_DIRNAME = "prescan_mask"  # segmentation-mask overlay PNG per FOV
@@ -169,7 +169,7 @@ def write_feature_viewer_artifacts(
 
     Same images and same fixed image folders as :func:`write_decision_artifacts`
     (``prescan_fov`` / ``prescan_mask``), plus the ``filename`` join column that
-    :mod:`shrimpy.fov_selection.feature_viewer.data` requires, so a calibration pre-scan drops
+    :mod:`fov_feature_viewer.data` requires, so a calibration pre-scan drops
     straight into the viewer with no conversion::
 
         <debug_dir>/fov_summary.csv       # one row per FOV; carries a `filename` column

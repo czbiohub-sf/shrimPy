@@ -25,6 +25,7 @@ conflicts = [[
 
 [manifest]
 members = [
+    "fov-feature-viewer",
     "napari-deskew-preview",
     "shrimpy",
 ]
@@ -789,7 +790,8 @@ name = "contourpy"
 version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" } },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/83/5a/a55177dd22553a277388e8a1b3220e92de91bacb28356cdc73caa240121d/contourpy-1.4.0.tar.gz", hash = "sha256:20156f5a1ac4f8ce02656e39a61e82164a3d359796dc8026f75b062783d500e1", size = 13323726, upload-time = "2026-09-11T19:05:05.808Z" }
 wheels = [
@@ -1317,6 +1319,47 @@ sdist = { url = "https://files.pythonhosted.org/packages/f1/87/e7b9b39d218793f15
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fc/75/0576b03f7889ad25b5385b4f6c69e0543713425a6f193b056c9b0a2e65ce/formulaic-1.2.2-py3-none-any.whl", hash = "sha256:0f84ff49e3fc9dc0e68ab08a0a9427874021aa6c558e66b44dc634a35739b09b", size = 118939, upload-time = "2026-06-02T18:24:41.344Z" },
 ]
+
+[[package]]
+name = "fov-feature-viewer"
+version = "0.1.0"
+source = { editable = "packages/feature_viewer" }
+dependencies = [
+    { name = "matplotlib" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "pyqt6", version = "6.9.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'linux' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "pyqt6", version = "6.11.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "pyyaml" },
+    { name = "qtpy" },
+    { name = "scikit-learn" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "ruff" },
+]
+umap = [
+    { name = "umap-learn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "pyqt6" },
+    { name = "pytest", marker = "extra == 'dev'" },
+    { name = "pyyaml" },
+    { name = "qtpy" },
+    { name = "ruff", marker = "extra == 'dev'" },
+    { name = "scikit-learn" },
+    { name = "umap-learn", marker = "extra == 'umap'" },
+]
+provides-extras = ["umap", "dev"]
 
 [[package]]
 name = "freetype-py"
@@ -2552,7 +2595,8 @@ dependencies = [
     { name = "cycler" },
     { name = "fonttools" },
     { name = "kiwisolver" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" } },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
     { name = "packaging" },
     { name = "pillow" },
     { name = "pyparsing" },
@@ -3247,7 +3291,8 @@ version = "0.67.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "llvmlite" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" } },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7a/90/2544f4e3a61e501d6c9a5418fd4b905323222693d54a02cab0106a0af865/numba-0.67.0.tar.gz", hash = "sha256:cd75aa535b33fa05d9d930b1ae8af9f97a2881e96d72dfb38ec9b78284d9f851", size = 2836515, upload-time = "2026-08-11T23:04:00.174Z" }
 wheels = [
@@ -4654,6 +4699,23 @@ wheels = [
 ]
 
 [[package]]
+name = "pynndescent"
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "joblib" },
+    { name = "llvmlite" },
+    { name = "numba" },
+    { name = "scikit-learn" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4a/fb/7f58c397fb31666756457ee2ac4c0289ef2daad57f4ae4be8dec12f80b03/pynndescent-0.6.0.tar.gz", hash = "sha256:7ffde0fb5b400741e055a9f7d377e3702e02250616834231f6c209e39aac24f5", size = 2992987, upload-time = "2026-01-08T21:29:58.943Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b2/e6/94145d714402fd5ade00b5661f2d0ab981219e07f7db9bfa16786cdb9c04/pynndescent-0.6.0-py3-none-any.whl", hash = "sha256:dc8c74844e4c7f5cbd1e0cd6909da86fdc789e6ff4997336e344779c3d5538ef", size = 73511, upload-time = "2026-01-08T21:29:57.306Z" },
+]
+
+[[package]]
 name = "pyopengl"
 version = "3.1.10"
 source = { registry = "https://pypi.org/simple" }
@@ -5593,8 +5655,10 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "joblib" },
     { name = "narwhals" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" } },
-    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" } },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
     { name = "threadpoolctl" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d2/eb/eaf5e07fcc0da7149b0e084f24e54edd7441b9a89ce7e034032ae97fe3a0/scikit_learn-1.9.1.tar.gz", hash = "sha256:629cada3e33e2b9bf376cdc7614a47a4140b8aedc1d836579e359736fbd82977", size = 7786908, upload-time = "2026-09-10T18:34:04.679Z" }
@@ -5928,12 +5992,11 @@ dynatrack = [
 fov = [
     { name = "anndata" },
     { name = "biahub", extra = ["stain"], marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "fov-feature-viewer" },
     { name = "imageio" },
     { name = "iohub", version = "0.3.12.dev9+172ee92", source = { git = "https://github.com/czbiohub-sf/iohub?rev=172ee926829300b42708edbf6c8e20f2fd642f78#172ee926829300b42708edbf6c8e20f2fd642f78" } },
     { name = "matplotlib" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" } },
-    { name = "pyqt6", version = "6.9.1", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'linux' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'linux' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'linux' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'linux' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "pyqt6", version = "6.11.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'linux' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'linux' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'linux' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'linux' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "scikit-image" },
     { name = "scikit-learn" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" } },
@@ -5945,12 +6008,11 @@ fov-cellpose = [
     { name = "biahub", extra = ["stain"], marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
     { name = "cellpose" },
     { name = "dinov3" },
+    { name = "fov-feature-viewer" },
     { name = "imageio" },
     { name = "iohub", version = "0.3.12.dev9+172ee92", source = { git = "https://github.com/czbiohub-sf/iohub?rev=172ee926829300b42708edbf6c8e20f2fd642f78#172ee926829300b42708edbf6c8e20f2fd642f78" } },
     { name = "matplotlib" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" } },
-    { name = "pyqt6", version = "6.9.1", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'linux' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'linux' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'linux' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'linux' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "pyqt6", version = "6.11.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'linux' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'linux' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'linux' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'linux' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "scikit-image" },
     { name = "scikit-learn" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" } },
@@ -5995,6 +6057,8 @@ requires-dist = [
     { name = "cellpose", marker = "extra == 'fov-cellpose'" },
     { name = "click" },
     { name = "dinov3", marker = "extra == 'fov-cellpose'", git = "https://github.com/facebookresearch/dinov3" },
+    { name = "fov-feature-viewer", marker = "extra == 'fov'", editable = "packages/feature_viewer" },
+    { name = "fov-feature-viewer", marker = "extra == 'fov-cellpose'", editable = "packages/feature_viewer" },
     { name = "imageio", marker = "extra == 'fov'" },
     { name = "imageio", marker = "extra == 'fov-cellpose'" },
     { name = "iohub", marker = "extra == 'dynatrack'" },
@@ -6012,8 +6076,6 @@ requires-dist = [
     { name = "pymmcore", specifier = ">=11.14.0.75.0" },
     { name = "pymmcore-gui", marker = "extra == 'gui'", git = "https://github.com/pymmcore-plus/pymmcore-gui?branch=main" },
     { name = "pymmcore-plus", git = "https://github.com/ieivanov/pymmcore-plus?branch=main" },
-    { name = "pyqt6", marker = "extra == 'fov'" },
-    { name = "pyqt6", marker = "extra == 'fov-cellpose'" },
     { name = "pyyaml" },
     { name = "qtpy" },
     { name = "scikit-image", marker = "extra == 'fov'" },
@@ -6677,6 +6739,25 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e4/31/3d74fa778a63b98b7374323befcc0be5ab3bd94afd4096a0124e7379152c/tzdata-2026.4.tar.gz", hash = "sha256:f1b8bd365d8d210c55353f4d7f8d6d8561c0ba50d704b700d195a9424bba0d79", size = 199350, upload-time = "2026-09-12T12:56:03.251Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f9/bc/8737e8d54cf51106118039b83f485a4783112fab49ea9d044b234978a46e/tzdata-2026.4-py2.py3-none-any.whl", hash = "sha256:c2169a8b0a7a5e9674da5a135ccdfb2b3e671b333ed9fed17b41f73c34476e81", size = 347494, upload-time = "2026-09-12T12:56:01.67Z" },
+]
+
+[[package]]
+name = "umap-learn"
+version = "0.5.12"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numba" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "pynndescent" },
+    { name = "scikit-learn" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/02/ee/af4171241117f85c74b5ca6448ea1033cc28d599c13651d67289bacd4083/umap_learn-0.5.12.tar.gz", hash = "sha256:6aff02ecac5f2aad9f3c65ee518d7ae93e1a985ae38721fdcffceee4232c33c7", size = 96672, upload-time = "2026-04-08T20:03:54.012Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1b/98/f63318ccbe75c810011fe9233884c5d348d94d90005de1b79e5f93bef9c0/umap_learn-0.5.12-py3-none-any.whl", hash = "sha256:f2a85d2a2adcb52b541bed9b27a23ca169b56bb1b23283abeebfb8dfb8a42fe5", size = 91849, upload-time = "2026-04-08T20:03:52.561Z" },
 ]
 
 [[package]]

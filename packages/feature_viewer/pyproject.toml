@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fov-feature-viewer"
+description = "Qt GUI to explore per-FOV features, label FOVs, and tune a pluggable ranking model (czbiohub-sf internal)"
+version = "0.1.0"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.12"
+# No scoring model is bundled: the Rank and Score-map tabs run on a Scorer found through
+# the `fov_feature_viewer.scorers` entry point (shrimpy registers one) or --scorer.
+dependencies = [
+  "matplotlib",
+  "numpy",
+  "pandas",
+  "pyqt6",
+  "PyYAML",
+  "qtpy",
+  "scikit-learn",  # PCA / t-SNE embeddings in the Analysis tab
+]
+classifiers = [
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+]
+
+[project.optional-dependencies]
+umap = ["umap-learn"]  # adds UMAP to the Analysis tab's embeddings
+dev = ["pytest", "ruff"]
+
+[project.scripts]
+fov-feature-viewer = "fov_feature_viewer.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fov_feature_viewer"]
+
+[tool.ruff]
+line-length = 95
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "I", "N", "UP", "B"]
+# E501: handled by the formatter. N802/N815: Qt's camelCase overrides. N803/N806: the
+# sklearn-style design matrix `X` and Qt layout variables named colA/colB/colC.
+# N812: modules imported under short uppercase aliases.
+ignore = ["E501", "N802", "N803", "N806", "N812", "N815"]
+
+# `def rowCount(self, parent=QtCore.QModelIndex())` is the signature Qt's model
+# overrides are declared with, and an invalid QModelIndex is a value type, so
+# B008's mutable-default concern does not apply.
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["qtpy.QtCore.QModelIndex"]
+
+[tool.ruff.lint.isort]
+lines-between-types = 1
+known-first-party = ["fov_feature_viewer"]
+
+[tool.ruff.format]
+docstring-code-format = true

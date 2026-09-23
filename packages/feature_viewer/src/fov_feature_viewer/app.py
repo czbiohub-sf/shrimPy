@@ -27,7 +27,7 @@ Data wiring
   prescan_mask/, prescan_fluor/ folder next to the CSV (strict filename match; legacy
   <stem>[_<channel>]_png/ folders still open) and stores it as __png / __png_<channel>.
 
-Run:  python -m shrimpy.fov_selection.feature_viewer [--scorer NAME|module:attr] [CSV ...]
+Run:  fov-feature-viewer [--scorer NAME|module:attr] [CSV ...]   (or python -m fov_feature_viewer)
 """
 
 from __future__ import annotations
