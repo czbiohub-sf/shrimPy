@@ -43,54 +43,13 @@ RANK_PARAM_LABELS = {
 
 
 def _internal_to_feature(shape, direction, lo, hi, curve_k, weight):
-    """Internal (lo, hi, ...) bounds -> a config feature dict with the interpretable params.
-    The math is :func:`fov_model.curve_params`; this only packages the result into the config
-    schema (center/fwhm, center/fold, or midpoint/width) and drops params the shape ignores."""
-    p = fov_model.curve_params(shape, lo, hi, curve_k)
-    feat = {"shape": shape}
-    if shape == "gaussian":
-        feat.update(center=p["center"], fwhm=p["fwhm"])
-    elif shape == "lognormal":
-        feat.update(center=p["center"], fold=p["fold"])
-    else:  # sigmoid monotonic (direction higher|lower)
-        feat.update(midpoint=p["midpoint"], width=p["width"], direction=direction)
-    feat["weight"] = weight
-    return feat
+    """Internal bounds -> a config feature dict (see ``fov_model._feature_from_bounds``)."""
+    return fov_model._feature_from_bounds(shape, direction, lo, hi, curve_k, weight)
 
 
 def _feature_to_internal(feat):
-    """A config feature dict -> internal ``(shape, direction, lo, hi, curve_k)``. The current
-    interpretable schema is converted via :func:`fov_model.curve_bounds`; legacy ``range``-style
-    profiles are read as internal bounds directly so old files still open."""
-    shape = feat.get("shape", "gaussian")
-    if shape == "linear":
-        raise ValueError("the 'linear' shape was removed; use gaussian, lognormal, or sigmoid")
-    dir_params = None  # (direction, params) when the current interpretable schema is present
-    if shape == "gaussian" and {"center", "fwhm"} <= feat.keys():
-        dir_params = ("target", {"center": float(feat["center"]), "fwhm": float(feat["fwhm"])})
-    elif shape == "lognormal" and {"center", "fold"} <= feat.keys():
-        dir_params = ("target", {"center": float(feat["center"]), "fold": float(feat["fold"])})
-    elif shape == "sigmoid" and "midpoint" in feat:
-        dir_params = (
-            feat.get("direction", "higher"),
-            {"midpoint": float(feat["midpoint"]), "width": float(feat["width"])},
-        )
-    if dir_params is not None:
-        direction, params = dir_params
-        lo, hi, ck = fov_model.curve_bounds(shape, params)
-        return shape, direction, lo, hi, ck
-    # Legacy fallback: `range` (or lo/hi) read straight as the internal bounds (e.g. an old
-    # gaussian range = +-1 sigma, or a sigmoid range + curve_k).
-    rng = feat.get("range", [feat.get("lo"), feat.get("hi")])
-    if rng[0] is None or rng[1] is None:
-        raise ValueError(
-            f"feature spec {feat!r} lacks the params for a {shape!r} curve "
-            "(gaussian: center/fwhm; lognormal: center/fold; sigmoid: midpoint/width/direction)"
-        )
-    lo, hi = float(rng[0]), float(rng[1])
-    direction = feat.get("direction", "target") if shape == "sigmoid" else "target"
-    curve_k = float(feat.get("curve_k", 0.0)) if shape == "sigmoid" else 0.0
-    return shape, direction, lo, hi, curve_k
+    """A config feature dict -> internal bounds (see ``fov_model._bounds_from_feature``)."""
+    return fov_model._bounds_from_feature(feat)
 
 
 DETAIL_SKIP = {"__src", "__png", "png", "__dataset"}

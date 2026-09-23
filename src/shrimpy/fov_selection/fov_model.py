@@ -16,6 +16,9 @@ model has a ``type``:
 
 Adding a model type = add a :class:`FOVModel` subclass + a branch in
 :func:`build_fov_model`; nothing in the feature-extraction or acquisition path changes.
+
+:class:`DesirabilityScorer` exposes the ranking model to the feature viewer, which tunes
+a profile through it without importing this module.
 """
 
 from __future__ import annotations
@@ -527,5 +530,196 @@ def curve_bounds(shape: str, params: dict) -> tuple:
         return lo, hi, 0.0
     if shape == "sigmoid":
         mid, w = float(params["midpoint"]), float(params["width"])
+        if w <= 0:
+            raise ValueError(f"sigmoid 'width' must be > 0; got {w}")
         return mid - 0.5 * w, mid + 0.5 * w, _SIGMOID_10_90
     raise ValueError(f"unknown shape {shape!r}; expected one of {DesirabilityModel.SHAPES}")
+
+
+def _feature_from_bounds(shape, direction, lo, hi, curve_k, weight) -> dict:
+    """Internal ``(lo, hi, curve_k)`` bounds -> a config feature dict.
+
+    Carries only the interpretable params the shape uses (center/fwhm, center/fold, or
+    midpoint/width), plus ``direction`` for the monotonic sigmoid and ``weight``.
+    """
+    feat = {"shape": shape, **curve_params(shape, lo, hi, curve_k)}
+    if shape == "sigmoid":
+        feat["direction"] = direction
+    feat["weight"] = weight
+    return feat
+
+
+def _bounds_from_feature(feat: dict) -> tuple[str, str, float, float, float]:
+    """A config feature dict -> internal ``(shape, direction, lo, hi, curve_k)``.
+
+    Reads the interpretable schema via :func:`curve_bounds`. Legacy ``range``-style profiles
+    (``range``/``lo``/``hi``, with ``curve_k`` for sigmoids) are read as internal bounds
+    directly, so old profile files still open. Raises ``ValueError`` on an unusable spec.
+    """
+    shape = feat.get("shape", "gaussian")
+    if shape == "linear":
+        raise ValueError("the 'linear' shape was removed; use gaussian, lognormal, or sigmoid")
+    if shape not in DesirabilityModel.SHAPES:
+        raise ValueError(
+            f"unknown shape {shape!r}; expected one of {DesirabilityModel.SHAPES}"
+        )
+    names = [name for name, _ in DesirabilityScorer._PARAMS[shape]]
+    if all(name in feat for name in names):
+        lo, hi, curve_k = curve_bounds(shape, {name: float(feat[name]) for name in names})
+        direction = feat.get("direction", "higher") if shape == "sigmoid" else "target"
+    else:
+        rng = feat.get("range", [feat.get("lo"), feat.get("hi")])
+        if rng[0] is None or rng[1] is None:
+            raise ValueError(
+                f"feature spec {feat!r} lacks the params for a {shape!r} curve "
+                "(gaussian: center/fwhm; lognormal: center/fold; "
+                "sigmoid: midpoint/width/direction)"
+            )
+        lo, hi = float(rng[0]), float(rng[1])
+        direction = feat.get("direction", "target") if shape == "sigmoid" else "target"
+        curve_k = float(feat.get("curve_k", 0.0)) if shape == "sigmoid" else 0.0
+    if shape == "sigmoid" and direction not in ("higher", "lower"):
+        direction = "higher"
+    return shape, direction, lo, hi, curve_k
+
+
+class DesirabilityScorer:
+    """The ranking model (``ranking_by_defined_range``) as an editor sees it.
+
+    Implements the feature viewer's ``Scorer`` interface: every method takes or returns
+    one feature's *spec* -- the exact dict that sits under ``fov_selection.model.features``
+    in the config (e.g. ``{shape: gaussian, center: 0.4, fwhm: 0.2, weight: 1.0}``) -- so an
+    editor never sees the model's internal bounds, and a profile it saves is a valid config.
+    Scores are computed by :class:`DesirabilityModel` itself, so what the viewer shows is
+    what the acquisition selects on.
+
+    Each spec also has two draggable *handles*, ``lo`` and ``hi``: the band edges of its
+    curve (the +-1 sigma points of a bell, the ends of a sigmoid's 10-90 % rise).
+    """
+
+    shapes = DesirabilityModel.SHAPES
+    aggregations = DesirabilityModel.AGGREGATIONS
+    default_aggregation = DesirabilityModel.DEFAULT_AGGREGATION
+    default_shape = "gaussian"
+
+    # Interpretable params per shape, in display order, with each one's smallest valid
+    # value (None = unbounded): widths must be positive, a lognormal fold must exceed 1.
+    _PARAMS = {
+        "gaussian": (("center", None), ("fwhm", 1e-9)),
+        "lognormal": (("center", 1e-12), ("fold", 1.0 + 1e-6)),
+        "sigmoid": (("midpoint", None), ("width", 1e-9)),
+    }
+    HANDLES = ("lo", "hi")
+
+    def directions(self, shape: str) -> tuple[str, ...]:
+        """Directions ``shape`` allows: bells are always 'target', a sigmoid higher|lower."""
+        return ("higher", "lower") if shape == "sigmoid" else ("target",)
+
+    def params(self, shape: str) -> tuple[tuple[str, float | None], ...]:
+        """``(name, minimum)`` of each interpretable param of ``shape``, in display order."""
+        return self._PARAMS[shape]
+
+    def seed(self, values) -> dict:
+        """A default spec fitted to one feature's measured ``values``.
+
+        A gaussian whose +-1 sigma band is the values' interquartile range, so it starts
+        centered on the data. NaNs are ignored; a constant or empty feature gets a band of
+        10 % of its value (or 1.0 around 0), so the spec is always valid.
+        """
+        v = np.asarray(values, float)
+        v = v[~np.isnan(v)]
+        lo, hi = (
+            (float(np.quantile(v, 0.25)), float(np.quantile(v, 0.75))) if v.size else (0, 0)
+        )
+        if hi <= lo:
+            half = 0.05 * abs(lo) or 0.5
+            lo, hi = lo - half, lo + half
+        return _feature_from_bounds(self.default_shape, "target", lo, hi, 0.0, 1.0)
+
+    def reshape(
+        self, spec: dict, shape: str | None = None, direction: str | None = None
+    ) -> dict:
+        """``spec`` as a valid spec of ``shape`` / ``direction``, keeping its curve's band.
+
+        ``None`` keeps the current value; a direction ``shape`` does not allow becomes its
+        first allowed one. Switching shape keeps the band edges, so a gaussian's center/fwhm
+        becomes a sigmoid's midpoint/width over the same range. Also normalizes a spec
+        (e.g. one just read back from edited widgets). Raises ``ValueError`` if ``spec``'s
+        params are invalid (e.g. ``fold <= 1``).
+        """
+        cur_shape, cur_direction, lo, hi, curve_k = self._bounds(spec)
+        shape = shape or cur_shape
+        if shape == "sigmoid" and cur_shape != "sigmoid":
+            curve_k = _SIGMOID_10_90  # a bell's +-1 sigma band becomes the 10-90 % rise
+        allowed = self.directions(shape)
+        direction = direction or cur_direction
+        if direction not in allowed:
+            direction = allowed[0]
+        return _feature_from_bounds(
+            shape, direction, lo, hi, curve_k, float(spec.get("weight", 1.0))
+        )
+
+    def handles(self, spec: dict) -> list[tuple[str, float]]:
+        """``(name, x)`` of each draggable handle: the curve's band edges ``lo`` and ``hi``."""
+        _shape, _direction, lo, hi, _curve_k = self._bounds(spec)
+        return [("lo", lo), ("hi", hi)]
+
+    def drag(self, spec: dict, handle: str, x: float) -> dict:
+        """``spec`` with handle ``lo`` or ``hi`` moved to ``x`` (never past the other one)."""
+        shape, direction, lo, hi, curve_k = self._bounds(spec)
+        # Keep a sliver between the edges so the band never collapses to an invalid width.
+        gap = 1e-9 * max(1.0, abs(lo), abs(hi))
+        if handle == "lo":
+            lo = min(float(x), hi - gap)
+        elif handle == "hi":
+            hi = max(float(x), lo + gap)
+        else:
+            raise ValueError(f"unknown handle {handle!r}; expected one of {self.HANDLES}")
+        return _feature_from_bounds(
+            shape, direction, lo, hi, curve_k, float(spec.get("weight", 1.0))
+        )
+
+    def curve(self, spec: dict, x) -> np.ndarray:
+        """Desirability in ``[0, 1]`` of ``spec`` at each value of ``x`` (NaN -> 0)."""
+        shape, direction, lo, hi, curve_k = self._bounds(spec)
+        return DesirabilityModel._desirability(x, lo, hi, direction, shape, curve_k)
+
+    def score(self, df, features: dict[str, dict], aggregation: str) -> np.ndarray:
+        """One score per row of ``df`` from ``features`` (name -> spec), as the acquisition
+        computes it. A feature missing from ``df`` counts as unmeasured (NaN)."""
+        model = DesirabilityModel(
+            {
+                "type": "ranking_by_defined_range",
+                # A selection quota the model requires but scoring never reads.
+                "top_fov": 1,
+                "aggregation": aggregation,
+                "features": features,
+            }
+        )
+        return np.asarray(model.predict(df)[0], float)
+
+    def read_profile(self, cfg) -> dict[str, dict]:
+        """Feature specs (name -> spec) from a saved profile or a ``fov_selection.model``.
+
+        Accepts a bare ``features`` mapping or a full model dict, and upgrades legacy
+        ``range``-style specs. Raises ``ValueError`` on a malformed profile.
+        """
+        feats = cfg.get("features", cfg) if isinstance(cfg, dict) else None
+        if not isinstance(feats, dict):
+            raise ValueError("a profile must be a mapping of feature name -> spec")
+        out = {}
+        for name, feat in feats.items():
+            if not isinstance(feat, dict):
+                raise ValueError(f"feature {name!r}: spec must be a mapping, got {feat!r}")
+            shape, direction, lo, hi, curve_k = _bounds_from_feature(feat)
+            out[name] = _feature_from_bounds(
+                shape, direction, lo, hi, curve_k, float(feat.get("weight", 1.0))
+            )
+        return out
+
+    def _bounds(self, spec: dict) -> tuple[str, str, float, float, float]:
+        """``spec`` -> internal ``(shape, direction, lo, hi, curve_k)``; ValueError if invalid."""
+        try:
+            return _bounds_from_feature(spec)
+        except (KeyError, TypeError) as e:
+            raise ValueError(f"invalid feature spec {spec!r}: {e}") from e
