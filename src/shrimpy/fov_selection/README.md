@@ -78,7 +78,7 @@ directly.
 
 Everything lives under `metadata.fov_selection` in the acquisition YAML, validated by
 `FOVSelectionConfig` (`config.py`) — the single source of truth for the block's shape.
-See `config/mda/fov_selection_demo.yaml` for a fully commented example. Key fields:
+See `config/mda/mantis/fov_selection_demo.yaml` for a fully commented example. Key fields:
 
 | Field | Meaning |
 |-------|---------|
@@ -165,8 +165,7 @@ aggregates.
 ### Feature reference
 
 Together the features describe *how much* is in the FOV, *how many* objects there are, and
-*how they are arranged*. `image_for_slides/feature_visualization/` has a per-feature panel
-overlaid on one example FOV.
+*how they are arranged*.
 
 **Object-level (from the per-object table)**
 
@@ -352,16 +351,24 @@ still shares one window instance.
 
 ## Offline model training
 
-Two scripts in `shrimpy/scripts/` support building a trained `classification_tree` model
-from annotated data (they are separate from the online engine above):
+The scripts that build a trained `classification_tree` model from annotated data are not
+part of shrimPy. They live on Bruno, under
+`/hpc/projects/comp.micro/microscope_dev/smart_fov_selection/scripts/`:
 
 - `make_projection_store.py`: project channels of an OME-Zarr into a compact 2D store.
 - `predict_fov_goodness.py`: train a decision tree on labeled FOV feature matrices and
   write `predicted_good_proba` / `predicted_goodness` columns onto a new matrix.
 
+They predate the current single-mask feature schema (they read channel-prefixed keys such
+as `nuclei_vs_sum__coverage_frac`), so a model they produce does not match the features the
+online pipeline extracts. The intended training input today is a calibration run's
+`fov_summary.csv` after labeling in the viewer's Label tab (the `goodness` column).
+
 ## Dependencies
 
-Installed via the `fov` dependency group (`uv sync --group fov`): cellpose + dinov3 (cpdino
-segmentation), instanseg (alternative segmenter), the analysis stack (scikit-learn,
-scikit-image, scipy, pandas, matplotlib, joblib), and Qt (via qtpy) for the viewer. iohub
-provides OME-Zarr I/O; waveorder provides the `best_focus_z` focus metric.
+Installed with the `fov` extra (`uv sync --extra fov` or `pip install "shrimpy[fov]"`):
+everything in the `dynatrack` extra (reconstruction: biahub, torch, waveorder for the
+`best_focus_z` focus metric), iohub for OME-Zarr I/O, scikit-image, scipy, pandas,
+scikit-learn, anndata, imageio, and the `fov-feature-viewer` package (which brings
+PyQt6, qtpy, and matplotlib). InstanSeg runs on torch alone, with no extra package. The
+Cellpose backend needs the `fov-cellpose` extra (`cellpose` + `dinov3`).
