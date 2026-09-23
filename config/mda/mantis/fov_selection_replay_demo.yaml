@@ -1,0 +1,168 @@
+# Offline FOV-selection demo (ReplayCamera) -- no microscope required.
+#
+# Runs the FOV-selection pipeline (see config/mda/fov_selection_demo.yaml for the fully
+# commented reference) against the ReplayCamera, so the whole path can be exercised
+# offline. Pair it with the A549 replay MMConfig:
+#
+#   uv run shrimpy acquire mantis \
+#       --mm-config /home/ivan.ivanov/Documents/CompMicro_MMConfigs/demo/MMConfig_A549_fov_replay.cfg \
+#       --mda-config config/mda/mantis/fov_selection_replay_demo.yaml \
+#       --output-dir ./YYYY_MM_DD_fov_replay_test \
+#       --name fov_replay
+#
+# CALIBRATION MODE (default here): PRE-SCAN ONLY, no timelapse afterwards. For every FOV the
+# BF z-stack is reconstructed (flatfield -> deskew), projected, segmented, and EVERY
+# available feature is extracted (the model.features block is ignored for extraction). The
+# per-FOV feature matrix + projection/mask PNGs are written under <name>_fov_debug/, and the
+# feature viewer opens on that CSV when the pre-scan finishes. Tune a ranking profile in the
+# viewer, Save... it, paste it into `model.features` below, set `calibration_mode: False`,
+# and re-run for a standard (pre-scan + timelapse) run.
+#
+# ReplayCamera specifics: the pre-scan uses a WellPlatePlan whose pos_names (B3_0000, ...)
+# map to the source HCS store (well B/3 fov k -> k-th source FOV in B/3), and the channel
+# `config` names must match the store's channels (BF - Oblique, GFP EX488 EM525-45) and the
+# `Channel` group presets in the MMConfig. The store itself is set by the Camera DataPath
+# property in the MMConfig.
+
+# ---- Timelapse stage_positions (top-level) ----
+# EMPTY: filled at runtime from the FOVs the pre-scan selects (only when calibration_mode is
+# False). Ignored in calibration mode.
+stage_positions: []
+
+time_plan:
+  prioritize_duration: true
+  interval: 1
+  loops: 1            # number of TIMELAPSE timepoints (only used when calibration is off)
+
+z_plan:
+  top: 79.95
+  bottom: -80.1
+  step: 0.15
+  go_up: true
+
+channels:
+  - config: BF - Oblique
+    group: Channel
+    exposure: 1.0
+  - config: GFP EX488 EM525-45
+    group: Channel
+    exposure: 1.0
+
+metadata:
+  reset_hardware_sequencing_settings:
+    - ['PiezoZ', 'UseSequences', 'No']
+  autofocus:
+    enabled: false
+    method: demo-PFS
+    stage: ObjectiveZ
+
+  fov_selection:
+    enabled: true
+    calibration_mode: True
+
+    # ---- Pre-scan MDASequence ----
+    # Run FIRST over all candidate FOVs. useq assigns plate_row/plate_col + slash-free field
+    # names, so the ReplayCamera can map each plate position to the matching source FOV.
+    # Here: well B/3 with a 7x7 grid = 49 candidates. For a quick smoke test, set
+    # well_points_plan rows/columns to 1 (1 FOV/well). To cover more of the store, add wells
+    # to selected_wells (e.g. rows [1, 1, 1], columns [3, 4, 5] -> B/3, B/4, B/5).
+    # No `setup` block -- the ReplayCamera needs no hardware property setup.
+    prescan_mda:
+      stage_positions:
+        a1_center_xy: [0.0, 0.0]
+        plate:
+          rows: 4
+          columns: 6
+          name: 24-well
+          well_size: [15.6, 15.6]
+          well_spacing: [19.0, 19.0]
+        selected_wells:
+          - [1]     # row B
+          - [3]     # column 3
+        well_points_plan:
+          rows: 7
+          columns: 7
+          fov_height: 180.0
+          fov_width: 180.0
+      time_plan:
+        loops: 1            # single pre-scan timepoint (validated)
+        interval: 0
+      z_plan:
+        top: 79.95
+        bottom: -80.1
+        step: 0.15
+        go_up: true
+      channels:
+        - config: BF - Oblique
+          group: Channel
+          exposure: 1.0
+
+    # Acquired channel fed to reconstruction (must be one of prescan_mda.channels).
+    fov_selection_channel: "BF - Oblique"
+    # The object FOV selection segments and scores: 'cells' or 'nuclei'.
+    target: cells
+
+    # Ordered preprocessing steps: reconstruction step(s), then ONE projection, then
+    # segmentation. The XY pixel size and Z step are fetched from the Core and z_plan.step
+    # at runtime. Options:
+    #   reconstruction : flatfield | deskew | phase | vs
+    #   projection     : sum_projection | max_projection | middle_slice_projection |
+    #                    logstd_projection | best_focus_z (needs the `best_focus_z:` block)
+    #   segmentation   : segmentation
+    preprocessing: ['flatfield', 'deskew', 'middle_slice_projection', 'segmentation']
+
+    deskew:
+      ls_angle_deg: 30.0
+      keep_overhang: false
+      average_n_slices: 3
+
+    # Uncomment together with `best_focus_z` in `preprocessing` above:
+    # best_focus_z:
+    #   numerical_aperture_detection: 1.35   # detection (objective) NA
+    #   wavelength_illumination: 0.450       # illumination wavelength, um
+    #   mode: max                            # optional: 'max' (default) | 'min'
+    #   midband_fractions: [0.125, 0.25]     # optional
+    # save_best_focus_z_for_debug: True
+
+    # Segmentation backend (`model`: cellpose | instanseg | otsu). Pick ONE.
+    # InstanSeg TorchScript checkpoint (bioimage.io .zip); the head (nuclei | cells) is
+    # derived from `target`, and the .zip carries its training pixel size.
+    segmentation:
+      model: instanseg
+      path: /hpc/projects/comp.micro/microscope_dev/smart_fov_selection/models/instanseg_34532446.zip
+      gpu: true
+    # Otsu alternative (no GPU / model; pair with logstd_projection):
+    # segmentation:
+    #   model: otsu
+    #   close_radius: 10
+    #   min_size: 8000
+    #   fill_holes: true
+
+    # FOV-goodness model. In calibration mode it is not used for extraction and no selection
+    # is applied, but a valid model block is still required. This ranking profile is only a
+    # starting point -- replace it with what you save from the feature viewer's Rank tab.
+    model:
+      type: ranking_by_defined_range
+      top_fov: 1                 # keep the N highest-ranked FOVs per position (required)
+      aggregation: gaussian
+      features:
+        coverage_frac:
+          shape: gaussian
+          center: 0.6824
+          fwhm: 0.1415
+          weight: 1.0
+        max_empty_radius:
+          shape: gaussian
+          center: 21.96101
+          fwhm: 7.81154
+          weight: 1.0
+        nn_um_mean:
+          shape: gaussian
+          center: 24.86861
+          fwhm: 6.76067
+          weight: 1.0
+
+    # Debug outputs. save_decision is forced on in calibration mode.
+    save_pre_scan_omezarr: False   # write the pre-scan reconstruction to <name>_prescan.ome.zarr
+    save_pre_scan_nd: False        # export fov_summary.csv -> fov_summary.zarr (AnnData)
+    save_decision: True            # feature-matrix CSV + projection/mask PNGs under <name>_fov_debug/

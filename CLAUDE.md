@@ -228,7 +228,8 @@ Use `logger.debug()` for detailed diagnostics (file only) and `logger.info()` fo
 
 Acquisitions are configured using YAML `MDASequence` files, validated by
 `src/shrimpy/config.py`. Examples live in `config/mda/` — `mantis/` (`demo.yaml`,
-`mantis.yaml`, `dynatrack_demo.yaml`), `dragonfly/dragonfly.yaml`, and
+`mantis.yaml`, `dynatrack_demo.yaml`, `fov_selection_replay_demo.yaml` for offline
+FOV selection with the ReplayCamera), `dragonfly/dragonfly.yaml`, and
 `replay_demo.yaml`. These are samples to copy and edit; they are *not* installed
 with the package. The only runtime package data is `src/shrimpy/logging/logging.ini`.
 
