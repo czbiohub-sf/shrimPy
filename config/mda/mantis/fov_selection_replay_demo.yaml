@@ -7,6 +7,7 @@
 #   uv run shrimpy acquire mantis \
 #       --mm-config /home/ivan.ivanov/Documents/CompMicro_MMConfigs/demo/MMConfig_A549_fov_replay.cfg \
 #       --mda-config config/mda/mantis/fov_selection_replay_demo.yaml \
+#       --unicore
 #       --output-dir ./YYYY_MM_DD_fov_replay_test \
 #       --name fov_replay
 #
