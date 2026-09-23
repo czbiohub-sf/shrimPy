@@ -37,8 +37,6 @@ dependencies = [
 # Optional *runtime* features, opt-in by users of the installed package
 # (`uv sync --extra gui`, `pip install "shrimpy[gui]"`).
 [project.optional-dependencies]
-# `shrimpy gui` only; nothing in the package imports Qt at module level, so the
-# acquisition CLI and the engines run headless without this.
 gui = ["pymmcore-gui"]
 viewer = ["napari[pyqt6]", "napari-deskew-preview"]
 dynatrack = [
@@ -47,14 +45,8 @@ dynatrack = [
   "matplotlib",
   "torch",
 ]
-# Smart FOV-selection stack (shrimpy/fov_selection/*). Opt-in: install with
-# `uv sync --extra fov` (an extra, so a plain `uv sync` stays lean). Segments with
-# InstanSeg (a TorchScript checkpoint run with torch alone) or Otsu; add `fov-cellpose`
-# for the Cellpose backend.
 fov = [
-  # reconstruction for the FOV pre-scan (deskew -> phase -> virtual staining).
   # Pull the whole `dynatrack` extra so a fov venv can run preprocessing too;
-  # this brings in biahub[stain] (waveorder/cytoland/jsonargparse) + torch.
   "shrimpy[dynatrack]",
   # torch also arrives via shrimpy[dynatrack], but the cu132 index source above
   # only applies to the extra that requires torch *directly*, so name it here
@@ -114,17 +106,16 @@ local_scheme = "no-local-version"
 # (tests/, archive/) precisely so they stay out of the wheel.
 packages = ["src/shrimpy"]
 
-# napari-deskew-preview is developed here but published as its own distribution,
-# so it is a workspace member rather than part of the shrimpy package. It can be
-# installed on its own:
-#   pip install "napari-deskew-preview @ git+https://github.com/czbiohub-sf/shrimPy.git#subdirectory=packages/napari-deskew-preview"
+# Workspace members: developed here, published as their own distributions (not part of
+# the shrimpy wheel), and installable on their own with
+#   pip install "<name> @ git+https://github.com/czbiohub-sf/shrimPy.git#subdirectory=packages/<dir>"
+#   napari-deskew-preview  packages/napari-deskew-preview  napari deskew widget ([viewer] extra)
+#   fov-feature-viewer     packages/feature_viewer         FOV-selection GUI ([fov] extra)
 [tool.uv.workspace]
 members = ["packages/*"]
 
 [tool.uv.sources]
 pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "main" }
-# plate_row/plate_col are `int | None` on main (0-based indices), not the string well
-# labels the `add-plate-row-col` branch allowed. Configs and plate naming use ints.
 ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
 useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "main" }
 napari-deskew-preview = { workspace = true }
@@ -161,8 +152,7 @@ conflicts = [
 
 # pyqt6-qt6 moved its Linux baseline from manylinux_2_28 to manylinux_2_34 at
 # 6.10.0, so 6.9.x is the newest build that runs on glibc 2.28 hosts (RHEL/Rocky
-# 8, which includes the HPC dev machines). Scoped to Linux so the Windows
-# acquisition machines stay on current Qt. Reaches PyQt6 wherever it enters the
+# 8, which includes the HPC dev machines). Reaches PyQt6 wherever it enters the
 # graph -- pymmcore-gui via [gui], napari[pyqt6] via [viewer], fov-feature-viewer via [fov].
 override-dependencies = [
   "pyqt6<6.10; sys_platform == 'linux'",
