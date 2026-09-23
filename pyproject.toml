@@ -141,10 +141,8 @@ torch = [
 pymmcore-gui = { git = "https://github.com/pymmcore-plus/pymmcore-gui", branch = "main" }
 
 # needed for phase reconstruction, deskew, and virtual staining
-biahub = { git = "https://github.com/czbiohub-sf/biahub", rev = "b011bca57d5bf15c777839e4250e594f7471af3e"}
-
-# no pipy release yet; uv sources don't propagate, so mirror biahub's cytoland pin
-cytoland = { git = "https://github.com/mehta-lab/VisCy", subdirectory = "applications/cytoland", rev = "4b62365c0df25929bffc7f01b3bb2d1c11d69cce" }
+# PR #338: ci(deps): bump zizmorcore/zizmor-action from 0.6.3 to 0.6.4 in the actions group
+biahub = { git = "https://github.com/czbiohub-sf/biahub", rev = "752e8bcccee79f4474112054c6d17adcf5128a61"}
 
 # GitHub-only dep for the `fov-cellpose` extra (not on PyPI).
 dinov3 = { git = "https://github.com/facebookresearch/dinov3" }  # cellpose "cpdino" backbone
