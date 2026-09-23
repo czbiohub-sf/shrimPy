@@ -14,8 +14,6 @@ import numpy as np
 
 from qtpy import QtCore, QtGui, QtWidgets
 
-from shrimpy.fov_selection import fov_model
-
 DEFAULT_DIR = os.environ.get(
     "FOV_VIEWER_DIR",
     "/hpc/projects/comp.micro/microscope_dev/smart_fov_selection/fov_selection_output",
@@ -26,30 +24,11 @@ PROFILE_DIR = Path(
 )
 REDUCE_PREFIX = {"PCA": "PCA", "t-SNE": "TSNE", "UMAP": "UMAP"}
 MAX_THUMBS = 200  # cap thumbnails rendered at once (refine the selection for more)
-# Rank-tab knob-table columns. The two param columns are shape-dependent: each holds a
-# prefix-labeled spin for whatever interpretable parameter the row's shape/direction needs
-# (center/fwhm, center/fold, midpoint/width), matching the config schema. Two is the maximum
-# any shape uses (every current shape has exactly two interpretable params).
-RCOL_FEATURE, RCOL_DIR, RCOL_SHAPE, RCOL_P1, RCOL_P2, RCOL_WEIGHT = range(6)
-RCOL_PARAMS = (RCOL_P1, RCOL_P2)
-# Short label shown as each parameter spin's prefix, per interpretable param key.
-RANK_PARAM_LABELS = {
-    "center": "center",
-    "fwhm": "fwhm",
-    "fold": "fold",
-    "midpoint": "midpoint",
-    "width": "width",
-}
-
-
-def _internal_to_feature(shape, direction, lo, hi, curve_k, weight):
-    """Internal bounds -> a config feature dict (see ``fov_model._feature_from_bounds``)."""
-    return fov_model._feature_from_bounds(shape, direction, lo, hi, curve_k, weight)
-
-
-def _feature_to_internal(feat):
-    """A config feature dict -> internal bounds (see ``fov_model._bounds_from_feature``)."""
-    return fov_model._bounds_from_feature(feat)
+# Rank-tab knob-table columns: feature, direction and shape come first, then one column
+# per editable param (as many as the scorer's widest shape needs -- see
+# RankTabMixin._rank_param_cols), then the weight.
+RCOL_FEATURE, RCOL_DIR, RCOL_SHAPE = range(3)
+RCOL_FIRST_PARAM = 3
 
 
 DETAIL_SKIP = {"__src", "__png", "png", "__dataset"}
@@ -272,7 +251,7 @@ class _ParamCell(QtWidgets.QWidget):
         lay = QtWidgets.QVBoxLayout(self)
         lay.setContentsMargins(2, 0, 2, 0)
         lay.setSpacing(0)
-        label = QtWidgets.QLabel(RANK_PARAM_LABELS.get(key, key))
+        label = QtWidgets.QLabel(key)
         label.setStyleSheet("color:#bbbbbb; font-size:10px;")
         lay.addWidget(label)
         lay.addWidget(spin)

@@ -11,10 +11,14 @@ Tabs
   Label     The loaded FOVs grouped into one panel per goodness class (Good/Neutral/Bad
             and unlabeled). Drag a thumbnail to another panel to relabel that FOV; edits
             are written back to the CSV only when you press Save.
-  Rank      Tune the DesirabilityModel. The left column shows each feature's value
+  Rank      Tune a scoring profile. The left column shows each feature's value
             histogram with its desirability curve overlaid, plus a table of the
             shape/direction/param knobs and a Re-rank button; the right column lists the
             FOVs as thumbnails ordered best-first by the resulting score.
+  Score map The score of a pair of the Rank tab's features, as a 2D contour + 3D surface.
+
+  Rank and Score map need a scorer (see scorer.py), which supplies the scoring model;
+  without one they are not shown.
 
 Data wiring
   Each feature CSV (fov_summary.csv, or a legacy *_fov_feature_matrix.csv) is one row per
@@ -23,7 +27,7 @@ Data wiring
   prescan_mask/, prescan_fluor/ folder next to the CSV (strict filename match; legacy
   <stem>[_<channel>]_png/ folders still open) and stores it as __png / __png_<channel>.
 
-Run:  python -m shrimpy.fov_selection.feature_viewer
+Run:  python -m shrimpy.fov_selection.feature_viewer [--scorer NAME|module:attr] [CSV ...]
 """
 
 from __future__ import annotations
@@ -54,6 +58,7 @@ from .analysis_tab import AnalysisTabMixin
 from .label_tab import LabelTabMixin
 from .rank_tab import RankTabMixin
 from .score_map_tab import ScoreMapTabMixin
+from .scorer import Scorer, available_scorers, load_scorer
 
 
 class FeatureViewer(
@@ -63,9 +68,14 @@ class FeatureViewer(
     LabelTabMixin,
     QtWidgets.QMainWindow,
 ):
-    def __init__(self):
-        """Build the main window: initialize all state, then assemble the Analysis, Label, and Rank tabs."""
+    def __init__(self, scorer: Scorer | None = None):
+        """Build the main window: initialize all state, then assemble the tabs.
+
+        ``scorer`` supplies the scoring model for the Rank and Score-map tabs; with ``None``
+        only the Analysis and Label tabs are built.
+        """
         super().__init__()
+        self.scorer = scorer
         self.setWindowTitle("FOV Feature Viewer")
         # Size to fill the available screen (never larger), so the Analysis-tab settings
         # panel shows all its sections completely; on smaller displays the window still
@@ -90,9 +100,10 @@ class FeatureViewer(
         self._focus_marker = None  # scatter ring artist
         self._focus_label = None  # highlighted thumbnail
         self._picked = False  # was a scatter point hit on this click?
-        # Rank tab: per-feature desirability knobs for the production DesirabilityModel.
-        # feature -> {"shape","direction","lo","hi","curve_k","weight","enabled"}.
+        # Rank tab: per-feature knobs, feature -> {"spec": <scorer spec>, "enabled": bool}.
         self.rank_ranges: dict = {}
+        self._rank_focus_pos = None  # df position of the Rank tab's clicked FOV
+        self._rank_focus_label = None
         self.rank_sort = False  # sort the Analysis FOV panel by `score` (legacy hook)
         # which FOV image channel the thumbnails display; default to the mask overlay so the
         # segmentation is visible on load (falls back to brightfield/first when absent).
@@ -129,8 +140,9 @@ class FeatureViewer(
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(main, "Analysis")
         self._label_tab_index = self.tabs.addTab(self._build_label_tab(), "Label")
-        self._rank_tab_index = self.tabs.addTab(self._build_rank_tab(), "Rank")
-        self._map_tab_index = self.tabs.addTab(self._build_score_map_tab(), "Score map")
+        if self.scorer is not None:
+            self._rank_tab_index = self.tabs.addTab(self._build_rank_tab(), "Rank")
+            self._map_tab_index = self.tabs.addTab(self._build_score_map_tab(), "Score map")
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self.setCentralWidget(self.tabs)
         self._ready = True
@@ -1016,6 +1028,13 @@ def main():
         help="which tab to open on launch (calibration pre-scans open 'rank')",
     )
     ap.add_argument(
+        "--scorer",
+        default=None,
+        help="scoring model for the Rank and Score-map tabs: a registered name "
+        f"({', '.join(sorted(available_scorers())) or 'none installed'}) or module:attr. "
+        "Default: the first registered one; with none, those tabs are hidden.",
+    )
+    ap.add_argument(
         "--rank-profile",
         default=None,
         help="YAML/JSON desirability profile (a bare features mapping or a full model "
@@ -1036,9 +1055,14 @@ def main():
             "must be given the same number of times (paired by order)"
         )
 
+    try:
+        scorer = load_scorer(args.scorer)
+    except (ImportError, AttributeError, ValueError) as e:
+        ap.error(f"--scorer: {e}")
+
     app = QtWidgets.QApplication(sys.argv[:1])  # keep argv out of Qt's parser
     apply_dark(app)
-    win = FeatureViewer()
+    win = FeatureViewer(scorer)
     win.show()
     if args.csv:  # explicit brightfield-folder override per CSV
         folders = args.png_folder or [None] * len(args.csv)
@@ -1056,7 +1080,14 @@ def main():
     elif args.csvs:  # sibling-folder auto-wiring
         win._load_files([str(Path(c)) for c in args.csvs])
     # Seed the Rank tab from a profile (after loading, so data features are merged in).
-    if args.rank_profile:
+    if scorer is None:
+        if args.rank_profile or args.rank_profile_json or args.start_tab in ("rank", "map"):
+            print(
+                "feature viewer: no scorer installed, so the Rank and Score-map tabs are "
+                "hidden and the ranking profile is ignored",
+                file=sys.stderr,
+            )
+    elif args.rank_profile:
         win._apply_rank_profile(str(Path(args.rank_profile)))
     elif args.rank_profile_json:
         import json
@@ -1071,8 +1102,8 @@ def main():
     tab_index = {
         "analysis": 0,
         "label": win._label_tab_index,
-        "rank": win._rank_tab_index,
-        "map": win._map_tab_index,
+        "rank": getattr(win, "_rank_tab_index", 0),
+        "map": getattr(win, "_map_tab_index", 0),
     }[args.start_tab]
     win.tabs.setCurrentIndex(tab_index)
     sys.exit(app.exec_())

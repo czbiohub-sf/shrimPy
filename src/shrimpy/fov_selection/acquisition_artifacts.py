@@ -28,6 +28,9 @@ from shrimpy.fov_selection.manager import FOVSelection
 
 logger = logging.getLogger(__name__)
 
+# The ranking model the feature viewer tunes (also registered as its "shrimpy" scorer).
+VIEWER_SCORER = "shrimpy.fov_selection.fov_model:DesirabilityScorer"
+
 
 def save_selected_config(timelapse_seq: MDASequence, data_path: Path) -> None:
     """Record the acquisition config with the SELECTED FOVs in ``stage_positions``.
@@ -111,6 +114,8 @@ def launch_feature_viewer(csv_path: Path | None, model_cfg: dict | None = None) 
         sys.executable,
         "-m",
         "shrimpy.fov_selection.feature_viewer",
+        "--scorer",
+        VIEWER_SCORER,
         "--start-tab",
         "rank",
     ]

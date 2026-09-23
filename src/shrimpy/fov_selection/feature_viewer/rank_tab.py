@@ -1,4 +1,8 @@
-"""Rank tab: tune the DesirabilityModel (per-feature curves) and rank FOVs by score."""
+"""Rank tab: tune a scoring profile (per-feature curves) and rank FOVs by score.
+
+All scoring goes through ``self.scorer`` (see :mod:`.scorer`). Per feature the tab keeps
+``self.rank_ranges[feature] = {"spec": <scorer spec>, "enabled": bool}``.
+"""
 
 from __future__ import annotations
 
@@ -10,8 +14,6 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from qtpy import QtCore, QtGui, QtWidgets
 
-from shrimpy.fov_selection import fov_model
-
 from . import data
 from ._common import (
     PROFILE_DIR,
@@ -19,13 +21,10 @@ from ._common import (
     RANK_TITLE_COLOR,
     RCOL_DIR,
     RCOL_FEATURE,
-    RCOL_PARAMS,
+    RCOL_FIRST_PARAM,
     RCOL_SHAPE,
-    RCOL_WEIGHT,
     THUMB_QSS,
     _border_qss,
-    _feature_to_internal,
-    _internal_to_feature,
     _ParamCell,
     goodness_border_qss,
 )
@@ -33,8 +32,19 @@ from ._common import (
 
 class RankTabMixin:
     # ============================================================== rank tab
+    @property
+    def _rank_param_cols(self) -> tuple[int, ...]:
+        """Table columns holding params: as many as the scorer's widest shape needs."""
+        n = max(len(self.scorer.params(shape)) for shape in self.scorer.shapes)
+        return tuple(range(RCOL_FIRST_PARAM, RCOL_FIRST_PARAM + n))
+
+    @property
+    def _rank_weight_col(self) -> int:
+        """Table column holding each feature's weight (after the param columns)."""
+        return self._rank_param_cols[-1] + 1
+
     def _build_rank_tab(self):
-        """Tune the production DesirabilityModel: per-feature shape + direction + params.
+        """Tune the scorer's profile: per-feature shape + direction + params.
         LEFT = feature-value histograms with the desirability curve overlaid (dashed) plus a
         table of the shape/direction/param knobs and a Re-rank button.
         RIGHT = the loaded FOVs as thumbnails ordered best-first by the resulting score."""
@@ -74,25 +84,21 @@ class RankTabMixin:
         table_help = QtWidgets.QLabel("Check a feature to include it in the score.")
         table_help.setWordWrap(True)
         lv.addWidget(table_help)
-        self.rank_table = QtWidgets.QTableWidget(0, 6)
+        param_cols = self._rank_param_cols
+        self.rank_table = QtWidgets.QTableWidget(0, self._rank_weight_col + 1)
         self.rank_table.setHorizontalHeaderLabels(
-            [
-                "✓ feature",
-                "direction",
-                "shape",
-                "param 1",
-                "param 2",
-                "weight",
-            ]
+            ["✓ feature", "direction", "shape"]
+            + [f"param {i + 1}" for i in range(len(param_cols))]
+            + ["weight"]
         )
         hh = self.rank_table.horizontalHeader()
         # Feature name fits its longest value; direction / shape / weight fit their widgets;
         # the two parameter-entry columns stretch to take all the remaining width, so the
         # spin boxes are roomy instead of the feature name hogging the table.
         hh.setSectionResizeMode(RCOL_FEATURE, QtWidgets.QHeaderView.ResizeToContents)
-        for c in (RCOL_DIR, RCOL_SHAPE, RCOL_WEIGHT):
+        for c in (RCOL_DIR, RCOL_SHAPE, self._rank_weight_col):
             hh.setSectionResizeMode(c, QtWidgets.QHeaderView.ResizeToContents)
-        for c in RCOL_PARAMS:
+        for c in param_cols:
             hh.setSectionResizeMode(c, QtWidgets.QHeaderView.Stretch)
         self.rank_table.verticalHeader().setVisible(False)
         self.rank_table.setMaximumHeight(240)
@@ -108,12 +114,10 @@ class RankTabMixin:
         # how the per-feature scores combine into the final score
         act.addWidget(QtWidgets.QLabel("combine"))
         self.rank_agg_combo = QtWidgets.QComboBox()
-        self.rank_agg_combo.addItems(
-            list(fov_model.DesirabilityModel.AGGREGATIONS)
-        )  # sum/product/gaussian
-        # Start on the same rule an unset `aggregation` gets during acquisition, so what you
-        # tune here is what runs.
-        self.rank_agg_combo.setCurrentText(fov_model.DesirabilityModel.DEFAULT_AGGREGATION)
+        self.rank_agg_combo.addItems(list(self.scorer.aggregations))
+        # Start on the scorer's default rule (for shrimpy, the one an unset `aggregation`
+        # gets during acquisition), so what you tune here is what runs.
+        self.rank_agg_combo.setCurrentText(self.scorer.default_aggregation)
         self.rank_agg_combo.setToolTip(
             "sum: weighted mean (compensatory)\n"
             "product: weighted geometric mean (one weak feature vetoes)\n"
@@ -188,23 +192,8 @@ class RankTabMixin:
         """The feature columns available to rank in the loaded data (empty if none loaded)."""
         return data.feature_columns(self.df) if self.df is not None else []
 
-    def _seed_range(self, f, direction):
-        """Data-derived (lo, hi) for feature ``f`` at ``direction``: label-agnostic quantiles
-        of all values (target -> [q25, q75]; monotone -> [q05, q95])."""
-        values = self.df[f].to_numpy(float)
-        finite = values[~np.isnan(values)]
-
-        def quantile(a, p):
-            """The p-quantile of array `a`, or 0.0 if it is empty."""
-            return float(np.quantile(a, p)) if len(a) else 0.0
-
-        if direction == "target":
-            return quantile(finite, 0.25), quantile(finite, 0.75)
-        return quantile(finite, 0.05), quantile(finite, 0.95)
-
     def _rank_seed_ranges(self):
-        """Fresh per-feature knobs: direction from the feature-name default, range from
-        :meth:`_seed_range` (label-agnostic data quantiles)."""
+        """Fresh per-feature knobs: the scorer's default spec fitted to each feature's data."""
         ranges = {}
         feats = self._rank_feature_list()
         # Default selection: only coverage_frac is checked (feeds the score); the user enables
@@ -213,21 +202,15 @@ class RankTabMixin:
         if not default_on and feats:
             default_on = {feats[0]}
         for f in feats:
-            # Default to a gaussian bell: it is symmetric, so the direction is 'target'
-            # (a gaussian's direction combo is forced to 'target' anyway). Seed its center /
-            # fwhm from the target-band quantiles via _seed_range.
-            direction = "target"
-            lo, hi = self._seed_range(f, direction)
             ranges[f] = {
-                "direction": direction,
-                "shape": "gaussian",  # curve family; user can switch to sigmoid/lognormal
-                "lo": lo,
-                "hi": hi,
-                "curve_k": 0.0,  # steepness for sigmoid / lognormal
-                "weight": 1.0,
+                "spec": self.scorer.seed(self.df[f].to_numpy(float)),
                 "enabled": f in default_on,  # unchecking a feature drops it from the score
             }
         return ranges
+
+    def _rank_direction(self, spec) -> str:
+        """The direction ``spec`` uses: its own, else its shape's only/default one."""
+        return spec.get("direction") or self.scorer.directions(spec["shape"])[0]
 
     def _make_spinbox(self, val):
         """Build an arrowless, no-wheel float spinbox initialized to `val` (0.0 for None/NaN)."""
@@ -249,23 +232,22 @@ class RankTabMixin:
         feats = list(self.rank_ranges)
         tbl.setRowCount(len(feats))
         for i, f in enumerate(feats):
-            spec = self.rank_ranges[f]
+            state = self.rank_ranges[f]
+            spec = state["spec"]
             item = QtWidgets.QTableWidgetItem(
                 f
             )  # checkbox = include this feature in the score
             item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
             item.setCheckState(
-                QtCore.Qt.Checked if spec.get("enabled", True) else QtCore.Qt.Unchecked
+                QtCore.Qt.Checked if state.get("enabled", True) else QtCore.Qt.Unchecked
             )
             tbl.setItem(i, RCOL_FEATURE, item)
-            dcombo = QtWidgets.QComboBox()
-            dcombo.addItems(list(fov_model.DesirabilityModel.DIRECTIONS))
-            dcombo.setCurrentText(spec["direction"])
+            dcombo = QtWidgets.QComboBox()  # items set per shape in _rank_update_row_enabled
             dcombo.currentTextChanged.connect(lambda _t, r=i: self._on_rank_dir_changed(r))
             tbl.setCellWidget(i, RCOL_DIR, dcombo)
             scombo = QtWidgets.QComboBox()  # curve family
-            scombo.addItems(list(fov_model.DesirabilityModel.SHAPES))
-            scombo.setCurrentText(spec.get("shape", "gaussian"))
+            scombo.addItems(list(self.scorer.shapes))
+            scombo.setCurrentText(spec["shape"])
             scombo.currentTextChanged.connect(lambda _t, r=i: self._on_rank_shape_changed(r))
             tbl.setCellWidget(i, RCOL_SHAPE, scombo)
             self._rank_fill_params(i, spec)  # shape-dependent parameter columns
@@ -274,37 +256,29 @@ class RankTabMixin:
             wspin.setDecimals(2)
             wspin.setRange(0.0, 1e6)
             wspin.editingFinished.connect(self._rank_refresh_curves)
-            tbl.setCellWidget(i, RCOL_WEIGHT, wspin)
+            tbl.setCellWidget(i, self._rank_weight_col, wspin)
             self._rank_update_row_enabled(i)
         tbl.blockSignals(False)
 
-    def _make_param_spinbox(self, key, value):
-        """A spin for one interpretable parameter. The param name is shown OUTSIDE the box (a
-        label above it, added by :class:`_ParamCell`) rather than as an in-box prefix. Stores
-        its param key on the widget so :meth:`_read_rank_table` knows what it is."""
+    def _make_param_spinbox(self, key, value, minimum=None):
+        """A spin for one param, bounded below by the scorer's ``minimum``. The param name is
+        shown OUTSIDE the box (a label above it, added by :class:`_ParamCell`) rather than as
+        an in-box prefix. Stores its param key on the widget so :meth:`_read_rank_table`
+        knows what it is."""
         s = self._make_spinbox(value)
-        if key in ("fwhm", "width"):  # strictly positive widths
-            s.setRange(1e-9, 1e12)
-        elif key == "fold":  # multiplicative tolerance must exceed 1
-            s.setRange(1.0 + 1e-6, 1e12)
+        if minimum is not None:
+            s.setRange(float(minimum), 1e12)
         s._param_key = key
         return s
 
     def _rank_fill_params(self, row, spec):
-        """(Re)build the three parameter columns for ``row`` from its internal spec, showing the
-        interpretable params for the current shape/direction (see fov_model.curve_params)."""
+        """(Re)build the parameter columns for ``row``: one spin per param of its shape."""
         tbl = self.rank_table
-        params = fov_model.curve_params(
-            spec.get("shape", "gaussian"),
-            spec["lo"],
-            spec["hi"],
-            spec.get("curve_k", 0.0),
-        )
-        items = list(params.items())
-        for idx, col in enumerate(RCOL_PARAMS):
+        items = list(self.scorer.params(spec["shape"]))
+        for idx, col in enumerate(self._rank_param_cols):
             if idx < len(items):
-                key, value = items[idx]
-                spin = self._make_param_spinbox(key, value)
+                key, minimum = items[idx]
+                spin = self._make_param_spinbox(key, spec.get(key), minimum)
                 spin.editingFinished.connect(self._rank_refresh_curves)
                 tbl.setCellWidget(
                     row, col, _ParamCell(key, spin)
@@ -313,19 +287,21 @@ class RankTabMixin:
                 tbl.removeCellWidget(row, col)
 
     def _rank_update_row_enabled(self, row):
-        """Constrain the direction combo to the row's shape: gaussian and lognormal are
-        symmetric bells (direction is always 'target', combo disabled); sigmoid is monotonic
-        (direction 'higher' or 'lower' only). The combo's items are rebuilt to the allowed set
-        and its selection is taken from the feature's stored direction when still valid."""
+        """Constrain the direction combo to the directions the row's shape allows (a shape
+        with a single direction disables the combo). The combo's items are rebuilt to the
+        allowed set and its selection is taken from the feature's stored direction when still
+        valid."""
         dcombo = self.rank_table.cellWidget(row, RCOL_DIR)
         shape_w = self.rank_table.cellWidget(row, RCOL_SHAPE)
         if dcombo is None or shape_w is None:
             return
         shape = shape_w.currentText()
-        allowed = ["target"] if shape in ("gaussian", "lognormal") else ["higher", "lower"]
+        allowed = list(self.scorer.directions(shape))
         f = self._rank_row_feature(row)
         desired = (
-            self.rank_ranges[f]["direction"] if f in self.rank_ranges else dcombo.currentText()
+            self._rank_direction(self.rank_ranges[f]["spec"])
+            if f in self.rank_ranges
+            else dcombo.currentText()
         )
         dcombo.blockSignals(True)
         if [dcombo.itemText(i) for i in range(dcombo.count())] != allowed:
@@ -342,36 +318,30 @@ class RankTabMixin:
 
     def _on_rank_dir_changed(self, row):
         """Apply a direction change for `row`: store it, rebuild that row's param columns, and redraw the curves."""
-        # Only sigmoid has an editable direction (higher <-> lower); it flips the curve while
-        # keeping the same params (midpoint/width), so rebuild the columns and redraw.
         f = self._rank_row_feature(row)
         if f is None:
             return
-        self.rank_ranges[f]["direction"] = self.rank_table.cellWidget(
-            row, RCOL_DIR
-        ).currentText()
+        state = self.rank_ranges[f]
+        direction = self.rank_table.cellWidget(row, RCOL_DIR).currentText()
+        state["spec"] = self.scorer.reshape(state["spec"], direction=direction)
         self.rank_table.blockSignals(True)
-        self._rank_fill_params(row, self.rank_ranges[f])
+        self._rank_fill_params(row, state["spec"])
         self.rank_table.blockSignals(False)
         self._rank_refresh_curves()
 
     def _on_rank_shape_changed(self, row):
-        """Apply a shape change for `row`: store it, constrain the direction combo to the new shape, rebuild the param columns from the kept bounds, and redraw."""
-        # Shape changes the parameter SET; keep the internal bounds and re-derive the params for
-        # the new shape (a gaussian center/fwhm becomes a sigmoid midpoint/width around the band).
+        """Apply a shape change for `row`: let the scorer convert the spec to the new shape, constrain the direction combo, rebuild the param columns, and redraw."""
+        # Shape changes the parameter SET; the scorer converts the spec (keeping the curve's
+        # band where it can) and coerces the direction to one the new shape allows.
         f = self._rank_row_feature(row)
         if f is None:
             return
-        self.rank_ranges[f]["shape"] = self.rank_table.cellWidget(
-            row, RCOL_SHAPE
-        ).currentText()
-        # bells -> target (disabled); sigmoid -> higher/lower; may coerce the current direction
+        state = self.rank_ranges[f]
+        shape = self.rank_table.cellWidget(row, RCOL_SHAPE).currentText()
+        state["spec"] = self.scorer.reshape(state["spec"], shape=shape)
         self._rank_update_row_enabled(row)
-        self.rank_ranges[f]["direction"] = self.rank_table.cellWidget(
-            row, RCOL_DIR
-        ).currentText()
         self.rank_table.blockSignals(True)
-        self._rank_fill_params(row, self.rank_ranges[f])
+        self._rank_fill_params(row, state["spec"])
         self.rank_table.blockSignals(False)
         self._rank_refresh_curves()
 
@@ -385,36 +355,26 @@ class RankTabMixin:
         self._rank_draw_hists()
 
     def _read_rank_table(self):
-        """Pull the table widgets back into ``self.rank_ranges``. The shape-dependent param
-        spins are converted to the internal (lo, hi, curve_k) bounds via
-        fov_model.curve_bounds; a transient invalid entry (e.g. fold=1 mid-edit) keeps the
-        row's previous values rather than raising."""
+        """Pull the table widgets back into ``self.rank_ranges``, normalized by the scorer.
+        A transient invalid entry (e.g. fold=1 mid-edit) keeps the row's previous spec rather
+        than raising."""
         tbl = self.rank_table
         for i, f in enumerate(list(self.rank_ranges)):
-            prev = self.rank_ranges[f]
+            state = self.rank_ranges[f]
             direction = tbl.cellWidget(i, RCOL_DIR).currentText()
             shape = tbl.cellWidget(i, RCOL_SHAPE).currentText()
-            params = {}
-            for col in RCOL_PARAMS:
+            edited = {"shape": shape, "direction": direction}
+            for col in self._rank_param_cols:
                 w = tbl.cellWidget(i, col)
                 if w is not None and getattr(w, "_param_key", None) is not None:
-                    params[w._param_key] = w.value()
+                    edited[w._param_key] = w.value()
+            edited["weight"] = tbl.cellWidget(i, self._rank_weight_col).value()
             try:
-                lo, hi, curve_k = fov_model.curve_bounds(shape, params)
-            except (ValueError, KeyError):
-                lo, hi, curve_k = prev["lo"], prev["hi"], prev.get("curve_k", 0.0)
-            weight = tbl.cellWidget(i, RCOL_WEIGHT).value()
+                state["spec"] = self.scorer.reshape(edited)
+            except ValueError:
+                pass  # keep the previous spec
             item = tbl.item(i, RCOL_FEATURE)
-            enabled = item is None or item.checkState() == QtCore.Qt.Checked
-            self.rank_ranges[f] = {
-                "direction": direction,
-                "shape": shape,
-                "lo": lo,
-                "hi": hi,
-                "curve_k": curve_k,
-                "weight": weight,
-                "enabled": enabled,
-            }
+            state["enabled"] = item is None or item.checkState() == QtCore.Qt.Checked
 
     def _rank_reorder_checked_first(self):
         """Order rank_ranges -- and hence the table rows and histograms -- with CHECKED
@@ -435,39 +395,20 @@ class RankTabMixin:
         self._rank_populate_table()  # rebuild rows in the new (checked-first) order
         self._rank_draw_hists()  # redraw histograms in the same order
 
-    def _rank_model_cfg(self):
-        """DesirabilityModel config from the CHECKED features only (unchecked ones are
-        excluded from the score, giving control over how many features are used).
-
-        Each feature is emitted with the interpretable params for its shape via
-        :func:`_internal_to_feature` (fov_model.curve_params), so the saved profile / config
-        never carries values the shape ignores and matches exactly what the model parses."""
-        feats = {
-            f: _internal_to_feature(
-                s.get("shape", "gaussian"),
-                s["direction"],
-                s["lo"],
-                s["hi"],
-                s.get("curve_k", 0.0),
-                s.get("weight", 1.0),
-            )
-            for f, s in self.rank_ranges.items()
-            if s.get("enabled", True) and (self.df is None or f in self.df.columns)
-        }
-        agg = (
-            self.rank_agg_combo.currentText()
-            if hasattr(self, "rank_agg_combo")
-            else fov_model.DesirabilityModel.DEFAULT_AGGREGATION
-        )
-        # top_fov is required by DesirabilityModel but is a SELECTION quota applied by the
-        # manager; the viewer only scores/orders FOVs and never selects, so pass the minimal
-        # valid value to satisfy the constructor.
+    def _rank_features(self):
+        """Specs of the CHECKED features present in the data (unchecked ones are excluded
+        from the score, giving control over how many features are used)."""
         return {
-            "type": "ranking_by_defined_range",
-            "top_fov": 1,
-            "aggregation": agg,
-            "features": feats,
+            f: state["spec"]
+            for f, state in self.rank_ranges.items()
+            if state.get("enabled", True) and (self.df is None or f in self.df.columns)
         }
+
+    def _rank_aggregation(self):
+        """The aggregation selected in the Rank tab (the scorer's default before it exists)."""
+        if hasattr(self, "rank_agg_combo"):
+            return self.rank_agg_combo.currentText()
+        return self.scorer.default_aggregation
 
     # ---- rank tab: actions ----
     def _rerank(self):
@@ -477,14 +418,13 @@ class RankTabMixin:
             self.rank_status.setText("no features to rank; load data first")
             return
         self._read_rank_table()
-        cfg = self._rank_model_cfg()
-        n_used = len(cfg["features"])
+        features = self._rank_features()
+        n_used = len(features)
         if n_used == 0:
             self.rank_status.setText("check at least one feature to score the FOVs")
             return
-        model = fov_model.build_fov_model(cfg)
-        proba, _good = model.predict(self.df)
-        self.df["score"] = np.asarray(proba, float)
+        scores = self.scorer.score(self.df, features, self._rank_aggregation())
+        self.df["score"] = np.asarray(scores, float)
         # best-first; NaN scores sink to the end (numpy argsort puts NaN last)
         self._rank_order = list(np.argsort(-self.df["score"].to_numpy(float), kind="stable"))
         self._rank_rebuild_grid()
@@ -543,41 +483,18 @@ class RankTabMixin:
         correct = float((sd[wins] > 0).sum() + 0.5 * (sd[wins] == 0).sum())
         return correct / npairs, npairs
 
-    @staticmethod
-    def _profile_points(spec):
-        """Draggable anchor points of the profile, as (x, y, role): 'lo'/'hi' move the band
-        edges. The curve BETWEEN anchors is set by the shape (drawn by sampling); these are
-        just the drag handles, placed at the curve's height at lo/hi."""
-        lo, hi = spec["lo"], spec["hi"]
+    def _profile_points(self, spec):
+        """Draggable handles of the profile, as (x, y, name): each handle the scorer exposes,
+        placed at the curve's height at its x. The curve BETWEEN them is drawn by sampling."""
+        return [
+            (x, float(self.scorer.curve(spec, np.array([x]))[0]), name)
+            for name, x in self.scorer.handles(spec)
+        ]
 
-        def desirability_at(x):
-            """The profile's desirability height at value `x` for this feature's spec."""
-            return float(
-                fov_model.DesirabilityModel._desirability(
-                    np.array([x]),
-                    lo,
-                    hi,
-                    spec["direction"],
-                    spec.get("shape", "gaussian"),
-                    spec.get("curve_k", 0.0),
-                )[0]
-            )
-
-        return [(lo, desirability_at(lo), "lo"), (hi, desirability_at(hi), "hi")]
-
-    @staticmethod
-    def _sample_profile(spec, lo_x, hi_x, n=240):
-        """(xs, ds) of the desirability curve across [lo_x, hi_x] using the model shape."""
+    def _sample_profile(self, spec, lo_x, hi_x, n=240):
+        """(xs, ds) of the desirability curve across [lo_x, hi_x]."""
         xs = np.linspace(lo_x, hi_x, n)
-        ds = fov_model.DesirabilityModel._desirability(
-            xs,
-            spec["lo"],
-            spec["hi"],
-            spec["direction"],
-            spec.get("shape", "gaussian"),
-            spec.get("curve_k", 0.0),
-        )
-        return xs, ds
+        return xs, self.scorer.curve(spec, xs)
 
     def _rank_draw_hists(self):
         """One histogram of measured values per feature, with the desirability profile drawn
@@ -604,7 +521,8 @@ class RankTabMixin:
         self.rank_canvas.setMinimumHeight(row_px * nrow)
         for i, f in enumerate(feats):
             ax = fig.add_subplot(nrow, ncol, i + 1, facecolor="#2b2b2b")
-            spec = self.rank_ranges[f]
+            state = self.rank_ranges[f]
+            spec = state["spec"]
             v = self.df[f].to_numpy(float)
             finite = ~np.isnan(v)
             vv = v[finite]
@@ -620,7 +538,8 @@ class RankTabMixin:
                         if cv.size:
                             ax.hist(cv, bins=bins, histtype="step", color=c, lw=1.3)
             else:
-                lo_x, hi_x = float(spec["lo"]), float(spec["hi"])
+                handle_xs = [x for _, x in self.scorer.handles(spec)]
+                lo_x, hi_x = float(min(handle_xs)), float(max(handle_xs))
             if hi_x <= lo_x:
                 hi_x = lo_x + 1e-9
             # Widen the x-axis to 1.5x the data span (0.25*span of padding on each side) so
@@ -631,7 +550,7 @@ class RankTabMixin:
             xlo, xhi = lo_x - pad_x, hi_x + pad_x
             # desirability profile (right axis, 0..1): smooth SAMPLED curve for the chosen
             # shape + draggable anchor markers. Unchecked features are dimmed.
-            on = spec.get("enabled", True)
+            on = state.get("enabled", True)
             prof_c = "#ffffff" if on else "#666666"
             ax2 = ax.twinx()
             xs_c, ds_c = self._sample_profile(spec, xlo, xhi)
@@ -658,16 +577,7 @@ class RankTabMixin:
                 )
                 if not np.isnan(fv):
                     ax.axvline(fv, color=RANK_CLICK_COLOR, lw=1.6, ls="--")
-                    fd = float(
-                        fov_model.DesirabilityModel._desirability(
-                            np.array([fv]),
-                            spec["lo"],
-                            spec["hi"],
-                            spec["direction"],
-                            spec.get("shape", "gaussian"),
-                            spec.get("curve_k", 0.0),
-                        )[0]
-                    )
+                    fd = float(self.scorer.curve(spec, np.array([fv]))[0])
                     ax2.plot([fv], [fd], "o", color=RANK_CLICK_COLOR, ms=6, zorder=5)
                     ax2.annotate(
                         f"{fv:.3g} → {fd:.2f}",
@@ -684,7 +594,7 @@ class RankTabMixin:
                 a.set_autoscalex_on(False)
             # feature name as the axes TITLE (above the plot) with a small pad to save space.
             # Bold + gold so it reads at a glance (dimmed gold when the feature is unchecked).
-            title = f"{f}  ({spec['direction']})" + ("" if on else "  [off]")
+            title = f"{f}  ({self._rank_direction(spec)})" + ("" if on else "  [off]")
             ax.set_title(
                 title,
                 color=RANK_TITLE_COLOR if on else "#8a7a3a",
@@ -736,23 +646,21 @@ class RankTabMixin:
             self._rank_drag = (best[0], best[1])
 
     def _rank_on_motion(self, event):
-        """While dragging, move the grabbed control point (lo/hi), sync the table row, and reshape the overlaid curve."""
+        """While dragging, move the grabbed handle, sync the table row, and reshape the overlaid curve."""
         if self._rank_drag is None or event.x is None:
             return
         meta, j = self._rank_drag
         f = meta["feature"]
-        spec = self.rank_ranges[f]
+        state = self.rank_ranges[f]
         lo_x, hi_x = meta["xlim"]
         # pixel -> this subplot's data x (works even if the cursor drifts to another subplot)
         xdata, _ = meta["ax2"].transData.inverted().transform((event.x, event.y))
         x = min(max(float(xdata), lo_x), hi_x)
-        role = meta["roles"][j]
-        lo, hi = spec["lo"], spec["hi"]
-        if role == "lo":
-            lo = min(x, hi)
-        elif role == "hi":
-            hi = max(x, lo)
-        spec.update(lo=lo, hi=hi)
+        try:
+            state["spec"] = self.scorer.drag(state["spec"], meta["roles"][j], x)
+        except ValueError:
+            return  # the scorer refused this position; leave the curve where it was
+        spec = state["spec"]
         self._rank_sync_row(f)  # keep the table knobs in sync
         pts = self._profile_points(spec)
         meta["markers"].set_data([p[0] for p in pts], [p[1] for p in pts])
@@ -766,26 +674,19 @@ class RankTabMixin:
         self._rank_drag = None
 
     def _rank_sync_row(self, feature):
-        """After a drag moved a feature's internal bounds, refresh its parameter spinboxes in
-        place (no signals). The drag keeps the shape/direction fixed, so the param SET is
-        unchanged -- just re-derive and set each param's value."""
+        """After a drag changed a feature's spec, refresh its parameter spinboxes in place (no
+        signals). A drag keeps the shape, so the param SET is unchanged -- only the values."""
         feats = list(self.rank_ranges)
         if feature not in feats:
             return
         r = feats.index(feature)
-        spec = self.rank_ranges[feature]
-        params = fov_model.curve_params(
-            spec.get("shape", "gaussian"),
-            spec["lo"],
-            spec["hi"],
-            spec.get("curve_k", 0.0),
-        )
-        for col in RCOL_PARAMS:
+        spec = self.rank_ranges[feature]["spec"]
+        for col in self._rank_param_cols:
             w = self.rank_table.cellWidget(r, col)
             key = getattr(w, "_param_key", None) if w is not None else None
-            if key is not None and key in params:
+            if key is not None and key in spec:
                 w.blockSignals(True)
-                w.setValue(float(params[key]))
+                w.setValue(float(spec[key]))
                 w.blockSignals(False)
 
     # ---- rank tab: right-side thumbnail grid (ordered by score) ----
@@ -960,7 +861,7 @@ class RankTabMixin:
         return Path(src).parent if src else None
 
     def _on_rank_save(self):
-        """Save the checked features' desirability config as a YAML mapping ready to drop under fov_selection.model.features in the acquisition config; caveat: writes only the features block (not type/top_fov), and unchecked features are omitted."""
+        """Save the checked features' specs as a YAML mapping (for shrimpy, ready to drop under fov_selection.model.features in the acquisition config); caveat: writes only the features block, and unchecked features are omitted."""
         if not self.rank_ranges:
             self.rank_status.setText("nothing to save; load data first")
             return
@@ -990,7 +891,7 @@ class RankTabMixin:
                 "tag:yaml.org,2002:seq", data, flow_style=True
             ),
         )
-        features = self._rank_model_cfg()["features"]
+        features = self._rank_features()
         # sort_keys=False keeps the checked-first feature order and the shape/params/weight order.
         text = yaml.dump(
             features,
@@ -1089,7 +990,7 @@ class RankTabMixin:
         return saved, matched
 
     def _on_rank_load(self):
-        """Load a desirability profile (YAML or legacy JSON), merging its (checked) features over the data-seeded (unchecked) ones, then re-rank; caveat: accepts either a bare features mapping or a full model dict, and legacy `range`-style profiles are still parsed."""
+        """Load a profile (YAML or JSON), merging its (checked) features over the data-seeded (unchecked) ones, then re-rank."""
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
             "Load desirability ranges",
@@ -1119,30 +1020,19 @@ class RankTabMixin:
         self._apply_rank_profile_cfg(cfg, source=source)
 
     def _apply_rank_profile_cfg(self, cfg, *, source):
-        """Merge an already-parsed desirability profile over the data-seeded ranges, re-rank.
+        """Merge an already-parsed profile over the data-seeded ranges, then re-rank.
 
         Shared by :meth:`_apply_rank_profile` (file load) and the ``--rank-profile-json``
         launch flag (a calibration pre-scan seeds the viewer straight from the config's
-        ``fov_selection.model``, passed inline so no profile file is written to disk).
-        Accepts either a bare features mapping or a full model dict (``{type, features,
-        ...}``); legacy ``range``-style profiles are still parsed. Never raises: a malformed
-        profile is reported in the status line.
+        ``fov_selection.model``, passed inline so no profile file is written to disk). The
+        scorer parses it (:meth:`Scorer.read_profile`). Never raises: a malformed profile is
+        reported in the status line.
         """
         try:
-            feats = cfg.get("features", cfg) if isinstance(cfg, dict) else {}
-            loaded = {}
-            for f, feat_cfg in feats.items():
-                # curve_bounds does the shape math; legacy `range` profiles still open.
-                shape, direction, lo, hi, curve_k = _feature_to_internal(feat_cfg)
-                loaded[f] = {
-                    "direction": direction,
-                    "shape": shape,
-                    "lo": lo,
-                    "hi": hi,
-                    "curve_k": curve_k,
-                    "weight": float(feat_cfg.get("weight", 1.0)),
-                    "enabled": True,  # a feature in the file is one to use
-                }
+            loaded = {
+                f: {"spec": spec, "enabled": True}  # a feature in the file is one to use
+                for f, spec in self.scorer.read_profile(cfg).items()
+            }
         except Exception as e:  # noqa: BLE001
             self.rank_status.setText(f"load failed: {e}")
             return
@@ -1150,8 +1040,8 @@ class RankTabMixin:
         # leave the ones absent from the file unchecked, and overlay the loaded ones (checked).
         if self.df is not None and self._rank_feature_list():
             merged = self._rank_seed_ranges()
-            for spec in merged.values():
-                spec["enabled"] = False
+            for state in merged.values():
+                state["enabled"] = False
             merged.update(loaded)
             self.rank_ranges = merged
         else:

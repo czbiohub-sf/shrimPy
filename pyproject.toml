@@ -99,6 +99,10 @@ test-cpu = ["torch"]
 [project.scripts]
 shrimpy = "shrimpy.cli.main:cli"
 
+# The ranking model the FOV feature viewer's Rank and Score-map tabs tune.
+[project.entry-points."fov_feature_viewer.scorers"]
+shrimpy = "shrimpy.fov_selection.fov_model:DesirabilityScorer"
+
 [tool.hatch.version]
 source = "vcs"
 

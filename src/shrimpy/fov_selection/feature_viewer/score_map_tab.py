@@ -10,12 +10,9 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as Navigation
 from matplotlib.figure import Figure
 from qtpy import QtWidgets
 
-from shrimpy.fov_selection import fov_model
-
 from ._common import (
     MPL_BG,
     MPL_FG,
-    _internal_to_feature,
     goodness_color,
 )
 
@@ -43,7 +40,7 @@ class ScoreMapTabMixin:
         bar.addWidget(self.map_y_combo)
         bar.addWidget(QtWidgets.QLabel("combine"))
         self.map_agg_combo = QtWidgets.QComboBox()
-        self.map_agg_combo.addItems(list(fov_model.DesirabilityModel.AGGREGATIONS))
+        self.map_agg_combo.addItems(list(self.scorer.aggregations))
         if hasattr(self, "rank_agg_combo"):  # default to the Rank tab's aggregation
             self.map_agg_combo.setCurrentText(self.rank_agg_combo.currentText())
         bar.addWidget(self.map_agg_combo)
@@ -99,28 +96,13 @@ class ScoreMapTabMixin:
         finally:
             self._map_updating = False
 
-    def _map_pair_cfg(self, fx, fy):
-        """A 2-feature DesirabilityModel config for the (fx, fy) pair, using each feature's
-        current shape/direction/range/weight and the map tab's aggregation."""
-        feats = {}
-        for f in (fx, fy):
-            s = self.rank_ranges[f]
-            feats[f] = _internal_to_feature(
-                s.get("shape", "gaussian"),
-                s["direction"],
-                s["lo"],
-                s["hi"],
-                s.get("curve_k", 0.0),
-                s.get("weight", 1.0),
-            )
-        # top_fov is a manager-side selection quota, unused for scoring; set to the minimal
-        # valid value so DesirabilityModel (which requires it) can be constructed here.
-        return {
-            "type": "ranking_by_defined_range",
-            "top_fov": 1,
-            "aggregation": self.map_agg_combo.currentText(),
-            "features": feats,
-        }
+    def _map_pair_score(self, df, fx, fy):
+        """Score ``df`` on the (fx, fy) pair alone: each feature's current spec, combined
+        with the map tab's aggregation."""
+        features = {f: self.rank_ranges[f]["spec"] for f in (fx, fy)}
+        return np.asarray(
+            self.scorer.score(df, features, self.map_agg_combo.currentText()), float
+        )
 
     @staticmethod
     def _style_map_axes(ax):
@@ -162,13 +144,6 @@ class ScoreMapTabMixin:
             self.map_canvas.draw_idle()
             return
 
-        try:
-            model = fov_model.build_fov_model(self._map_pair_cfg(fx, fy))
-        except Exception as e:  # noqa: BLE001
-            self.map_status.setText(f"cannot build score model: {e}")
-            self.map_canvas.draw_idle()
-            return
-
         x = self.df[fx].to_numpy(float)
         y = self.df[fy].to_numpy(float)
         finite = np.isfinite(x) & np.isfinite(y)
@@ -181,8 +156,13 @@ class ScoreMapTabMixin:
         ys = np.linspace(float(y[finite].min()), float(y[finite].max()), 120)
         gx, gy = np.meshgrid(xs, ys)
         grid_df = pd.DataFrame({fx: gx.ravel(), fy: gy.ravel()})
-        z_grid = np.asarray(model.predict(grid_df)[0], float).reshape(gx.shape)
-        fov_scores = np.asarray(model.predict(self.df)[0], float)
+        try:
+            z_grid = self._map_pair_score(grid_df, fx, fy).reshape(gx.shape)
+            fov_scores = self._map_pair_score(self.df, fx, fy)
+        except Exception as e:  # noqa: BLE001
+            self.map_status.setText(f"cannot score this pair: {e}")
+            self.map_canvas.draw_idle()
+            return
         agg = self.map_agg_combo.currentText()
 
         ax2 = self.map_fig.add_subplot(1, 2, 1)
