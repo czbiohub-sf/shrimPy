@@ -341,12 +341,9 @@ class InstansegSegmenter(Segmenter):
             for name, cast in self.FORWARD_ARGS.items()
             if seg.get(name) is not None
         }
-        # fp16 mixed precision on CUDA, as InstanSeg's own inference does. The module builds
-        # its label map in float32, so label ids are not rounded by the half-precision pass.
-        with (
-            torch.no_grad(),
-            torch.autocast("cuda", dtype=torch.float16, enabled=self.device == "cuda"),
-        ):
+        # fp32 on purpose: fp16 autocast measured ~15% slower on our small (model-resolution)
+        # inputs, with identical labels.
+        with torch.no_grad():
             out = self.module(x, target_segmentation=selector, **kwargs)
 
         # (1, 1, H, W) -- one head selected above. Nearest-neighbour back to the original grid
