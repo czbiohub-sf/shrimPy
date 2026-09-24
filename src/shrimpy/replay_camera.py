@@ -83,6 +83,20 @@ logger = logging.getLogger(__name__)
 DEFAULT_POSITION_KEY = "0"
 
 
+def _plate_row_letter(value) -> str:
+    """Plate row as a letter: 0-based int -> 'A','B',... ; str -> as-is."""
+    if isinstance(value, str):
+        return value
+    return chr(ord("A") + int(value))
+
+
+def _plate_col_label(value) -> str:
+    """Plate column label: 0-based int -> 1-based str '1','2',... ; str -> as-is."""
+    if isinstance(value, str):
+        return value
+    return str(int(value) + 1)
+
+
 class ReplayCamera(SimpleCameraDevice):
     """UniMMCore camera that replays frames from an OME-Zarr dataset.
 
@@ -133,6 +147,11 @@ class ReplayCamera(SimpleCameraDevice):
         self._z_origin: float = 0.0  # z-stage position at center of stack
         self._exposure: float = 10.0
         self._mda_connected: bool = False
+        # Map from MDA position index -> source position key, built at
+        # sequenceStarted when the sequence uses a plate/grid (WellPlatePlan)
+        # whose pos_names (e.g. "B3_0000") don't match the source HCS keys
+        # (e.g. "B/3/000000"). See _build_mda_position_map.
+        self._mda_pos_map: dict[int, str] = {}
 
         # Queue of z-indices for sequenced (hardware-triggered) acquisitions
         self._z_queue: deque[int] = deque()
@@ -257,8 +276,23 @@ class ReplayCamera(SimpleCameraDevice):
 
     @staticmethod
     def _read_z_scale(position) -> float:
-        """Read the z-step size (um) from a position's OME-NGFF metadata."""
-        multiscales = position.zattrs.get("multiscales", [{}])
+        """Read the z-step size (um) from a position's OME-NGFF metadata.
+
+        Uses iohub's parsed ``scale`` (axis order T, C, Z, Y, X), which is
+        robust across OME-NGFF 0.4 (zarr v2, ``multiscales`` at top level) and
+        0.5 (zarr v3, nested under an ``"ome"`` key). Falls back to parsing
+        ``coordinateTransformations`` directly, then to 1.0.
+        """
+        scale = getattr(position, "scale", None)
+        if scale is not None and len(scale) >= 3 and scale[2]:
+            return float(scale[2])
+
+        # Fallback: parse coordinateTransformations, checking both the 0.4
+        # top-level layout and the 0.5 "ome" namespace.
+        zattrs = position.zattrs
+        multiscales = zattrs.get("multiscales") or zattrs.get("ome", {}).get(
+            "multiscales", [{}]
+        )
         datasets = multiscales[0].get("datasets", [{}]) if multiscales else [{}]
         transforms = datasets[0].get("coordinateTransformations", [])
         for t in transforms:
@@ -454,9 +488,11 @@ class ReplayCamera(SimpleCameraDevice):
         and z-position are set by each ``eventStarted`` signal.
         """
         core.mda.events.eventStarted.connect(self._on_event_started)
+        core.mda.events.sequenceStarted.connect(self._on_sequence_started)
         self._mda_connected = True
         self._mda_disconnect = lambda: (
             core.mda.events.eventStarted.disconnect(self._on_event_started),
+            core.mda.events.sequenceStarted.disconnect(self._on_sequence_started),
             setattr(self, "_mda_connected", False),
         )
 
@@ -466,6 +502,52 @@ class ReplayCamera(SimpleCameraDevice):
             self._mda_disconnect()
             self._mda_disconnect = None
             self._mda_connected = False
+
+    def _on_sequence_started(self, sequence, meta=None) -> None:
+        """Build the plate position -> source key map for this run."""
+        self._mda_pos_map = self._build_mda_position_map(sequence)
+
+    def _build_mda_position_map(self, sequence) -> dict[int, str]:
+        """Map MDA position index -> source position key for plate sequences.
+
+        A ``WellPlatePlan`` names positions like ``"B3_0000"`` and carries
+        ``plate_row``/``plate_col``; these don't match the source HCS keys
+        (``"B/3/000000"``). Reconstruct each position's well from its
+        plate_row/plate_col and take the k-th source FOV in that well (k = the
+        position's index among positions in the same well, in acquisition
+        order), so replayed data lines up with the output HCS layout.
+
+        Returns an empty map for non-plate sequences (falls back to matching by
+        ``pos_name`` then index in :meth:`_set_position_from_event`).
+        """
+        positions = getattr(sequence, "stage_positions", None) or []
+        mapping: dict[int, str] = {}
+        per_well_count: dict[str, int] = {}
+        for p_idx, pos in enumerate(positions):
+            pr = getattr(pos, "plate_row", None)
+            pc = getattr(pos, "plate_col", None)
+            if pr is None or pc is None:
+                continue
+            well = f"{_plate_row_letter(pr)}/{_plate_col_label(pc)}"
+            k = per_well_count.get(well, 0)
+            per_well_count[well] = k + 1
+            src = sorted(key for key in self._position_keys if key.startswith(well + "/"))
+            if k < len(src):
+                mapping[p_idx] = src[k]
+            else:
+                logger.warning(
+                    "ReplayCamera: no source FOV #%d in well %s for position index %d",
+                    k,
+                    well,
+                    p_idx,
+                )
+        if mapping:
+            logger.info(
+                "ReplayCamera: mapped %d plate positions to source keys: %s",
+                len(mapping),
+                mapping,
+            )
+        return mapping
 
     def _on_event_started(self, event: MDAEvent) -> None:
         """Update state from the running MDA event.
@@ -530,12 +612,19 @@ class ReplayCamera(SimpleCameraDevice):
         if len(self._position_keys) <= 1:
             return
 
+        # Plate/grid sequences: index -> source key (built at sequenceStarted).
+        p = event.index.get("p")
+        if p is not None and p in self._mda_pos_map:
+            self._set_position(self._mda_pos_map[p])
+            return
+
+        # Otherwise match by pos_name against the source HCS keys...
         pos_name = getattr(event, "pos_name", None)
         if pos_name and pos_name in self._data_arrays:
             self._set_position(pos_name)
             return
 
-        p = event.index.get("p")
+        # ...falling back to the position index.
         if p is not None and 0 <= p < len(self._position_keys):
             self._set_position(self._position_keys[p])
 

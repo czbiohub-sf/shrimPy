@@ -107,6 +107,8 @@ class _ViewerState:
         self._follow_target: tuple[int, ...] | None = None
         # Last current_step we observed, to tell which axis a user change touched.
         self._last_step: tuple[int, ...] | None = None
+        # Whether the follow signals are already wired to this viewer (connect once).
+        self._follow_connected = False
         # Deskew state. Both raw and deskewed array views are built up front (lazy, cheap)
         # and the Deskew widget swaps which one backs each layer at runtime.
         self._deskew = False
@@ -133,7 +135,10 @@ class _ViewerState:
 
     def _on_start(self, msg: dict) -> None:
         if self._started:
-            return
+            # A second sequence: the feeder has allocated a new ring (see
+            # ViewerFeeder._on_sequence_started) and is about to free the old one, so the
+            # old layers must be torn down rather than left reading freed memory.
+            self._reset()
         self._started = True
         sizes = msg["sizes"]
         frame_shape = tuple(msg["frame_shape"])
@@ -197,7 +202,57 @@ class _ViewerState:
         self._last_step = tuple(self._viewer.dims.current_step)
         if self._deskew_available:
             self._add_deskew_widget(scan_step_um, (n_z, *frame_shape))
+        # sequenceFinished fires per sequence, so a preceding pre-scan will have left the
+        # title reading "finished"; this run is live again.
+        try:
+            self._viewer.title = "shrimpy — live acquisition"
+        except Exception:  # noqa: BLE001
+            pass
         logger.info("Viewer initialized: %d channel(s), sizes=%s", self._n_channels, sizes)
+
+    def _reset(self) -> None:
+        """Tear down the previous sequence's layers, widget and ring.
+
+        ``acquire()`` can run more than one MDA (with FOV selection: the pre-scan, then
+        the main acquisition), and each sends its own 'start' with a different ring,
+        frame shape, channel list and sizes. Everything derived from the old one is
+        dropped here; :meth:`_on_start` then rebuilds from the new message. The follow
+        controls are connected to ``self._viewer``, which outlives a sequence, so they
+        stay connected (see :meth:`_connect_follow_controls`).
+        """
+        for layer in self._layers:
+            try:
+                self._viewer.layers.remove(layer)
+            except Exception:  # noqa: BLE001 - already-removed layer must not stop teardown
+                logger.debug("Could not remove layer (ignored)", exc_info=True)
+        self._layers = []
+        if self._controls is not None:
+            try:
+                self._viewer.window.remove_dock_widget(self._controls)
+            except Exception:  # noqa: BLE001
+                logger.debug("Could not remove deskew widget (ignored)", exc_info=True)
+            self._controls = None
+        if self._ring is not None:
+            try:
+                self._ring.close()
+            except Exception:  # noqa: BLE001
+                logger.debug("Could not close ring (ignored)", exc_info=True)
+            self._ring = None
+        # Cleared in place: the rebuilt LazyRingArrays are handed this same dict.
+        self._index_map.clear()
+        self._slot_owner = []
+        self._contrast_done.clear()
+        self._raw_arrays = []
+        self._deskew_arrays = []
+        self._projector = None
+        self._deskew = False
+        self._deskew_available = False
+        self._n_zscan = 0
+        self._frame_shape = ()
+        self._following = True
+        self._follow_target = None
+        self._last_step = None
+        self._started = False
 
     def _ring_gather(self, channel: int):
         """A source gather for :func:`deskewed_layer`: one tilt row across the scan stack."""
@@ -291,8 +346,16 @@ class _ViewerState:
             logger.debug("Deskew geometry update failed (ignored)", exc_info=True)
 
     def _connect_follow_controls(self) -> None:
-        """Wire up auto-advance pause (user scrub) and resume (Home button)."""
+        """Wire up auto-advance pause (user scrub) and resume (Home button).
+
+        Both signals belong to ``self._viewer``, which outlives a sequence, so they are
+        connected once: a second sequence (see :meth:`_reset`) must not double-connect
+        and fire each handler twice.
+        """
         self._last_step = tuple(self._viewer.dims.current_step)
+        if self._follow_connected:
+            return
+        self._follow_connected = True
         try:
             self._viewer.dims.events.current_step.connect(self._on_dims_step_changed)
         except Exception:  # noqa: BLE001

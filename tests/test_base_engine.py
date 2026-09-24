@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import weakref
 
+from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 from pymmcore_plus.core._constants import Keyword
 from pymmcore_plus.core._sequencing import SequencedEvent
-from pymmcore_plus.mda import SkipEvent
+from pymmcore_plus.mda import MDAEngine, SkipEvent
 from useq import MDAEvent, MDASequence
 
 from shrimpy.engines.base_engine import (
@@ -25,6 +26,7 @@ from shrimpy.engines.base_engine import (
 )
 from shrimpy.engines.dragonfly_engine import DragonflyEngine
 from shrimpy.engines.isim_engine import ISIMEngine
+from shrimpy.fov_selection.manager import PrescanOutcome
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -48,42 +50,6 @@ def engine(mock_core: MagicMock) -> BaseEngine:
 def _make_sequence(shrimpy_meta: dict | None = None) -> MDASequence:
     """Helper to create an MDASequence with optional shrimPy metadata sections."""
     return MDASequence(metadata=shrimpy_meta or {})
-
-
-# ---------------------------------------------------------------------------
-# _get_next_acquisition_name() — pure function
-# ---------------------------------------------------------------------------
-
-
-def test_next_name_first_acquisition_in_empty_dir(tmp_path):
-    # Empty directory → index starts at 1
-    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_1"
-
-
-def test_next_name_skips_existing_index(tmp_path):
-    # acq_1.ome.zarr already exists → should return acq_2
-    (tmp_path / "acq_1.ome.zarr").mkdir()
-    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"
-
-
-def test_next_name_skips_multiple_existing(tmp_path):
-    # acq_1 through acq_3 exist → should return acq_4
-    for i in range(1, 4):
-        (tmp_path / f"acq_{i}.ome.zarr").mkdir()
-    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_4"
-
-
-def test_next_name_different_base_names_dont_collide(tmp_path):
-    # "experiment_1.ome.zarr" exists, but asking for "acq" → acq_1
-    (tmp_path / "experiment_1.ome.zarr").mkdir()
-    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_1"
-
-
-def test_next_name_gap_in_indices(tmp_path):
-    # acq_1 exists, acq_2 missing, acq_3 exists → returns acq_2
-    (tmp_path / "acq_1.ome.zarr").mkdir()
-    (tmp_path / "acq_3.ome.zarr").mkdir()
-    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"
 
 
 # ---------------------------------------------------------------------------
@@ -962,6 +928,209 @@ def _dragonfly(mock_core) -> DragonflyEngine:
         eng = DragonflyEngine(mock_core)
     eng._mmcore_ref = weakref.ref(mock_core)
     return eng
+
+
+def test_dragonfly_setup_sequence_opens_shutter_before_super(mock_core):
+    # Dragonfly images with the shutter held open. The order matters: MDAEngine
+    # latches _autoshutter_was_set at the END of its setup_sequence, and that
+    # flag drives its per-event shutter toggling -- so autoshutter must already
+    # be off by the time super() runs, or the parent undoes this every event.
+    eng = _dragonfly(mock_core)
+    mock_core.getAutoShutter.return_value = True
+
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence") as mock_super:
+        mock_core.attach_mock(mock_super, "super_setup_sequence")
+        eng.setup_sequence(MDASequence())
+
+    names = [c[0] for c in mock_core.mock_calls]
+    assert names.index("setAutoShutter") < names.index("super_setup_sequence")
+    assert names.index("setShutterOpen") < names.index("super_setup_sequence")
+    mock_core.setAutoShutter.assert_called_once_with(False)
+    mock_core.setShutterOpen.assert_called_once_with(True)
+    # The pre-run autoshutter state is remembered for teardown
+    assert eng._autoshutter_to_restore is True
+
+
+def test_dragonfly_teardown_sequence_restores_shutter(mock_core):
+    # The parent's state restoration captures autoshutter AFTER setup_sequence
+    # disabled it, so the engine restores it itself rather than leaving the
+    # shutter open on the sample.
+    eng = _dragonfly(mock_core)
+    mock_core.getAutoShutter.return_value = True
+
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence"):
+        eng.setup_sequence(MDASequence())
+    mock_core.reset_mock()
+
+    with patch("shrimpy.engines.base_engine.MDAEngine.teardown_sequence"):
+        eng.teardown_sequence(MDASequence())
+
+    mock_core.setShutterOpen.assert_called_once_with(False)
+    mock_core.setAutoShutter.assert_called_once_with(True)
+    assert eng._autoshutter_to_restore is None
+
+
+def test_dragonfly_teardown_leaves_autoshutter_off_when_it_started_off(mock_core):
+    # A scope left with autoshutter already off stays that way.
+    eng = _dragonfly(mock_core)
+    mock_core.getAutoShutter.return_value = False
+
+    with patch("shrimpy.engines.base_engine.MDAEngine.setup_sequence"):
+        eng.setup_sequence(MDASequence())
+    mock_core.reset_mock()
+
+    with patch("shrimpy.engines.base_engine.MDAEngine.teardown_sequence"):
+        eng.teardown_sequence(MDASequence())
+
+    mock_core.setAutoShutter.assert_called_once_with(False)
+
+
+# ---------------------------------------------------------------------------
+# _get_next_acquisition_name() — pure function
+# ---------------------------------------------------------------------------
+
+
+def test_next_name_first_acquisition_in_empty_dir(tmp_path):
+    # Empty directory → the index is still appended; the bare name is never used
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_1"
+
+
+def test_next_name_appends_suffix_when_first_index_taken(tmp_path):
+    # acq_1.ome.zarr already exists → append the next free suffix, acq_2
+    (tmp_path / "acq_1.ome.zarr").mkdir()
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"
+
+
+def test_next_name_skips_multiple_existing(tmp_path):
+    # acq_1 through acq_3 exist → should return acq_4
+    for i in range(1, 4):
+        (tmp_path / f"acq_{i}.ome.zarr").mkdir()
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_4"
+
+
+def test_next_name_different_base_names_dont_collide(tmp_path):
+    # "experiment_1.ome.zarr" exists, but asking for "acq" → acq_1
+    (tmp_path / "experiment_1.ome.zarr").mkdir()
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_1"
+
+
+def test_next_name_gap_in_indices(tmp_path):
+    # acq_1 exists, acq_2 missing, acq_3 exists → returns acq_2
+    (tmp_path / "acq_1.ome.zarr").mkdir()
+    (tmp_path / "acq_3.ome.zarr").mkdir()
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"
+
+
+def _teardown_engine(fov) -> BaseEngine:
+    """A bare engine wired up with just what _teardown_fov_selection touches."""
+    engine = BaseEngine.__new__(BaseEngine)
+    engine._dynatrack = None
+    # Set by __init__, which __new__ bypasses; teardown reads them via
+    # _return_focus_device_home().
+    engine._focus_device = None
+    engine._focus_home = None
+    engine._prescan_outcome = None
+    engine._fov_selection = fov
+    core = MagicMock()
+    engine._mmcore_ref = weakref.ref(core)  # `mmcore` is a read-only property
+    # The weakref does not keep the mock alive, and BaseEngine.mmcore raises once it is
+    # collected -- so the engine has to hold a strong reference for the test's lifetime.
+    engine._test_core = core
+    return engine
+
+
+def test_teardown_captures_the_outcome_before_debug_writes():
+    """A failing debug write must not cost us the selection.
+
+    Regression: finalize_debug_summary() used to run BEFORE the selection was captured,
+    so a PermissionError on fov_summary.csv (a spreadsheet holding it open) aborted
+    teardown_sequence with nothing captured -- acquire() then skipped the timelapse for
+    "no FOVs passed" even though FOVs had scored and passed.
+    """
+    fov = MagicMock()
+    fov.calibration_mode = False
+    fov.outcome.return_value = PrescanOutcome(selected_fovs=["p0_0019", "p0_0021", "p0_0016"])
+    fov.finalize_debug_summary.side_effect = PermissionError("fov_summary.csv is locked")
+    engine = _teardown_engine(fov)
+
+    sequence = MDASequence(stage_positions=[{"x": 0, "y": 0}])
+    with patch.object(MDAEngine, "teardown_sequence"), pytest.raises(PermissionError):
+        engine.teardown_sequence(sequence)
+
+    # Even though the debug write blew up, the selection survived.
+    assert engine._prescan_outcome.selected_fovs == ["p0_0019", "p0_0021", "p0_0016"]
+
+
+def test_calibration_teardown_still_logs_selection_and_finalizes():
+    """Calibration mode must run the post-drain summary + CSV finalize too, not only the
+    normal path -- so the log records which FOVs the model would select and the well columns
+    are stamped even when no timelapse follows."""
+    csv = Path("run/acq_fov_debug/fov_summary.csv")
+    fov = MagicMock()
+    fov.num_decided = 3
+    fov.calibration_mode = True
+    fov.outcome.return_value = PrescanOutcome(selected_fovs=[], calibration_csv=csv)
+    engine = _teardown_engine(fov)
+
+    with patch.object(MDAEngine, "teardown_sequence"):
+        engine.teardown_sequence(MDASequence(stage_positions=[{"x": 0, "y": 0}]))
+
+    fov.log_selection_summary.assert_called_once()
+    fov.finalize_debug_summary.assert_called_once()
+    # No timelapse selection in calibration -- only the viewer's feature matrix.
+    assert engine._prescan_outcome == PrescanOutcome(selected_fovs=[], calibration_csv=csv)
+
+
+# ---------------------------------------------------------------------------
+# _get_next_acquisition_name() — leftovers from crashed runs
+# ---------------------------------------------------------------------------
+# A run that dies mid-pre-scan writes <name>_fov_debug/ and maybe
+# <name>_prescan.ome.zarr but never <name>.ome.zarr, because the pre-scan run passes
+# output=None. Testing only the store handed the next run the same name, whose worker
+# then appended to the dead run's fov_summary.csv and reused its debug directory.
+
+
+def test_next_name_avoids_a_crashed_prescan_debug_dir(tmp_path):
+    # Store absent, debug dir present -> the name is NOT free.
+    (tmp_path / "acq_1_fov_debug").mkdir()
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"
+
+
+def test_next_name_avoids_a_crashed_prescan_zarr(tmp_path):
+    (tmp_path / "acq_1_prescan.ome.zarr").mkdir()
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"
+
+
+def test_next_name_avoids_indexed_sibling_leftovers(tmp_path):
+    # The real failure: stores acq_1..acq_3 exist, but a crashed 4th run left
+    # acq_4_fov_debug and acq_4_prescan. acq_4 looks free by the store alone.
+    for index in (1, 2, 3):
+        (tmp_path / f"acq_{index}.ome.zarr").mkdir()
+    for index in (1, 2, 3, 4):
+        (tmp_path / f"acq_{index}_fov_debug").mkdir()
+    (tmp_path / "acq_4_prescan.ome.zarr").mkdir()
+
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_5"
+
+
+def test_next_name_never_reuses_or_deletes_leftovers(tmp_path):
+    # Freshness is about the NAME existing, not about the run having completed: an
+    # incomplete folder is skipped and left untouched for inspection.
+    debug = tmp_path / "acq_1_fov_debug"
+    debug.mkdir()
+    (debug / "fov_summary.csv").write_text("name,proba\np0_0000,0.5\n")
+
+    name = _get_next_acquisition_name(tmp_path, "acq")
+
+    assert name == "acq_2"
+    assert (debug / "fov_summary.csv").read_text() == "name,proba\np0_0000,0.5\n"
+
+
+def test_next_name_avoids_a_leftover_config_backup(tmp_path):
+    # The backup is written BETWEEN the two runs, so a run that dies right after it --
+    # before the timelapse creates the store -- leaves it as the name's only trace.
+    (tmp_path / "acq_1_config_backup.yaml").write_text("channels: []\n")
+    assert _get_next_acquisition_name(tmp_path, "acq") == "acq_2"
 
 
 def test_move_focus_stage_skips_moves_below_threshold(mock_core):

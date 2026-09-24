@@ -108,19 +108,23 @@ class ViewerFeeder:
                 sig.disconnect(slot)
             except Exception:  # noqa: BLE001 - disconnect is best-effort
                 pass
-        if self._ring is not None:
-            try:
-                self._ring.close()
-            except Exception:  # noqa: BLE001
-                logger.debug("Failed to close ring buffer", exc_info=True)
-            self._ring = None
+        self._release_ring()
         if self._proc is not None and self._proc.is_alive():
             self._proc.terminate()
 
     # -- event handlers (run on the acquisition thread) ------------------------
 
     def _on_sequence_started(self, sequence: MDASequence, meta: object = None) -> None:
-        """Capture dataset dimensions and channel names for the viewer."""
+        """Capture dataset dimensions and channel names, and start a fresh ring.
+
+        One ``acquire()`` can run several MDAs on the same core -- with FOV selection it
+        runs the pre-scan and then the main acquisition -- and they differ in frame shape
+        (pre-scan: label-free arm, full chip; main run: light-sheet arm under
+        ``setup.roi``), channel list and size. The ring is therefore per-sequence: drop it
+        here so the next frame allocates one that fits, and so the pre-scan's block is
+        freed rather than pinned for the whole timelapse.
+        """
+        self._release_ring()
         try:
             sizes = sequence.sizes
             # Fold the grid axis into the position axis: a "position" is a stage
@@ -147,7 +151,21 @@ class ViewerFeeder:
     ) -> None:
         """Copy the frame into the ring and notify the viewer. Never raises."""
         try:
-            if self._ring is None:
+            ring = self._ring
+            # Rebuild on a shape/dtype change as well as on the first frame: a ROI or
+            # camera switch mid-sequence would otherwise make every subsequent write
+            # raise, which costs a logged traceback per frame and shows the viewer
+            # nothing (the frame message is only sent once the write succeeds).
+            if ring is None or image.shape != ring.frame_shape or image.dtype != ring.dtype:
+                if ring is not None:
+                    logger.info(
+                        "Frame changed from %s %s to %s %s; reallocating the ring buffer.",
+                        ring.frame_shape,
+                        ring.dtype,
+                        tuple(image.shape),
+                        image.dtype,
+                    )
+                self._release_ring()
                 self._init_ring(image)
             assert self._ring is not None
             slot = self._frame_counter % self._ring.n_slots
@@ -175,8 +193,24 @@ class ViewerFeeder:
 
     # -- helpers ---------------------------------------------------------------
 
+    def _release_ring(self) -> None:
+        """Free the current ring, so the next frame allocates one for its own shape."""
+        if self._ring is not None:
+            try:
+                self._ring.close()
+            except Exception:  # noqa: BLE001 - release is best-effort
+                logger.debug("Failed to close ring buffer", exc_info=True)
+            self._ring = None
+        # Slots are indexed by this counter modulo the ring size, so it restarts with
+        # the ring: a fresh ring always fills from slot 0.
+        self._frame_counter = 0
+
     def _init_ring(self, image: np.ndarray) -> None:
-        """Allocate the ring on the first frame, then send the viewer a 'start' message."""
+        """Allocate a ring for ``image``'s shape, then send the viewer a 'start' message.
+
+        Called on the first frame of every sequence (see :meth:`_on_sequence_started`), so
+        the viewer receives one 'start' per sequence and rebuilds its layers each time.
+        """
         frame_shape = tuple(image.shape)
         dtype = np.dtype(image.dtype)
         frame_bytes = int(np.prod(frame_shape) * dtype.itemsize)
