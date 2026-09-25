@@ -691,6 +691,15 @@ class BaseEngine(MDAEngine):
     # Acquisition entry point
     # ------------------------------------------------------------------
 
+    @property
+    def data_path(self) -> Path | None:
+        """OME-Zarr store this engine is writing, or None before :meth:`acquire`.
+
+        Set as soon as the output name is resolved, so a ``sequenceStarted`` listener
+        (the live viewer) can find the store the run is about to fill.
+        """
+        return self._data_path
+
     def acquire(
         self,
         output_dir: str | Path,

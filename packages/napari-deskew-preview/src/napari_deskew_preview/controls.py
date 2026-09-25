@@ -55,13 +55,24 @@ class DeskewControls(QWidget):
     geometryChanged = Signal()
 
     def __init__(
-        self, scan_step_um: float = DEFAULT_SCAN_STEP_UM, parent: object = None
+        self,
+        scan_step_um: float = DEFAULT_SCAN_STEP_UM,
+        parent: object = None,
+        *,
+        angle_deg: float = LS_ANGLE_DEG,
+        pixel_size_um: float = PIXEL_SIZE_UM,
     ) -> None:
+        """Build the panel, seeded with the acquisition geometry.
+
+        All three values default to the module constants; pass them when the geometry
+        is known (e.g. read back from an acquisition's OME-Zarr metadata) so the fields
+        open on the real values instead of the defaults.
+        """
         super().__init__(parent)
         layout = QVBoxLayout(self)
 
-        self._angle = _make_spin(LS_ANGLE_DEG, 0.0, 89.9, 1.0, 2)
-        self._pixel = _make_spin(PIXEL_SIZE_UM, 1e-4, 100.0, 0.001, 4)
+        self._angle = _make_spin(angle_deg, 0.0, 89.9, 1.0, 2)
+        self._pixel = _make_spin(pixel_size_um, 1e-4, 100.0, 0.001, 4)
         self._scan = _make_spin(scan_step_um, 1e-4, 1000.0, 0.01, 4)
         form = QFormLayout()
         form.setLabelAlignment(self._LEFT)  # field labels left-aligned, not right

@@ -86,8 +86,8 @@ src/shrimpy/             # the installed package
 │   ├── __init__.py           # configure_logging() and DEFAULT_LOGGING_CONFIG
 │   └── logging.ini           # package data: the INI the above loads by default
 ├── dynatrack/           # DynaTrack position tracking (any engine, via BaseEngine)
-├── viewer/              # Out-of-process napari viewer for live acquisitions
-└── cli/                 # Command-line interface (`shrimpy acquire`, `shrimpy gui`)
+├── viewer/              # napari viewer, reading the acquisition's OME-Zarr
+└── cli/                 # CLI (`shrimpy acquire`, `shrimpy view`, `shrimpy gui`)
 
 tests/                   # Unit and integration tests
 config/mda/              # Example acquisition configs to copy and edit
@@ -224,6 +224,50 @@ log_file = configure_logging(output_dir, name)
 
 Use `logger.debug()` for detailed diagnostics (file only) and `logger.info()` for user-facing messages (console + file).
 
+#### 4. Viewer Pattern
+
+The viewer reads the acquisition's OME-Zarr **from disk**, read-only, for both a
+finished dataset and one still being written (acquire-zarr no longer holds
+`zarr.json` locked — acquire-project/acquire-zarr#234). No image data crosses a
+process boundary and nothing is kept in RAM on the acquisition's behalf, so the
+whole acquisition is browsable while it runs and a viewer crash or hang cannot
+disturb the run. `shrimpy view` and `shrimpy acquire --napari-viewer` are the
+same window on the same data; the live case only adds a child process and two
+lifecycle messages (`open <path>`, `finish`) over a `multiprocessing.Queue`.
+
+```
+shrimpy/viewer/
+├── store.py             # AcquisitionStore: read a live or finished OME-Zarr
+├── _napari_process.py   # the window; run_viewer() is also `shrimpy view`
+└── live.py              # LiveViewer: spawn it beside an acquisition
+```
+
+`AcquisitionStore` uses `iohub.open_ome_zarr` for layout, ordering, channels,
+axes and scales — it already handles every layout ome-writers writes (single
+image, bioformats2raw series, HCS plate) and re-reads array metadata on each
+`Position.data` access, so a growing store needs no special handling. What
+shrimPy adds is what reading a *live* store needs:
+
+- **A decompressed-volume cache.** A whole z-stack is one chunk (see
+  `dimension_overrides` in `BaseEngine.acquire`), so reading one plane
+  decompresses the entire stack — ~275 ms for a mantis-sized volume, *every
+  time*. Caching `(z, y, x)` volumes under a byte budget is what makes scrubbing
+  z, and deskew (where every displayed plane mixes all of them), interactive.
+- **`volume_ready()`.** Chunks are flushed asynchronously once complete, so "the
+  frame was acquired" is not "the frame is readable", and an unflushed chunk
+  reads back as zeros. Checking the chunk files both blanks half-written stacks
+  instead of deskewing garbage and keeps a blank volume out of the cache.
+- Positions whose array does not exist yet (acquire-zarr creates it on first
+  write), reads past the acquired extent, and the `latest_complete` frontier the
+  sliders follow.
+
+Deskew geometry: the **scan step** comes from the store's z scale, where the
+acquisition recorded it. The **lateral pixel size does not** — MM resolves
+`getPixelSizeUm()` from whichever pixel-size config currently matches the device
+properties, which has silently changed the deskew ratio between otherwise
+identical runs (see `BaseEngine._setup_dynatrack`). It uses the
+`napari-deskew-preview` default, and the Deskew widget overrides both.
+
 ### Configuration Files
 
 Acquisitions are configured using YAML `MDASequence` files, validated by
@@ -277,7 +321,8 @@ ship in the package metadata, so a user of the installed package can opt in with
 `uv sync --extra <name>` or `pip install "shrimpy[<name>]"`.
 
 - `gui` — **pymmcore-gui**, required only by `shrimpy gui`
-- `viewer` — **napari** + **napari-deskew-preview**, the live acquisition viewer
+- `viewer` — **napari** + **napari-deskew-preview** + **iohub**, for `shrimpy view`
+  and `shrimpy acquire --napari-viewer`
 - `dynatrack` — **biahub[stain]** (pulls cytoland/VisCy), **matplotlib**, **torch**
 
 `[dependency-groups]` (PEP 735) are **development/CI only**: they are not in the
@@ -320,6 +365,12 @@ This project uses [uv](https://docs.astral.sh/uv/) for dependency management and
 Shared engine behavior is tested in `tests/test_base_engine.py`; keep
 microscope-specific tests in `tests/test_<microscope>_*.py` and add
 tests for new microscope engines there.
+
+Viewer tests (`tests/test_viewer_store.py`, `tests/test_viewer_layers.py`) build
+real stores with ome-writers/acquire-zarr rather than hand-rolled zarr, because
+the behavior being tested *is* that writer's: arrays appear only when a position
+is first written, and chunks are flushed asynchronously. They need no napari — a
+fake viewer stands in for it — but they do need `iohub` (in the `dev` group).
 
 ## Current Development Focus
 

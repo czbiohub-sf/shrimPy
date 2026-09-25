@@ -31,6 +31,8 @@ dependencies = [
   "PyYAML",
   "qtpy",
   "useq-schema",
+  # also transitive via ome-writers; declared so [tool.uv.sources] can redirect it
+  "yaozarrs",
 ]
 
 
@@ -40,7 +42,10 @@ dependencies = [
 # `shrimpy gui` only; nothing in the package imports Qt at module level, so the
 # acquisition CLI and the engines run headless without this.
 gui = ["pymmcore-gui"]
-viewer = ["napari[pyqt6]", "napari-deskew-preview"]
+# iohub reads the acquisition's OME-Zarr back (shrimpy.viewer.store): it already
+# handles every layout ome-writers writes, and is how the lab opens these stores
+# elsewhere. Only the viewer needs it, so `shrimpy acquire` stays lean without it.
+viewer = ["napari[pyqt6]", "napari-deskew-preview", "iohub"]
 dynatrack = [
   "biahub[stain]",  # [stain] pulls in cytoland, required for dynatrack
   "matplotlib",
@@ -92,6 +97,11 @@ members = ["packages/*"]
 pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "main" }
 ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
 useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "main" }
+# Released yaozarrs (<=0.3.2) never writes the plate *row* groups from
+# PlateBuilder.prepare(), the path ome-writers takes, so an HCS store cannot be read
+# until it is closed and the live viewer stays empty for the whole acquisition.
+# imaging-formats/yaozarrs#58; point this back at PyPI once that is released.
+yaozarrs = { git = "https://github.com/ieivanov/yaozarrs", branch = "fix-plate-builder-row-groups" }
 napari-deskew-preview = { workspace = true }
 # Windows: CUDA build via cu132 index (requires CUDA Toolkit 13.2 on the machine)
 # for the production `dynatrack` group; the CI-only `test-cpu` group takes the
@@ -119,7 +129,16 @@ conflicts = [[{ extra = "dynatrack" }, { group = "test-cpu" }]]
 # 8, which includes the HPC dev machines). Scoped to Linux so the Windows
 # acquisition machines stay on current Qt. Reaches PyQt6 wherever it enters the
 # graph -- pymmcore-gui via [gui], napari[pyqt6] via [viewer].
-override-dependencies = ["pyqt6<6.10; sys_platform == 'linux'"]
+#
+# Must be an override, not a constraint: pymmcore-gui pins pyqt6==6.11.0, which
+# a constraint cannot relax, and an override *replaces* every requirement on the
+# package. That replacement is also why the second entry is needed -- with only
+# the Linux one, pyqt6 is overridden into nothing off Linux and napari installs
+# with no Qt bindings at all (`uv run napari` then fails on a missing PyQt6).
+override-dependencies = [
+  "pyqt6<6.10; sys_platform == 'linux'",
+  "pyqt6>=6.10; sys_platform != 'linux'",
+]
 
 [[tool.uv.index]]
 name = "pytorch-cu132"
