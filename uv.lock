@@ -3733,8 +3733,8 @@ wheels = [
 
 [[package]]
 name = "ome-writers"
-version = "0.3.3.dev1+gbac0f391e"
-source = { git = "https://github.com/ieivanov/ome-writers?branch=main#bac0f391eeadc1083b70cbafb2e5efd3e7075df9" }
+version = "0.3.3.dev2+gba0f638c9"
+source = { git = "https://github.com/pymmcore-plus/ome-writers?rev=ba0f638c9191a66f4667ce8e86030a9265ecb67f#ba0f638c9191a66f4667ce8e86030a9265ecb67f" }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
     { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
@@ -4663,8 +4663,8 @@ dependencies = [
 
 [[package]]
 name = "pymmcore-plus"
-version = "0.18.2.dev11+g1b305307d"
-source = { git = "https://github.com/ieivanov/pymmcore-plus?branch=main#1b305307d275fcf84acc7574ea735eff533f9838" }
+version = "0.18.2.dev18+g59cfb0b72"
+source = { git = "https://github.com/pymmcore-plus/pymmcore-plus?rev=59cfb0b72b3b025a5768ddac15daa7f91c8eb573#59cfb0b72b3b025a5768ddac15daa7f91c8eb573" }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
     { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
@@ -6079,12 +6079,12 @@ requires-dist = [
     { name = "napari", extras = ["pyqt6"], marker = "extra == 'viewer'" },
     { name = "napari-deskew-preview", marker = "extra == 'viewer'", editable = "packages/napari-deskew-preview" },
     { name = "numpy" },
-    { name = "ome-writers", extras = ["acquire-zarr"], git = "https://github.com/ieivanov/ome-writers?branch=main" },
+    { name = "ome-writers", extras = ["acquire-zarr"], git = "https://github.com/pymmcore-plus/ome-writers?rev=ba0f638c9191a66f4667ce8e86030a9265ecb67f" },
     { name = "pandas", marker = "extra == 'fov'", specifier = "<3" },
     { name = "pandas", marker = "extra == 'fov-cellpose'", specifier = "<3" },
     { name = "pymmcore", specifier = ">=11.14.0.75.0" },
     { name = "pymmcore-gui", marker = "extra == 'gui'", git = "https://github.com/pymmcore-plus/pymmcore-gui?branch=main" },
-    { name = "pymmcore-plus", git = "https://github.com/ieivanov/pymmcore-plus?branch=main" },
+    { name = "pymmcore-plus", git = "https://github.com/pymmcore-plus/pymmcore-plus?rev=59cfb0b72b3b025a5768ddac15daa7f91c8eb573" },
     { name = "pyyaml" },
     { name = "qtpy" },
     { name = "scikit-image", marker = "extra == 'fov'" },
@@ -6098,8 +6098,8 @@ requires-dist = [
     { name = "torch", marker = "sys_platform != 'win32' and extra == 'dynatrack'" },
     { name = "torch", marker = "sys_platform != 'win32' and extra == 'fov'" },
     { name = "torch", marker = "extra == 'fov-cellpose'" },
-    { name = "useq-schema", git = "https://github.com/ieivanov/useq-schema?branch=main" },
-    { name = "yaozarrs", git = "https://github.com/ieivanov/yaozarrs?branch=fix-plate-builder-row-groups" },
+    { name = "useq-schema", git = "https://github.com/pymmcore-plus/useq-schema?rev=942a551d6a81f7999f9f517eadd5c44685c5dcfe" },
+    { name = "yaozarrs", git = "https://github.com/imaging-formats/yaozarrs?rev=a5b824b529084f66b2cec8e632f2af061dba752c" },
 ]
 provides-extras = ["dynatrack", "fov", "fov-cellpose", "gui", "viewer"]
 
@@ -6786,7 +6786,7 @@ wheels = [
 [[package]]
 name = "useq-schema"
 version = "0.9.3.dev1+g942a551d6"
-source = { git = "https://github.com/ieivanov/useq-schema?branch=main#942a551d6a81f7999f9f517eadd5c44685c5dcfe" }
+source = { git = "https://github.com/pymmcore-plus/useq-schema?rev=942a551d6a81f7999f9f517eadd5c44685c5dcfe#942a551d6a81f7999f9f517eadd5c44685c5dcfe" }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
     { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
@@ -7287,8 +7287,8 @@ wheels = [
 
 [[package]]
 name = "yaozarrs"
-version = "0.3.2.dev5+ga5b824b52"
-source = { git = "https://github.com/ieivanov/yaozarrs?branch=fix-plate-builder-row-groups#a5b824b529084f66b2cec8e632f2af061dba752c" }
+version = "0.3.3.dev2+ga5b824b52"
+source = { git = "https://github.com/imaging-formats/yaozarrs?rev=a5b824b529084f66b2cec8e632f2af061dba752c#a5b824b529084f66b2cec8e632f2af061dba752c" }
 dependencies = [
     { name = "pydantic" },
     { name = "pydantic-core", marker = "python_full_version >= '3.13' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
