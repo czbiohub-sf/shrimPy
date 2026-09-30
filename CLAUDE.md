@@ -94,7 +94,8 @@ config/mda/              # Example acquisition configs to copy and edit
 archive/                 # Historical implementations (pycromanager, old pymmcore-plus,
                          # deprecated Mantis Qt widget and its launcher)
 packages/                # uv workspace members: separate distributions developed here
-└── napari-deskew-preview/   # napari deskew widget, also installable on its own
+├── napari-deskew-preview/   # napari deskew widget, also installable on its own
+└── feature_viewer/          # fov-feature-viewer: Qt GUI to tune FOV-selection rankings
 ```
 
 ### Workspace members
@@ -114,6 +115,15 @@ Install it without shrimPy:
 ```bash
 pip install "napari-deskew-preview @ git+https://github.com/czbiohub-sf/shrimPy.git#subdirectory=packages/napari-deskew-preview"
 ```
+
+`fov-feature-viewer` (`packages/feature_viewer`, import `fov_feature_viewer`) is
+the GUI that FOV-selection calibration mode opens. It does no model math: its Rank
+and Score-map tabs run on a `Scorer` protocol (`fov_feature_viewer/scorer.py`)
+that shrimPy implements as `DesirabilityScorer` in
+`src/shrimpy/fov_selection/fov_model.py` and registers through the
+`fov_feature_viewer.scorers` entry point. The viewer never imports shrimpy. shrimPy
+depends on it through the `fov` extra; its tests are in the root `testpaths` and
+skip when it (or a Qt binding) is not installed.
 
 `DeskewControls` lives in the public `napari_deskew_preview.controls` module
 rather than being re-exported from the package root: it needs qtpy, and the root
@@ -228,7 +238,8 @@ Use `logger.debug()` for detailed diagnostics (file only) and `logger.info()` fo
 
 Acquisitions are configured using YAML `MDASequence` files, validated by
 `src/shrimpy/config.py`. Examples live in `config/mda/` — `mantis/` (`demo.yaml`,
-`mantis.yaml`, `dynatrack_demo.yaml`), `dragonfly/dragonfly.yaml`, and
+`mantis.yaml`, `dynatrack_demo.yaml`, `fov_selection_replay_demo.yaml` for offline
+FOV selection with the ReplayCamera), `dragonfly/dragonfly.yaml`, and
 `replay_demo.yaml`. These are samples to copy and edit; they are *not* installed
 with the package. The only runtime package data is `src/shrimpy/logging/logging.ini`.
 
@@ -244,6 +255,10 @@ with the package. The only runtime package data is `src/shrimpy/logging/logging.
 - `metadata.reset_hardware_sequencing_settings`: properties restored in teardown
 - `metadata.dynatrack`: DynaTrack position tracking, available to every engine
   (see `src/shrimpy/dynatrack/README.md`)
+- `metadata.fov_selection`: smart FOV selection — the pre-scan sequence, the
+  preprocessing pipeline, the segmentation backend, and the selection model.
+  Validated by `FOVSelectionConfig` in `src/shrimpy/fov_selection/config.py`
+  (see `src/shrimpy/fov_selection/README.md`)
 
 Configs with the settings nested one level deeper under `metadata.mantis` (the
 older layout) are rejected by `load_config` with a migration message.
@@ -279,6 +294,9 @@ ship in the package metadata, so a user of the installed package can opt in with
 - `gui` — **pymmcore-gui**, required only by `shrimpy gui`
 - `viewer` — **napari** + **napari-deskew-preview**, the live acquisition viewer
 - `dynatrack` — **biahub[stain]** (pulls cytoland/VisCy), **matplotlib**, **torch**
+- `fov` — smart FOV selection: `dynatrack` plus scikit-image, pandas, scikit-learn,
+  anndata and **fov-feature-viewer**; segments with InstanSeg (torch only) or Otsu
+- `fov-cellpose` — `fov` plus **cellpose** + **dinov3**, for the Cellpose backend
 
 `[dependency-groups]` (PEP 735) are **development/CI only**: they are not in the
 published metadata and cannot be installed by a consumer, only with

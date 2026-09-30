@@ -12,6 +12,7 @@ level, with the microscope settings folded directly into ``metadata``::
       reset_hardware_sequencing_settings:
         - ['TS2_DAC03', 'Sequence', 'Off']
       dynatrack: {enabled: true, input_channel: BF, tracking_channel: BF}
+      fov_selection: {enabled: true, fov_selection_channel: BF, prescan_mda: {...}}
 
 :class:`ShrimpyMetadata` validates the ``metadata`` sections that shrimPy
 itself consumes, so a mistyped setting fails before any hardware is touched::
@@ -32,9 +33,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from useq import MDASequence
 
 from shrimpy.dynatrack.tracking import DynaTrackConfig
+from shrimpy.fov_selection.config import FOVSelectionConfig
 
 __all__ = [
     "AutofocusSettings",
+    "FOVSelectionConfig",
     "ShrimpyMetadata",
     "load_config",
 ]
@@ -116,6 +119,11 @@ class ShrimpyMetadata(BaseModel):
         tracking. A section that is present is validated even when
         ``enabled: false``, so ``input_channel`` / ``tracking_channel`` are
         required; omit the section entirely to disable tracking.
+    fov_selection : FOVSelectionConfig | None
+        Smart FOV-selection settings; ``None`` (the default) disables it. Like
+        ``dynatrack``, a section that is present is validated in full even when
+        ``enabled: false`` -- omit the section entirely to disable selection.
+        See :class:`shrimpy.fov_selection.config.FOVSelectionConfig`.
 
     Raises
     ------
@@ -132,6 +140,7 @@ class ShrimpyMetadata(BaseModel):
         default_factory=list
     )
     dynatrack: DynaTrackConfig | None = None
+    fov_selection: FOVSelectionConfig | None = None
 
     _coerce_reset = field_validator("reset_hardware_sequencing_settings", mode="before")(
         _as_property_settings
