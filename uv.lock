@@ -227,7 +227,7 @@ dependencies = [
     { name = "packaging" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" } },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" } },
-    { name = "scverse-misc", extra = ["settings"], marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "scverse-misc", extra = ["settings"], marker = "extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "typing-extensions", marker = "python_full_version < '3.15'" },
     { name = "zarr" },
 ]
@@ -267,7 +267,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "matplotlib" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" } },
-    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" } },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "pillow" },
     { name = "pyyaml" },
     { name = "requests" },
@@ -359,7 +360,7 @@ source = { git = "https://github.com/czbiohub-sf/biahub?rev=752e8bcccee79f447411
 dependencies = [
     { name = "antspyx" },
     { name = "click" },
-    { name = "dask", extra = ["array"], marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "dask", extra = ["array"], marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
     { name = "humanize" },
     { name = "imageio-ffmpeg" },
     { name = "iohub", version = "0.3.12.dev9+172ee92", source = { git = "https://github.com/czbiohub-sf/iohub?rev=172ee926829300b42708edbf6c8e20f2fd642f78#172ee926829300b42708edbf6c8e20f2fd642f78" } },
@@ -371,15 +372,16 @@ dependencies = [
     { name = "natsort" },
     { name = "numba" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" } },
-    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" } },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "pydantic" },
     { name = "pystackreg" },
     { name = "scikit-learn" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" } },
     { name = "submitit" },
     { name = "toml" },
-    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "tqdm" },
     { name = "waveorder" },
 ]
@@ -398,8 +400,8 @@ dependencies = [
     { name = "msgpack" },
     { name = "ndindex" },
     { name = "numexpr", marker = "platform_machine != 'wasm32' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "pydantic" },
     { name = "rich" },
     { name = "threadpoolctl", marker = "platform_machine != 'wasm32' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
@@ -480,8 +482,8 @@ dependencies = [
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" } },
     { name = "segment-anything" },
     { name = "tifffile" },
-    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose') or (extra == 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "torchvision" },
     { name = "tqdm" },
 ]
@@ -747,8 +749,8 @@ name = "cmap"
 version = "0.7.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/37/85/5c31c565c68807e525cb268d783e62b1f4a46b97d301d991f6b4ffbd52d6/cmap-0.7.2.tar.gz", hash = "sha256:9501cec4d5c2b7a821479aec3282b3d8b42fda983bad055e0f9dbc19cf7bc5b1", size = 949039, upload-time = "2026-02-24T13:18:33.729Z" }
 wheels = [
@@ -790,8 +792,8 @@ name = "contourpy"
 version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/83/5a/a55177dd22553a277388e8a1b3220e92de91bacb28356cdc73caa240121d/contourpy-1.4.0.tar.gz", hash = "sha256:20156f5a1ac4f8ce02656e39a61e82164a3d359796dc8026f75b062783d500e1", size = 13323726, upload-time = "2026-09-11T19:05:05.808Z" }
 wheels = [
@@ -1047,8 +1049,8 @@ wheels = [
 
 [package.optional-dependencies]
 array = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
 ]
 
 [[package]]
@@ -1083,8 +1085,8 @@ dependencies = [
     { name = "scikit-learn" },
     { name = "submitit" },
     { name = "termcolor" },
-    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose') or (extra == 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "torchmetrics" },
     { name = "torchvision" },
 ]
@@ -1310,7 +1312,8 @@ dependencies = [
     { name = "interface-meta" },
     { name = "narwhals" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" } },
-    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" } },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" } },
     { name = "typing-extensions" },
     { name = "wrapt" },
@@ -1326,10 +1329,10 @@ version = "0.1.0"
 source = { editable = "packages/feature_viewer" }
 dependencies = [
     { name = "matplotlib" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "pyqt6", version = "6.9.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'linux' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "pyqt6", version = "6.11.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "pyyaml" },
@@ -1769,8 +1772,8 @@ name = "ihist"
 version = "0.1.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/fe/c1/36eea91093807da22de06b97b4a24018a5641c5a0b0a788e83690d6442a9/ihist-0.1.3.tar.gz", hash = "sha256:5be2d5f02ce8f0771272deed7fa5a47c40b9dc5d0fa673f02a1f07218766169c", size = 100174, upload-time = "2026-01-14T23:32:52.307Z" }
 wheels = [
@@ -1797,8 +1800,8 @@ name = "imagecodecs"
 version = "2026.8.16"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/87/da/c2488dd650a72f65e6f7c808fecea4650e1fe9d34783583870056399e378/imagecodecs-2026.8.16.tar.gz", hash = "sha256:03a6add9ad9ba61dce1520489fd090b1b5cf2a2701a9666d1ab8e7653278175f", size = 9703497, upload-time = "2026-08-15T16:07:19.803Z" }
 wheels = [
@@ -1832,8 +1835,8 @@ name = "imageio"
 version = "2.37.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "pillow" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/48/62/aa770a9307508d2a2a2c62d536a49347bffe9e55322db27838d3c93d0b07/imageio-2.37.4.tar.gz", hash = "sha256:e45cbc5e83502047fb138f7f585f7f105a136a57eea5f4b3cfc6ce1b52720bd3", size = 390173, upload-time = "2026-07-20T05:26:11.369Z" }
@@ -1910,21 +1913,21 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform != 'linux' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "blosc2", marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "dask", extra = ["array"], marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "natsort", marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "nd2", marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "ndtiff", marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "pillow", marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "pydantic", marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "pydantic-extra-types", marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "rich", marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "tifffile", marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "tqdm", marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "xarray", marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "zarr", marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "zarrs", marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "blosc2", marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "dask", extra = ["array"], marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "natsort", marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "nd2", marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "ndtiff", marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "pillow", marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "pydantic", marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "pydantic-extra-types", marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "rich", marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "tifffile", marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "tqdm", marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "xarray", marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "zarr", marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "zarrs", marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a5/cc/b69b2f71f526b1e556602e8346001e0c8fc93af0e2f2c939254d9067b812/iohub-0.3.11.tar.gz", hash = "sha256:b8de0698d4dcd25671858abb6d80875b643170780ccb62588c04cdf04e0cd42b", size = 338704, upload-time = "2026-08-17T21:31:46.898Z" }
 wheels = [
@@ -1947,23 +1950,24 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform != 'linux' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "blosc2", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "dask", extra = ["array"], marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "lazy-loader", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "natsort", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "nd2", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "ndtiff", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "pillow", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "pydantic", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "pydantic-extra-types", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "rich", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "tifffile", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "tqdm", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "typer", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "xarray", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "zarr", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "zarrs", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "blosc2", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "dask", extra = ["array"], marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "lazy-loader", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "natsort", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "nd2", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "ndtiff", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "pillow", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "pydantic", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "pydantic-extra-types", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "rich", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "tifffile", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "tqdm", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "typer", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "xarray", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "zarr", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "zarrs", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
 ]
 
 [[package]]
@@ -2344,8 +2348,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "kornia-rs" },
     { name = "packaging" },
-    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1a/80/460e9dad0c1b68f3e83f198f3983638d62f910a88542b492290010d25f50/kornia-0.8.3.tar.gz", hash = "sha256:c06887374eaf39fb614a77ca054383e6cc2092cb7225e45437111b4984d0f866", size = 727384, upload-time = "2026-05-19T20:23:35.048Z" }
 wheels = [
@@ -2423,13 +2427,13 @@ name = "lightning"
 version = "2.6.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "fsspec", extra = ["http"], marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "fsspec", extra = ["http"], marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
     { name = "lightning-utilities" },
     { name = "packaging" },
     { name = "pytorch-lightning" },
     { name = "pyyaml" },
-    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "torchmetrics" },
     { name = "tqdm" },
     { name = "typing-extensions" },
@@ -2595,8 +2599,8 @@ dependencies = [
     { name = "cycler" },
     { name = "fonttools" },
     { name = "kiwisolver" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "packaging" },
     { name = "pillow" },
     { name = "pyparsing" },
@@ -2674,8 +2678,8 @@ name = "ml-dtypes"
 version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/12/72/307d7c4bd0600601c7133fba5cb78af7db968152951c1cd473abb1cda782/ml_dtypes-0.6.0.tar.gz", hash = "sha256:5e60251d32ced5598972e4d5e06a2f044341f9291402551a3f6f0ec44f9299b0", size = 3032327, upload-time = "2026-08-13T14:14:40.215Z" }
 wheels = [
@@ -2717,8 +2721,8 @@ version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" } },
-    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f4/ac/b14b7bcc888526537698c5f4ff49354eb19bec74dcc30d7e73881a3839a8/monai-1.6.0.tar.gz", hash = "sha256:eded72f0a73531abb6887b9473b081a42c78ec8c80dc5f2da43df159da265b9b", size = 1275977, upload-time = "2026-06-22T16:47:51.668Z" }
 wheels = [
@@ -2972,10 +2976,10 @@ dependencies = [
     { name = "napari-plugin-engine" },
     { name = "napari-svg" },
     { name = "npe2" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "pillow" },
     { name = "pint" },
     { name = "platformdirs" },
@@ -2990,8 +2994,8 @@ dependencies = [
     { name = "pyyaml" },
     { name = "qtpy" },
     { name = "scikit-image", extra = ["data"] },
-    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "superqt" },
     { name = "tifffile" },
     { name = "toolz" },
@@ -3033,8 +3037,8 @@ name = "napari-deskew-preview"
 version = "0.1.0"
 source = { editable = "packages/napari-deskew-preview" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "qtpy" },
 ]
 
@@ -3072,8 +3076,8 @@ version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "imageio" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "vispy" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a7/90/802f8288d16c1513b908d644779e733461a53b6c1a2c7561f1464c9f1516/napari_svg-0.2.1.tar.gz", hash = "sha256:031f13b34b0948afbdcb11eb00728fe32ef7e4e3aa3905f923001d6871a08ad9", size = 17533, upload-time = "2025-01-14T07:26:30.657Z" }
@@ -3105,8 +3109,8 @@ version = "0.11.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dask", extra = ["array"] },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "ome-types" },
     { name = "pydantic-core", marker = "python_full_version >= '3.13' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "resource-backed-dask-array" },
@@ -3171,8 +3175,8 @@ version = "3.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dask", extra = ["array"] },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "sortedcontainers" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b4/0e/bed28fa3e3b0701ef99668b8bee9561f36ac8031143c81dac7ffcfd8c3c3/ndtiff-3.1.0.tar.gz", hash = "sha256:2d9a7f579228caaaff8476a9498d05570848bdd46126568f49ca185aac5189fd", size = 36251, upload-time = "2024-06-13T09:15:20.981Z" }
@@ -3187,8 +3191,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cmap" },
     { name = "ihist" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "psygnal" },
     { name = "pydantic" },
     { name = "typing-extensions" },
@@ -3291,8 +3295,8 @@ version = "0.67.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "llvmlite" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7a/90/2544f4e3a61e501d6c9a5418fd4b905323222693d54a02cab0106a0af865/numba-0.67.0.tar.gz", hash = "sha256:cd75aa535b33fa05d9d930b1ae8af9f97a2881e96d72dfb38ec9b78284d9f851", size = 2836515, upload-time = "2026-08-11T23:04:00.174Z" }
 wheels = [
@@ -3320,8 +3324,8 @@ name = "numcodecs"
 version = "0.16.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/44/bd/8a391e7c356366224734efd24da929cc4796fff468bfb179fe1af6548535/numcodecs-0.16.5.tar.gz", hash = "sha256:0d0fb60852f84c0bd9543cc4d2ab9eefd37fc8efcc410acd4777e62a1d300318", size = 6276387, upload-time = "2025-11-21T02:49:48.986Z" }
@@ -3348,8 +3352,8 @@ name = "numexpr"
 version = "2.14.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/79/c4/27ea7849eb4a7e3b51db446b0414254326dba8c6bdee09b9f2abf963e55d/numexpr-2.14.2.tar.gz", hash = "sha256:e7144e83ea9e581f2273e0304f15836736c4e470e2bd2e378ce617662a1ca278", size = 121744, upload-time = "2026-07-18T10:52:43.185Z" }
 wheels = [
@@ -3732,8 +3736,8 @@ name = "ome-writers"
 version = "0.3.3.dev1+gbac0f391e"
 source = { git = "https://github.com/ieivanov/ome-writers?branch=main#bac0f391eeadc1083b70cbafb2e5efd3e7075df9" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "pydantic" },
     { name = "pydantic-extra-types" },
     { name = "typing-extensions" },
@@ -3952,10 +3956,10 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform != 'linux' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "python-dateutil", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "pytz", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "tzdata", marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "python-dateutil", marker = "extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "pytz", marker = "extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "tzdata", marker = "extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/33/01/d40b85317f86cf08d853a4f495195c73815fdf205eef3993821720274518/pandas-2.3.3.tar.gz", hash = "sha256:e05e1af93b977f7eafa636d043f9f94c7ee3ac81af99c13508215942e64c993b", size = 4495223, upload-time = "2025-09-29T23:34:51.853Z" }
 wheels = [
@@ -4010,9 +4014,10 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform != 'linux' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "python-dateutil", marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "tzdata", marker = "(sys_platform == 'emscripten' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "python-dateutil", marker = "(extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "tzdata", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'emscripten' and extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'emscripten' and extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'emscripten' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose') or (extra != 'extra-7-shrimpy-dynatrack' and extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/be/4f/5f3422a2afec5ffc46308b79e53291365a93748b498ac2e58bead0197916/pandas-3.0.5.tar.gz", hash = "sha256:dca3734d6ab7c906e6730f0788b0a1dbb9f2467731f9711f77995c8e9d62d712", size = 4658219, upload-time = "2026-07-22T22:19:28.819Z" }
 wheels = [
@@ -4616,8 +4621,8 @@ name = "pymmcore"
 version = "12.5.0.75.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f5/51/e75186deeff67e4ba5b6c340343d7efc2d6819a2607e1927547754ea6183/pymmcore-12.5.0.75.0.tar.gz", hash = "sha256:c78670ff99ea2a4424d41eea7f0f0b6059053689af7700a5b19815fa8dde8390", size = 1418871, upload-time = "2026-05-06T08:34:20.948Z" }
 wheels = [
@@ -4661,8 +4666,8 @@ name = "pymmcore-plus"
 version = "0.18.2.dev11+g1b305307d"
 source = { git = "https://github.com/ieivanov/pymmcore-plus?branch=main#1b305307d275fcf84acc7574ea735eff533f9838" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "ome-types" },
     { name = "ome-writers", extra = ["tensorstore"] },
     { name = "platformdirs" },
@@ -4707,8 +4712,8 @@ dependencies = [
     { name = "llvmlite" },
     { name = "numba" },
     { name = "scikit-learn" },
-    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/4a/fb/7f58c397fb31666756457ee2ac4c0289ef2daad57f4ae4be8dec12f80b03/pynndescent-0.6.0.tar.gz", hash = "sha256:7ffde0fb5b400741e055a9f7d377e3702e02250616834231f6c209e39aac24f5", size = 2992987, upload-time = "2026-01-08T21:29:58.943Z" }
 wheels = [
@@ -4960,12 +4965,12 @@ name = "pytorch-lightning"
 version = "2.6.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "fsspec", extra = ["http"], marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "fsspec", extra = ["http"], marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
     { name = "lightning-utilities" },
     { name = "packaging" },
     { name = "pyyaml" },
-    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "torchmetrics" },
     { name = "tqdm" },
     { name = "typing-extensions" },
@@ -4982,8 +4987,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" } },
     { name = "scikit-learn" },
-    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "tqdm" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9b/80/6e61b1a91debf4c1b47d441f9a9d7fe2aabcdd9575ed70b2811474eb95c3/pytorch-metric-learning-2.9.0.tar.gz", hash = "sha256:27a626caf5e2876a0fd666605a78cb67ef7597e25d7a68c18053dd503830701f", size = 84530, upload-time = "2025-08-17T17:11:19.501Z" }
@@ -5591,12 +5596,12 @@ dependencies = [
     { name = "imageio" },
     { name = "lazy-loader" },
     { name = "networkx" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "packaging" },
     { name = "pillow" },
-    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "tifffile" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a1/b4/2528bb43c67d48053a7a649a9666432dc307d66ba02e3a6d5c40f46655df/scikit_image-0.26.0.tar.gz", hash = "sha256:f5f970ab04efad85c24714321fcc91613fcb64ef2a892a13167df2f3e59199fa", size = 22729739, upload-time = "2025-12-20T17:12:21.824Z" }
@@ -5655,10 +5660,10 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "joblib" },
     { name = "narwhals" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "threadpoolctl" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d2/eb/eaf5e07fcc0da7149b0e084f24e54edd7441b9a89ce7e034032ae97fe3a0/scikit_learn-1.9.1.tar.gz", hash = "sha256:629cada3e33e2b9bf376cdc7614a47a4140b8aedc1d836579e359736fbd82977", size = 7786908, upload-time = "2026-09-10T18:34:04.679Z" }
@@ -5717,7 +5722,7 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform != 'linux' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0f/37/6964b830433e654ec7485e45a00fc9a27cf868d622838f6b6d9c5ec0d532/scipy-1.15.3.tar.gz", hash = "sha256:eae3cf522bc7df64b42cad3925c876e1b0b6c35c1337c93e12c0f366f55b0eaf", size = 59419214, upload-time = "2025-05-08T16:13:05.955Z" }
 wheels = [
@@ -5766,7 +5771,7 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform != 'linux' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7e/74/66de6258867beb2ef08f35f9f2ac017a52cacd5081714d239ff1a442d458/scipy-1.18.1.tar.gz", hash = "sha256:52c4b7422442aba924d03ad4019852b08a92e64ea187b933135687bfe2747307", size = 30781235, upload-time = "2026-08-21T23:28:50.599Z" }
 wheels = [
@@ -5909,8 +5914,8 @@ name = "shapely"
 version = "2.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/4d/bc/0989043118a27cccb4e906a46b7565ce36ca7b57f5a18b78f4f1b0f72d9d/shapely-2.1.2.tar.gz", hash = "sha256:2ed4ecb28320a433db18a5bf029986aa8afcfd740745e78847e330d5d94922a9", size = 315489, upload-time = "2025-09-24T13:51:41.432Z" }
 wheels = [
@@ -5971,14 +5976,15 @@ source = { editable = "." }
 dependencies = [
     { name = "acquire-zarr" },
     { name = "click" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "ome-writers", extra = ["acquire-zarr"] },
     { name = "pymmcore" },
     { name = "pymmcore-plus" },
     { name = "pyyaml" },
     { name = "qtpy" },
     { name = "useq-schema" },
+    { name = "yaozarrs" },
 ]
 
 [package.optional-dependencies]
@@ -5991,7 +5997,7 @@ dynatrack = [
 ]
 fov = [
     { name = "anndata" },
-    { name = "biahub", extra = ["stain"], marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "biahub", extra = ["stain"], marker = "extra == 'extra-7-shrimpy-fov' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "fov-feature-viewer" },
     { name = "imageio" },
     { name = "iohub", version = "0.3.12.dev9+172ee92", source = { git = "https://github.com/czbiohub-sf/iohub?rev=172ee926829300b42708edbf6c8e20f2fd642f78#172ee926829300b42708edbf6c8e20f2fd642f78" } },
@@ -6000,12 +6006,12 @@ fov = [
     { name = "scikit-image" },
     { name = "scikit-learn" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" } },
-    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
 ]
 fov-cellpose = [
     { name = "anndata" },
-    { name = "biahub", extra = ["stain"], marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "biahub", extra = ["stain"], marker = "extra == 'extra-7-shrimpy-fov-cellpose' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "cellpose" },
     { name = "dinov3" },
     { name = "fov-feature-viewer" },
@@ -6016,13 +6022,15 @@ fov-cellpose = [
     { name = "scikit-image" },
     { name = "scikit-learn" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" } },
-    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose') or (extra == 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
 ]
 gui = [
     { name = "pymmcore-gui" },
 ]
 viewer = [
+    { name = "iohub", version = "0.3.11", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "iohub", version = "0.3.12.dev9+172ee92", source = { git = "https://github.com/czbiohub-sf/iohub?rev=172ee926829300b42708edbf6c8e20f2fd642f78#172ee926829300b42708edbf6c8e20f2fd642f78" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
     { name = "napari", extra = ["pyqt6"] },
     { name = "napari-deskew-preview" },
 ]
@@ -6033,8 +6041,8 @@ build = [
     { name = "twine" },
 ]
 dev = [
-    { name = "iohub", version = "0.3.11", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
-    { name = "iohub", version = "0.3.12.dev9+172ee92", source = { git = "https://github.com/czbiohub-sf/iohub?rev=172ee926829300b42708edbf6c8e20f2fd642f78#172ee926829300b42708edbf6c8e20f2fd642f78" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "iohub", version = "0.3.11", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "iohub", version = "0.3.12.dev9+172ee92", source = { git = "https://github.com/czbiohub-sf/iohub?rev=172ee926829300b42708edbf6c8e20f2fd642f78#172ee926829300b42708edbf6c8e20f2fd642f78" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
     { name = "ipykernel" },
     { name = "napari-deskew-preview" },
     { name = "pre-commit" },
@@ -6064,6 +6072,7 @@ requires-dist = [
     { name = "iohub", marker = "extra == 'dynatrack'" },
     { name = "iohub", marker = "extra == 'fov'" },
     { name = "iohub", marker = "extra == 'fov-cellpose'" },
+    { name = "iohub", marker = "extra == 'viewer'" },
     { name = "matplotlib", marker = "extra == 'dynatrack'" },
     { name = "matplotlib", marker = "extra == 'fov'" },
     { name = "matplotlib", marker = "extra == 'fov-cellpose'" },
@@ -6090,6 +6099,7 @@ requires-dist = [
     { name = "torch", marker = "sys_platform != 'win32' and extra == 'fov'" },
     { name = "torch", marker = "extra == 'fov-cellpose'" },
     { name = "useq-schema", git = "https://github.com/ieivanov/useq-schema?branch=main" },
+    { name = "yaozarrs", git = "https://github.com/ieivanov/yaozarrs?branch=fix-plate-builder-row-groups" },
 ]
 provides-extras = ["dynatrack", "fov", "fov-cellpose", "gui", "viewer"]
 
@@ -6151,7 +6161,8 @@ dependencies = [
     { name = "formulaic" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" } },
     { name = "packaging" },
-    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" } },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "patsy" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" } },
 ]
@@ -6287,8 +6298,8 @@ version = "0.1.85"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ml-dtypes" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/26/16/a6530387ed22d07e974af2ef55e34fb19a7251a6911c85a0be029a4dcf9c/tensorstore-0.1.85.tar.gz", hash = "sha256:26698bded0278e98e0988eb8f7d76ad248762afc5f55a38b9122ffd1474e505f", size = 7317948, upload-time = "2026-08-05T15:35:56.098Z" }
 wheels = [
@@ -6336,8 +6347,8 @@ name = "tifffile"
 version = "2026.9.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/28/52/fdf44e2de6ccd641d4b21eec7a875f5b1c3e28e8108032b4e5da63839db9/tifffile-2026.9.9.tar.gz", hash = "sha256:5e5a0dfa16e6376bf062bc46e21b896fbfe895fcb47559af9c64b9b2d77bb4a0", size = 442579, upload-time = "2026-09-08T23:28:11.069Z" }
 wheels = [
@@ -6352,8 +6363,8 @@ dependencies = [
     { name = "huggingface-hub" },
     { name = "pyyaml" },
     { name = "safetensors" },
-    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "torchvision" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/cf/72/58b8363e22508418d5fac897ac68e2c33f01f84d9d471edc38cbb6523dc6/timm-1.0.29.tar.gz", hash = "sha256:1af8d12bb7e15c5f96e98d60b7b8319cd7f31730778bf1af58e912a7ce171576", size = 2497559, upload-time = "2026-08-28T15:07:31.007Z" }
@@ -6420,6 +6431,9 @@ name = "torch"
 version = "2.14.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
+    "python_full_version >= '3.14' and sys_platform == 'win32'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32'",
+    "python_full_version < '3.13' and sys_platform == 'win32'",
     "python_full_version >= '3.14' and sys_platform == 'linux'",
     "python_full_version >= '3.14' and sys_platform != 'linux' and sys_platform != 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'linux'",
@@ -6429,19 +6443,19 @@ resolution-markers = [
 ]
 dependencies = [
     { name = "cuda-bindings", marker = "python_full_version < '3.15' and sys_platform == 'linux'" },
-    { name = "cuda-toolkit", extra = ["cublas", "cudart", "cufft", "cufile", "cupti", "curand", "cusolver", "cusparse", "nvjitlink", "nvrtc", "nvtx"], marker = "sys_platform == 'linux' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "filelock", marker = "sys_platform != 'win32'" },
-    { name = "fsspec", marker = "sys_platform != 'win32'" },
-    { name = "jinja2", marker = "sys_platform != 'win32'" },
-    { name = "networkx", marker = "sys_platform != 'win32'" },
+    { name = "cuda-toolkit", extra = ["cublas", "cudart", "cufft", "cufile", "cupti", "curand", "cusolver", "cusparse", "nvjitlink", "nvrtc", "nvtx"], marker = "(sys_platform == 'linux' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'linux' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'linux' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'linux' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "filelock", marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "fsspec", marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "jinja2", marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "networkx", marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
     { name = "nvidia-cudnn-cu13", marker = "sys_platform == 'linux'" },
     { name = "nvidia-cusparselt-cu13", marker = "sys_platform == 'linux'" },
     { name = "nvidia-nccl-cu13", marker = "sys_platform == 'linux'" },
     { name = "nvidia-nvshmem-cu13", marker = "sys_platform == 'linux'" },
-    { name = "setuptools", marker = "sys_platform != 'win32'" },
-    { name = "sympy", marker = "sys_platform != 'win32'" },
+    { name = "setuptools", marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "sympy", marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
     { name = "triton", marker = "python_full_version < '3.15' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "sys_platform != 'win32'" },
+    { name = "typing-extensions", marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra != 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/17/76/bb4770f56cf6d8971671dbcbb7493e5a6a15ad2825f4e359b02c27c38297/torch-2.14.0-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:c1f844f1c750e87df4b68bc3afbc0e2b0c7ef19d7b8f666e48bdcf6a0c4f0056", size = 127303200, upload-time = "2026-09-02T13:43:20.311Z" },
@@ -6517,13 +6531,13 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform == 'win32'",
 ]
 dependencies = [
-    { name = "filelock", marker = "sys_platform == 'win32'" },
-    { name = "fsspec", marker = "sys_platform == 'win32'" },
-    { name = "jinja2", marker = "sys_platform == 'win32'" },
-    { name = "networkx", marker = "sys_platform == 'win32'" },
-    { name = "setuptools", marker = "sys_platform == 'win32'" },
-    { name = "sympy", marker = "sys_platform == 'win32'" },
-    { name = "typing-extensions", marker = "sys_platform == 'win32'" },
+    { name = "filelock", marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "fsspec", marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "jinja2", marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "networkx", marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "setuptools", marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "sympy", marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "typing-extensions", marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cu132/torch-2.14.0%2Bcu132-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:ace5d911d05b47e8c673ade02ff1736c70c66c3fa97cf85fe3d70d28c302799c", upload-time = "2026-09-02T19:02:56Z" },
@@ -6554,8 +6568,8 @@ dependencies = [
     { name = "lightning-utilities" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" } },
     { name = "packaging" },
-    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/81/34/39b8b749333db56c0585d7a11fa62a283c087bb1dfc897d69fb8cedbefb1/torchmetrics-1.9.0.tar.gz", hash = "sha256:a488609948600df52d3db4fcdab02e62aab2a85ef34da67037dc3e65b8512faa", size = 581765, upload-time = "2026-03-09T17:41:22.443Z" }
 wheels = [
@@ -6569,8 +6583,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" } },
     { name = "pillow" },
-    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/d2/9daad500db2ab880eca0f0a569afd73e1afdd49f22c94560c85546dd87c2/torchvision-0.29.0-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:994687b818cac0e6d34cb407a41458e2c3262cb7db927465841c9522ba7ebb92", size = 1813740, upload-time = "2026-09-02T13:47:03.933Z" },
@@ -6747,12 +6761,12 @@ version = "0.5.12"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numba" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "pynndescent" },
     { name = "scikit-learn" },
-    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "tqdm" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/02/ee/af4171241117f85c74b5ca6448ea1033cc28d599c13651d67289bacd4083/umap_learn-0.5.12.tar.gz", hash = "sha256:6aff02ecac5f2aad9f3c65ee518d7ae93e1a985ae38721fdcffceee4232c33c7", size = 96672, upload-time = "2026-04-08T20:03:54.012Z" }
@@ -6774,8 +6788,8 @@ name = "useq-schema"
 version = "0.9.3.dev1+g942a551d6"
 source = { git = "https://github.com/ieivanov/useq-schema?branch=main#942a551d6a81f7999f9f517eadd5c44685c5dcfe" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "pydantic" },
     { name = "shapely" },
     { name = "typing-extensions" },
@@ -6806,11 +6820,12 @@ dependencies = [
     { name = "lightning" },
     { name = "monai" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" } },
-    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" } },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "pyarrow" },
     { name = "pydantic" },
-    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "tqdm" },
     { name = "zarr" },
 ]
@@ -6828,8 +6843,8 @@ dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" } },
     { name = "pytorch-metric-learning" },
     { name = "timm" },
-    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "transformers" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/5d/4a/5a0bdaa43e1615d2febeb26765fa73ebb3ae319bcc548a661d479116ccc9/viscy_models-0.1.0.tar.gz", hash = "sha256:4c97f8a9f63cd80db7b59fadaf1afedc555aa04ab4d91636a059f148f5e31238", size = 76665, upload-time = "2026-08-20T20:27:20.777Z" }
@@ -6845,8 +6860,8 @@ dependencies = [
     { name = "kornia" },
     { name = "monai" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" } },
-    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/70/b6/bb5ab5a9cbe7cd17c21f60dda96b5c928cc6ebf00bcf227cf790ae43582f/viscy_transforms-0.1.0a0.tar.gz", hash = "sha256:a108615da94779d90fc064c59ac2db384c580ec12cb4fc41db35e279dbd4e394", size = 6374171, upload-time = "2026-06-30T15:25:54.422Z" }
 wheels = [
@@ -6859,7 +6874,7 @@ version = "0.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "iohub", version = "0.3.12.dev9+172ee92", source = { git = "https://github.com/czbiohub-sf/iohub?rev=172ee926829300b42708edbf6c8e20f2fd642f78#172ee926829300b42708edbf6c8e20f2fd642f78" } },
-    { name = "jsonargparse", extra = ["signatures"], marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
+    { name = "jsonargparse", extra = ["signatures"], marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
     { name = "lightning" },
     { name = "matplotlib" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" } },
@@ -6870,8 +6885,8 @@ dependencies = [
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" } },
     { name = "tensorboard" },
     { name = "tensorstore" },
-    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "viscy-data" },
     { name = "wandb" },
     { name = "xarray" },
@@ -6889,8 +6904,8 @@ dependencies = [
     { name = "freetype-py" },
     { name = "hsluv" },
     { name = "kiwisolver" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "packaging" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/59/05/24d898a22390b2fe563905e9cceae24b1c4393253afbb22df18143085278/vispy-0.16.2.tar.gz", hash = "sha256:09451abe8781336fd6842207cd95ce5e8609d99f13bcde898412538125c35088", size = 2522193, upload-time = "2026-05-20T13:30:00.609Z" }
@@ -6967,8 +6982,8 @@ dependencies = [
     { name = "qtpy" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" } },
     { name = "tensorboard" },
-    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform != 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
-    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov-cellpose') or (sys_platform == 'win32' and extra != 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform != 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra == 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "torch", version = "2.14.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-shrimpy-dynatrack') or (sys_platform == 'win32' and extra == 'extra-7-shrimpy-fov') or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "wget" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/94/6f/b1d5478ea51584d7975162d9cc8e3607d326194d54b5554beb9a7f4f7c16/waveorder-3.0.5.tar.gz", hash = "sha256:2f78105b0262d3df16a5f6e4a77a1aebcc3347533c1c2d891c8e223ecb3510a3", size = 67159460, upload-time = "2026-06-23T03:37:37.534Z" }
@@ -7101,11 +7116,11 @@ name = "xarray"
 version = "2026.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "packaging" },
-    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu')" },
+    { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/ea/96/3f7bdd00e505ec3698903415b30135024703e017b28c6b61f98da3193b0d/xarray-2026.7.0.tar.gz", hash = "sha256:361b495928fdbf5b58d0969bb6775339019da5e93ca74d61ddf4eb5edd6ce604", size = 3145348, upload-time = "2026-07-09T17:38:26.515Z" }
 wheels = [
@@ -7272,16 +7287,12 @@ wheels = [
 
 [[package]]
 name = "yaozarrs"
-version = "0.3.2"
-source = { registry = "https://pypi.org/simple" }
+version = "0.3.2.dev5+ga5b824b52"
+source = { git = "https://github.com/ieivanov/yaozarrs?branch=fix-plate-builder-row-groups#a5b824b529084f66b2cec8e632f2af061dba752c" }
 dependencies = [
     { name = "pydantic" },
     { name = "pydantic-core", marker = "python_full_version >= '3.13' or (extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu')" },
     { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/f2/52/1ce1df1554c9e0fc0380e8e1a0365ea79cbd6d52daa5e39f26885e74273f/yaozarrs-0.3.2.tar.gz", hash = "sha256:d99cf65b03daffe3e704d97726ead7b8ff9da29815d4d973edc0ff3b46e7de7f", size = 199424, upload-time = "2026-09-11T11:51:19.032Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/32/de/be83afdd24ee0b8084e2b64bc7203f8ecd174425ae056d68e613aeff8f17/yaozarrs-0.3.2-py3-none-any.whl", hash = "sha256:049b0e1df62db380f3b6c2e76105963813bb250ccd2ae4707f6a2a54c6a93276", size = 105650, upload-time = "2026-09-11T11:51:17.177Z" },
 ]
 
 [package.optional-dependencies]
@@ -7382,8 +7393,8 @@ dependencies = [
     { name = "donfig" },
     { name = "google-crc32c" },
     { name = "numcodecs" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "packaging" },
     { name = "typing-extensions" },
 ]
@@ -7397,8 +7408,8 @@ name = "zarrs"
 version = "0.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose' or extra != 'group-7-shrimpy-test-cpu'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-shrimpy-dynatrack' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov' and extra == 'group-7-shrimpy-test-cpu') or (extra == 'extra-7-shrimpy-fov-cellpose' and extra == 'group-7-shrimpy-test-cpu') or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "zarr" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f9/b3/9e088d4ab5c971e5d2b52cd4d58e3acce35acb3e131990fdc28b69366233/zarrs-0.2.3.tar.gz", hash = "sha256:61640dbbffb9a0b0ebd73f970ce97b52ef56df2828c2809058016d76da59ee60", size = 64827, upload-time = "2026-03-27T08:47:44.186Z" }

@@ -42,7 +42,7 @@ The core install is headless and pulls no Qt bindings, so `shrimpy acquire` work
 
 ```sh
 uv sync --extra gui        # `shrimpy gui` (pymmcore-gui)
-uv sync --extra viewer     # live napari viewer during acquisition
+uv sync --extra viewer     # napari viewer for live and finished acquisitions
 uv sync --extra dynatrack  # DynaTrack position tracking (biahub, torch)
 uv sync --all-extras       # all of the above
 ```
@@ -105,6 +105,21 @@ uv run shrimpy acquire mantis \
 The output directory must already exist.
 
 Acquisitions are configured using YAML files, each an `MDASequence` with the microscope settings under `metadata`. See [config/mda/](config/mda/) for example configurations.
+
+### Viewing acquisitions
+
+Add `--napari-viewer` to `shrimpy acquire mantis` to watch an acquisition as it runs, or
+open a dataset on its own:
+
+```sh
+uv run shrimpy view ./YYYY_MM_DD_experiment_name/acquisition_name_1.ome.zarr --deskew
+```
+
+Both read the acquisition's OME-Zarr directly, so they are the same view of the same
+data. The store can be opened while it is still being written, which means `shrimpy
+view` also attaches to a run already in progress — from another terminal, or another
+machine that can see the same directory — and that a live viewer shows the *whole*
+acquisition so far, not just the most recent frames. Requires the `viewer` extra.
 
 ## Setting up the mantis microscope
 

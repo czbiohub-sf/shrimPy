@@ -16,6 +16,7 @@ if not os.environ.get("PYMM_LOG_RICH"):
 
 from shrimpy.cli.acquire import acquire
 from shrimpy.cli.gui import gui
+from shrimpy.cli.view import view
 
 
 @click.group()
@@ -31,6 +32,7 @@ def cli():
 # Register command groups
 cli.add_command(acquire)
 cli.add_command(gui)
+cli.add_command(view)
 
 
 if __name__ == "__main__":
