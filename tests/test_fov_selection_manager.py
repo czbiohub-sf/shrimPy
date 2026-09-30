@@ -1,0 +1,473 @@
+"""Tests for the streaming FOV-selection coordinator.
+
+Exercise the frame buffering, per-FOV submission, verdict store, and drain
+barrier without a GPU or worker subprocess: an in-process ``decide_fn`` stands
+in for the reconstruct->segment->tree decision (which is tested against the real
+pipeline elsewhere).
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from useq import MDAEvent, MDASequence
+
+from shrimpy.fov_selection.config import FOVSelectionConfig
+from shrimpy.fov_selection.manager import FOVSelection, PrescanOutcome
+
+# 5-slice z_plan, two channels, three candidate positions.
+SEQUENCE = MDASequence(
+    channels=[
+        {"config": "BF", "group": "Channel"},
+        {"config": "GFP", "group": "Channel"},
+    ],
+    z_plan={"top": 2, "bottom": -2, "step": 1},  # -> 5 slices
+    stage_positions=[
+        {"x": 0, "y": 0, "name": "good0"},
+        {"x": 1, "y": 0, "name": "bad0"},
+        {"x": 2, "y": 0, "name": "good1"},
+    ],
+    time_plan={"loops": 3, "interval": 0},
+)
+N_Z = 5
+META = {
+    "enabled": True,
+    "model": {"type": "classification_tree", "path": "dummy.joblib"},
+    "fov_selection_channel": "BF",
+    "target": "cells",
+    "preprocessing": ["deskew", "phase", "vs", "sum_projection", "segmentation"],
+    "deskew": {"ls_angle_deg": 30.0, "px_to_scan_ratio": 1.0},
+    "phase": {"transfer_function": {}, "apply_inverse": {}},
+    "virtual_staining": {"ckpt_path": "dummy.ckpt"},
+    "segmentation": {"model": "otsu"},
+}
+
+
+def _cfg(**overrides) -> FOVSelectionConfig:
+    """:data:`META` as the validated config object the coordinator takes.
+
+    The schema itself is exercised in ``tests/test_fov_selection_config.py``; here it is
+    only the constructor, so these tests stay about the coordinator's behaviour rather
+    than the config's shape.
+    """
+    return FOVSelectionConfig.model_validate({**META, **overrides})
+
+
+def _good_if_positive(bf_zyx: np.ndarray) -> tuple[float, bool]:
+    """Decider: a FOV is good iff its stack has a positive mean.
+
+    Encodes the verdict in the frame values so the test controls it.
+    """
+    is_good = float(bf_zyx.mean()) > 0
+    return (1.0 if is_good else 0.0), is_good
+
+
+def _event(p_idx: int, z_idx: int, channel: str, t_idx: int = 0) -> MDAEvent:
+    c_idx = 0 if channel == "BF" else 1
+    return MDAEvent(
+        index={"t": t_idx, "p": p_idx, "c": c_idx, "z": z_idx},
+        channel={"config": channel, "group": "Channel"},
+        pos_name=SEQUENCE.stage_positions[p_idx].name,
+    )
+
+
+def _feed_prescan_stack(fov: FOVSelection, p_idx: int, value: float, channel: str = "BF"):
+    """Emit a full t0 z-stack for one position with constant pixel value."""
+    for z in range(N_Z):
+        frame = np.full((4, 4), value, dtype=np.float32)
+        fov.on_frame_ready(frame, _event(p_idx, z, channel))
+
+
+def _make_fov() -> FOVSelection:
+    fov = FOVSelection.from_metadata(
+        _cfg(), SEQUENCE, pixel_size_um=0.1, decide_fn=_good_if_positive
+    )
+    fov.start(zyx_shape=(N_Z, 4, 4))
+    return fov
+
+
+# ---------------------------------------------------------------------------
+# Calibration mode plumbing
+# ---------------------------------------------------------------------------
+
+
+def _calibration_fov(tmp_path, config_extra=None):
+    """Build a coordinator directly (bypassing model validation) with a data_path."""
+    return FOVSelection(
+        config=_cfg(**(config_extra or {})),
+        sequence=SEQUENCE,
+        pixel_size_um=0.1,
+        z_step_um=1.0,
+        data_path=tmp_path / "acq.ome.zarr",
+        decide_fn=_good_if_positive,
+    )
+
+
+def test_calibration_forces_save_decision_and_exposes_feature_matrix_csv(tmp_path):
+    # calibration_mode: True with NO save_decision key -> save_decision forced on, and the
+    # feature-viewer CSV path is the fixed <name>_fov_debug/fov_summary.csv (shared with
+    # normal mode).
+    fov = _calibration_fov(tmp_path, {"calibration_mode": True})
+    assert fov.calibration_mode is True
+    assert fov._save_decision is True
+    assert fov.calibration_matrix_csv == tmp_path / "acq_fov_debug" / "fov_summary.csv"
+
+
+def test_non_calibration_has_no_feature_matrix_csv(tmp_path):
+    fov = _calibration_fov(tmp_path)  # calibration_mode absent -> False
+    assert fov.calibration_mode is False
+    assert fov._matrix_stem is None
+    assert fov.calibration_matrix_csv is None
+
+
+def test_calibration_finalize_debug_summary_is_a_noop(tmp_path):
+    # Calibration applies no selection, so finalize must not touch/require fov_summary.csv.
+    fov = _calibration_fov(tmp_path, {"calibration_mode": True})
+    (fov._debug_dir).mkdir(parents=True, exist_ok=True)
+    fov.finalize_debug_summary()  # must not raise despite there being no fov_summary.csv
+
+
+# ---------------------------------------------------------------------------
+# outcome() -- what the pre-scan hands back across the mda.run() boundary
+# ---------------------------------------------------------------------------
+
+
+def _decided_fov(tmp_path, config_extra=None) -> FOVSelection:
+    """A started coordinator that has scored one good FOV and one bad one."""
+    fov = _calibration_fov(tmp_path, config_extra)
+    fov.start(zyx_shape=(N_Z, 4, 4))
+    _feed_prescan_stack(fov, 0, value=1.0)  # good0 -> positive -> good
+    _feed_prescan_stack(fov, 1, value=-1.0)  # bad0  -> negative -> not good
+    fov.drain()
+    return fov
+
+
+def test_outcome_carries_the_selection_in_normal_mode(tmp_path):
+    fov = _decided_fov(tmp_path, {"save_decision": True})
+    try:
+        outcome = fov.outcome()
+        assert outcome.selected_fovs == ["good0"]
+        # save_decision writes the same fov_summary.csv, but only calibration hands it
+        # on: outside calibration there is no viewer to open.
+        assert outcome.calibration_csv is None
+    finally:
+        fov.shutdown()
+
+
+def test_outcome_drops_the_selection_in_calibration_mode(tmp_path):
+    # Calibration runs no timelapse, so the FOVs it scored are NOT a selection to hand
+    # on (log_selection_summary still reports which ones would have been picked). What
+    # the engine needs is the matrix the feature viewer opens on.
+    fov = _decided_fov(tmp_path, {"calibration_mode": True})
+    try:
+        assert fov.passed_position_names() == ["good0"]  # a selection does exist ...
+        assert fov.outcome() == PrescanOutcome(  # ... and is deliberately not passed on
+            selected_fovs=[],
+            calibration_csv=tmp_path / "acq_fov_debug" / "fov_summary.csv",
+        )
+    finally:
+        fov.shutdown()
+
+
+def test_outcome_survives_shutdown(tmp_path):
+    # shutdown() clears the frame buffers, not the verdicts -- so the engine's ordering
+    # (capture, then the debug writers, then shutdown) is not load-bearing for this.
+    fov = _decided_fov(tmp_path)
+    fov.shutdown()
+    assert fov.outcome().selected_fovs == ["good0"]
+
+
+def test_from_metadata_disabled_returns_none():
+    assert FOVSelection.from_metadata(_cfg(enabled=False), SEQUENCE, 0.1) is None
+    assert FOVSelection.from_metadata(None, SEQUENCE, 0.1) is None
+
+
+def test_model_type_picks_the_selection_rule():
+    # Ranking selects the top_fov best FOVs per position; a classification model selects
+    # on its per-FOV verdict and needs no quota. The coordinator keys on the TYPE.
+    ranking = _cfg(
+        model={
+            "type": "ranking_by_defined_range",
+            "top_fov": 2,
+            "features": {"coverage_frac": {"shape": "gaussian", "center": 0.5, "fwhm": 0.2}},
+        }
+    )
+    fov = FOVSelection.from_metadata(ranking, SEQUENCE, 0.1, decide_fn=_good_if_positive)
+    assert fov._model_type == "ranking_by_defined_range"
+    assert fov._top_fov == 2
+
+    thresholding = _cfg(
+        model={
+            "type": "classification_by_thresholding",
+            "features": {"coverage_frac": {"range": [0.0, 1.0]}},
+        }
+    )
+    fov = FOVSelection.from_metadata(thresholding, SEQUENCE, 0.1, decide_fn=_good_if_positive)
+    assert fov._model_type == "classification_by_thresholding"
+    assert fov._top_fov is None
+
+
+def test_from_metadata_requires_pixel_size():
+    with pytest.raises(ValueError, match="pixel size"):
+        FOVSelection.from_metadata(_cfg(), SEQUENCE, pixel_size_um=0.0)
+
+
+def test_from_metadata_requires_a_z_step_for_deskew_or_phase():
+    # deskew/phase take the Z step from the sequence, not the config; without one the
+    # worker would only fail mid-run (or silently use a wrong axial scale).
+    flat = SEQUENCE.replace(z_plan=None)
+    with pytest.raises(ValueError, match="Z step"):
+        FOVSelection.from_metadata(_cfg(), flat, 0.1)
+
+
+def test_from_metadata_rejects_unknown_fov_selection_channel():
+    with pytest.raises(ValueError, match="fov_selection_channel"):
+        FOVSelection.from_metadata(_cfg(fov_selection_channel="nope"), SEQUENCE, 0.1)
+
+
+def test_streaming_decision_partitions_good_and_bad():
+    fov = _make_fov()
+    try:
+        _feed_prescan_stack(fov, 0, value=1.0)  # good0 -> positive
+        _feed_prescan_stack(fov, 1, value=-1.0)  # bad0  -> negative
+        _feed_prescan_stack(fov, 2, value=2.0)  # good1 -> positive
+        fov.drain()
+
+        assert fov.num_decided == 3
+        # Non-ranking model (top_fov None): passed == the FOVs decided good.
+        passed = set(fov.passed_position_names())
+        assert passed == {"good0", "good1"}
+        assert "bad0" not in passed
+        assert "unseen" not in passed  # undecided -> not selected
+    finally:
+        fov.shutdown()
+
+
+def test_partial_stack_is_not_decided():
+    """A position whose stack is incomplete must not produce a verdict."""
+    fov = _make_fov()
+    try:
+        # Only 3 of 5 slices for position 0.
+        for z in range(3):
+            fov.on_frame_ready(np.ones((4, 4), np.float32), _event(0, z, "BF"))
+        fov.drain()
+        assert fov.num_decided == 0
+    finally:
+        fov.shutdown()
+
+
+def test_non_input_channel_and_later_timepoints_ignored():
+    fov = _make_fov()
+    try:
+        # GFP frames at t0 and BF frames at t1 must not be buffered for a decision.
+        for z in range(N_Z):
+            fov.on_frame_ready(np.ones((4, 4), np.float32), _event(0, z, "GFP"))
+            fov.on_frame_ready(np.ones((4, 4), np.float32), _event(0, z, "BF", t_idx=1))
+        fov.drain()
+        assert fov.num_decided == 0
+    finally:
+        fov.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# target (cells | nuclei) -> reconstruction channels and the segmentation head
+# ---------------------------------------------------------------------------
+
+
+def test_target_nuclei_reconstructs_nuclei_only():
+    # VS + nuclei -> only the nuclei channel is reconstructed (membrane not predicted).
+    fov = FOVSelection.from_metadata(
+        _cfg(target="nuclei"), SEQUENCE, 0.1, decide_fn=_good_if_positive
+    )
+    assert fov._recon_channels == ["nuclei"]
+    fov_cells = FOVSelection.from_metadata(
+        _cfg(target="cells"), SEQUENCE, 0.1, decide_fn=_good_if_positive
+    )
+    assert fov_cells._recon_channels == ["nuclei", "membrane"]
+
+
+def test_target_drives_the_segmentation_head():
+    # `target` is a top-level field; the coordinator injects it into the segmentation
+    # block, so the backend never carries a second copy that could disagree with it.
+    fov = FOVSelection.from_metadata(
+        _cfg(target="nuclei"), SEQUENCE, 0.1, decide_fn=_good_if_positive
+    )
+    assert fov._segmentation["target"] == "nuclei"
+
+
+# --- debug-summary finalisation ------------------------------------------------------
+# `selected` / `rank` are added post-drain over the finished CSV. These pin the values and,
+# more importantly, that a filesystem failure there cannot escape into teardown_sequence:
+# a debug artifact must never be able to abort an acquisition.
+
+
+class _StubSelection(FOVSelection):
+    """Bare FOVSelection exposing only what finalize_debug_summary touches.
+
+    ``fov_group`` maps every candidate name to a position; the default puts the four
+    ``_summary`` FOVs in ONE position, so ``rank`` is a single global ordering.
+    """
+
+    def __init__(
+        self,
+        debug_dir,
+        top_fov,
+        passed,
+        fov_group=None,
+        well_coords=None,
+        calibration_mode=False,
+    ):
+        self._debug_dir = debug_dir
+        self._top_fov = top_fov
+        self._passed = passed
+        self._calibration_mode = calibration_mode
+        self._fov_group = fov_group if fov_group is not None else dict.fromkeys("ABCD", "P")
+        self._well_coords = well_coords or {}
+
+    def passed_position_names(self):
+        return self._passed
+
+
+def _summary(tmp_path):
+    import pandas as pd
+
+    (tmp_path / "fov_summary.csv").write_text(
+        pd.DataFrame({"name": ["A", "B", "C", "D"], "proba": [0.1, 0.9, 0.5, 0.5]}).to_csv(
+            index=False
+        )
+    )
+    return tmp_path / "fov_summary.csv"
+
+
+def test_finalize_adds_selected_and_rank_for_a_ranking_model(tmp_path):
+    import pandas as pd
+
+    csv = _summary(tmp_path)
+    _StubSelection(tmp_path, top_fov=2, passed=["B", "C"]).finalize_debug_summary()
+
+    df = pd.read_csv(csv)
+    assert list(df.columns)[:5] == ["name", "proba", "selected", "position", "rank"]
+    assert df.set_index("name")["selected"].to_dict() == {"A": 0, "B": 1, "C": 1, "D": 0}
+    # all four FOVs are in one position (stub default), so rank is a single global ordering;
+    # method='first' -> ties get distinct consecutive ranks, not 3.5/3.5.
+    assert df.set_index("name")["rank"].to_dict() == {"A": 4.0, "B": 1.0, "C": 2.0, "D": 3.0}
+
+
+def _summary_with_filenames(tmp_path):
+    import pandas as pd
+
+    (tmp_path / "fov_summary.csv").write_text(
+        pd.DataFrame(
+            {
+                "name": ["A1_0000", "A1_0001", "B2_0000"],
+                "filename": ["A1_0000", "A1_0001", "B2_0000"],
+                "proba": [0.1, 0.9, 0.5],
+            }
+        ).to_csv(index=False)
+    )
+    return tmp_path / "fov_summary.csv"
+
+
+_WELLS = {"A1_0000": ("A", 1), "A1_0001": ("A", 1), "B2_0000": ("B", 2)}
+
+
+def test_finalize_stamps_well_columns_in_normal_mode(tmp_path):
+    # well_row/well_col are joined onto the CSV by filename so the viewer can group by well;
+    # the selection columns are still added in normal mode.
+    import pandas as pd
+
+    csv = _summary_with_filenames(tmp_path)
+    _StubSelection(
+        tmp_path,
+        top_fov=1,
+        passed=["A1_0001", "B2_0000"],
+        fov_group={"A1_0000": "A1", "A1_0001": "A1", "B2_0000": "B2"},
+        well_coords=_WELLS,
+    ).finalize_debug_summary()
+
+    df = pd.read_csv(csv).set_index("filename")
+    assert df.loc["A1_0000", "well_row"] == "A" and int(df.loc["A1_0000", "well_col"]) == 1
+    assert df.loc["B2_0000", "well_row"] == "B" and int(df.loc["B2_0000", "well_col"]) == 2
+    assert {"selected", "rank", "position"} <= set(df.columns)  # selection still stamped
+
+
+def test_finalize_stamps_well_columns_in_calibration_mode(tmp_path):
+    # calibration runs no selection, but the well columns must still be stamped so the viewer
+    # can group the calibration matrix by well.
+    import pandas as pd
+
+    csv = _summary_with_filenames(tmp_path)
+    _StubSelection(
+        tmp_path, top_fov=None, passed=[], well_coords=_WELLS, calibration_mode=True
+    ).finalize_debug_summary()
+
+    df = pd.read_csv(csv)
+    assert {"well_row", "well_col"} <= set(df.columns)
+    assert "selected" not in df.columns  # no timelapse -> no selection columns
+
+
+def test_finalize_gathers_only_selected_projection_pngs(tmp_path):
+    # save_decision writes every FOV's projection to prescan_fov/; finalize copies just the
+    # selected ones into selected_fov/, prefixed by position, so the fields the timelapse
+    # will image can be browsed on their own.
+    from shrimpy.fov_selection.plate_naming import file_stem_name
+
+    _summary(tmp_path)
+    proj_dir = tmp_path / "prescan_fov"
+    proj_dir.mkdir()
+    for name in ["A", "B", "C", "D"]:
+        (proj_dir / f"{file_stem_name(name)}.png").write_bytes(b"png")
+
+    _StubSelection(tmp_path, top_fov=2, passed=["B", "C"]).finalize_debug_summary()
+
+    sel_dir = tmp_path / "selected_fov"
+    got = sorted(p.name for p in sel_dir.iterdir())
+    # position "P" for all (stub default): files are prefixed by well then FOV name.
+    assert got == sorted(f"{file_stem_name('P')}__{file_stem_name(n)}.png" for n in ("B", "C"))
+    # the unselected FOVs are not copied over.
+    assert not (sel_dir / f"{file_stem_name('P')}__{file_stem_name('A')}.png").exists()
+
+
+def test_finalize_skips_selected_pngs_when_no_projection_folder(tmp_path):
+    # save_decision off (or the projections were never written): no folder is created and
+    # finalize still succeeds.
+    _summary(tmp_path)
+    _StubSelection(tmp_path, top_fov=2, passed=["B", "C"]).finalize_debug_summary()
+    assert not (tmp_path / "selected_fov").exists()
+
+
+def test_finalize_leaves_rank_nan_for_non_ranking_models(tmp_path):
+    import pandas as pd
+
+    csv = _summary(tmp_path)
+    _StubSelection(tmp_path, top_fov=None, passed=["B", "D"]).finalize_debug_summary()
+
+    df = pd.read_csv(csv)
+    assert df["rank"].isna().all()  # no ordering exists for a pass/fail model
+    assert df.set_index("name")["selected"].to_dict() == {"A": 0, "B": 1, "C": 0, "D": 1}
+
+
+def test_finalize_is_a_noop_without_a_summary(tmp_path):
+    _StubSelection(tmp_path, top_fov=2, passed=[]).finalize_debug_summary()  # no CSV
+    _StubSelection(None, top_fov=2, passed=[]).finalize_debug_summary()  # save_decision off
+
+
+def test_finalize_falls_back_when_the_csv_is_not_writable(tmp_path):
+    # A spreadsheet app holding fov_summary.csv open must not raise out of
+    # teardown_sequence, and must not silently lose the selection either.
+    import os
+    import stat
+
+    import pandas as pd
+
+    csv = _summary(tmp_path)
+    os.chmod(csv, stat.S_IREAD)
+    try:
+        _StubSelection(tmp_path, top_fov=2, passed=["B", "C"]).finalize_debug_summary()
+    finally:
+        os.chmod(csv, stat.S_IWRITE)
+
+    fallback = tmp_path / "fov_summary_selected.csv"
+    assert fallback.exists(), "selected/rank must survive a locked target"
+    assert set(pd.read_csv(fallback).columns) >= {"selected", "rank"}
