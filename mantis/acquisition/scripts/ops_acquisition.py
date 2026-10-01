@@ -39,8 +39,8 @@ well_diameter = 3000
 min_fov_distance_from_well_edge = 800  # in um
 well_centers = {
     'A1': (-49000, -17080, 7893),
-    'A2': (-9660, -17080, 7848),
-    'A3': (29680, -17080, 7830),
+    # 'A2': (-9660, -17080, 7848),
+    # 'A3': (29680, -17080, 7830),
     # 'B1': (-49000, 23000, 7893),
     # 'B2': (-9660, 23000, 7848),
     # 'B3': (29680, 23000, 7830),
@@ -57,11 +57,11 @@ phenotyping_channel_group = '02_Channels'
 # phenotyping_channel = '5-MultiCam_DAPI_mCherry_BF'
 # phenotyping_channel = '5-MultiCam_GFP_Cy5_BF'
 # phenotyping_channel = '5-MultiCam_GFP_mCherry_BF'
-# phenotyping_channel = '4-MultiCam_GFP_BF'
+phenotyping_channel = '4-MultiCam_GFP_BF'
 # phenotyping_channel = '4-MultiCam_CL488_BF'
 # phenotyping_channel = '4-MultiCam_mCherry_BF'
 # phenotyping_channel = '4-MultiCam_Cy5_BF'
-phenotyping_channel = '1-Zyla_BF'
+# phenotyping_channel = '1-Zyla_BF'
 tracking_channel_group = '02_Channels'
 tracking_channel = '1-Zyla_BF'
 
@@ -366,6 +366,23 @@ def autofocus_hook_fn(events):
             logger.error('Autofocus failed')
     return events
 
+def get_last_image_idx(events):
+    last_img_idx = dict(events[-1]['axes'])
+
+    _last_camera = None
+    if mmc.get_property('Core', 'Camera') == 'Multi Camera':
+        for i in range(3):
+            _camera = mmc.get_property('Multi Camera', f'Physical Camera {i+1}')
+            if _camera != "Undefined":
+                _last_camera = _camera
+            else:
+                break
+
+    if _last_camera is not None:
+        last_img_idx.update({'camera': _last_camera})
+
+    return last_img_idx
+
 with open(acq_dir / 'tracking_position_list.json', 'w') as fp:
     json.dump(
         dict(zip(tracking_position_labels.flatten().tolist(), tracking_positions.reshape(-1, 3).tolist())),
@@ -404,11 +421,7 @@ try:
             xy_positions=pheno_positions[i, :, :2],  # select XY positions only
             # keep_shutter_open_between_z_steps=True,
         )
-        last_img_idx = dict(events[-1]['axes'])
-        # last_img_idx.update({'channel': num_phenotyping_channel-1})
-        # TODO: Remove hardcode
-        ##### BUG 
-        # last_img_idx.update({'camera': "Sona-Long"})
+        last_img_idx = get_last_image_idx(events)
         logger.info(f'Acquiring phenotyping at well {well_name}')
         acq = Acquisition(
             directory=str(acq_dir),
