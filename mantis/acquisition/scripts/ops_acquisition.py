@@ -23,23 +23,24 @@ def _create_acquisition_directory(root_dir: Path, acq_name: str, idx=1) -> Path:
     return acq_dir
 
 USE_HW_SEQUENCING = False
+SKIP_TRACKING = False
 DEBUG = False
 PIEZO_STEP_TIME_S = 0.05
 NUM_RETRY = 3
 BRUNO_DST = Path(r"Z:\OPS")
 mmc = Core()
 
-acquisition_directory = Path(r'D:\Ivan\2026_08_19_ops_testing')
-acquisition_name = 'test_OPS0000'
+acquisition_directory = Path(r'D:\\OPS')
+acquisition_name = 'OPS0206_fixed'
 # start_time = '2026-04-14 04:15:00'
 start_time = 'now'
 well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
 # well_diameter = 3000
 min_fov_distance_from_well_edge = 800  # in um
 well_centers = {
-    'A1': (-49160, -16300, 7917),
-    'A2': (-10100, -16000, 7915),
-    'A3': (28800, -16000, 7944),
+    'A1': (-49000, -17080, 7893),
+    'A2': (-9660, -17080, 7848),
+    'A3': (29680, -17080, 7830),
 }  # (x, y, z) in um
 
 phenotyping_magnification = 20
@@ -53,11 +54,11 @@ phenotyping_channel_group = 'Channels'
 # phenotyping_channel = '5-MultiCam_DAPI_mCherry_BF'
 # phenotyping_channel = '5-MultiCam_GFP_Cy5_BF'
 # phenotyping_channel = '5-MultiCam_GFP_mCherry_BF'
-phenotyping_channel = '4-MultiCam_GFP_BF'
+# phenotyping_channel = '4-MultiCam_GFP_BF'
 # phenotyping_channel = '4-MultiCam_CL488_BF'
 # phenotyping_channel = '4-MultiCam_mCherry_BF'
 # phenotyping_channel = '4-MultiCam_Cy5_BF'
-# phenotyping_channel = '1-Zyla_BF'
+phenotyping_channel = '1-Zyla_BF'
 tracking_channel_group = 'Channels'
 tracking_channel = '1-Zyla_BF'
 
@@ -383,6 +384,9 @@ if start_delay_s > 0:
 
 try:
     setup_acquisition()
+
+    if SKIP_TRACKING:
+        logger.warning('This run will skip tracking acquisitions')
         
     logger.info(f'Starting acquisition')
     for i, well_name in enumerate(well_names):
@@ -400,7 +404,8 @@ try:
         last_img_idx = dict(events[-1]['axes'])
         # last_img_idx.update({'channel': num_phenotyping_channel-1})
         # TODO: Remove hardcode
-        last_img_idx.update({'camera': "Sona-Long"})
+        ##### BUG 
+        # last_img_idx.update({'camera': "Sona-Long"})
         logger.info(f'Acquiring phenotyping at well {well_name}')
         acq = Acquisition(
             directory=str(acq_dir),
@@ -415,7 +420,7 @@ try:
         acq.await_completion()
 
         # Track cells
-        if i < num_wells-1:  # no need to track after the last well has been phenotyped
+        if not SKIP_TRACKING and i < num_wells-1:  # no need to track after the last well has been phenotyped
             logger.info(f'Changing magnification for tracking')
             change_magnification_tracking()
             events = multi_d_acquisition_events(
