@@ -120,14 +120,17 @@ packages = ["src/shrimpy"]
 members = ["packages/*"]
 
 [tool.uv.sources]
-pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", branch = "main" }
-ome-writers = { git = "https://github.com/ieivanov/ome-writers", branch = "main" }
-useq-schema = { git = "https://github.com/ieivanov/useq-schema", branch = "main" }
-# Released yaozarrs (<=0.3.2) never writes the plate *row* groups from
-# PlateBuilder.prepare(), the path ome-writers takes, so an HCS store cannot be read
-# until it is closed and the live viewer stays empty for the whole acquisition.
-# imaging-formats/yaozarrs#58; point this back at PyPI once that is released.
-yaozarrs = { git = "https://github.com/ieivanov/yaozarrs", branch = "fix-plate-builder-row-groups" }
+# ieivanov/pymmcore-plus@combined/skip-missing-state-props-and-seq-recheck-buffer:
+# upstream main plus two open PRs, pymmcore-plus#631 "fix: don't read
+# state-device properties the device doesn't have" and pymmcore-plus#633 "fix:
+# re-check the buffer after a sequence stops so late frames are not dropped";
+# point back at a released/main commit once both are merged.
+pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", rev = "84c4aed9674c4e242589b3dc8f850432d64ea8c9" }
+ome-writers = { git = "https://github.com/pymmcore-plus/ome-writers", rev = "ba0f638c9191a66f4667ce8e86030a9265ecb67f" }
+useq-schema = { git = "https://github.com/pymmcore-plus/useq-schema", rev = "942a551d6a81f7999f9f517eadd5c44685c5dcfe" }
+# imaging-formats/yaozarrs#58 (open): "fix: create the plate row groups in
+# PlateBuilder.prepare()"; point this back at PyPI once that is released.
+yaozarrs = { git = "https://github.com/imaging-formats/yaozarrs", rev = "a5b824b529084f66b2cec8e632f2af061dba752c" }
 napari-deskew-preview = { workspace = true }
 fov-feature-viewer = { workspace = true }
 # Windows: CUDA build via cu132 index (requires CUDA Toolkit 13.2 on the machine)
