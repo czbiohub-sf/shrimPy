@@ -120,9 +120,12 @@ packages = ["src/shrimpy"]
 members = ["packages/*"]
 
 [tool.uv.sources]
-# pymmcore-plus#631 (open): "fix: don't read state-device properties the device
-# doesn't have"; point back at a released/main commit once it is merged.
-pymmcore-plus = { git = "https://github.com/pymmcore-plus/pymmcore-plus", rev = "59cfb0b72b3b025a5768ddac15daa7f91c8eb573" }
+# ieivanov/pymmcore-plus@combined/skip-missing-state-props-and-seq-recheck-buffer:
+# upstream main plus two open PRs, pymmcore-plus#631 "fix: don't read
+# state-device properties the device doesn't have" and pymmcore-plus#633 "fix:
+# re-check the buffer after a sequence stops so late frames are not dropped";
+# point back at a released/main commit once both are merged.
+pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", rev = "84c4aed9674c4e242589b3dc8f850432d64ea8c9" }
 ome-writers = { git = "https://github.com/pymmcore-plus/ome-writers", rev = "ba0f638c9191a66f4667ce8e86030a9265ecb67f" }
 useq-schema = { git = "https://github.com/pymmcore-plus/useq-schema", rev = "942a551d6a81f7999f9f517eadd5c44685c5dcfe" }
 # imaging-formats/yaozarrs#58 (open): "fix: create the plate row groups in
