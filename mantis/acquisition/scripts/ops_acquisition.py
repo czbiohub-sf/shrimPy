@@ -23,7 +23,7 @@ def _create_acquisition_directory(root_dir: Path, acq_name: str, idx=1) -> Path:
     return acq_dir
 
 USE_HW_SEQUENCING = False
-SKIP_TRACKING = False
+SKIP_TRACKING = True
 DEBUG = False
 PIEZO_STEP_TIME_S = 0.05
 NUM_RETRY = 3
@@ -31,16 +31,19 @@ BRUNO_DST = Path(r"Z:\OPS")
 mmc = Core()
 
 acquisition_directory = Path(r'D:\\OPS')
-acquisition_name = 'OPS0206_fixed'
+acquisition_name = 'test_OPS0000'
 # start_time = '2026-04-14 04:15:00'
 start_time = 'now'
-well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
-# well_diameter = 3000
+# well_diameter = 35000  # in um, 6 well plates have 35 mm diameter wells
+well_diameter = 3000
 min_fov_distance_from_well_edge = 800  # in um
 well_centers = {
     'A1': (-49000, -17080, 7893),
     'A2': (-9660, -17080, 7848),
     'A3': (29680, -17080, 7830),
+    # 'B1': (-49000, 23000, 7893),
+    # 'B2': (-9660, 23000, 7848),
+    # 'B3': (29680, 23000, 7830),
 }  # (x, y, z) in um
 
 phenotyping_magnification = 20
@@ -50,7 +53,7 @@ percent_overlap = 8
 image_size = (2048, 2046)
 pixel_size = 6.5  # in um
 
-phenotyping_channel_group = 'Channels'
+phenotyping_channel_group = '02_Channels'
 # phenotyping_channel = '5-MultiCam_DAPI_mCherry_BF'
 # phenotyping_channel = '5-MultiCam_GFP_Cy5_BF'
 # phenotyping_channel = '5-MultiCam_GFP_mCherry_BF'
@@ -59,7 +62,7 @@ phenotyping_channel_group = 'Channels'
 # phenotyping_channel = '4-MultiCam_mCherry_BF'
 # phenotyping_channel = '4-MultiCam_Cy5_BF'
 phenotyping_channel = '1-Zyla_BF'
-tracking_channel_group = 'Channels'
+tracking_channel_group = '02_Channels'
 tracking_channel = '1-Zyla_BF'
 
 # Define same exposure for all channels.
