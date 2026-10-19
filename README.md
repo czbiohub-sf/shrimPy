@@ -34,7 +34,7 @@ This will automatically:
 - Create a `.venv` virtual environment
 - Install shrimPy, its dependencies, and the development tooling
 
-`pymmcore-plus`, `ome-writers`, and `useq-schema` track git branches pinned in `pyproject.toml` and are fetched for you. They do not need to be cloned separately.
+`pymmcore-plus`, `ome-writers`, `useq-schema`, and `yaozarrs` are pinned to git commits in `pyproject.toml` and are fetched for you. They do not need to be cloned separately.
 
 ### Optional features
 
