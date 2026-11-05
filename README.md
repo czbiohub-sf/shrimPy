@@ -9,6 +9,9 @@ The acquired multidimensional raw datasets are processed with the [biahub](https
 
 This version of the code contains an acquisition engine for the `mantis` microscope, including several archived versions. We intend to develop additional acquisition engines for the `iSIM` and `Dragonfly` microscopes within this framework. These acquisition engines are expected to have shared features but also to accommodate differences between the microscope hardware and the acquisition needs on each microscope.
 
+> **Project status:** Active development. shrimPy is alpha software, and its
+> APIs, CLI, and configuration formats may change between releases.
+
 ## Installation
 
 This project uses [uv](https://docs.astral.sh/uv/) for package management. uv handles Python installation, virtual environments, and dependency locking automatically.
@@ -161,3 +164,17 @@ uv run pre-commit install
 ## Contributing
 
 We are updating the code to enable smart high throughput microscopy on any Micro-Manager controlled microscope. The code will have rough edges for the next several months. We appreciate the bug reports and code contributions if you use this package. If you would like to contribute to this package, please read the [contributing guide](CONTRIBUTING.md).
+
+## Community
+
+Participation in shrimPy is governed by the
+[Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+Do not report security vulnerabilities in public issues. Follow our
+[security policy](SECURITY.md) to report them privately.
+
+## License
+
+[BSD-3-Clause](LICENSE.md)
