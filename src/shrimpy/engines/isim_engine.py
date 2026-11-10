@@ -39,16 +39,16 @@ class ISIMEngine(BaseEngine):
 
     def __init__(self, mmc, *args, **kwargs):
         super().__init__(mmc, *args, **kwargs)
-        self._configure_orca_quest()
+        self._configure_orca_quest(mmc)
 
-    def _configure_orca_quest(self) -> None:
+    @staticmethod
+    def _configure_orca_quest(core) -> None:
         """Make the ORCA-Quest the active camera and apply the iSIM ROI.
 
         Done only if the camera is loaded, so the engine still works with other
         configs (e.g. the Micro-Manager demo config). ``setROI`` acts on the
         current camera, hence ``setCameraDevice`` first.
         """
-        core = self.mmcore
         loaded_devices = core.getLoadedDevices()
         logger.debug(f"Loaded devices: {', '.join(loaded_devices)}")
 
