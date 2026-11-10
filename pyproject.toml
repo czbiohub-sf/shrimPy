@@ -120,11 +120,11 @@ packages = ["src/shrimpy"]
 members = ["packages/*"]
 
 [tool.uv.sources]
-# main: the latest release (0.18.1) predates pymmcore-plus#631 "fix: don't read
-# state-device properties the device doesn't have" and #633 "fix: re-check the
-# buffer after a sequence stops so late frames are not dropped"; point back at
-# PyPI once released.
-pymmcore-plus = { git = "https://github.com/pymmcore-plus/pymmcore-plus", rev = "973c03a8f64fb5b0cc4f394754d8ceabcdc04077" }
+# ieivanov fork, branch fix-multicam-channel-camera: upstream main (which already
+# has #631 and #633, both newer than the latest release 0.18.1) plus the Multi
+# Camera output fixes -- size the output for the camera the channel presets select,
+# and fold cameras into the channel axis. Point back at upstream once merged.
+pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", rev = "dee873a6f2a0ff3a9b432ea91121e6390da6b838" }
 # main: the latest release (0.3.2) predates ome-writers#136 "assign fov names for
 # plate positions with grid_plan" and #134 "propagate position coordinates to zarr
 # coordinateTransforms and OME StageLabel"; point back at PyPI once released.

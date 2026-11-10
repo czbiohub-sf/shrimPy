@@ -5671,8 +5671,8 @@ dependencies = [
 
 [[package]]
 name = "pymmcore-plus"
-version = "0.18.2.dev21+g973c03a8f"
-source = { git = "https://github.com/pymmcore-plus/pymmcore-plus?rev=973c03a8f64fb5b0cc4f394754d8ceabcdc04077#973c03a8f64fb5b0cc4f394754d8ceabcdc04077" }
+version = "0.18.2.dev25+gdee873a6f"
+source = { git = "https://github.com/ieivanov/pymmcore-plus?rev=dee873a6f2a0ff3a9b432ea91121e6390da6b838#dee873a6f2a0ff3a9b432ea91121e6390da6b838" }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
     { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu' or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
@@ -7347,7 +7347,7 @@ requires-dist = [
     { name = "pandas", marker = "extra == 'fov-cellpose'", specifier = "<3" },
     { name = "pymmcore", specifier = ">=11.14.0.75.0" },
     { name = "pymmcore-gui", marker = "extra == 'gui'", git = "https://github.com/pymmcore-plus/pymmcore-gui?branch=main" },
-    { name = "pymmcore-plus", git = "https://github.com/pymmcore-plus/pymmcore-plus?rev=973c03a8f64fb5b0cc4f394754d8ceabcdc04077" },
+    { name = "pymmcore-plus", git = "https://github.com/ieivanov/pymmcore-plus?rev=dee873a6f2a0ff3a9b432ea91121e6390da6b838" },
     { name = "pyyaml" },
     { name = "qtpy" },
     { name = "scikit-image", marker = "extra == 'fov'" },
