@@ -78,7 +78,7 @@ src/shrimpy/             # the installed package
 ├── engines/             # One module per microscope, all sharing BaseEngine
 │   ├── base_engine.py        # BaseEngine: MDAEngine subclass shared by all microscopes
 │   ├── mantis_engine.py      # Label-free + light-sheet microscope (implemented)
-│   ├── isim_engine.py        # iSIM (placeholder)
+│   ├── isim_engine.py        # iSIM: selects the ORCA-Quest + ROI at init (no autofocus yet)
 │   └── dragonfly_engine.py   # Dragonfly (placeholder)
 │
 ├── config.py            # pydantic validation of the shrimPy metadata sections
@@ -172,7 +172,7 @@ class MantisEngine(BaseEngine):
 
 To add a new microscope:
 1. Subclass `BaseEngine` in `src/shrimpy/engines/<microscope_name>_engine.py`
-   (`isim_engine.py` and `dragonfly_engine.py` are placeholders to fill in)
+   (`isim_engine.py` is a minimal subclass to build on)
 2. Implement `engage_autofocus()`; override `setup_sequence()`, `setup_event()`,
    and positioning methods as needed, always calling `super()`
 3. Define microscope-specific metadata schema
@@ -241,7 +241,7 @@ finished dataset and one still being written (acquire-zarr no longer holds
 `zarr.json` locked — acquire-project/acquire-zarr#234). No image data crosses a
 process boundary and nothing is kept in RAM on the acquisition's behalf, so the
 whole acquisition is browsable while it runs and a viewer crash or hang cannot
-disturb the run. `shrimpy view` and `shrimpy acquire --napari-viewer` are the
+disturb the run. `shrimpy view` and `shrimpy acquire <microscope> --viewer` are the
 same window on the same data; the live case only adds a child process and two
 lifecycle messages (`open <path>`, `finish`) over a `multiprocessing.Queue`.
 
@@ -337,7 +337,7 @@ ship in the package metadata, so a user of the installed package can opt in with
 
 - `gui` — **pymmcore-gui**, required only by `shrimpy gui`
 - `viewer` — **napari** + **napari-deskew-preview** + **iohub**, for `shrimpy view`
-  and `shrimpy acquire --napari-viewer`
+  and `shrimpy acquire <microscope> --viewer`
 - `dynatrack` — **biahub[stain]** (pulls cytoland/VisCy), **matplotlib**, **torch**
 - `fov` — smart FOV selection: `dynatrack` plus scikit-image, pandas, scikit-learn,
   anndata and **fov-feature-viewer**; segments with InstanSeg (torch only) or Otsu
@@ -397,7 +397,7 @@ fake viewer stands in for it — but they do need `iohub` (in the `dev` group).
   now live in `src/shrimpy/engines/` and share `BaseEngine`
 - Archiving legacy code (pycromanager/V1-V2 engines, the Mantis Qt widget) in
   `archive/`
-- iSIM and Dragonfly engines are placeholders for future work
+- iSIM engine is minimal (camera/ROI selection only; no autofocus yet)
 
 **What's stable:**
 - Shared acquisition engine (`BaseEngine`) and the Mantis engine (`MantisEngine`)

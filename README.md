@@ -108,7 +108,7 @@ Acquisitions are configured using YAML files, each an `MDASequence` with the mic
 
 ### Viewing acquisitions
 
-Add `--napari-viewer` to `shrimpy acquire mantis` to watch an acquisition as it runs, or
+Add `--viewer` to `shrimpy acquire mantis`, `isim` or `dragonfly` to watch an acquisition as it runs, or
 open a dataset on its own:
 
 ```sh

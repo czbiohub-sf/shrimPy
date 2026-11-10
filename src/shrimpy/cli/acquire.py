@@ -8,7 +8,7 @@ from pathlib import Path
 
 import click
 
-from shrimpy.cli.options import mda_config, mm_config, name, output_dir
+from shrimpy.cli.options import mda_config, mm_config, name, output_dir, viewer
 from shrimpy.logging import configure_logging
 
 logger = logging.getLogger(__name__)
@@ -20,11 +20,34 @@ def acquire():
     pass
 
 
+def _acquire(engine, *, viewer: bool, deskew: bool, **acquire_kwargs) -> None:
+    """Run ``engine.acquire(**acquire_kwargs)``, optionally beside a live napari viewer.
+
+    The viewer window is left open after the acquisition: the store is complete on
+    disk, so the user can go on browsing all of it.
+    """
+    live_viewer = None
+    if viewer:
+        from shrimpy.viewer import LiveViewer
+
+        live_viewer = LiveViewer(engine, deskew=deskew)
+        live_viewer.start()
+
+    try:
+        engine.acquire(**acquire_kwargs)
+    finally:
+        if live_viewer is not None:
+            logger.info("Acquisition done; viewer window left open until closed.")
+            live_viewer.join()
+            live_viewer.cleanup()
+
+
 @acquire.command()
 @mm_config
 @mda_config
 @output_dir
 @name
+@viewer
 @click.option(
     "--unicore",
     is_flag=True,
@@ -35,13 +58,16 @@ def acquire():
     "--napari-viewer",
     is_flag=True,
     default=False,
-    help="Show the acquisition live in a separate-process napari viewer.",
+    hidden=True,
+    deprecated="Use --viewer instead.",
+    help="Deprecated alias for --viewer.",
 )
 def mantis(
     mm_config: Path,
     mda_config: Path,
     output_dir: Path,
     name: str,
+    viewer: bool,
     unicore: bool,
     napari_viewer: bool,
 ):
@@ -95,24 +121,16 @@ def mantis(
                 device.connect_to_mda(core)
     engine = MantisEngine(core)
 
-    viewer = None
-    if napari_viewer:
-        from shrimpy.viewer import LiveViewer
-
-        # Mantis is an oblique-plane light-sheet microscope, so the deskew widget is
-        # shown by default (on, toggleable). Other microscopes pass deskew=False.
-        viewer = LiveViewer(engine, deskew=True)
-        viewer.start()
-
-    try:
-        engine.acquire(output_dir=output_dir, name=name, mda_config=mda_config)
-    finally:
-        if viewer is not None:
-            # Keep the window open after the acquisition: the store is complete on
-            # disk, so the user can go on browsing all of it.
-            logger.info("Acquisition done; viewer window left open until closed.")
-            viewer.join()
-            viewer.cleanup()
+    # Mantis is an oblique-plane light-sheet microscope, so the deskew widget is
+    # shown by default (on, toggleable).
+    _acquire(
+        engine,
+        viewer=viewer or napari_viewer,
+        deskew=True,
+        output_dir=output_dir,
+        name=name,
+        mda_config=mda_config,
+    )
 
 
 @acquire.command()
@@ -120,7 +138,8 @@ def mantis(
 @mda_config
 @output_dir
 @name
-def dragonfly(mm_config: Path, mda_config: Path, output_dir: Path, name: str):
+@viewer
+def dragonfly(mm_config: Path, mda_config: Path, output_dir: Path, name: str, viewer: bool):
     """Run Dragonfly microscope acquisition.
 
     Example:
@@ -147,19 +166,56 @@ def dragonfly(mm_config: Path, mda_config: Path, output_dir: Path, name: str):
     core.loadSystemConfiguration(mm_config)
 
     engine = DragonflyEngine(core)
-    engine.acquire(output_dir=output_dir, name=name, mda_config=mda_config)
+    # Dragonfly is a spinning-disk confocal: no deskew.
+    _acquire(
+        engine,
+        viewer=viewer,
+        deskew=False,
+        output_dir=output_dir,
+        name=name,
+        mda_config=mda_config,
+    )
 
 
 @acquire.command()
-def isim():
-    """Run iSIM microscope acquisition (coming soon).
+@mm_config
+@mda_config
+@output_dir
+@name
+@viewer
+def isim(mm_config: Path, mda_config: Path, output_dir: Path, name: str, viewer: bool):
+    """Run iSIM microscope acquisition.
 
     Example:
 
         shrimpy acquire isim \\
             --mm-config /path/to/isim.cfg \\
-            --mda-config /path/to/sequence.yaml
+            --mda-config /path/to/sequence.yaml \\
+            --output-dir ./data \\
+            --name my_experiment
     """
-    click.echo(
-        click.style("iSIM acquisition is not yet implemented. Coming soon!", fg="yellow")
+    # Import before configure_logging: pymmcore-plus calls configure_logging() at module
+    # level, which clears all handlers on the "pymmcore-plus" logger. Importing first
+    # ensures that call happens before fileConfig() attaches the shrimpy file handler.
+    from shrimpy.engines.isim_engine import ISIMEngine
+    from shrimpy.robust_cmmcore import RobustCMMCore
+
+    log_file = configure_logging(output_dir, name)
+    logger.info(f"Logging configured for acquisition: {name}")
+    logger.info(f"Log file: {log_file}")
+
+    core = RobustCMMCore()
+
+    logger.info(f"Loading Micro-Manager configuration from {mm_config}")
+    core.loadSystemConfiguration(mm_config)
+
+    engine = ISIMEngine(core)
+    # iSIM images a flat focal plane: no deskew.
+    _acquire(
+        engine,
+        viewer=viewer,
+        deskew=False,
+        output_dir=output_dir,
+        name=name,
+        mda_config=mda_config,
     )

@@ -1,0 +1,58 @@
+# Setup
+setup:
+  properties:
+    - ['Core', 'Focus', 'ZStage']  # piezo stage
+    - ['Lasers', 'Intensity-5-488nm', 10]  # laser intensity
+    - ['Lasers', 'Intensity-3-561nm', 10]
+
+# Define stage positions
+stage_positions:
+- x: -35650
+  y: 37510
+  plate_row: 0
+  plate_col: 0
+  name: fov0
+  properties:
+    - ['FocusDrive', 'Position', '4889']
+- x: -35950
+  y: 37510
+  plate_row: 0
+  plate_col: 0
+  name: fov1
+  properties:
+    - ['FocusDrive', 'Position', '4889']
+
+# Define time plan
+time_plan:
+  interval: 1
+  loops: 3
+
+# Define z plan (absolute)
+z_plan:
+  top: 12
+  bottom: -9
+  # step: 0.25
+  step: 2  # DEBUG 
+  go_up: true
+
+# Define channels
+channels:
+- config: C488
+  group: ChConfocal
+  exposure: 100.0
+- config: C561
+  group: ChConfocal
+  exposure: 100.0
+
+keep_shutter_open_across: ['z']
+
+# Microscope settings
+# metadata:
+#   autofocus:
+#     enabled: true
+#     method: Adaptive Focus Control
+#     stage: FocusDrive
+#     # The z_plan rides the ASI piezo (Core-Focus) while AFC drives the Leica
+#     # FocusDrive. Without homing, AFC locks onto wherever the previous Z-stack
+#     # stopped -- the top slice -- and the stack is acquired below focus.
+#     home_focus_device: true

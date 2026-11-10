@@ -122,3 +122,6 @@ ENV/
 
 # Claude
 .claude/
+
+# Cairn Optospin device adapter log, written to the working directory
+optospin_log.txt

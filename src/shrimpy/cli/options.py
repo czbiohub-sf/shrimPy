@@ -31,6 +31,13 @@ output_dir = click.option(
     help="Output directory where acquisition data and logs will be saved (must exist)",
 )
 
+viewer = click.option(
+    "--viewer",
+    is_flag=True,
+    default=False,
+    help="Show the acquisition live in a separate-process napari viewer.",
+)
+
 name = click.option(
     "-n",
     "--name",
