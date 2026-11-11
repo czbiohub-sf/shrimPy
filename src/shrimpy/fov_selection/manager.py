@@ -39,9 +39,10 @@ import numpy as np
 
 from shrimpy.fov_selection import prescan_artifacts
 from shrimpy.fov_selection.plate_naming import file_stem_name, plate_labels
+from shrimpy.preprocessing import channel_names
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from useq import MDAEvent, MDASequence
 
@@ -110,6 +111,12 @@ class FOVSelection:
         decisions run on the executor thread instead of the worker subprocess
         (used by tests and custom deciders); ``start`` then skips spawning the
         worker.
+    channel_cameras : Sequence[Sequence[str]] | None
+        The camera channel names each of ``sequence.channels`` acquires with (see
+        :func:`shrimpy.preprocessing.channel_names`). A Multi Camera channel yields one
+        frame per camera per event, so ``fov_selection_channel`` must then name the
+        camera, as the store does: ``"<channel>-<camera>"``. ``None`` treats every
+        channel as single-camera.
     """
 
     def __init__(
@@ -120,6 +127,7 @@ class FOVSelection:
         z_step_um: float,
         data_path: Path | None = None,
         decide_fn: Callable[[np.ndarray], tuple[float, bool]] | None = None,
+        channel_cameras: Sequence[Sequence[str]] | None = None,
     ) -> None:
         self.config = config
         self._pixel_size_um = pixel_size_um
@@ -218,7 +226,11 @@ class FOVSelection:
         # InstanSeg heads), so the segmentation block does not carry a second source of truth.
         self._segmentation = {**self._segmentation, "target": self._target}
 
-        self._validate_fov_selection_channel(sequence)
+        # The channel config frames are matched on, and for a Multi Camera channel
+        # the camera index (see on_frame_ready).
+        self._fov_channel_config, self._fov_camera_index = self._resolve_fov_selection_channel(
+            sequence, channel_cameras
+        )
         self._expected_slices = max(sequence.sizes.get("z", 1), 1)
 
         # Per-(timepoint, position) frame buffering for the pre-scan stacks.
@@ -324,6 +336,7 @@ class FOVSelection:
         pixel_size_um: float,
         data_path: Path | None = None,
         decide_fn: Callable[[np.ndarray], tuple[float, bool]] | None = None,
+        channel_cameras: Sequence[Sequence[str]] | None = None,
     ) -> FOVSelection | None:
         """Build the coordinator from the validated ``fov_selection`` metadata block.
 
@@ -358,6 +371,7 @@ class FOVSelection:
             z_step_um=z_step_um,
             data_path=data_path,
             decide_fn=decide_fn,
+            channel_cameras=channel_cameras,
         )
 
     @staticmethod
@@ -414,13 +428,24 @@ class FOVSelection:
             coords[file_stem_name(name)] = (well[0], int(well[1]))
         return coords
 
-    def _validate_fov_selection_channel(self, sequence: MDASequence) -> None:
-        names = [ch.config for ch in sequence.channels]
+    def _resolve_fov_selection_channel(
+        self, sequence: MDASequence, channel_cameras: Sequence[Sequence[str]] | None
+    ) -> tuple[str, int | None]:
+        """Resolve ``fov_selection_channel`` to ``(channel config, camera index)``.
+
+        The camera index is None for a single-camera channel. Raises ``ValueError`` if
+        the name is not one of the acquisition's channel names (see
+        :func:`shrimpy.preprocessing.channel_names`).
+        """
+        names = channel_names(sequence, channel_cameras)
         if self._fov_selection_channel not in names:
             raise ValueError(
                 f"FOV selection fov_selection_channel {self._fov_selection_channel!r} is not one of "
-                f"the acquisition channels {names}."
+                f"the acquisition channels {list(names)}. A Multi Camera channel must name the "
+                "camera, as '<channel>-<camera>'."
             )
+        c, cam = names[self._fov_selection_channel]
+        return sequence.channels[c].config, cam
 
     def _producible_feature_names(self) -> set[str]:
         """Every feature-column name the configured preprocessing/segmentation can emit.
@@ -565,11 +590,14 @@ class FOVSelection:
         Connect to the core's ``frameReady`` signal. Only the pre-scan timepoint
         (t=0) and the ``fov_selection_channel`` are buffered; frames are matched by
         channel *name* (not index) since the pre-scan phase yields only the
-        prescan channel. When all z-slices for a position have arrived, the stack
-        is submitted for a decision.
+        prescan channel -- for a Multi Camera channel, only its camera's frames.
+        When all z-slices for a position have arrived, the stack is submitted for a
+        decision.
         """
         channel = getattr(getattr(event, "channel", None), "config", None)
-        if channel != self._fov_selection_channel:
+        if channel != self._fov_channel_config:
+            return
+        if (cam := event.index.get("cam")) is not None and cam != self._fov_camera_index:
             return
         if event.index.get("t", 0) != PRESCAN_TIMEPOINT:
             return

@@ -18,8 +18,11 @@ import psutil
 
 from shrimpy.dynatrack.position_update import PositionStore, PositionUpdateManager
 from shrimpy.dynatrack.tracking import DynaTrackConfig, DynaTrackUpdater
+from shrimpy.preprocessing import channel_names
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     import numpy as np
 
     from useq import MDAEvent, MDASequence
@@ -65,6 +68,12 @@ class DynaTrack:
         Override the tracking updater. When provided, updates run in-process
         on a background thread instead of the default DynaTrack worker
         subprocess (useful for tests and custom trackers).
+    channel_cameras : Sequence[Sequence[str]] | None
+        The camera channel names each of ``sequence.channels`` acquires with (see
+        :func:`channel_names`). A Multi Camera channel yields one frame per
+        camera per event, so ``input_channel`` must then name the camera, as the
+        store does: ``"<channel>-<camera>"``. ``None`` treats every channel as
+        single-camera.
     """
 
     def __init__(
@@ -75,6 +84,7 @@ class DynaTrack:
         updater: PositionUpdater | None = None,
         pixel_size_um: float | None = None,
         z_step_um: float | None = None,
+        channel_cameras: Sequence[Sequence[str]] | None = None,
     ) -> None:
         self.config = config
         self._store = PositionStore()
@@ -85,10 +95,14 @@ class DynaTrack:
         # microns; derived from the core / z_plan by from_config.
         self._pixel_size_um = pixel_size_um
         self._z_step_um = z_step_um
-        # Resolve the input channel name to its index in the sequence (used to
-        # filter frames in on_frame_ready).
-        self._input_channel_index = self._resolve_input_channel(config.input_channel, sequence)
-        self._validate_tracking_channel(config, sequence)
+        # Resolve the input channel name to its channel index in the sequence and,
+        # for a Multi Camera channel, its camera index (used to filter frames in
+        # on_frame_ready).
+        names = channel_names(sequence, channel_cameras)
+        self._input_channel_index, self._input_camera_index = self._resolve_input_channel(
+            config.input_channel, names
+        )
+        self._validate_tracking_channel(config, list(names))
 
         self._debug_zarr_path: Path | None = None
         self._debug_position_names: dict[int, str] = {}
@@ -113,7 +127,7 @@ class DynaTrack:
         )
 
     @staticmethod
-    def _validate_tracking_channel(config: DynaTrackConfig, sequence: MDASequence) -> None:
+    def _validate_tracking_channel(config: DynaTrackConfig, input_channels: list[str]) -> None:
         """Validate ``tracking_channel`` against the preprocessing pipeline.
 
         Without VS, it must name one of the acquisition input channels (tracking
@@ -146,7 +160,6 @@ class DynaTrack:
                     "includes 'vs'."
                 )
         else:
-            input_channels = [ch.config for ch in sequence.channels]
             if tc not in input_channels:
                 raise ValueError(
                     f"tracking_channel={tc!r} must be one of the acquisition channels "
@@ -154,18 +167,22 @@ class DynaTrack:
                 )
 
     @staticmethod
-    def _resolve_input_channel(name: str, sequence: MDASequence) -> int:
-        """Resolve the input channel name to its index in the sequence.
+    def _resolve_input_channel(
+        name: str, names: dict[str, tuple[int, int | None]]
+    ) -> tuple[int, int | None]:
+        """Resolve the input channel name to ``(channel index, camera index)``.
 
-        Raises ``ValueError`` if the name is not one of the sequence's channels.
+        The camera index is None for a single-camera channel. Raises ``ValueError``
+        if the name is not one of the acquisition's channel names (see
+        :func:`channel_names`).
         """
-        channel_names = [ch.config for ch in sequence.channels]
-        if name not in channel_names:
+        if name not in names:
             raise ValueError(
                 f"DynaTrack input_channel {name!r} is not one of the acquisition "
-                f"channels {channel_names}."
+                f"channels {list(names)}. A Multi Camera channel must name the "
+                "camera, as '<channel>-<camera>'."
             )
-        return channel_names.index(name)
+        return names[name]
 
     @classmethod
     def from_config(
@@ -174,6 +191,7 @@ class DynaTrack:
         sequence: MDASequence,
         data_path: Path | None = None,
         pixel_size_um: float | None = None,
+        channel_cameras: Sequence[Sequence[str]] | None = None,
     ) -> DynaTrack | None:
         """Build a DynaTrack coordinator from a validated config.
 
@@ -224,6 +242,7 @@ class DynaTrack:
             data_path=data_path,
             pixel_size_um=pixel_size_um,
             z_step_um=z_step_um,
+            channel_cameras=channel_cameras,
         )
 
     @classmethod
@@ -360,9 +379,12 @@ class DynaTrack:
         Connect to the core's ``frameReady`` signal. Counts z-slices per
         (timepoint, position) and submits the stack for tracking as soon as
         all expected slices have been collected. Only frames from
-        ``config.input_channel`` are buffered.
+        ``config.input_channel`` are buffered -- for a Multi Camera channel, only
+        those of its camera.
         """
         if event.index.get("c") != self._input_channel_index:
+            return
+        if (cam := event.index.get("cam")) is not None and cam != self._input_camera_index:
             return
 
         t_idx = event.index.get("t", 0)

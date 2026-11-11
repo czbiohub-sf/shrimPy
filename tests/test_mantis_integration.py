@@ -99,7 +99,9 @@ def test_pixel_size_is_read_after_the_setup_event(demo_engine, shrimpy_metadata,
 
     seen: dict[str, float | None] = {}
 
-    def _record_pixel_size(config, sequence, data_path=None, pixel_size_um=None):
+    def _record_pixel_size(
+        config, sequence, data_path=None, pixel_size_um=None, channel_cameras=None
+    ):
         seen["pixel_size_um"] = pixel_size_um
         return None
 

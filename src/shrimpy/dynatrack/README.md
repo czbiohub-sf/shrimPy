@@ -121,6 +121,11 @@ metadata:
 The section is validated even when `enabled: false`, so `input_channel` and
 `tracking_channel` must be present; omit the whole section to disable tracking.
 
+A channel acquired with a Multi Camera (one frame per camera per event) is named
+per camera, as the OME-Zarr store names it -- `<channel>-<camera>`, e.g.
+`input_channel: C488_BF-HamamatsuHam_DCAM`. Naming only the channel (`C488_BF`)
+is rejected, since it would mix the cameras' frames into one stack.
+
 See [`config/mda/mantis/dynatrack_demo.yaml`](../../../config/mda/mantis/dynatrack_demo.yaml)
 for a fully commented example.
 

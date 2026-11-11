@@ -24,6 +24,7 @@ from shrimpy.engines.base_engine import BaseEngine
 from shrimpy.engines.dragonfly_engine import DragonflyEngine
 from shrimpy.engines.isim_engine import ISIMEngine
 from shrimpy.engines.mantis_engine import MantisEngine
+from shrimpy.preprocessing import channel_names
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -580,9 +581,13 @@ class TestDynaTrackIntegration:
             metadata=shrimpy_metadata,
         )
 
-        def _fake_from_config(config, sequence, data_path=None, pixel_size_um=None):
+        def _fake_from_config(
+            config, sequence, data_path=None, pixel_size_um=None, channel_cameras=None
+        ):
             config = DynaTrackConfig(input_channel="DAPI", tracking_channel="DAPI")
-            return DynaTrack(config, sequence, updater=ShiftUpdater())
+            return DynaTrack(
+                config, sequence, updater=ShiftUpdater(), channel_cameras=channel_cameras
+            )
 
         xy_positions: list[tuple[int, int, float, float]] = []
 
@@ -609,3 +614,142 @@ class TestDynaTrackIntegration:
         x_t2_p0, y_t2_p0 = seen[(2, 0)]
         assert x_t2_p0 > 100.0, f"Expected x > 100 at t=2, got {x_t2_p0}"
         assert y_t2_p0 > 200.0, f"Expected y > 200 at t=2, got {y_t2_p0}"
+
+
+# ---------------------------------------------------------------------------
+# Multi Camera input channels
+# ---------------------------------------------------------------------------
+
+# C488_BF acquires with a Multi Camera (two frames per event), C561 with one camera.
+MULTICAM_CAMERAS = [["HamamatsuHam_DCAM", "Oryx"], ["HamamatsuHam_DCAM"]]
+
+
+def _multicam_dynatrack(input_channel: str, tracking_channel: str | None = None, **kw):
+    config = DynaTrackConfig(
+        input_channel=input_channel, tracking_channel=tracking_channel or input_channel
+    )
+    return DynaTrack(
+        config,
+        _sequence(channels=("C488_BF", "C561")),
+        updater=kw.pop("updater", PositionUpdater()),
+        channel_cameras=MULTICAM_CAMERAS,
+    )
+
+
+class TestMultiCameraInputChannel:
+    def test_channel_names_name_each_camera_of_a_multi_camera_channel(self):
+        names = channel_names(_sequence(channels=("C488_BF", "C561")), MULTICAM_CAMERAS)
+        assert names == {
+            "C488_BF-HamamatsuHam_DCAM": (0, 0),
+            "C488_BF-Oryx": (0, 1),
+            "C561": (1, None),
+        }
+
+    def test_channel_names_without_cameras_are_the_configs(self):
+        names = channel_names(_sequence(channels=("BF", "GFP")))
+        assert names == {"BF": (0, None), "GFP": (1, None)}
+
+    @pytest.mark.parametrize(
+        "name, expected",
+        [("C488_BF-HamamatsuHam_DCAM", (0, 0)), ("C488_BF-Oryx", (0, 1)), ("C561", (1, None))],
+    )
+    def test_input_channel_resolves_to_channel_and_camera(self, name, expected):
+        dt = _multicam_dynatrack(name)
+        assert (dt._input_channel_index, dt._input_camera_index) == expected
+
+    @pytest.mark.parametrize("name", ["C488_BF", "C488_BF-Nope", "C561-HamamatsuHam_DCAM"])
+    def test_ambiguous_or_unknown_input_channel_is_rejected(self, name):
+        """A Multi Camera channel must name its camera; the error lists the choices."""
+        with pytest.raises(ValueError, match="C488_BF-HamamatsuHam_DCAM.*C488_BF-Oryx"):
+            _multicam_dynatrack(name, tracking_channel="C561")
+
+    def test_tracking_channel_may_name_a_camera(self):
+        _multicam_dynatrack("C561", tracking_channel="C488_BF-Oryx")
+        with pytest.raises(ValueError, match="tracking_channel"):
+            _multicam_dynatrack("C561", tracking_channel="C488_BF")
+
+    def test_only_the_named_cameras_frames_are_buffered(self):
+        dt = _multicam_dynatrack("C488_BF-Oryx")
+        frame = np.zeros((4, 4), dtype=np.uint16)
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 0, "cam": 0}))
+        assert dt._frames == {}
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 0, "cam": 1}))
+        assert len(dt._frames[(0, 0)]) == 1
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 1, "z": 0}))
+        assert len(dt._frames[(0, 0)]) == 1  # other channel ignored
+
+    def test_single_camera_channel_in_a_mixed_sequence(self):
+        dt = _multicam_dynatrack("C561")
+        frame = np.zeros((4, 4), dtype=np.uint16)
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 0, "z": 0, "cam": 0}))
+        assert dt._frames == {}
+        dt.on_frame_ready(frame, MDAEvent(index={"t": 0, "p": 0, "c": 1, "z": 0}))
+        assert len(dt._frames[(0, 0)]) == 1
+
+    def test_engine_feeds_dynatrack_one_camera_of_a_multi_camera(
+        self, demo_core, shrimpy_metadata
+    ):
+        """End to end: the stacks DynaTrack gets are exactly one camera's frames."""
+        core = demo_core
+        core.loadDevice("Camera2", "DemoCamera", "DCam")
+        core.loadDevice("MultiCam", "Utilities", "Multi Camera")
+        core.initializeDevice("MultiCam")
+        core.initializeDevice("Camera2")
+        core.setProperty("Camera2", "BitDepth", "16")
+        core.setProperty("MultiCam", "Physical Camera 1", "Camera")
+        core.setProperty("MultiCam", "Physical Camera 2", "Camera2")
+        core.defineConfig("ChConfocal", "C488_BF", "Core", "Camera", "MultiCam")
+        core.defineConfig("ChConfocal", "C561", "Core", "Camera", "Camera")
+        core.updateSystemStateCache()
+        BaseEngine(core)
+
+        stacks: dict[tuple[int, int], list[np.ndarray]] = {}
+
+        class SpyUpdater(PositionUpdater):
+            def update(self, t_idx, p_idx, position, data=None, **kwargs):
+                stacks[(t_idx, p_idx)] = [np.array(f) for f in data]
+                return position
+
+        def _fake_from_config(
+            config, sequence, data_path=None, pixel_size_um=None, channel_cameras=None
+        ):
+            assert channel_cameras == [["Camera", "Camera2"], ["Camera"]]
+            return DynaTrack(
+                config, sequence, updater=SpyUpdater(), channel_cameras=channel_cameras
+            )
+
+        shrimpy_metadata["autofocus"]["enabled"] = False
+        shrimpy_metadata["dynatrack"] = {
+            "enabled": True,
+            "input_channel": "C488_BF-Camera2",
+            "tracking_channel": "C488_BF-Camera2",
+        }
+        seq = MDASequence(
+            channels=[
+                {"config": "C488_BF", "group": "ChConfocal"},
+                {"config": "C561", "group": "ChConfocal"},
+            ],
+            stage_positions=[{"x": 100, "y": 200, "z": 50}],
+            time_plan={"interval": 0, "loops": 2},
+            z_plan={"range": 2, "step": 1},
+            metadata=shrimpy_metadata,
+        )
+
+        camera2_frames: dict[tuple[int, int], list[np.ndarray]] = {}
+
+        @core.mda.events.frameReady.connect
+        def _on_frame(img, event, meta):
+            i = event.index
+            if i.get("c") == 0 and i.get("cam") == 1:
+                camera2_frames.setdefault((i["t"], i["p"]), []).append(img.copy())
+
+        with patch.object(DynaTrack, "from_config", staticmethod(_fake_from_config)):
+            core.mda.run(seq)
+
+        # t=1 is tracked from t=0's stack onwards; every stack handed over must be
+        # camera 2's z-stack, three planes, in order
+        assert stacks
+        for key, stack in stacks.items():
+            assert len(stack) == 3
+            for got, expected in zip(stack, camera2_frames[key], strict=True):
+                np.testing.assert_array_equal(got, expected)

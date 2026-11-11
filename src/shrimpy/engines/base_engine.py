@@ -45,6 +45,10 @@ from pymmcore_plus.core import CMMCorePlus
 from pymmcore_plus.core._constants import Keyword
 from pymmcore_plus.core._sequencing import SequencedEvent
 from pymmcore_plus.mda import MDAEngine, SkipEvent
+
+# The per-channel camera names the OME-Zarr sink stores Multi Camera channels under
+# (pymmcore-plus#646), so DynaTrack names them identically.
+from pymmcore_plus.mda._sink import camera_channels
 from pymmcore_plus.metadata import SummaryMetaV1
 from useq import Axis, MDAEvent, MDASequence
 
@@ -233,8 +237,8 @@ class BaseEngine(MDAEngine):
         # the one whose home position we track.
         self._capture_focus_home()
 
-        self._setup_dynatrack(meta, sequence, pixel_size_um)
-        self._setup_fov_selection(meta, sequence, pixel_size_um)
+        self._setup_dynatrack(meta, sequence, pixel_size_um, result)
+        self._setup_fov_selection(meta, sequence, pixel_size_um, result)
 
         return result
 
@@ -636,19 +640,29 @@ class BaseEngine(MDAEngine):
         )
 
     def _setup_dynatrack(
-        self, meta: ShrimpyMetadata, sequence: MDASequence, pixel_size_um: float
+        self,
+        meta: ShrimpyMetadata,
+        sequence: MDASequence,
+        pixel_size_um: float,
+        summary: SummaryMetaV1 | None = None,
     ) -> None:
         """Build and start DynaTrack, if ``metadata.dynatrack`` enables it.
 
         ``pixel_size_um`` and the z_plan step are the single source of truth for
-        all scale parameters.
+        all scale parameters. ``summary`` (the summary metadata) gives the cameras
+        each channel acquires with, so that a Multi Camera channel's cameras are
+        named exactly as the output store names them.
         """
         core = self.mmcore
+        channel_cameras = None
+        if meta.dynatrack is not None and meta.dynatrack.enabled and summary:
+            channel_cameras = camera_channels(sequence, summary)
         self._dynatrack = DynaTrack.from_config(
             meta.dynatrack,
             sequence,
             data_path=self._data_path,
             pixel_size_um=pixel_size_um,
+            channel_cameras=channel_cameras,
         )
         if self._dynatrack is None:
             return
@@ -684,19 +698,28 @@ class BaseEngine(MDAEngine):
         self._dynatrack = None
 
     def _setup_fov_selection(
-        self, meta: ShrimpyMetadata, sequence: MDASequence, pixel_size_um: float
+        self,
+        meta: ShrimpyMetadata,
+        sequence: MDASequence,
+        pixel_size_um: float,
+        summary: SummaryMetaV1 | None = None,
     ) -> None:
         """Build and start FOV selection, if ``metadata.fov_selection`` enables it.
 
         Active only for the pre-scan run; the main run's metadata disables
-        ``fov_selection``, so ``from_metadata`` returns ``None`` there.
+        ``fov_selection``, so ``from_metadata`` returns ``None`` there. ``summary``
+        gives the cameras each channel acquires with (see :meth:`_setup_dynatrack`).
         """
         core = self.mmcore
+        channel_cameras = None
+        if meta.fov_selection is not None and meta.fov_selection.enabled and summary:
+            channel_cameras = camera_channels(sequence, summary)
         self._fov_selection = FOVSelection.from_metadata(
             meta.fov_selection,
             sequence,
             pixel_size_um=pixel_size_um,
             data_path=self._data_path,
+            channel_cameras=channel_cameras,
         )
         if self._fov_selection is None:
             return

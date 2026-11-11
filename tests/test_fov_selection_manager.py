@@ -471,3 +471,100 @@ def test_finalize_falls_back_when_the_csv_is_not_writable(tmp_path):
     fallback = tmp_path / "fov_summary_selected.csv"
     assert fallback.exists(), "selected/rank must survive a locked target"
     assert set(pd.read_csv(fallback).columns) >= {"selected", "rank"}
+
+
+# ---------------------------------------------------------------------------
+# Multi Camera fov_selection_channel
+# ---------------------------------------------------------------------------
+
+# BF acquires with a Multi Camera (two frames per event), GFP with one camera.
+MULTICAM_CAMERAS = [["HamamatsuHam_DCAM", "Oryx"], ["HamamatsuHam_DCAM"]]
+
+
+def _multicam_fov(channel: str) -> FOVSelection:
+    fov = FOVSelection.from_metadata(
+        _cfg(fov_selection_channel=channel),
+        SEQUENCE,
+        pixel_size_um=0.1,
+        decide_fn=_good_if_positive,
+        channel_cameras=MULTICAM_CAMERAS,
+    )
+    fov.start(zyx_shape=(N_Z, 4, 4))
+    return fov
+
+
+@pytest.mark.parametrize("channel", ["BF", "BF-Nope", "GFP-HamamatsuHam_DCAM"])
+def test_multicam_fov_selection_channel_must_name_a_camera(channel):
+    """A Multi Camera channel must name its camera; the error lists the choices."""
+    with pytest.raises(ValueError, match="BF-HamamatsuHam_DCAM.*BF-Oryx"):
+        _multicam_fov(channel)
+
+
+@pytest.mark.parametrize("cam", [0, 1])
+def test_multicam_only_the_named_cameras_frames_are_decided(cam):
+    """Only the named camera's stack is decided; the other camera's frames are ignored."""
+    camera = MULTICAM_CAMERAS[0][cam]
+    fov = _multicam_fov(f"BF-{camera}")
+    try:
+        for z in range(N_Z):
+            for frame_cam in (0, 1):
+                # the named camera sees a good FOV, the other camera a bad one
+                value = 1.0 if frame_cam == cam else -1.0
+                event = _event(0, z, "BF")
+                event = event.model_copy(update={"index": {**event.index, "cam": frame_cam}})
+                fov.on_frame_ready(np.full((4, 4), value, np.float32), event)
+        fov.drain()
+        assert fov.num_decided == 1  # one stack: the named camera's
+        assert set(fov.passed_position_names()) == {"good0"}
+    finally:
+        fov.shutdown()
+
+
+def test_multicam_single_camera_channel_in_a_mixed_sequence():
+    fov = _multicam_fov("GFP")
+    try:
+        _feed_prescan_stack(fov, 0, value=1.0, channel="GFP")
+        fov.drain()
+        assert fov.num_decided == 1
+    finally:
+        fov.shutdown()
+
+
+def test_engine_passes_each_channels_cameras_to_fov_selection(demo_core):
+    """The pre-scan's FOVSelection gets the cameras each channel acquires with."""
+    from unittest.mock import patch
+
+    from shrimpy.engines.base_engine import BaseEngine
+
+    core = demo_core
+    core.loadDevice("Camera2", "DemoCamera", "DCam")
+    core.loadDevice("MultiCam", "Utilities", "Multi Camera")
+    core.initializeDevice("MultiCam")
+    core.initializeDevice("Camera2")
+    core.setProperty("Camera2", "BitDepth", "16")
+    core.setProperty("MultiCam", "Physical Camera 1", "Camera")
+    core.setProperty("MultiCam", "Physical Camera 2", "Camera2")
+    core.defineConfig("ChConfocal", "C488_BF", "Core", "Camera", "MultiCam")
+    core.defineConfig("ChConfocal", "C561", "Core", "Camera", "Camera")
+    core.updateSystemStateCache()
+    engine = BaseEngine(core)
+
+    seen = {}
+
+    def _record(meta, sequence, pixel_size_um, data_path=None, channel_cameras=None):
+        seen["channel_cameras"] = channel_cameras
+        return None
+
+    prescan = MDASequence(
+        channels=[
+            {"config": "C488_BF", "group": "ChConfocal"},
+            {"config": "C561", "group": "ChConfocal"},
+        ],
+        stage_positions=[{"x": 0, "y": 0, "name": "fov0"}],
+        z_plan={"top": 1, "bottom": -1, "step": 1},
+        metadata={"fov_selection": {**META, "fov_selection_channel": "C488_BF-Camera2"}},
+    )
+    with patch.object(FOVSelection, "from_metadata", staticmethod(_record)):
+        engine.setup_sequence(prescan)
+        engine.teardown_sequence(prescan)
+    assert seen["channel_cameras"] == [["Camera", "Camera2"], ["Camera"]]

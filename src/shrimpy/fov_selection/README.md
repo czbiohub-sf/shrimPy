@@ -85,7 +85,7 @@ See `config/mda/mantis/fov_selection_demo.yaml` for a fully commented example. K
 | `enabled` | turn FOV selection on for this run |
 | `calibration_mode` | pre-scan only, extract all features, open the viewer |
 | `prescan_mda` | a complete nested MDASequence: the candidate FOVs, pre-scan z_plan, and channels (single timepoint) |
-| `fov_selection_channel` | the acquired channel imaged in the pre-scan and fed to reconstruction |
+| `fov_selection_channel` | the acquired channel imaged in the pre-scan and fed to reconstruction; for a Multi Camera channel, name the camera as the store does: `<channel>-<camera>` (e.g. `C488_BF-HamamatsuHam_DCAM`) |
 | `target` | `cells` or `nuclei`: the object to segment and score (drives the InstanSeg head, the VS channels predicted, and how outputs reduce to one segmentation input) |
 | `preprocessing` | ordered steps, e.g. `['deskew', 'phase', 'vs', 'sum_projection', 'segmentation']` |
 | `deskew` / `phase` / `virtual_staining` | reconstruction sub-configs (scale values are injected, never duplicated) |

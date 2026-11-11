@@ -27,10 +27,12 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable, Sequence
     from typing import Any
 
     import torch
+
+    from useq import MDASequence
 
 logger = logging.getLogger(__name__)
 
@@ -543,3 +545,44 @@ class _LabelfreePreprocessor:
                 )
         except ImportError:
             pass
+
+
+# -- acquisition channel names ---------------------------------------------------------
+# A channel whose preset selects a Multi Camera yields one frame per camera per event,
+# and the OME-Zarr store holds each camera as its own channel, named
+# "<channel>-<camera>" (pymmcore-plus folds the cameras into the channel axis; see
+# pymmcore_plus.mda._sink.camera_channels). DynaTrack's input_channel and FOV
+# selection's fov_selection_channel name the channel they consume the same way.
+
+
+def channel_names(
+    sequence: MDASequence, channel_cameras: Sequence[Sequence[str]] | None = None
+) -> dict[str, tuple[int, int | None]]:
+    """Map each acquisition channel name to ``(channel index, camera index)``.
+
+    A single-camera channel is named by its config (camera index None). A Multi
+    Camera channel yields one frame per camera, so each camera is its own channel,
+    named ``"<channel>-<camera>"`` as the OME-Zarr store names it.
+    ``channel_cameras`` lists each channel's camera names (see
+    ``pymmcore_plus.mda._sink.camera_channels``); ``None`` treats every channel
+    as single-camera.
+    """
+    names: dict[str, tuple[int, int | None]] = {}
+    for c, ch in enumerate(sequence.channels):
+        cameras = channel_cameras[c] if channel_cameras is not None else ()
+        if len(cameras) > 1:
+            for cam, camera in enumerate(cameras):
+                names[f"{ch.config}-{camera}"] = (c, cam)
+        else:
+            names[ch.config] = (c, None)
+    return names
+
+
+def names_a_channel(name: str, configs: Iterable[str]) -> bool:
+    """Whether ``name`` is one of ``configs``, or one of them qualified by a camera.
+
+    For checks made before the cameras are known (no core yet): a camera-qualified
+    name, ``"<channel>-<camera>"``, is accepted for any listed channel, and its
+    camera is checked against the hardware once the acquisition is set up.
+    """
+    return any(name == config or name.startswith(f"{config}-") for config in configs)

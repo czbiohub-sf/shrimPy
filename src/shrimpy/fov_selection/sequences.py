@@ -17,6 +17,7 @@ from useq import MDASequence, Position, WellPlatePlan
 
 from shrimpy.fov_selection.config import FOVSelectionConfig
 from shrimpy.fov_selection.plate_naming import plate_labels, well_field_name
+from shrimpy.preprocessing import names_a_channel
 
 
 def fov_selection_config(sequence: MDASequence) -> FOVSelectionConfig | None:
@@ -89,12 +90,15 @@ def build_prescan_sequence(sequence: MDASequence, fov_cfg: FOVSelectionConfig) -
             f"t={prescan_seq.sizes['t']}); a looping pre-scan is not yet supported."
         )
 
+    # A Multi Camera channel is named per camera, '<channel>-<camera>'; its camera is
+    # checked against the hardware when the pre-scan is set up (FOVSelection).
     fov_selection_channel = fov_cfg.fov_selection_channel
     channel_configs = [c.config for c in prescan_seq.channels]
-    if fov_selection_channel not in channel_configs:
+    if not names_a_channel(fov_selection_channel, channel_configs):
         raise ValueError(
             f"FOV selection fov_selection_channel {fov_selection_channel!r} is not one of the "
-            f"pre-scan channels {channel_configs}."
+            f"pre-scan channels {channel_configs} (a Multi Camera channel is named "
+            "'<channel>-<camera>')."
         )
 
     # A top-level grid_plan keeps its FOVs on a separate `g` axis while the

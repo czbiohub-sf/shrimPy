@@ -202,6 +202,15 @@ def test_prescan_raises_on_unknown_fov_selection_channel():
         build_prescan_sequence(seq, cfg)
 
 
+def test_prescan_accepts_a_camera_qualified_fov_selection_channel():
+    """A Multi Camera channel is named '<channel>-<camera>'; the camera itself is
+    checked when the pre-scan is set up, where the hardware is known."""
+    seq = _sequence()
+    cfg = _validated(_fov_cfg(fov_selection_channel="BF - Oblique-HamamatsuHam_DCAM"))
+    ps = build_prescan_sequence(seq, cfg)
+    assert [c.config for c in ps.channels] == ["BF - Oblique"]
+
+
 def test_prescan_raises_without_prescan_mda():
     # prescan_mda is optional in the schema (the pre-scan run's own metadata carries the
     # block with it stripped), so the "you forgot the candidates" error lands here.

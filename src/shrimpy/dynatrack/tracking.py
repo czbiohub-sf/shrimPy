@@ -139,7 +139,10 @@ class DynaTrackConfig(BaseModel):
         Required. Name of the acquisition channel (e.g. ``"BF"``) whose frames
         are fed to the tracker. Must match one of the channel configs in the
         acquisition ``MDASequence`` (validated in
-        :class:`~shrimpy.dynatrack.manager.DynaTrack`).
+        :class:`~shrimpy.dynatrack.manager.DynaTrack`). A channel acquired with a
+        Multi Camera yields a frame per camera, so it must also name the camera,
+        as the OME-Zarr store names it: ``"<channel>-<camera>"`` (e.g.
+        ``"C488_BF-HamamatsuHam_DCAM"``).
     z_device : str | None
         Device name for Z corrections (e.g. ``"ObjectiveZ"``). When set, Z
         is written to that device's ``Position`` property instead of the
@@ -180,7 +183,8 @@ class DynaTrackConfig(BaseModel):
         the pipeline in :class:`~shrimpy.dynatrack.manager.DynaTrack`:
 
         - No VS in ``preprocessing``: must name one of the acquisition input
-          channels (e.g. ``"BF"``). Tracking runs on that channel's raw,
+          channels (e.g. ``"BF"``, or ``"<channel>-<camera>"`` for a Multi Camera
+          channel, as for ``input_channel``). Tracking runs on that channel's raw,
           deskewed, or deskew+phase volume depending on ``preprocessing``.
         - VS in ``preprocessing``: must be one of
           ``virtual_staining.target_channels`` (e.g. ``"nuclei"``,

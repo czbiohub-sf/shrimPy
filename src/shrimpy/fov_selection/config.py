@@ -448,7 +448,9 @@ class FOVSelectionConfig(BaseModel):
     fov_selection_channel : str
         The acquired channel imaged during the pre-scan and fed to reconstruction. Must
         name one of ``prescan_mda``'s channels (checked against the sequence, which is
-        not visible here).
+        not visible here). A channel acquired with a Multi Camera yields a frame per
+        camera, so it must also name the camera, as the OME-Zarr store names it:
+        ``"<channel>-<camera>"`` (e.g. ``"C488_BF-HamamatsuHam_DCAM"``).
     target : {'cells', 'nuclei'}
         The ONE object selection segments and scores. Drives the InstanSeg head, which
         channels virtual staining predicts, and how reconstruction outputs reduce to a
