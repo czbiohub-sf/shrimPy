@@ -126,7 +126,7 @@ members = ["packages/*"]
 # camera, fold cameras into the channel axis as <channel>-<camera>, mix Multi
 # Camera and single-camera channels, and keep frames in place when a camera drops
 # frames. Point back at upstream once merged.
-pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", rev = "ce65f0b8572f909e75e33c156b739cb98b11df1e" }
+pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", rev = "be75b33f33543d87a7f6e1ca95e73ea4caf2d298" }
 # main: the latest release (0.3.2) predates ome-writers#136 "assign fov names for
 # plate positions with grid_plan" and #134 "propagate position coordinates to zarr
 # coordinateTransforms and OME StageLabel"; point back at PyPI once released.
