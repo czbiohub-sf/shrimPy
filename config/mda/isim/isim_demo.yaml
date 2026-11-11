@@ -32,7 +32,7 @@ z_plan:
   top: 12
   bottom: -9
   # step: 0.25
-  step: 2  # DEBUG 
+  step: 2  # DEBUG
   go_up: true
 
 # Define channels
