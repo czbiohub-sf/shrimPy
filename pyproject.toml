@@ -120,11 +120,13 @@ packages = ["src/shrimpy"]
 members = ["packages/*"]
 
 [tool.uv.sources]
-# ieivanov fork, branch fix-multicam-channel-camera: upstream main (which already
-# has #631 and #633, both newer than the latest release 0.18.1) plus the Multi
-# Camera output fixes -- size the output for the camera the channel presets select,
-# and fold cameras into the channel axis. Point back at upstream once merged.
-pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", rev = "dee873a6f2a0ff3a9b432ea91121e6390da6b838" }
+# ieivanov fork, branch fix-multicam-output (pymmcore-plus#646): upstream main
+# (which already has #631 and #633, both newer than the latest release 0.18.1)
+# plus the Multi Camera output fixes -- size the output for the first channel's
+# camera, fold cameras into the channel axis as <channel>-<camera>, mix Multi
+# Camera and single-camera channels, and keep frames in place when a camera drops
+# frames. Point back at upstream once merged.
+pymmcore-plus = { git = "https://github.com/ieivanov/pymmcore-plus", rev = "ce65f0b8572f909e75e33c156b739cb98b11df1e" }
 # main: the latest release (0.3.2) predates ome-writers#136 "assign fov names for
 # plate positions with grid_plan" and #134 "propagate position coordinates to zarr
 # coordinateTransforms and OME StageLabel"; point back at PyPI once released.
