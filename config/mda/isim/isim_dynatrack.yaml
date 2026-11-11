@@ -134,11 +134,12 @@ metadata:
     # both in-plane axes converge to the deadband (a pure swap, det -1, drove
     # one axis to diverge). Setup-specific -- recalibrate per scope orientation.
 
-    ##### TODO
-    # image_to_stage_matrix_xyz:
-    #   - [0.0, 1.0, 0.0]
-    #   - [-1.0, 0.0, 0.0]
-    #   - [0.0, 0.0, -1.0]
+    ##### TODO, check with fish
+    # Calibrated for Hamamatsu camera
+    image_to_stage_matrix_xyz:
+      - [-1.0, 0.0, 0.0]
+      - [0.0, -1.0, 0.0]
+      - [0.0, 0.0, -1.0]
 
     # Stage that receives Z corrections: Z is written to this device's
     # `Position` property instead of the event's z_pos (which usually drives
