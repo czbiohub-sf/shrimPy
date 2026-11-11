@@ -52,3 +52,77 @@ def test_demo_config():
     ISIMEngine(core)
     assert core.getCameraDevice() == "Camera"
     assert core.getROI() == roi_before
+
+
+@pytest.fixture
+def multicam_core():
+    """ISIMCore on the MM demo config, with a 2-camera Multi Camera selected."""
+    from shrimpy.engines.isim_engine import ISIMCore
+
+    core = ISIMCore()
+    try:
+        core.loadSystemConfiguration()
+    except Exception as e:  # pragma: no cover - no MM install
+        pytest.skip(f"Micro-Manager demo config unavailable: {e}")
+    core.loadDevice("Camera2", "DemoCamera", "DCam")
+    core.loadDevice("MultiCam", "Utilities", "Multi Camera")
+    core.initializeDevice("MultiCam")
+    core.initializeDevice("Camera2")
+    core.setProperty("MultiCam", "Physical Camera 1", "Camera")
+    core.setProperty("MultiCam", "Physical Camera 2", "Camera2")
+    core.setCameraDevice("MultiCam")
+    return core
+
+
+@pytest.mark.parametrize("first_binning", [1, 2])
+def test_multicam_mixed_binning_pixel_size(multicam_core, first_binning):
+    """Mixed binning makes MMCore report 0; ISIMCore returns the config as defined."""
+    from pymmcore_plus import CMMCorePlus
+
+    core = multicam_core
+    core.setProperty("Camera", "Binning", str(first_binning))
+    core.setProperty("Camera2", "Binning", str(3 - first_binning))  # the other one
+
+    # the Micro-Manager bug being worked around
+    assert CMMCorePlus.getPixelSizeUm(core) == 0.0
+    assert not any(CMMCorePlus.getPixelSizeAffine(core))
+
+    config = core.getCurrentPixelSizeConfig()
+    assert core.getPixelSizeUm() == core.getPixelSizeUmByID(config)
+    assert core.getPixelSizeUm(True) == core.getPixelSizeUmByID(config)
+    assert core.getPixelSizeAffine() == tuple(core.getPixelSizeAffineByID(config))
+
+
+def test_multicam_pixel_size_config_keyed_on_camera(multicam_core):
+    """As on the iSIM: a pixel-size config for the Multi Camera + objective."""
+    core = multicam_core
+    objective = core.getProperty("Objective", "Label")
+    core.definePixelSizeConfig("60x_MultiCam", "Core", "Camera", "MultiCam")
+    core.definePixelSizeConfig("60x_MultiCam", "Objective", "Label", objective)
+    core.setPixelSizeUm("60x_MultiCam", 0.075)
+    core.setPixelSizeAffine("60x_MultiCam", [0.075, 0.0, 0.0, 0.0, 0.075, 0.0])
+    core.definePixelSizeConfig("60x_Single", "Core", "Camera", "Camera2")
+    core.definePixelSizeConfig("60x_Single", "Objective", "Label", objective)
+    core.setPixelSizeUm("60x_Single", 0.0575)
+    core.setProperty("Camera", "Binning", "1")
+    core.setProperty("Camera2", "Binning", "2")
+
+    assert core.getCurrentPixelSizeConfig() == "60x_MultiCam"
+    assert core.getPixelSizeUm() == 0.075
+    assert core.getPixelSizeAffine() == (0.075, 0.0, 0.0, 0.0, 0.075, 0.0)
+
+    # a single camera is unaffected: MMCore scales its config by its binning (2)
+    core.setCameraDevice("Camera2")
+    assert core.getCurrentPixelSizeConfig() == "60x_Single"
+    assert core.getPixelSizeUm() == 0.0575 * 2
+
+
+def test_multicam_same_binning_pixel_size_unchanged(multicam_core):
+    """With matching binning MMCore is right, and ISIMCore changes nothing."""
+    from pymmcore_plus import CMMCorePlus
+
+    core = multicam_core
+    core.setProperty("Camera", "Binning", "2")
+    core.setProperty("Camera2", "Binning", "2")
+    assert core.getPixelSizeUm() == CMMCorePlus.getPixelSizeUm(core) != 0.0
+    assert core.getPixelSizeAffine() == tuple(CMMCorePlus.getPixelSizeAffine(core))

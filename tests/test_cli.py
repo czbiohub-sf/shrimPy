@@ -77,6 +77,7 @@ def _invoke_acquire(runner, tmp_path, microscope, engine_path, *flags):
     with (
         patch("shrimpy.cli.acquire.configure_logging", return_value=tmp_path / "log"),
         patch("shrimpy.robust_cmmcore.RobustCMMCore", MagicMock()),
+        patch("shrimpy.engines.isim_engine.ISIMCore", MagicMock()),
         patch(engine_path, MagicMock()),
         patch("shrimpy.cli.acquire._acquire") as run,
     ):

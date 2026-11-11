@@ -197,14 +197,14 @@ def isim(mm_config: Path, mda_config: Path, output_dir: Path, name: str, viewer:
     # Import before configure_logging: pymmcore-plus calls configure_logging() at module
     # level, which clears all handlers on the "pymmcore-plus" logger. Importing first
     # ensures that call happens before fileConfig() attaches the shrimpy file handler.
-    from shrimpy.engines.isim_engine import ISIMEngine
-    from shrimpy.robust_cmmcore import RobustCMMCore
+    from shrimpy.engines.isim_engine import ISIMCore, ISIMEngine
 
     log_file = configure_logging(output_dir, name)
     logger.info(f"Logging configured for acquisition: {name}")
     logger.info(f"Log file: {log_file}")
 
-    core = RobustCMMCore()
+    # RobustCMMCore, plus a fix for the pixel size of a Multi Camera mixing binning
+    core = ISIMCore()
 
     logger.info(f"Loading Micro-Manager configuration from {mm_config}")
     core.loadSystemConfiguration(mm_config)
