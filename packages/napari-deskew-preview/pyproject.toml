@@ -7,7 +7,7 @@ name = "napari-deskew-preview"
 description = "napari widget for quick on-demand deskew preview of oblique-plane light-sheet data (czbiohub-sf internal)"
 version = "0.1.0"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = { file = "LICENSE.md" }
 requires-python = ">=3.12"
 # No module here imports napari -- it is discovered *by* napari through the
 # napari.manifest entry point below, and the deskew core is plain numpy. Keeping
