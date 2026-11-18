@@ -7,20 +7,20 @@ setup:
 
 # Define stage positions
 stage_positions:
-- x: -35650
-  y: 37510
+- x: -33879
+  y: 38693
   plate_row: 0
   plate_col: 0
   name: fov0
   properties:
-    - ['FocusDrive', 'Position', '4889']
-- x: -35950
-  y: 37510
-  plate_row: 0
-  plate_col: 0
-  name: fov1
-  properties:
-    - ['FocusDrive', 'Position', '4889']
+    - ['FocusDrive', 'Position', '4916.7']
+# - x: -35950
+#   y: 37510
+#   plate_row: 0
+#   plate_col: 0
+#   name: fov1
+#   properties:
+#     - ['FocusDrive', 'Position', '4889']
 
 # Define time plan
 time_plan:
@@ -44,7 +44,7 @@ channels:
   group: ChConfocal
   exposure: 100.0
 
-keep_shutter_open_across: ['z']
+# keep_shutter_open_across: ['z']
 
 # Microscope settings
 # metadata:

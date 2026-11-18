@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 ORCA_QUEST_CAMERA = "HamamatsuHam_DCAM"
 
 #: ``(x, y, width, height)`` of the ORCA-Quest ROI covering the iSIM field of view.
-ORCA_QUEST_ROI = (976, 684, 2048, 1500)
+ORCA_QUEST_ROI = (1488, 920, 1024, 1024)
 
 
 class ISIMCore(RobustCMMCore):

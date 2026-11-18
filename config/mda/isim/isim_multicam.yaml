@@ -1,5 +1,9 @@
 # Setup
 setup:
+  # BF_PhotoM makes the Oryx the current camera, so this ROI applies to the Oryx
+  # (the setup event applies the channel before the ROI). The ORCA-Quest ROI is
+  # set by ISIMEngine at init (ORCA_QUEST_ROI in src/shrimpy/engines/isim_engine.py).
+  roi: [512, 48, 1024, 1024]
   channel:
     config: BF_PhotoM
     group: ChConfocal
@@ -12,13 +16,13 @@ setup:
 
 # Define stage positions
 stage_positions:
-- x: -35650
-  y: 37510
+- x: -33879
+  y: 38693
   plate_row: 0
   plate_col: 0
   name: fov0
   properties:
-    - ['FocusDrive', 'Position', '4889']
+    - ['FocusDrive', 'Position', '4916.7']
 
 # Define time plan
 time_plan:
