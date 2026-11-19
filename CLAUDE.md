@@ -278,6 +278,9 @@ whole acquisition is browsable while it runs and a viewer crash or hang cannot
 disturb the run. `shrimpy view` and `shrimpy acquire <microscope> --viewer` are the
 same window on the same data; the live case only adds a child process and two
 lifecycle messages (`open <path>`, `finish`) over a `multiprocessing.Queue`.
+When the acquisition returns, the CLI unloads every Micro-Manager device
+(`_acquire_with_viewer` in `cli/acquire.py`) *before* waiting on the window, so the
+hardware is free while the user keeps browsing the finished store.
 
 ```
 shrimpy/viewer/

@@ -194,3 +194,85 @@ def test_gui_photom_bad_calibration_fails_before_launch(runner, tmp_path):
     launch.assert_not_called()
     assert malformed.exit_code == 1 and "affine_transform_yx" in malformed.output
     assert too_many.exit_code == 1 and "pass at most one per mirror" in too_many.output
+
+
+class _Recorder:
+    """Stand-in engine/core/viewer that logs the order calls arrive in."""
+
+    def __init__(self, *, acquire_error=None, join_error=None, unload_error=None):
+        self.calls = []
+        self._acquire_error = acquire_error
+        self._join_error = join_error
+        self._unload_error = unload_error
+        self.mmcore = self
+
+    # engine
+    def acquire(self, **kwargs):
+        self.calls.append("acquire")
+        if self._acquire_error is not None:
+            raise self._acquire_error
+
+    # core
+    def waitForSystem(self):
+        self.calls.append("waitForSystem")
+
+    def unloadAllDevices(self):
+        self.calls.append("unloadAllDevices")
+        if self._unload_error is not None:
+            raise self._unload_error
+
+    # viewer
+    def disconnect(self):
+        self.calls.append("disconnect")
+
+    def join(self):
+        self.calls.append("join")
+        if self._join_error is not None:
+            raise self._join_error
+
+    def terminate(self):
+        self.calls.append("terminate")
+
+
+_RELEASE_THEN_WAIT = [
+    "acquire",
+    "disconnect",
+    "waitForSystem",
+    "unloadAllDevices",
+    "join",
+    "terminate",
+]
+
+
+def test_viewer_outlives_the_core():
+    """The core is unloaded before the CLI waits on the viewer window."""
+    from shrimpy.cli.acquire import _acquire_with_viewer
+
+    rec = _Recorder()
+    _acquire_with_viewer(rec, rec, output_dir="x", name="y", mda_config="z")
+    assert rec.calls == _RELEASE_THEN_WAIT
+
+
+def test_failed_acquisition_still_releases_the_core():
+    from shrimpy.cli.acquire import _acquire_with_viewer
+
+    rec = _Recorder(acquire_error=RuntimeError("boom"))
+    with pytest.raises(RuntimeError, match="boom"):
+        _acquire_with_viewer(rec, rec)
+    assert rec.calls == _RELEASE_THEN_WAIT
+
+
+def test_unload_failure_does_not_close_the_viewer():
+    from shrimpy.cli.acquire import _acquire_with_viewer
+
+    rec = _Recorder(unload_error=RuntimeError("device stuck"))
+    _acquire_with_viewer(rec, rec)
+    assert rec.calls == _RELEASE_THEN_WAIT
+
+
+def test_ctrl_c_while_viewing_closes_the_viewer():
+    from shrimpy.cli.acquire import _acquire_with_viewer
+
+    rec = _Recorder(join_error=KeyboardInterrupt())
+    _acquire_with_viewer(rec, rec)
+    assert rec.calls == _RELEASE_THEN_WAIT

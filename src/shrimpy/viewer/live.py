@@ -88,6 +88,15 @@ class LiveViewer:
 
     def cleanup(self) -> None:
         """Disconnect the lifecycle signals and tear the process down."""
+        self.disconnect()
+        self.terminate()
+
+    def disconnect(self) -> None:
+        """Stop listening to the acquisition; the window itself is left running.
+
+        Call this before the core is unloaded: the viewer needs nothing more from the
+        acquisition process once the store is on disk.
+        """
         events = self._engine.mmcore.mda.events
         for signal, slot in (
             (events.sequenceStarted, self._on_sequence_started),
@@ -97,6 +106,9 @@ class LiveViewer:
                 signal.disconnect(slot)
             except Exception:  # noqa: BLE001 - disconnect is best-effort
                 pass
+
+    def terminate(self) -> None:
+        """Close the viewer window if it is still open."""
         if self._process is not None and self._process.is_alive():
             self._process.terminate()
 

@@ -24,22 +24,59 @@ def _acquire(engine, *, viewer: bool, deskew: bool, **acquire_kwargs) -> None:
     """Run ``engine.acquire(**acquire_kwargs)``, optionally beside a live napari viewer.
 
     The viewer window is left open after the acquisition: the store is complete on
-    disk, so the user can go on browsing all of it.
+    disk, so the user can go on browsing all of it. The Micro-Manager devices are
+    unloaded first, so the hardware is free while the window stays open.
     """
-    live_viewer = None
-    if viewer:
-        from shrimpy.viewer import LiveViewer
+    if not viewer:
+        engine.acquire(**acquire_kwargs)
+        return
 
-        live_viewer = LiveViewer(engine, deskew=deskew)
-        live_viewer.start()
+    from shrimpy.viewer import LiveViewer
 
+    live_viewer = LiveViewer(engine, deskew=deskew)
+    live_viewer.start()
+    _acquire_with_viewer(engine, live_viewer, **acquire_kwargs)
+
+
+def _release_core(core) -> None:
+    """Unload every Micro-Manager device so the hardware is free for the next run.
+
+    Best-effort: a device that fails to unload is logged, never raised, because by now
+    the acquisition is over and its data is on disk.
+    """
+    try:
+        core.waitForSystem()
+    except Exception:  # noqa: BLE001 - still try to unload
+        logger.debug("waitForSystem failed before unloading devices", exc_info=True)
+    try:
+        core.unloadAllDevices()
+        logger.info("Micro-Manager devices unloaded.")
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to unload Micro-Manager devices", exc_info=True)
+
+
+def _acquire_with_viewer(engine, viewer, **acquire_kwargs) -> None:
+    """Run ``engine.acquire`` beside a started ``LiveViewer``, then keep the window open.
+
+    The viewer reads only the OME-Zarr on disk, so once ``acquire`` returns (the writer
+    has closed the store) it needs nothing from this process. The core is therefore
+    unloaded *before* waiting on the window: the hardware is released for the next
+    acquisition or for Micro-Manager while the user goes on browsing the data.
+    """
     try:
         engine.acquire(**acquire_kwargs)
     finally:
-        if live_viewer is not None:
-            logger.info("Acquisition done; viewer window left open until closed.")
-            live_viewer.join()
-            live_viewer.cleanup()
+        # Drop the MDA signal slots before the core goes away; "finish" has already
+        # been queued by sequenceFinished.
+        viewer.disconnect()
+        _release_core(engine.mmcore)
+        logger.info("Acquisition done; viewer window left open until closed.")
+        try:
+            viewer.join()
+        except KeyboardInterrupt:
+            logger.info("Interrupted; closing the viewer.")
+        finally:
+            viewer.terminate()
 
 
 @acquire.command()
