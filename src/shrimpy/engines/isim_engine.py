@@ -4,8 +4,9 @@ Inherits the shared behavior from
 :class:`~shrimpy.engines.base_engine.BaseEngine` (hardware sequencing
 defaults, hardware logging, autofocus dispatch and event skipping, hardware
 reset on teardown, and ``acquire()``). The iSIM-specific steps so far are
-selecting the Hamamatsu ORCA-Quest camera and cropping it to the iSIM field of
-view when the engine is created (see :meth:`ISIMEngine.__init__`), and
+selecting the Hamamatsu ORCA-Quest camera and cropping it and the FLIR Oryx to
+the iSIM field of view when the engine is created (see
+:meth:`ISIMEngine.__init__`), and
 :class:`ISIMCore`, which works around Micro-Manager reporting a pixel size of 0
 for the iSIM's Multi Camera.
 
@@ -28,6 +29,13 @@ ORCA_QUEST_CAMERA = "HamamatsuHam_DCAM"
 
 #: ``(x, y, width, height)`` of the ORCA-Quest ROI covering the iSIM field of view.
 ORCA_QUEST_ROI = (1488, 920, 1024, 1024)
+
+#: Device label of the FLIR Oryx camera in the iSIM MM config.
+ORYX_CAMERA = "Oryx ORX-10G-123S6M"
+
+#: ``(x, y, width, height)`` of the Oryx ROI covering the iSIM field of view, in the
+#: Oryx's binned (2x) pixels.
+ORYX_ROI = (512, 48, 1024, 1024)
 
 
 class ISIMCore(RobustCMMCore):
@@ -101,6 +109,7 @@ class ISIMEngine(BaseEngine):
     def __init__(self, mmc, *args, **kwargs):
         super().__init__(mmc, *args, **kwargs)
         self._configure_orca_quest(mmc)
+        self._configure_oryx(mmc)
 
     @staticmethod
     def _configure_orca_quest(core) -> None:
@@ -122,3 +131,17 @@ class ISIMEngine(BaseEngine):
         logger.info(f"Setting camera to {ORCA_QUEST_CAMERA} with ROI {ORCA_QUEST_ROI}")
         core.setCameraDevice(ORCA_QUEST_CAMERA)
         core.setROI(*ORCA_QUEST_ROI)
+
+    @staticmethod
+    def _configure_oryx(core) -> None:
+        """Apply the iSIM ROI to the Oryx, without changing the current camera.
+
+        Done only if the camera is loaded. ``setROI`` with a device label crops that
+        camera directly, so the ORCA-Quest stays the active camera.
+        """
+        if ORYX_CAMERA not in core.getLoadedDevices():
+            logger.info(f"{ORYX_CAMERA} is not loaded; leaving its ROI unchanged")
+            return
+
+        logger.info(f"Setting {ORYX_CAMERA} ROI to {ORYX_ROI}")
+        core.setROI(ORYX_CAMERA, *ORYX_ROI)

@@ -86,7 +86,7 @@ src/shrimpy/             # the installed package
 ├── engines/             # One module per microscope, all sharing BaseEngine
 │   ├── base_engine.py        # BaseEngine: MDAEngine subclass shared by all microscopes
 │   ├── mantis_engine.py      # Label-free + light-sheet microscope (implemented)
-│   ├── isim_engine.py        # iSIM: selects the ORCA-Quest + ROI at init (no autofocus yet)
+│   ├── isim_engine.py        # iSIM: selects the ORCA-Quest, sets ORCA + Oryx ROIs at init (no autofocus yet)
 │   └── dragonfly_engine.py   # Dragonfly (placeholder)
 │
 ├── config.py            # pydantic validation of the shrimPy metadata sections

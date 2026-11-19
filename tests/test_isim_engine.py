@@ -8,11 +8,17 @@ from __future__ import annotations
 
 import weakref
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from shrimpy.engines.isim_engine import ORCA_QUEST_CAMERA, ORCA_QUEST_ROI, ISIMEngine
+from shrimpy.engines.isim_engine import (
+    ORCA_QUEST_CAMERA,
+    ORCA_QUEST_ROI,
+    ORYX_CAMERA,
+    ORYX_ROI,
+    ISIMEngine,
+)
 
 
 def _make_engine(core: MagicMock) -> ISIMEngine:
@@ -30,6 +36,23 @@ def test_orca_quest_selected_and_cropped(mock_core: MagicMock):
     _make_engine(mock_core)
     mock_core.setCameraDevice.assert_called_once_with(ORCA_QUEST_CAMERA)
     mock_core.setROI.assert_called_once_with(*ORCA_QUEST_ROI)
+
+
+def test_oryx_cropped_without_becoming_current_camera(mock_core: MagicMock):
+    mock_core.getLoadedDevices.return_value = ("Core", ORCA_QUEST_CAMERA, ORYX_CAMERA)
+    _make_engine(mock_core)
+    mock_core.setCameraDevice.assert_called_once_with(ORCA_QUEST_CAMERA)
+    assert mock_core.setROI.call_args_list == [
+        call(*ORCA_QUEST_ROI),
+        call(ORYX_CAMERA, *ORYX_ROI),
+    ]
+
+
+def test_oryx_cropped_without_orca_quest(mock_core: MagicMock):
+    mock_core.getLoadedDevices.return_value = ("Core", ORYX_CAMERA)
+    _make_engine(mock_core)
+    mock_core.setCameraDevice.assert_not_called()
+    mock_core.setROI.assert_called_once_with(ORYX_CAMERA, *ORYX_ROI)
 
 
 def test_camera_untouched_without_orca_quest(mock_core: MagicMock):

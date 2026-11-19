@@ -1,9 +1,5 @@
 # Setup
 setup:
-  # BF_PhotoM makes the Oryx the current camera, so this ROI applies to the Oryx
-  # (the setup event applies the channel before the ROI). The ORCA-Quest ROI is
-  # set by ISIMEngine at init (ORCA_QUEST_ROI in src/shrimpy/engines/isim_engine.py).
-  roi: [512, 48, 1024, 1024]
   channel:
     config: BF_PhotoM
     group: ChConfocal
