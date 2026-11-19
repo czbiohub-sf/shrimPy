@@ -66,6 +66,9 @@ fov = [
   "imageio",       # 8-bit PNG export
   "fov-feature-viewer",  # calibration mode's Rank-tab GUI (packages/feature_viewer)
 ]
+# Vendored coPylot (packages/copylot): Vortran lasers, Optotune mirror, the photom
+# assembly with camera calibration, and its Qt GUI (`shrimpy gui photom`).
+photom = ["copylot[calibration,gui,optotune]"]
 # Cellpose segmentation backend for FOV selection (model: cellpose).
 fov-cellpose = [
   "shrimpy[fov]",
@@ -86,6 +89,10 @@ dev = [
   # Workspace member, so its (numpy-only) tests run in the default environment.
   # Costs nothing: its deps are numpy and qtpy, both already core.
   "napari-deskew-preview",
+  # Workspace member (vendored coPylot), so its tests run by default. Its core deps
+  # are numpy, pydantic, PyYAML and pyserial; the calibration test skips without
+  # the [calibration] extra.
+  "copylot",
 ]
 # CI-only: the CPU torch build is all the DynaTrack *unit* tests need (they
 # exercise pure torch/numpy math, not biahub/cytoland). Avoids the ~2.5 GB
@@ -116,6 +123,7 @@ packages = ["src/shrimpy"]
 #   pip install "<name> @ git+https://github.com/czbiohub-sf/shrimPy.git#subdirectory=packages/<dir>"
 #   napari-deskew-preview  packages/napari-deskew-preview  napari deskew widget ([viewer] extra)
 #   fov-feature-viewer     packages/feature_viewer         FOV-selection GUI ([fov] extra)
+#   copylot                packages/copylot                vendored coPylot subset ([photom] extra)
 [tool.uv.workspace]
 members = ["packages/*"]
 
@@ -139,6 +147,7 @@ useq-schema = { git = "https://github.com/pymmcore-plus/useq-schema", rev = "8e4
 yaozarrs = { git = "https://github.com/imaging-formats/yaozarrs", rev = "34754779338237dc71a1de3e67c5c80954b9dde7" }
 napari-deskew-preview = { workspace = true }
 fov-feature-viewer = { workspace = true }
+copylot = { workspace = true }
 # Windows: CUDA build via cu132 index (requires CUDA Toolkit 13.2 on the machine)
 # for the production `dynatrack` group; the CI-only `test-cpu` group takes the
 # CPU wheel instead. Elsewhere (macOS/Linux) both fall back to PyPI (CPU/MPS).
@@ -240,6 +249,11 @@ docstring-code-format = true
 [tool.pytest.ini_options]
 # The workspace member's tests are numpy-only (no napari/Qt), so they run in the
 # default environment alongside shrimPy's.
-testpaths = ["tests", "packages/napari-deskew-preview/tests", "packages/feature_viewer/tests"]
+testpaths = [
+  "tests",
+  "packages/napari-deskew-preview/tests",
+  "packages/feature_viewer/tests",
+  "packages/copylot/tests",
+]
 # Never collect tests from archived/legacy code or scripts (any depth)
 norecursedirs = ["archive", "scripts"]

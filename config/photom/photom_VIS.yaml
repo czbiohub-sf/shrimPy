@@ -1,0 +1,38 @@
+# Photomanipulation (photom) GUI config: `shrimpy gui photom --config <this file>`.
+# Copy and edit; validated by copylot.assemblies.photom.gui.photom_gui.PhotomConfig
+# (unknown keys are errors). Relative paths resolve against this file's directory.
+
+# Vortran Stradus lasers. Right-click in the Laser Marker window fires the first one.
+lasers:
+  - name: laser_405
+    COM_port: COM9
+  # - name: laser_450
+  #   COM_port: COM11
+
+# Optotune MR-E-2 mirrors.
+mirrors:
+  - name: mirror_1_VIS
+    COM_port: COM8
+    x_position: 0
+    y_position: 0
+    # Camera-to-mirror calibration saved by the GUI's Calibrate button; null starts
+    # uncalibrated (identity). `--calibration <file>` on the command line overrides
+    # this, and Load Calibration can load one later; the GUI shows which is loaded.
+    affine_matrix_path: null
+
+# Arduino PWM controllers for pulsed illumination (sketches in
+# packages/copylot/src/copylot/assemblies/photom/utils/arduino/). Omit if unused.
+arduinos:
+  - COM_port: COM10
+    baud_rate: 115200
+
+# Camera sensor (height, width) the Laser Marker window is scaled to.
+camera_sensor_size_yx: [3000, 4096]
+
+# Calibrate button: the mirror-coordinate grid swept while imaging the laser spot.
+# Calibration needs a camera, and none is wired up for real hardware yet, so the
+# button is disabled outside --demo (use Load Calibration).
+calibration:
+  mirror_roi: [[-0.01, -0.03], [0.015, 0.0]]
+  grid_n_points: 9
+  save_dir: null  # default: the working directory

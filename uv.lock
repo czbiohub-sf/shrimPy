@@ -124,6 +124,7 @@ conflicts = [[
 
 [manifest]
 members = [
+    "copylot",
     "fov-feature-viewer",
     "napari-deskew-preview",
     "shrimpy",
@@ -1005,6 +1006,56 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/d8/b1/bc774d9d200cfc4f073bba78b1bb1cb3b55bf1c8c345eae41fc2db510459/contourpy-1.4.0-cp315-cp315t-win_amd64.whl", hash = "sha256:de503609fdb71f597634ca64fb4bd2f13d27c97f140e912b1e8ed93544840df0", size = 262450, upload-time = "2026-09-11T19:04:49.502Z" },
     { url = "https://files.pythonhosted.org/packages/54/bf/eb4ff492e1c3d027617b5a20e4e6d63a035b41b8cf77a95950159556a3a5/contourpy-1.4.0-cp315-cp315t-win_arm64.whl", hash = "sha256:78ed5c5f962b3e156109f0531b174a65ba80d13cc681a70227b12524c162e184", size = 587064, upload-time = "2026-09-11T19:04:51.148Z" },
 ]
+
+[[package]]
+name = "copylot"
+version = "0.1.0"
+source = { editable = "packages/copylot" }
+dependencies = [
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu' or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "pydantic" },
+    { name = "pyserial" },
+    { name = "pyyaml" },
+]
+
+[package.optional-dependencies]
+calibration = [
+    { name = "matplotlib" },
+    { name = "scikit-image" },
+    { name = "tifffile" },
+]
+dev = [
+    { name = "pytest" },
+    { name = "ruff" },
+]
+gui = [
+    { name = "pyqt6", version = "6.9.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'linux'" },
+    { name = "pyqt6", version = "6.11.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
+    { name = "qtpy" },
+]
+optotune = [
+    { name = "optokummenberg" },
+    { name = "optomdc" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "matplotlib", marker = "extra == 'calibration'" },
+    { name = "numpy" },
+    { name = "optokummenberg", marker = "extra == 'optotune'", path = "packages/copylot/third_party/optotune/optokummenberg-1.0.5422-py3-none-any.whl" },
+    { name = "optomdc", marker = "extra == 'optotune'", path = "packages/copylot/third_party/optotune/optomdc-1.3.5434-py3-none-any.whl" },
+    { name = "pydantic", specifier = ">=2" },
+    { name = "pyqt6", marker = "extra == 'gui'" },
+    { name = "pyserial" },
+    { name = "pytest", marker = "extra == 'dev'" },
+    { name = "pyyaml" },
+    { name = "qtpy", marker = "extra == 'gui'" },
+    { name = "ruff", marker = "extra == 'dev'" },
+    { name = "scikit-image", marker = "extra == 'calibration'" },
+    { name = "tifffile", marker = "extra == 'calibration'" },
+]
+provides-extras = ["calibration", "gui", "optotune", "dev"]
 
 [[package]]
 name = "cryptography"
@@ -2157,6 +2208,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/af/08/07edfac98a38ab0208557524cbdd94a296f565b0558417ccb2c03d14a6ea/in_n_out-0.2.1.tar.gz", hash = "sha256:43cde2b7de981d41a6d70618a2b7bd989481095922a53ead4dc75f2bbd5dffea", size = 26026, upload-time = "2024-04-22T18:56:50.418Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3b/06/711a4d105ad3d01d3ef351a1039bb5cc517a57dbf377d7da9a0808e34c77/in_n_out-0.2.1-py3-none-any.whl", hash = "sha256:343e81edb27cf41ec946134a92964f408465abdf6a065c6c55fe96f53bc3c8b7", size = 19951, upload-time = "2024-04-22T18:56:48.572Z" },
+]
+
+[[package]]
+name = "inflect"
+version = "7.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jaraco-functools" },
+    { name = "more-itertools" },
+    { name = "typeguard" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9b/4e/2836918b501ac34bf42c14dabc039ed83ce8a81bb5711e3ee4f526deedce/inflect-7.6.0.tar.gz", hash = "sha256:b46875b50534a7cd5fcfb5a7c971bb93fe68948c43ca53e9833bd1e1a69221bd", size = 83035, upload-time = "2026-10-21T18:03:37.146Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d6/b1/819d4158942c33d7eaa241c5d2e49ece9825dc4a8d0c72e8edd2813c0dd1/inflect-7.6.0-py3-none-any.whl", hash = "sha256:9fefad5c0c174d8a38f8c33d3033817e38fca8475f7f226c62efc39d46c83e8a", size = 37777, upload-time = "2026-10-21T18:03:35.928Z" },
 ]
 
 [[package]]
@@ -4747,6 +4812,41 @@ wheels = [
 ]
 
 [[package]]
+name = "optokummenberg"
+version = "1.0.5422"
+source = { path = "packages/copylot/third_party/optotune/optokummenberg-1.0.5422-py3-none-any.whl" }
+dependencies = [
+    { name = "inflect" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu' or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
+    { name = "pyserial" },
+]
+wheels = [
+    { filename = "optokummenberg-1.0.5422-py3-none-any.whl", hash = "sha256:f93206f9a75107c31f434ac335ae16a60b6b9444b48bfa3716415f4744c1c577" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "inflect", specifier = ">=4.1.0" },
+    { name = "numpy", specifier = ">=1.24.3" },
+    { name = "pyserial", specifier = ">=3.4" },
+]
+
+[[package]]
+name = "optomdc"
+version = "1.3.5434"
+source = { path = "packages/copylot/third_party/optotune/optomdc-1.3.5434-py3-none-any.whl" }
+dependencies = [
+    { name = "optokummenberg" },
+]
+wheels = [
+    { filename = "optomdc-1.3.5434-py3-none-any.whl", hash = "sha256:8778b9c10429d2161c74b93a969ef1c77d5e7efdbffaeb724447e419ab774c92" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "optokummenberg", specifier = ">=0.16.3933" }]
+
+[[package]]
 name = "packaging"
 version = "26.3"
 source = { registry = "https://pypi.org/simple" }
@@ -6022,6 +6122,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyserial"
+version = "3.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1e/7d/ae3f0a63f41e4d2f6cb66a5b57197850f919f59e558159a4dd3a818f5082/pyserial-3.5.tar.gz", hash = "sha256:3c77e014170dfffbd816e6ffc205e9842efb10be9f58ec16d3e8675b4925cddb", size = 159125, upload-time = "2020-11-23T03:59:15.045Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/07/bc/587a445451b253b285629263eb51c2d8e9bcea4fc97826266d186f96f558/pyserial-3.5-py2.py3-none-any.whl", hash = "sha256:c4451db6ba391ca6ca299fb3ec7bae67a5c55dde170964c7a14ceefec02f2cf0", size = 90585, upload-time = "2020-11-23T03:59:13.41Z" },
+]
+
+[[package]]
 name = "pystackreg"
 version = "0.2.8"
 source = { registry = "https://pypi.org/simple" }
@@ -7289,6 +7398,9 @@ fov-cellpose = [
 gui = [
     { name = "pymmcore-gui" },
 ]
+photom = [
+    { name = "copylot", extra = ["calibration", "gui", "optotune"] },
+]
 viewer = [
     { name = "iohub", version = "0.3.11", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu' or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "iohub", version = "0.3.12.dev9+172ee92", source = { git = "https://github.com/czbiohub-sf/iohub?rev=172ee926829300b42708edbf6c8e20f2fd642f78#172ee926829300b42708edbf6c8e20f2fd642f78" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
@@ -7303,6 +7415,7 @@ build = [
     { name = "twine" },
 ]
 dev = [
+    { name = "copylot" },
     { name = "iohub", version = "0.3.11", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-7-shrimpy-test-cpu' or (extra != 'extra-7-shrimpy-dynatrack' and extra != 'extra-7-shrimpy-fov' and extra != 'extra-7-shrimpy-fov-cellpose')" },
     { name = "iohub", version = "0.3.12.dev9+172ee92", source = { git = "https://github.com/czbiohub-sf/iohub?rev=172ee926829300b42708edbf6c8e20f2fd642f78#172ee926829300b42708edbf6c8e20f2fd642f78" }, marker = "extra == 'extra-7-shrimpy-dynatrack' or extra == 'extra-7-shrimpy-fov' or extra == 'extra-7-shrimpy-fov-cellpose'" },
     { name = "ipykernel" },
@@ -7326,6 +7439,7 @@ requires-dist = [
     { name = "biahub", extras = ["stain"], marker = "extra == 'fov-cellpose'", git = "https://github.com/czbiohub-sf/biahub?rev=752e8bcccee79f4474112054c6d17adcf5128a61" },
     { name = "cellpose", marker = "extra == 'fov-cellpose'" },
     { name = "click" },
+    { name = "copylot", extras = ["calibration", "gui", "optotune"], marker = "extra == 'photom'", editable = "packages/copylot" },
     { name = "dinov3", marker = "extra == 'fov-cellpose'", git = "https://github.com/facebookresearch/dinov3" },
     { name = "fov-feature-viewer", marker = "extra == 'fov'", editable = "packages/feature_viewer" },
     { name = "fov-feature-viewer", marker = "extra == 'fov-cellpose'", editable = "packages/feature_viewer" },
@@ -7364,7 +7478,7 @@ requires-dist = [
     { name = "useq-schema", git = "https://github.com/pymmcore-plus/useq-schema?rev=8e44aa21c04f32641e16a2a52c35ac186e5cfd2e" },
     { name = "yaozarrs", git = "https://github.com/imaging-formats/yaozarrs?rev=34754779338237dc71a1de3e67c5c80954b9dde7" },
 ]
-provides-extras = ["dynatrack", "fov", "fov-cellpose", "gui", "viewer"]
+provides-extras = ["dynatrack", "fov", "fov-cellpose", "gui", "photom", "viewer"]
 
 [package.metadata.requires-dev]
 build = [
@@ -7372,6 +7486,7 @@ build = [
     { name = "twine" },
 ]
 dev = [
+    { name = "copylot", editable = "packages/copylot" },
     { name = "iohub" },
     { name = "ipykernel" },
     { name = "napari-deskew-preview", editable = "packages/napari-deskew-preview" },
@@ -8057,6 +8172,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/92/3c/58f808a359700f39a967dffede33efeac809262c03303fa3eec6afff8f49/twine-7.0.0.tar.gz", hash = "sha256:85cdb29c518efef867360ae4acd4b0dfd61c8654a22fca08e6f8539f05022177", size = 215032, upload-time = "2026-07-27T15:59:00.825Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/96/08/ddcdc06225eaad6de0e48e1002b06d919dbde20582d0662c7af51308e5d6/twine-7.0.0-py3-none-any.whl", hash = "sha256:b854164df26db268af05f49aa5c0344b10e27a494343ff05b1e0bad3b135f5a7", size = 43204, upload-time = "2026-07-27T15:58:59.26Z" },
+]
+
+[[package]]
+name = "typeguard"
+version = "4.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b4/de/4420db493fa8fc0856d5e5c1b159c63a323d2de2317babe36b01568928e8/typeguard-4.6.0.tar.gz", hash = "sha256:e7414f09111317de3e335de92cd397c5c0ca00b1cc1676de12e1d444a79b3f21", size = 82330, upload-time = "2026-07-26T08:40:23.207Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8f/eb/461d5f167b6f5c7d97696f397c82f82e3480e003fce3f0a1cd1dd26e2eb2/typeguard-4.6.0-py3-none-any.whl", hash = "sha256:79878165bb86f2cf5d41d159a0ff1792a796cf496882d2fe1b1c6c7049b9cdd7", size = 36884, upload-time = "2026-07-26T08:40:21.868Z" },
 ]
 
 [[package]]

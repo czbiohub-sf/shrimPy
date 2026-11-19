@@ -47,7 +47,15 @@ uv run pytest tests/test_mantis_logger.py
 ```bash
 # Launch pymmcore-gui through the shrimPy CLI
 uv run shrimpy gui
+
+# Launch only the photomanipulation GUI (no pymmcore-gui / Micro-Manager);
+# needs the `photom` extra. --demo simulates every device.
+uv run shrimpy gui photom --demo
+uv run shrimpy gui photom --config config/photom/photom_VIS.yaml     --calibration path/to/affine_VIS.yml   # optional; repeat per mirror
 ```
+`shrimpy gui` is a click group: with no subcommand it runs pymmcore-gui (its
+`--mm-config`/`--unicore` options go before any subcommand and are rejected with
+one); standalone tool GUIs are subcommands.
 The older Mantis acquisition widget is deprecated and archived in
 `archive/` — do not update it.
 
@@ -91,11 +99,13 @@ src/shrimpy/             # the installed package
 
 tests/                   # Unit and integration tests
 config/mda/              # Example acquisition configs to copy and edit
+config/photom/           # Example photom GUI config (`shrimpy gui photom --config`)
 archive/                 # Historical implementations (pycromanager, old pymmcore-plus,
                          # deprecated Mantis Qt widget and its launcher)
 packages/                # uv workspace members: separate distributions developed here
 ├── napari-deskew-preview/   # napari deskew widget, also installable on its own
-└── feature_viewer/          # fov-feature-viewer: Qt GUI to tune FOV-selection rankings
+├── feature_viewer/          # fov-feature-viewer: Qt GUI to tune FOV-selection rankings
+└── copylot/                 # vendored coPylot photom subset: lasers, mirror, assembly, GUI
 ```
 
 ### Workspace members
@@ -124,6 +134,30 @@ that shrimPy implements as `DesirabilityScorer` in
 `fov_feature_viewer.scorers` entry point. The viewer never imports shrimpy. shrimPy
 depends on it through the `fov` extra; its tests are in the root `testpaths` and
 skip when it (or a Qt binding) is not installed.
+
+`copylot` (`packages/copylot`) is the photom (photomanipulation) subset of
+[coPylot](https://github.com/czbiohub-sf/coPylot), vendored from main @ `0bcc3a3`
+(BSD-3-Clause). coPylot is being archived, so this is the maintained copy:
+`AbstractLaser`/`VortranLaser`, `AbstractMirror`/`OptoMirror` (Optotune MR-E-2),
+`PhotomAssembly` with its calibration and pattern utils, simulated devices, and
+the photom Qt GUI (`copylot.assemblies.photom.gui`, ported from PyQt5 to qtpy).
+coPylot's module paths are kept (`copylot.hardware.lasers.vortran.vortran`,
+`copylot.assemblies.photom.photom`, ...), so `from copylot...` imports work
+unchanged; the distribution is also named `copylot`. Each module's docstring
+records its fixes relative to coPylot. It attaches no log handlers at import;
+`shrimpy/logging/logging.ini` routes the `copylot` logger to the console and
+acquisition log. Core deps are numpy, pydantic, PyYAML and pyserial; extras are
+`calibration` (scikit-image, tifffile, matplotlib), `gui` (qtpy, PyQt6) and
+`optotune`. shrimPy exposes all three as its `photom` extra; copylot is in the
+`dev` group and its tests are in the root `testpaths` (the GUI tests run
+offscreen and skip without a Qt binding).
+
+Optotune's MR-E SDK (`optoMDC`, `optoKummenberg`) is **not** vendored code: it is
+Optotune's two wheels, committed unmodified in `packages/copylot/third_party/optotune/`
+(with Optotune's license and the sha256 of the official download) only because uv
+cannot install wheels from inside Optotune's zip and the SDK is on no index.
+copylot's `[tool.uv.sources]` points the `optotune` extra at them. Do not edit
+them; replace them with a newer SDK release per that directory's README.
 
 `DeskewControls` lives in the public `napari_deskew_preview.controls` module
 rather than being re-exported from the package root: it needs qtpy, and the root
@@ -287,6 +321,9 @@ FOV selection with the ReplayCamera), `dragonfly/dragonfly.yaml`, and
 `replay_demo.yaml`. These are samples to copy and edit; they are *not* installed
 with the package. The only runtime package data is `src/shrimpy/logging/logging.ini`.
 
+The photom GUI has its own config (not an `MDASequence`): `config/photom/photom_VIS.yaml`,
+validated by `PhotomConfig` in `copylot.assemblies.photom.gui.photom_gui`.
+
 **Key Configuration Sections:**
 - `setup`: ROI, imaging path, and device properties applied once before the run
 - `time_plan`: Timepoint intervals and loops
@@ -342,6 +379,9 @@ ship in the package metadata, so a user of the installed package can opt in with
 - `fov` — smart FOV selection: `dynatrack` plus scikit-image, pandas, scikit-learn,
   anndata and **fov-feature-viewer**; segments with InstanSeg (torch only) or Otsu
 - `fov-cellpose` — `fov` plus **cellpose** + **dinov3**, for the Cellpose backend
+- `photom` — vendored **copylot** (`packages/copylot`) with its `calibration`, `gui`
+  and `optotune` extras: Vortran lasers, the Optotune mirror, the photom
+  assembly, and its GUI (`shrimpy gui photom`)
 
 `[dependency-groups]` (PEP 735) are **development/CI only**: they are not in the
 published metadata and cannot be installed by a consumer, only with

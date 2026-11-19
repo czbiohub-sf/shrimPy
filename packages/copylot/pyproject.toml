@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "copylot"
+description = "Vendored subset of coPylot: Vortran Stradus laser driver and the photom assembly (czbiohub-sf internal)"
+version = "0.1.0"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.12"
+dependencies = [
+  "numpy",
+  "pydantic>=2",
+  "pyserial",  # Vortran lasers over RS-232
+  "PyYAML",    # affine calibration files
+]
+classifiers = [
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: BSD License",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+]
+
+[project.optional-dependencies]
+# PhotomAssembly.calibrate_w_camera: spot detection, calibration stack, plot.
+calibration = ["scikit-image", "tifffile", "matplotlib"]
+# The photom Qt GUI (copylot.assemblies.photom.gui).
+gui = ["qtpy", "PyQt6"]
+# Optotune MR-E-2 mirror (copylot.hardware.mirrors.optotune). Optotune's SDK is not on
+# any index: in a checkout, uv installs the unmodified wheels in third_party/optotune
+# (see [tool.uv.sources]); with pip, install them from Optotune's SDK download first.
+optotune = ["optoMDC==1.3.5434", "optoKummenberg==1.0.5422"]
+dev = ["pytest", "ruff"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/copylot"]
+
+[tool.uv.sources]
+optomdc = { path = "third_party/optotune/optomdc-1.3.5434-py3-none-any.whl" }
+optokummenberg = { path = "third_party/optotune/optokummenberg-1.0.5422-py3-none-any.whl" }
+
+[tool.ruff]
+line-length = 95
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "I", "N", "UP", "B"]
+# N802/N806/N815: upstream names (T_affine, cmd_LF, reset_T_affine) kept for API
+# compatibility, and Qt's camelCase (signals, overrides)
+ignore = ["E501", "N802", "N806", "N815"]
+
+[tool.ruff.lint.isort]
+lines-between-types = 1
+known-first-party = ["copylot"]

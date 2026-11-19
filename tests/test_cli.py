@@ -116,3 +116,81 @@ def test_acquire_mantis_napari_viewer_is_deprecated_alias(runner, tmp_path):
     assert run.call_args.kwargs["viewer"] is True
     assert "DeprecationWarning" in result.output
     assert "--viewer" in result.output
+
+
+def test_gui_help_lists_photom(runner):
+    result = runner.invoke(cli, ["gui", "--help"])
+    assert result.exit_code == 0
+    assert "pymmcore-gui" in result.output
+    assert "photom" in result.output
+
+
+def test_gui_photom_requires_config_or_demo(runner):
+    result = runner.invoke(cli, ["gui", "photom"])
+    assert result.exit_code == 2
+    assert "--config is required unless --demo" in result.output
+
+
+def test_gui_rejects_pymmcore_gui_options_with_subcommand(runner):
+    result = runner.invoke(cli, ["gui", "--unicore", "photom", "--demo"])
+    assert result.exit_code == 2
+    assert "do not apply to `shrimpy gui photom`" in result.output
+
+
+def test_gui_photom_demo_launches_only_photom(runner):
+    """`shrimpy gui photom` runs the photom GUI and never touches pymmcore-gui."""
+    pytest.importorskip("copylot.assemblies.photom.gui.photom_gui")
+    with (
+        patch("copylot.assemblies.photom.gui.photom_gui.launch", return_value=0) as launch,
+        patch("pymmcore_gui._app.create_mmgui", create=True) as create_mmgui,
+    ):
+        result = runner.invoke(cli, ["gui", "photom", "--demo"])
+    assert result.exit_code == 0, result.output
+    launch.assert_called_once_with(None, demo=True, calibration_files=[])
+    create_mmgui.assert_not_called()
+
+
+def test_gui_photom_config_is_loaded(runner):
+    pytest.importorskip("copylot.assemblies.photom.gui.photom_gui")
+    from pathlib import Path
+
+    example = Path(__file__).parent.parent / "config" / "photom" / "photom_VIS.yaml"
+    with patch("copylot.assemblies.photom.gui.photom_gui.launch", return_value=0) as launch:
+        result = runner.invoke(cli, ["gui", "photom", "--config", str(example)])
+    assert result.exit_code == 0, result.output
+    (config,), kwargs = launch.call_args
+    assert kwargs == {"demo": False, "calibration_files": []}
+    assert [m.name for m in config.mirrors] == ["mirror_1_VIS"]
+
+
+def _calibration_file(tmp_path, name="affine.yml"):
+    path = tmp_path / name
+    path.write_text(
+        "affine_transform_yx:\n- [1.0, 0.0, 0.0]\n- [0.0, 1.0, 0.0]\n- [0.0, 0.0, 1.0]\n"
+    )
+    return path
+
+
+def test_gui_photom_calibration_is_passed_to_launch(runner, tmp_path):
+    pytest.importorskip("copylot.assemblies.photom.gui.photom_gui")
+    cal = _calibration_file(tmp_path)
+    with patch("copylot.assemblies.photom.gui.photom_gui.launch", return_value=0) as launch:
+        result = runner.invoke(cli, ["gui", "photom", "--demo", "--calibration", str(cal)])
+    assert result.exit_code == 0, result.output
+    assert launch.call_args.kwargs["calibration_files"] == [cal.resolve()]
+
+
+def test_gui_photom_bad_calibration_fails_before_launch(runner, tmp_path):
+    pytest.importorskip("copylot.assemblies.photom.gui.photom_gui")
+    bad = tmp_path / "bad.yml"
+    bad.write_text("not_a_calibration: 1\n")
+    cal = _calibration_file(tmp_path)
+    with patch("copylot.assemblies.photom.gui.photom_gui.launch") as launch:
+        malformed = runner.invoke(cli, ["gui", "photom", "--demo", "--calibration", str(bad)])
+        too_many = runner.invoke(
+            cli,
+            ["gui", "photom", "--demo", "--calibration", str(cal), "--calibration", str(cal)],
+        )
+    launch.assert_not_called()
+    assert malformed.exit_code == 1 and "affine_transform_yx" in malformed.output
+    assert too_many.exit_code == 1 and "pass at most one per mirror" in too_many.output
