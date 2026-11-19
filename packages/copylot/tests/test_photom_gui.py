@@ -356,3 +356,236 @@ def test_check_calibration_files(config, tmp_path):
 
     with pytest.raises(FileNotFoundError):
         photom_gui.check_calibration_files(config, [tmp_path / "missing.yml"])
+
+
+# --- dragging the marker steers the mirror
+
+
+def _drag(window, offsets):
+    """Press on the marker, move by each offset, release; return the mirror after each step."""
+    from qtpy.QtCore import QEvent, QPointF, Qt
+    from qtpy.QtGui import QMouseEvent
+
+    marker_window = window.photom_window
+    viewport = marker_window.shooting_view.viewport()
+    left, none = Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton
+
+    def send(etype, pos, button, buttons):
+        event = QMouseEvent(
+            etype,
+            QPointF(pos),
+            viewport.mapToGlobal(pos).toPointF(),
+            button,
+            buttons,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QtWidgets.QApplication.sendEvent(viewport, event)
+        QtWidgets.QApplication.processEvents()  # run the deferred mirror update
+
+    center = marker_window.get_marker_center(marker_window.marker)
+    start = QPoint(int(center[0]), int(center[1]))
+    mirror = window.mirrors[0]
+    steps = []
+    send(QEvent.Type.MouseButtonPress, start, left, left)
+    for dx, dy in offsets:
+        send(QEvent.Type.MouseMove, start + QPoint(dx, dy), none, left)
+        steps.append(
+            (marker_window.get_marker_center(marker_window.marker), list(mirror.position))
+        )
+    send(QEvent.Type.MouseButtonRelease, start + QPoint(*offsets[-1]), left, none)
+    return steps
+
+
+def test_dragging_marker_moves_mirror_without_lag(qapp, config, tmp_path, closing):
+    path = _write_calibration(tmp_path / "cal.yml", matrix=np.diag([1e-4, 1e-4, 1.0]))
+    app = _make_app(config, calibration_files=[path])
+    closing(app)
+    affine = app.mirrors[0].affine_transform_obj
+
+    steps = _drag(app, [(10, 5), (30, 15), (60, 30)])
+    marker_centers = [center for center, _ in steps]
+    assert marker_centers[0] != marker_centers[-1], "the marker should follow the drag"
+    for center, mirror_position in steps:
+        # the mirror is where the marker is *now*, not where it was one event ago
+        expected = [c[0] for c in affine.apply_affine(center)]
+        np.testing.assert_allclose(mirror_position, expected[:2], atol=1e-5)
+
+
+def test_uncalibrated_drag_warns_that_the_laser_is_pinned(qapp, config, closing, caplog):
+    app = _make_app(config)
+    closing(app)
+    for widget in app.mirror_widgets:  # Optotune MR-E-2 range
+        widget.movement_limits_x, widget.movement_limits_y = [-1.0, 1.0], [-1.0, 1.0]
+
+    with caplog.at_level("WARNING", logger="copylot.assemblies.photom.gui.windows"):
+        _drag(app, [(10, 5), (30, 15)])
+
+    warnings = [r for r in caplog.records if "outside the mirror's range" in r.getMessage()]
+    assert len(warnings) == 1, "warn once per drag, not on every move"
+    assert "uncalibrated" in warnings[0].getMessage()
+    assert "outside the mirror's range" in app.statusBar().currentMessage()
+
+
+def test_drag_starting_off_the_marker_moves_marker_and_mirror(qapp, config, tmp_path, closing):
+    """Regression: a press that missed the 40 px marker used to leave it (and the laser) put."""
+    from qtpy.QtCore import QEvent, QPointF, Qt
+    from qtpy.QtGui import QMouseEvent
+
+    path = _write_calibration(tmp_path / "cal.yml", matrix=np.diag([1e-4, 1e-4, 1.0]))
+    app = _make_app(config, calibration_files=[path])
+    closing(app)
+    marker_window = app.photom_window
+    viewport = marker_window.shooting_view.viewport()
+    affine = app.mirrors[0].affine_transform_obj
+    left, none = Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton
+
+    def send(etype, pos, button, buttons):
+        event = QMouseEvent(
+            etype,
+            QPointF(pos),
+            viewport.mapToGlobal(pos).toPointF(),
+            button,
+            buttons,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QtWidgets.QApplication.sendEvent(viewport, event)
+        QtWidgets.QApplication.processEvents()
+
+    def marker_center():
+        return marker_window.get_marker_center(marker_window.marker)
+
+    def assert_mirror_on_marker():
+        expected = [c[0] for c in affine.apply_affine(marker_center())][:2]
+        np.testing.assert_allclose(app.mirrors[0].position, expected, atol=1e-5)
+
+    press = QPoint(30, 25)  # well away from the centred marker
+    assert marker_window.marker not in marker_window.shooting_view.items(press)
+
+    send(QEvent.Type.MouseButtonPress, press, left, left)
+    np.testing.assert_allclose(marker_center(), [press.x(), press.y()], atol=1)
+    assert_mirror_on_marker()
+
+    for step in (QPoint(50, 40), QPoint(90, 70)):
+        send(QEvent.Type.MouseMove, step, none, left)
+        np.testing.assert_allclose(marker_center(), [step.x(), step.y()], atol=1)
+        assert_mirror_on_marker()
+    send(QEvent.Type.MouseButtonRelease, QPoint(90, 70), left, none)
+
+
+# --- the marker shows where the laser is
+
+
+def _marker_center(app):
+    return app.photom_window.get_marker_center(app.photom_window.marker)
+
+
+def _marker_maps_to_mirror(app, atol=1e-5):
+    affine = app.mirrors[app._current_mirror_idx].affine_transform_obj
+    expected = [c[0] for c in affine.apply_affine(_marker_center(app))][:2]
+    np.testing.assert_allclose(
+        app.mirrors[app._current_mirror_idx].position, expected, atol=atol
+    )
+
+
+def test_marker_starts_at_the_mirrors_position(qapp, config, tmp_path, closing):
+    path = _write_calibration(tmp_path / "cal.yml", matrix=np.diag([1e-4, 1e-4, 1.0]))
+    start = (0.02, 0.015)  # inside the window under this calibration
+    mirrors = [
+        config.mirrors[0].model_copy(update={"x_position": start[0], "y_position": start[1]})
+    ]
+    app = _make_app(config.model_copy(update={"mirrors": mirrors}), calibration_files=[path])
+    closing(app)
+
+    assert app.mirrors[0].position == list(start), "startup must not move the mirror"
+    _marker_maps_to_mirror(app)
+    assert _marker_center(app) != [
+        app.photom_window.window_geometry[-2] / 2,
+        app.photom_window.window_geometry[-1] / 2,
+    ]
+    # the sliders show the start position (a nudge must not jump the mirror from 0)
+    widget = app.mirror_widgets[0]
+    assert widget.mirror_x_slider.value() == pytest.approx(start[0], abs=1e-5)
+    assert widget.mirror_y_slider.value() == pytest.approx(start[1], abs=1e-5)
+
+
+def test_rig_marker_and_laser_start_together_at_the_centre(qapp, closing):
+    """photom_VIS.yaml's start position + affine.yml put the marker at the window centre.
+
+    On the rig the laser sits at the image centre at the start position, and
+    affine.yml's translation was re-zeroed to match, so the marker must open there
+    too, at any window size, and dragging must keep them together.
+    """
+    root = Path(__file__).resolve().parents[3] / "config" / "photom"
+    if not (root / "photom_VIS.yaml").exists() or not (root / "affine.yml").exists():
+        pytest.skip("shrimPy's photom configs not present")  # pragma: no cover
+    config = PhotomConfig.from_yaml(root / "photom_VIS.yaml").model_copy(
+        update={"arduinos": []}
+    )
+    app = _make_app_sized(config, width=853, calibration_files=[root / "affine.yml"])
+    closing(app)
+    for percent in (100, 180):
+        app.resize_spinbox.setValue(percent)
+        width, height = app.photom_window.window_geometry[-2:]
+        np.testing.assert_allclose(_marker_center(app), [width / 2, height / 2], atol=1)
+        np.testing.assert_allclose(app.mirrors[0].position, [0.00302, -0.01051])
+    # and they move together
+    _drag(app, [(40, 20), (80, 40)])
+    _marker_maps_to_mirror(app)
+
+
+def _make_app_sized(config, width, **kwargs):
+    from copylot.assemblies.photom.gui.windows import PhotomApp
+
+    return PhotomApp(
+        photom_assembly=make_photom_assembly(config, demo=True),
+        photom_sensor_size_yx=config.camera_sensor_size_yx,
+        photom_window_size_x=width,
+        **kwargs,
+    )
+
+
+def test_start_outside_the_window_centres_marker_and_warns(qapp, config, closing, caplog):
+    mirrors = [config.mirrors[0].model_copy(update={"x_position": 0.003, "y_position": -0.01})]
+    with caplog.at_level("WARNING", logger="copylot.assemblies.photom.gui.windows"):
+        app = _make_app(config.model_copy(update={"mirrors": mirrors}))  # uncalibrated
+    closing(app)
+    width, height = app.photom_window.window_geometry[-2:]
+    np.testing.assert_allclose(_marker_center(app), [width / 2, height / 2])
+    assert app.mirrors[0].position == [0.003, -0.01], "the mirror must not be moved"
+    assert any(
+        "outside the Laser Marker window (uncalibrated)" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_resize_and_mirror_switch_keep_marker_on_the_laser(qapp, config, tmp_path, closing):
+    first = _write_calibration(tmp_path / "a.yml", matrix=np.diag([1e-4, 1e-4, 1.0]))
+    second = _write_calibration(tmp_path / "b.yml", matrix=np.diag([2e-4, 2e-4, 1.0]))
+    mirrors = [
+        config.mirrors[0].model_copy(update={"x_position": 0.02, "y_position": 0.015}),
+        config.mirrors[0].model_copy(
+            update={"name": "mirror_2_IR", "x_position": 0.01, "y_position": 0.012}
+        ),
+    ]
+    app = _make_app(
+        config.model_copy(update={"mirrors": mirrors}), calibration_files=[first, second]
+    )
+    closing(app)
+
+    app.resize_spinbox.setValue(150)
+    _marker_maps_to_mirror(app)
+
+    app.mirror_dropdown.setCurrentIndex(1)
+    assert app.mirrors[1].position == [0.01, 0.012], "switching must not reset the mirror"
+    _marker_maps_to_mirror(app)
+
+
+def test_recenter_marker_also_steers_the_laser(qapp, config, tmp_path, closing):
+    path = _write_calibration(tmp_path / "cal.yml", matrix=np.diag([1e-4, 1e-4, 1.0]))
+    mirrors = [config.mirrors[0].model_copy(update={"x_position": 0.02, "y_position": 0.015})]
+    app = _make_app(config.model_copy(update={"mirrors": mirrors}), calibration_files=[path])
+    closing(app)
+    app.recenter_marker()
+    width, height = app.photom_window.window_geometry[-2:]
+    np.testing.assert_allclose(_marker_center(app), [width / 2, height / 2])
+    _marker_maps_to_mirror(app)

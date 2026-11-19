@@ -1,10 +1,14 @@
+# Camera-to-mirror calibration for mirror_1_VIS (sensor px (x, y) -> mirror units).
+# 2026-11-18: translation re-zeroed so the sensor centre maps to the start position
+# (0.00302, -0.01051) in photom_VIS.yaml, where the laser sits at the image centre.
+# Was (-0.0191331468, -0.03205780288); scale/rotation unchanged (see git history).
 affine_transform_yx:
 - - 1.8845889831362016e-05
   - 4.1877095163985503e-07
-  - -0.019133146802978198
+  - -0.03622380346287219
 - - -4.922711685199448e-07
   - 1.8728034264227446e-05
-  - -0.032057802883206685
+  - -0.03761211580630803
 - - 0.0
   - 0.0
   - 1.0

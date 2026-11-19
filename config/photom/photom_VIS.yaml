@@ -13,8 +13,11 @@ lasers:
 mirrors:
   - name: mirror_1_VIS
     COM_port: COM8
-    x_position: 0
-    y_position: 0
+    # Start position (normalized mirror units, each in [-1, 1]), applied on connect;
+    # the Laser Marker opens on this spot. Set 2026-11-18 from the resting position
+    # in logs/photom_20261118T171937.log (with calibration affine.yml).
+    x_position: 0.00302
+    y_position: -0.01051
     # Camera-to-mirror calibration saved by the GUI's Calibrate button; null starts
     # uncalibrated (identity). `--calibration <file>` on the command line overrides
     # this, and Load Calibration can load one later; the GUI shows which is loaded.

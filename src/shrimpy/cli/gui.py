@@ -119,7 +119,22 @@ def gui(ctx: click.Context, mm_config: Path | None, unicore: bool):
         "mirrors, in config order."
     ),
 )
-def photom(config_path: Path | None, demo: bool, calibration_paths: tuple[Path, ...]):
+@click.option(
+    "--debug",
+    is_flag=True,
+    default=False,
+    help=(
+        "Log debug detail (every mouse event in the Laser Marker window, each mirror "
+        "target) to the console and to logs/photom_<timestamp>.log in the working "
+        "directory."
+    ),
+)
+def photom(
+    config_path: Path | None,
+    demo: bool,
+    calibration_paths: tuple[Path, ...],
+    debug: bool,
+):
     """Launch the photomanipulation (photom) GUI on its own, without pymmcore-gui.
 
     Steers the lasers with the galvo mirrors: drag the marker in the Laser Marker
@@ -148,7 +163,7 @@ def photom(config_path: Path | None, demo: bool, calibration_paths: tuple[Path, 
             "`uv sync --extra photom` or `pip install 'shrimpy[photom]'`."
         ) from exc
 
-    _log_copylot_to_console()
+    _log_copylot_to_console(debug=debug)
     calibration_files = [path.resolve() for path in calibration_paths]
     try:
         config = PhotomConfig.from_yaml(config_path) if config_path is not None else None
@@ -159,14 +174,34 @@ def photom(config_path: Path | None, demo: bool, calibration_paths: tuple[Path, 
     raise SystemExit(launch(config, demo=demo, calibration_files=calibration_files))
 
 
-def _log_copylot_to_console() -> None:
-    """Show copylot's INFO messages (laser power, calibration) on the console."""
+def _log_copylot_to_console(debug: bool = False) -> None:
+    """Show copylot's messages (laser power, calibration) on the console.
+
+    INFO and up by default; with ``debug``, everything, also written to
+    ``logs/photom_<timestamp>.log`` in the working directory.
+    """
+    from datetime import datetime
+
     copylot_logger = logging.getLogger("copylot")
+    copylot_logger.setLevel(logging.DEBUG)
+    level = logging.DEBUG if debug else logging.INFO
     if not any(type(h) is logging.StreamHandler for h in copylot_logger.handlers):
         handler = logging.StreamHandler()
-        handler.setLevel(logging.INFO)
+        handler.setLevel(level)
         handler.setFormatter(
             logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", "%H:%M:%S")
         )
         copylot_logger.addHandler(handler)
-        copylot_logger.setLevel(logging.DEBUG)
+    if debug:
+        log_dir = Path.cwd() / "logs"
+        log_dir.mkdir(exist_ok=True)
+        log_file = log_dir / f"photom_{datetime.now():%Y%m%dT%H%M%S}.log"
+        file_handler = logging.FileHandler(log_file, encoding="utf-8")
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s.%(msecs)03d - %(levelname)s - %(name)s - %(message)s", "%H:%M:%S"
+            )
+        )
+        copylot_logger.addHandler(file_handler)
+        copylot_logger.info(f"Debug log: {log_file}")

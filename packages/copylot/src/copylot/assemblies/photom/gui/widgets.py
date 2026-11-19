@@ -4,7 +4,9 @@ Vendored from coPylot ``copylot/assemblies/photom/gui/widgets.py``
 (main @ 0bcc3a3), BSD-3-Clause; see the package LICENSE. Ported from PyQt5 to
 qtpy.
 
-Changes from upstream: logging instead of ``print``; ``ArduinoPWMWidget``'s
+Changes from upstream: logging instead of ``print``; ``MirrorWidget`` starts its
+sliders at the mirror's position (upstream started them at 0, so the first nudge
+jumped the mirror) and gains ``show_position``; ``ArduinoPWMWidget``'s
 pulse-duration field no longer raises ``AttributeError`` (``self.time_period``)
 when given invalid text.
 """
@@ -187,6 +189,20 @@ class MirrorWidget(QWidget):
         layout.addWidget(self.mirror_y_label)
 
         self.setLayout(layout)
+        self.show_position(list(self.mirror.position))
+
+    def show_position(self, position) -> None:
+        """Show ``(x, y)`` on the sliders and labels without moving the mirror."""
+        for slider, label, axis, value in (
+            (self.mirror_x_slider, self.mirror_x_label, "X", position[0]),
+            (self.mirror_y_slider, self.mirror_y_label, "Y", position[1]),
+        ):
+            slider.blockSignals(True)
+            try:
+                slider.setValue(value)
+            finally:
+                slider.blockSignals(False)
+            label.setText(f"{axis}: {value}")
 
     def update_mirror_x(self, value):
         self.mirror.position_x = value

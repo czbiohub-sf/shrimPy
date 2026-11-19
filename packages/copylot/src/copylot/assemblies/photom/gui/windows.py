@@ -28,6 +28,19 @@ Changes from upstream:
   marker no longer mapped to the mirror), and the mirror is recentered on the
   window center (upstream passed sensor (y, x) coordinates through the window
   affine)
+- a left-press anywhere in the Laser Marker window moves the marker there and
+  drags it; upstream only dragged on a direct hit on the 40 px marker, and a
+  press elsewhere snapped the laser to the marker and then ignored the drag
+- the marker shows where the laser is: at startup, after loading a calibration,
+  on mirror switch and on resize it is placed at the mirror's actual position
+  (upstream centred it, so the first press jumped the laser). Switching mirrors
+  no longer resets the selected mirror to (0, 0), Recenter Marker also steers the
+  laser to the centre, and the mirror sliders start at the mirror's position
+- dragging the marker steers the mirror to where the marker *is*: upstream
+  steered before the view moved the marker, so the laser trailed one mouse event
+  behind. Mirror updates are also coalesced, and a target outside the mirror's
+  range (every target when uncalibrated, which pins the laser at the edge) is
+  reported in the log and the status bar instead of being clamped silently
 - a calibration that raises shows an error and restores the buttons (upstream
   left the GUI stuck in "Cancel Calibration")
 - unused imports removed (including ``networkx``, which was not a dependency);
@@ -98,6 +111,13 @@ from copylot.assemblies.photom.utils.scanning_algorithms import calculate_rectan
 logger = logging.getLogger(__name__)
 
 MARKER_IMAGE = Path(__file__).parent.parent / "utils" / "images" / "hit_marker_red.png"
+
+#: Mouse events written to the debug log (``shrimpy gui photom --debug``).
+_TRACED_MOUSE_EVENTS = (
+    QEvent.Type.MouseButtonPress,
+    QEvent.Type.MouseMove,
+    QEvent.Type.MouseButtonRelease,
+)
 
 
 def _event_pos(event) -> QPoint:
@@ -227,6 +247,53 @@ class PhotomApp(QMainWindow):
                 self.load_calibration_file(path, mirror_idx=idx)
         self.update_laser_window_affine()
         self._update_calibration_display()
+        self.sync_marker_to_mirror()
+
+    def sync_marker_to_mirror(self, warn: bool = True) -> None:
+        """Place the marker where the current mirror points; the mirror does not move.
+
+        Inverts the mirror's window affine (calibration @ window scaling) at its
+        actual position, so the marker shows the laser from startup (upstream
+        centred it, and the first press jumped the laser to the centre). A position
+        that lands outside the window, e.g. when uncalibrated, centres the marker
+        with a warning instead.
+        """
+        if self.photom_window is None:
+            return
+        idx = self._current_mirror_idx
+        mirror = self.mirrors[idx]
+        marker_window = self.photom_window
+        width, height = marker_window.window_geometry[-2:]
+        mirror_xy = [float(v) for v in mirror.position]
+        try:
+            window_to_mirror = np.asarray(
+                mirror.affine_transform_obj.get_affine_matrix(), float
+            )
+            wx, wy, w = np.linalg.inv(window_to_mirror) @ [mirror_xy[0], mirror_xy[1], 1.0]
+            wx, wy = wx / w, wy / w
+        except np.linalg.LinAlgError:
+            wx = wy = np.nan
+        if np.isfinite(wx) and np.isfinite(wy) and 0 <= wx <= width and 0 <= wy <= height:
+            marker_window.display_marker_center(marker_window.marker, (wx, wy))
+            logger.debug(
+                f"Marker placed at {mirror.name}'s position {mirror_xy} -> window ({wx:.0f}, {wy:.0f})"
+            )
+        else:
+            marker_window.recenter_marker()
+            if not warn:
+                return
+            uncalibrated = self.calibration_sources[idx] is None and np.allclose(
+                self.T_mirror_cam_matrices[idx], np.eye(3)
+            )
+            message = (
+                f"{mirror.name} points at {[round(v, 5) for v in mirror_xy]}, outside the "
+                f"Laser Marker window{' (uncalibrated)' if uncalibrated else ''}; the "
+                "marker is centred and does not show the laser until you drag it."
+            )
+            logger.warning(message)
+            self.statusBar().showMessage(message, 10000)
+        for widget in getattr(self, "mirror_widgets", [])[idx : idx + 1]:
+            widget.show_position(mirror_xy)
 
     def load_calibration_file(self, path: Path | str, mirror_idx: int | None = None) -> None:
         """Load a camera -> mirror calibration YAML for a mirror (default: the current one)."""
@@ -239,6 +306,8 @@ class PhotomApp(QMainWindow):
         self.calibration_sources[idx] = str(path)
         self.update_laser_window_affine()
         self._update_calibration_display()
+        if idx == self._current_mirror_idx:
+            self.sync_marker_to_mirror()
 
     def _update_calibration_display(self) -> None:
         source = self.calibration_sources[self._current_mirror_idx]
@@ -250,7 +319,15 @@ class PhotomApp(QMainWindow):
         else:
             text, name = "Calibration: none (uncalibrated)", "uncalibrated"
         self.calibration_label.setText(text)
-        self.calibration_label.setToolTip(source or "")
+        self.calibration_label.setToolTip(
+            source
+            or (
+                "Uncalibrated: the marker does not map onto the mirror, so dragging it "
+                "pins the laser at the edge of the mirror's range. Load a calibration."
+                if name == "uncalibrated"
+                else ""
+            )
+        )
         self.photom_window.setWindowTitle(f"{self.photom_window.window_name} - {name}")
 
     def initializer_laser_marker_window(self):
@@ -520,15 +597,20 @@ class PhotomApp(QMainWindow):
         new_height = int(new_width / self.photom_window.aspect_ratio)
         self.photom_window.update_window_geometry(new_width, new_height)
         self.update_laser_window_affine()
+        self.sync_marker_to_mirror()  # same laser spot, new window scale
 
     def mirror_dropdown_changed(self, index):
+        # Upstream reset the newly selected mirror to (0, 0); it now stays where it
+        # is (e.g. its configured start position) and the marker moves to it.
         logger.info(f"Mirror dropdown changed to index {index}")
         self._current_mirror_idx = index
-        self.photom_assembly.mirror[self._current_mirror_idx].position = [0, 0]
         self._update_calibration_display()
+        self.sync_marker_to_mirror()
 
     def recenter_marker(self):
+        """Centre the marker and steer the laser there (upstream moved only the marker)."""
         self.photom_window.recenter_marker()
+        self.photom_window._move_marker_and_update_sliders()
 
     def calibrate_w_camera(self):
         if self.camera_factory is None:
@@ -748,6 +830,8 @@ class LaserMarkerWindow(QMainWindow):
         # FLAGS (set before the window shows and starts filtering events)
         self._right_click_hold = False
         self._left_click_hold = False
+        self._follow_pending = False  # a deferred marker -> mirror update is queued
+        self._out_of_range_warned = False
 
         self.lastPoint = None
         self.drawing = False
@@ -945,6 +1029,8 @@ class LaserMarkerWindow(QMainWindow):
     def eventFilter(self, source, event):
         """Mouse handling for the shooting and drawing views."""
         etype = event.type()
+        if etype in _TRACED_MOUSE_EVENTS and logger.isEnabledFor(logging.DEBUG):
+            self._trace_mouse_event(source, event)
         if etype == QEvent.Type.MouseButtonPress:
             if event.buttons() == Qt.MouseButton.LeftButton:
                 self._left_click_hold = True
@@ -954,7 +1040,10 @@ class LaserMarkerWindow(QMainWindow):
                     self.curr_shape_points.append(_event_pos(event))
                     self.update()
                 elif self.stacked_widget.currentWidget() == self.shooting_view:
-                    self._move_marker_and_update_sliders()
+                    self._out_of_range_warned = False  # warn once per drag
+                    if source is self.shooting_view.viewport():
+                        self._grab_marker_at(_event_pos(event))
+                    self._follow_marker()
 
             elif event.buttons() == Qt.MouseButton.RightButton:
                 self._right_click_hold = True
@@ -963,7 +1052,7 @@ class LaserMarkerWindow(QMainWindow):
         elif etype == QEvent.Type.MouseMove:
             if self._left_click_hold:
                 if source == self.shooting_view.viewport():
-                    self._move_marker_and_update_sliders()
+                    self._follow_marker()
                 elif self.drawing and source == self.drawing_view.viewport():
                     self.curr_shape_points.append(_event_pos(event))
                     self.update()
@@ -1022,14 +1111,75 @@ class LaserMarkerWindow(QMainWindow):
         rect_x = (new_width - rect_width) / 2
         rect_y = (new_height - rect_height) / 2
 
-        self.recenter_marker()
+        # Keep the marker on the laser spot (upstream recentred it, leaving the laser
+        # elsewhere). Before the control panel is built there is no mirror to follow.
+        controls = self.photom_controls
+        if controls is not None and getattr(controls, "mirror_widgets", None):
+            # quiet: mid-resize the window affine may not be rescaled yet
+            controls.sync_marker_to_mirror(warn=False)
+        else:
+            self.recenter_marker()
 
         self.dashed_rectangle.setRect(rect_x, rect_y, rect_width, rect_height)
         self.dashed_rectangle.setPen(QPen(QColor(0, 0, 0), 2, Qt.PenStyle.DashLine))
         self.shooting_view.update()
 
+    def _trace_mouse_event(self, source, event) -> None:
+        """Debug log of a mouse event: what received it, buttons, position, marker."""
+        names = {
+            id(self.shooting_view): "shooting_view",
+            id(self.shooting_view.viewport()): "shooting_viewport",
+            id(self.drawing_view): "drawing_view",
+            id(self.drawing_view.viewport()): "drawing_viewport",
+            id(self.calibration_view): "calibration_view",
+        }
+        pos = _event_pos(event)
+        marker = self.get_marker_center(self.marker)
+        # every item under the cursor, topmost first; the marker must be among them
+        # for a press to grab it (the dashed guide rectangle above it ignores clicks)
+        under = [
+            "marker" if item is self.marker else type(item).__name__
+            for item in self.shooting_view.items(pos)
+        ]
+        logger.debug(
+            f"mouse {event.type().name} on {names.get(id(source), type(source).__name__)}: "
+            f"pos=({pos.x()}, {pos.y()}) button={event.button().name} "
+            f"buttons={event.buttons()} hold={self._left_click_hold} "
+            f"scene={type(self.stacked_widget.currentWidget()).__name__}"
+            f"{'(shooting)' if self.stacked_widget.currentWidget() is self.shooting_view else ''} "
+            f"marker=({marker[0]:.0f}, {marker[1]:.0f}) "
+            f"items_under_cursor={under}"
+        )
+
+    def _grab_marker_at(self, viewport_pos: QPoint) -> None:
+        """Bring the marker under a press that missed it, so the press drags it.
+
+        Only a press *on* the 40 px marker used to drag it; a press anywhere else
+        steered the mirror to wherever the marker already was and then ignored the
+        drag. The event filter runs before the view handles the press, so centring
+        the marker on the cursor here makes the view grab it like a direct hit.
+        """
+        if self.marker in self.shooting_view.items(viewport_pos):
+            return
+        scene_pos = self.shooting_view.mapToScene(viewport_pos)
+        self.display_marker_center(self.marker, (scene_pos.x(), scene_pos.y()))
+
+    def _follow_marker(self):
+        """Steer the mirror to the marker once the view has finished moving it.
+
+        The event filter sees a mouse event *before* the view hands it to the marker
+        item, so steering immediately aimed at the marker's previous position: the
+        laser lagged one event behind the drag (in coPylot too). Defer to the next
+        event-loop turn, and coalesce: if mirror writes are slower than mouse moves,
+        only the latest marker position is sent.
+        """
+        if not self._follow_pending:
+            self._follow_pending = True
+            QTimer.singleShot(0, self._move_marker_and_update_sliders)
+
     def _move_marker_and_update_sliders(self):
         """Steer the current mirror to the marker, via the mirror widget's sliders."""
+        self._follow_pending = False
         if self.photom_controls is not None:
             marker_position = self.get_marker_center(
                 self.marker, coords=(self.marker.pos().x(), self.marker.pos().y())
@@ -1040,8 +1190,48 @@ class LaserMarkerWindow(QMainWindow):
             new_coords = mirror_widget.mirror.affine_transform_obj.apply_affine(
                 marker_position
             )
-            mirror_widget.mirror_x_slider.setValue(new_coords[0][0])
-            mirror_widget.mirror_y_slider.setValue(new_coords[1][0])
+            target = (new_coords[0][0], new_coords[1][0])
+            logger.debug(
+                f"steer mirror {mirror_widget.mirror.name}: marker=({marker_position[0]:.0f}, "
+                f"{marker_position[1]:.0f}) -> target=({target[0]:.5f}, {target[1]:.5f})"
+            )
+            self._warn_if_out_of_range(mirror_widget, target)
+            mirror_widget.mirror_x_slider.setValue(target[0])
+            mirror_widget.mirror_y_slider.setValue(target[1])
+
+    def _warn_if_out_of_range(self, mirror_widget, target) -> None:
+        """Say so when the target is clamped to the mirror's range (once per drag).
+
+        The sliders silently clamp to the mirror's movement limits, so an
+        out-of-range target pins the laser at the edge however far the marker is
+        dragged. Without a calibration this is every target: the window maps to
+        sensor pixels (thousands), while the Optotune mirror accepts +/-1.
+        """
+        (x_lo, x_hi), (y_lo, y_hi) = (
+            mirror_widget.movement_limits_x,
+            mirror_widget.movement_limits_y,
+        )
+        in_range = x_lo <= target[0] <= x_hi and y_lo <= target[1] <= y_hi
+        if in_range or self._out_of_range_warned:
+            return
+        self._out_of_range_warned = True
+        controls = self.photom_controls
+        uncalibrated = controls.calibration_sources[controls._current_mirror_idx] is None and (
+            np.allclose(controls.T_mirror_cam_matrix, np.eye(3))
+        )
+        hint = (
+            "the mirror is uncalibrated; load a calibration (Load Calibration, or "
+            "--calibration)"
+            if uncalibrated
+            else "aim inside the calibrated area"
+        )
+        message = (
+            f"Marker maps to mirror ({target[0]:.4g}, {target[1]:.4g}), outside the "
+            f"mirror's range x[{x_lo}, {x_hi}] y[{y_lo}, {y_hi}]; the laser is pinned "
+            f"at the edge: {hint}."
+        )
+        logger.warning(message)
+        controls.statusBar().showMessage(message, 10000)
 
     def _roi_tracing(self, pattern_delay: float = 1.0):
         """Step the mirror through the selected shape's ablation points."""
