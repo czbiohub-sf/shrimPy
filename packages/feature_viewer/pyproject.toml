@@ -7,7 +7,7 @@ name = "fov-feature-viewer"
 description = "Qt GUI to explore per-FOV features, label FOVs, and tune a pluggable ranking model (czbiohub-sf internal)"
 version = "0.1.0"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = { file = "LICENSE.md" }
 requires-python = ">=3.12"
 # No scoring model is bundled: the Rank and Score-map tabs run on a Scorer found through
 # the `fov_feature_viewer.scorers` entry point (shrimpy registers one) or --scorer.

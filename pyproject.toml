@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "shrimpy"
 description = "Custom acquisition engines for optical microscopes based on pymmcore-plus"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = { file = "LICENSE.md" }
 requires-python = ">=3.12, <4.0"
 
 # the dynamically determined project metadata attributes

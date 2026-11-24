@@ -9,6 +9,9 @@ The acquired multidimensional raw datasets are processed with the [biahub](https
 
 This version of the code contains an acquisition engine for the `mantis` microscope, including several archived versions. We intend to develop additional acquisition engines for the `iSIM` and `Dragonfly` microscopes within this framework. These acquisition engines are expected to have shared features but also to accommodate differences between the microscope hardware and the acquisition needs on each microscope.
 
+> **Project status:** Active development. shrimPy is alpha software, and its
+> APIs, CLI, and configuration formats may change between releases.
+
 ## Installation
 
 This project uses [uv](https://docs.astral.sh/uv/) for package management. uv handles Python installation, virtual environments, and dependency locking automatically.
@@ -41,13 +44,17 @@ This will automatically:
 The core install is headless and pulls no Qt bindings, so `shrimpy acquire` works on a bare server. Opt into the features you need:
 
 ```sh
-uv sync --extra gui        # `shrimpy gui` (pymmcore-gui)
-uv sync --extra viewer     # napari viewer for live and finished acquisitions
-uv sync --extra dynatrack  # DynaTrack position tracking (biahub, torch)
-uv sync --all-extras       # all of the above
+uv sync --extra gui           # `shrimpy gui` (pymmcore-gui)
+uv sync --extra viewer        # napari viewer for live and finished acquisitions
+uv sync --extra dynatrack     # DynaTrack position tracking (biahub, torch)
+uv sync --extra fov           # smart FOV selection (InstanSeg or Otsu segmentation)
+uv sync --extra fov-cellpose  # FOV selection with Cellpose (cellpose, DINOv3)
+uv sync --all-extras          # all of the above
 ```
 
 On Windows the `dynatrack` extra pulls the CUDA build of PyTorch, which requires the CUDA Toolkit to be installed.
+
+The `fov-cellpose` extra installs [DINOv3](https://github.com/facebookresearch/dinov3), which uses its own license rather than BSD-3-Clause. See [License](#license).
 
 ### Workspace packages
 
@@ -161,3 +168,19 @@ uv run pre-commit install
 ## Contributing
 
 We are updating the code to enable smart high throughput microscopy on any Micro-Manager controlled microscope. The code will have rough edges for the next several months. We appreciate the bug reports and code contributions if you use this package. If you would like to contribute to this package, please read the [contributing guide](CONTRIBUTING.md).
+
+## Community
+
+Participation in shrimPy is governed by the
+[Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+Do not report security vulnerabilities in public issues. Follow our
+[security policy](SECURITY.md) to report them privately.
+
+## License
+
+[BSD-3-Clause](LICENSE.md)
+
+The optional `fov-cellpose` extra, which `--all-extras` also installs, adds [DINOv3](https://github.com/facebookresearch/dinov3) under the [DINOv3 License](https://github.com/facebookresearch/dinov3/blob/main/LICENSE.md). Installing that extra binds you to its terms. They prohibit some uses, including military, weapons, nuclear, and ITAR-controlled work, and require publications that use DINOv3 to acknowledge it.
